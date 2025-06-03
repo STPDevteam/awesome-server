@@ -17,7 +17,8 @@ export class MCPManager {
     try {
       // 检查是否已连接
       if (this.clients.has(name)) {
-        throw new Error(`MCP ${name} is already connected`);
+        logger.info(`MCP ${name} is already connected, skipping connection`);
+        return; // 已经连接，直接返回成功
       }
 
       // 创建传输层
