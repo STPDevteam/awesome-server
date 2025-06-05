@@ -9,42 +9,42 @@ export class MCPToolAdapter {
    * 生成符合 OpenAI API 限制的工具名称（最大64字符）
    */
   private generateToolName(mcpName: string, toolName: string): string {
-    // 1. 简化 MCP 名称：移除常见后缀
-    let shortMcpName = mcpName
-      .replace('-mcp-server', '')
-      .replace('-mcp', '')
-      .replace('_server', '')
-      .replace('_mcp', '');
-    
-    // 2. 构建初始名称
-    let fullName = `${shortMcpName}_${toolName}`;
-    
-    // 3. 如果名称长度合适，直接返回
-    if (fullName.length <= 64) {
-      return fullName;
-    }
-    
-    // 4. 如果太长，智能截断
-    const maxMcpLength = 20; // 为 MCP 名称预留的最大长度
-    const maxToolLength = 43; // 为工具名称预留的长度（64 - 20 - 1）
-    
-    // 截断 MCP 名称
+  const sanitize = (s: string) =>
+    s.replace(/[^a-zA-Z0-9_-]/g, '_'); // 替换非法字符
+
+  // 1. 简化 MCP 名称
+  let shortMcpName = mcpName
+    .replace('-mcp-server', '')
+    .replace('-mcp', '')
+    .replace('_server', '')
+    .replace('_mcp', '');
+
+  // 清洗
+  shortMcpName = sanitize(shortMcpName);
+  toolName = sanitize(toolName);
+
+  // 2. 构建名称
+  let fullName = `${shortMcpName}_${toolName}`;
+
+  // 3. 若超出长度，截断
+  if (fullName.length > 64) {
+    const maxMcpLength = 20;
+    const maxToolLength = 43;
+
     if (shortMcpName.length > maxMcpLength) {
       shortMcpName = shortMcpName.substring(0, maxMcpLength);
     }
-    
-    // 截断工具名称
-    let finalToolName = toolName;
-    if (finalToolName.length > maxToolLength) {
-      finalToolName = finalToolName.substring(0, maxToolLength);
+
+    if (toolName.length > maxToolLength) {
+      toolName = toolName.substring(0, maxToolLength);
     }
-    
-    // 5. 生成最终名称
-    const finalName = `${shortMcpName}_${finalToolName}`;
-    
-    // 6. 确保不超过64字符（额外保险）
-    return finalName.length > 64 ? finalName.substring(0, 64) : finalName;
+
+    fullName = `${shortMcpName}_${toolName}`;
+    return fullName.length > 64 ? fullName.substring(0, 64) : fullName;
   }
+
+  return fullName;
+}
 
   /**
    * 将 MCP 工具转换为 LangChain 工具
