@@ -7,6 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { MCPManager } from './services/mcpManager.js';
 import { MCPToolAdapter } from './services/mcpToolAdapter.js';
+import { OfficialMCPAdapter } from './services/officialMcpAdapter.js';
 
 dotenv.config();
 
@@ -25,7 +26,14 @@ const llm = new ChatOpenAI({
 
 // MCP 客户端管理
 const mcpManager = new MCPManager();
-const mcpToolAdapter = new MCPToolAdapter(mcpManager);
+
+// 选择使用官方适配器或自定义适配器
+const USE_OFFICIAL_ADAPTER = process.env.USE_OFFICIAL_MCP_ADAPTER === 'true';
+const mcpToolAdapter = USE_OFFICIAL_ADAPTER 
+  ? new OfficialMCPAdapter(mcpManager)
+  : new MCPToolAdapter(mcpManager);
+
+console.log(`🔧 Using ${USE_OFFICIAL_ADAPTER ? 'Official' : 'Custom'} MCP Adapter`);
 
 // 转换消息格式的辅助函数
 function convertToLangChainMessages(messages: any[]) {
@@ -89,16 +97,46 @@ app.post('/api/chat', async (req, res) => {
               throw new Error(`Tool ${toolCall.name} not found`);
             }
             
-            // 执行工具
-            const toolResult = await tool.func(toolCall.args);
+            // 执行工具 (兼容官方和自定义适配器)
+            const toolResult = 'func' in tool 
+              ? await tool.func(toolCall.args)
+              : await tool.invoke(toolCall.args);
             console.log('Tool execution result:', {
               toolName: toolCall.name,
-              resultLength: typeof toolResult === 'string' ? toolResult.length : 'non-string'
+              resultLength: typeof toolResult === 'string' ? toolResult.length : 'non-string',
+              resultType: typeof toolResult
             });
+            
+            // 处理工具结果格式（兼容官方和自定义适配器）
+            let processedContent: string;
+            
+            if (USE_OFFICIAL_ADAPTER && typeof toolResult === 'object' && toolResult !== null) {
+              // 官方适配器可能返回复杂对象
+              if ('content' in toolResult && Array.isArray(toolResult.content)) {
+                // 处理包含 content 数组的结果
+                processedContent = toolResult.content
+                  .map((item: any) => {
+                    if (typeof item === 'string') return item;
+                    if (item.type === 'text' && item.text) return item.text;
+                    return JSON.stringify(item);
+                  })
+                  .join('\n');
+              } else {
+                // 其他对象格式转为 JSON 字符串
+                processedContent = JSON.stringify(toolResult, null, 2);
+              }
+            } else {
+              // 自定义适配器或字符串结果
+              processedContent = typeof toolResult === 'string' 
+                ? toolResult 
+                : JSON.stringify(toolResult, null, 2);
+            }
+            
+            console.log('Processed content length:', processedContent.length);
             
             // 创建工具结果消息
             const toolMessage = new ToolMessage({
-              content: toolResult,
+              content: processedContent,
               tool_call_id: toolCall.id || `${toolCall.name}_${Date.now()}`
             });
             
