@@ -1,0 +1,288 @@
+import { db } from '../config/database.js';
+
+interface Migration {
+  version: number;
+  name: string;
+  up: () => Promise<void>;
+  down: () => Promise<void>;
+}
+
+class MigrationService {
+  private migrations: Migration[] = [
+    {
+      version: 1,
+      name: 'create_users_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR(255) PRIMARY KEY,
+            username VARCHAR(255),
+            avatar TEXT,
+            wallet_address VARCHAR(255),
+            balance VARCHAR(255),
+            email VARCHAR(255),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            last_login_at TIMESTAMP WITH TIME ZONE,
+            is_active BOOLEAN DEFAULT true
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_users_wallet_address 
+          ON users(wallet_address) 
+          WHERE wallet_address IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_users_email 
+          ON users(email) 
+          WHERE email IS NOT NULL
+        `);
+
+        console.log('✅ Created users table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS users CASCADE');
+        console.log('✅ Dropped users table');
+      }
+    },
+    {
+      version: 2,
+      name: 'create_user_login_methods_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS user_login_methods (
+            id SERIAL PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            method_type VARCHAR(50) NOT NULL CHECK (method_type IN ('wallet', 'google', 'github')),
+            method_data JSONB NOT NULL,
+            verified BOOLEAN DEFAULT false,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, method_type)
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_user_login_methods_user_id 
+          ON user_login_methods(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_user_login_methods_type 
+          ON user_login_methods(method_type)
+        `);
+
+        // 为不同登录方式的特定字段创建表达式索引（BTREE）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_user_login_methods_wallet_address 
+          ON user_login_methods ((method_data->>'address')) 
+          WHERE method_type = 'wallet'
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_user_login_methods_google_id 
+          ON user_login_methods ((method_data->>'googleId')) 
+          WHERE method_type = 'google'
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_user_login_methods_github_id 
+          ON user_login_methods ((method_data->>'githubId')) 
+          WHERE method_type = 'github'
+        `);
+
+        console.log('✅ Created user_login_methods table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS user_login_methods CASCADE');
+        console.log('✅ Dropped user_login_methods table');
+      }
+    },
+    {
+      version: 3,
+      name: 'create_refresh_tokens_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS refresh_tokens (
+            id SERIAL PRIMARY KEY,
+            token_hash VARCHAR(255) NOT NULL UNIQUE,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            revoked_at TIMESTAMP WITH TIME ZONE,
+            is_revoked BOOLEAN DEFAULT false
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id 
+          ON refresh_tokens(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at 
+          ON refresh_tokens(expires_at)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash 
+          ON refresh_tokens(token_hash)
+        `);
+
+        console.log('✅ Created refresh_tokens table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS refresh_tokens CASCADE');
+        console.log('✅ Dropped refresh_tokens table');
+      }
+    },
+    {
+      version: 4,
+      name: 'create_migrations_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS migrations (
+            version INTEGER PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        console.log('✅ Created migrations table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS migrations CASCADE');
+        console.log('✅ Dropped migrations table');
+      }
+    }
+  ];
+
+  async getCurrentVersion(): Promise<number> {
+    try {
+      // 先确保 migrations 表存在
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS migrations (
+          version INTEGER PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      const result = await db.query('SELECT MAX(version) as version FROM migrations');
+      return result.rows[0]?.version || 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  async runMigrations(): Promise<void> {
+    console.log('🚀 Starting database migrations...');
+    
+    const currentVersion = await this.getCurrentVersion();
+    console.log(`📊 Current database version: ${currentVersion}`);
+    
+    const pendingMigrations = this.migrations.filter(m => m.version > currentVersion);
+    
+    if (pendingMigrations.length === 0) {
+      console.log('✅ Database is up to date');
+      return;
+    }
+
+    console.log(`📝 Found ${pendingMigrations.length} pending migrations`);
+
+    for (const migration of pendingMigrations) {
+      console.log(`⏳ Running migration ${migration.version}: ${migration.name}`);
+      
+      try {
+        await migration.up();
+        
+        // 记录迁移
+        await db.query(
+          'INSERT INTO migrations (version, name) VALUES ($1, $2) ON CONFLICT (version) DO NOTHING',
+          [migration.version, migration.name]
+        );
+        
+        console.log(`✅ Migration ${migration.version} completed`);
+      } catch (error) {
+        console.error(`❌ Migration ${migration.version} failed:`, error);
+        throw error;
+      }
+    }
+
+    console.log('🎉 All migrations completed successfully!');
+  }
+
+  async rollback(targetVersion: number): Promise<void> {
+    console.log(`🔄 Rolling back to version ${targetVersion}...`);
+    
+    const currentVersion = await this.getCurrentVersion();
+    
+    if (targetVersion >= currentVersion) {
+      console.log('✅ Already at or below target version');
+      return;
+    }
+
+    const migrationsToRollback = this.migrations
+      .filter(m => m.version > targetVersion && m.version <= currentVersion)
+      .sort((a, b) => b.version - a.version); // 降序，从高版本开始回滚
+
+    for (const migration of migrationsToRollback) {
+      console.log(`⏳ Rolling back migration ${migration.version}: ${migration.name}`);
+      
+      try {
+        await migration.down();
+        
+        // 删除迁移记录
+        await db.query('DELETE FROM migrations WHERE version = $1', [migration.version]);
+        
+        console.log(`✅ Migration ${migration.version} rolled back`);
+      } catch (error) {
+        console.error(`❌ Rollback of migration ${migration.version} failed:`, error);
+        throw error;
+      }
+    }
+
+    console.log('🎉 Rollback completed successfully!');
+  }
+}
+
+export const migrationService = new MigrationService();
+
+// 如果直接运行此脚本
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const command = process.argv[2];
+  const version = process.argv[3] ? parseInt(process.argv[3]) : undefined;
+
+  switch (command) {
+    case 'up':
+      migrationService.runMigrations()
+        .then(() => process.exit(0))
+        .catch((error) => {
+          console.error('Migration failed:', error);
+          process.exit(1);
+        });
+      break;
+    
+    case 'down':
+      if (version === undefined) {
+        console.error('Please specify target version for rollback');
+        process.exit(1);
+      }
+      migrationService.rollback(version)
+        .then(() => process.exit(0))
+        .catch((error) => {
+          console.error('Rollback failed:', error);
+          process.exit(1);
+        });
+      break;
+    
+    default:
+      console.log('Usage: npm run migrate [up|down] [version]');
+      console.log('  up: Run pending migrations');
+      console.log('  down <version>: Rollback to specific version');
+      process.exit(1);
+  }
+} 

@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钱包登录示例</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .user-info {
+            background: #d1ecf1;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .hidden {
+            display: none;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 钱包登录示例</h1>
+        <p>这个示例展示如何使用 MetaMask 钱包登录到 MCP LangChain 服务。</p>
+
+        <div id="no-wallet" class="error hidden">
+            <strong>未检测到钱包</strong><br>
+            请安装 MetaMask 或其他支持的以太坊钱包。
+        </div>
+
+        <div id="connect-section">
+            <button id="connect-wallet">连接钱包</button>
+            <button id="login-wallet" disabled>钱包登录</button>
+            <button id="logout" class="hidden">登出</button>
+        </div>
+
+        <div id="status" class="info">
+            状态：未连接
+        </div>
+
+        <div id="user-info" class="user-info hidden">
+            <h3>用户信息</h3>
+            <div id="user-details"></div>
+        </div>
+
+        <div id="chat-section" class="hidden">
+            <h3>AI 聊天测试</h3>
+            <input type="text" id="chat-input" placeholder="输入消息..." style="width: 70%; padding: 10px;">
+            <button id="send-chat">发送</button>
+            <div id="chat-response" class="info"></div>
+        </div>
+
+        <div id="response-area"></div>
+
+        <div class="info">
+            <h4>API 服务器地址</h4>
+            <input type="text" id="api-url" value="http://localhost:3001" style="width: 100%; padding: 8px;">
+        </div>
+    </div>
+
+    <script>
+        let currentAccount = null;
+        let accessToken = null;
+        let apiUrl = 'http://localhost:3001';
+
+        // DOM 元素
+        const connectBtn = document.getElementById('connect-wallet');
+        const loginBtn = document.getElementById('login-wallet');
+        const logoutBtn = document.getElementById('logout');
+        const statusDiv = document.getElementById('status');
+        const userInfoDiv = document.getElementById('user-info');
+        const userDetailsDiv = document.getElementById('user-details');
+        const chatSection = document.getElementById('chat-section');
+        const chatInput = document.getElementById('chat-input');
+        const sendChatBtn = document.getElementById('send-chat');
+        const chatResponse = document.getElementById('chat-response');
+        const responseArea = document.getElementById('response-area');
+        const apiUrlInput = document.getElementById('api-url');
+
+        // 更新 API URL
+        apiUrlInput.addEventListener('change', (e) => {
+            apiUrl = e.target.value;
+        });
+
+        // 检查是否有 MetaMask
+        function checkWallet() {
+            if (typeof window.ethereum !== 'undefined') {
+                statusDiv.textContent = '状态：检测到钱包，请点击连接';
+                return true;
+            } else {
+                document.getElementById('no-wallet').classList.remove('hidden');
+                statusDiv.textContent = '状态：未检测到钱包';
+                return false;
+            }
+        }
+
+        // 连接钱包
+        async function connectWallet() {
+            try {
+                const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                currentAccount = accounts[0];
+                statusDiv.textContent = `状态：已连接钱包 ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}`;
+                connectBtn.textContent = '钱包已连接';
+                connectBtn.disabled = true;
+                loginBtn.disabled = false;
+                showResponse('钱包连接成功', 'success');
+            } catch (error) {
+                showResponse(`连接钱包失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 钱包登录
+        async function walletLogin() {
+            if (!currentAccount) {
+                showResponse('请先连接钱包', 'error');
+                return;
+            }
+
+            try {
+                // 1. 获取 nonce
+                statusDiv.textContent = '状态：获取登录随机数...';
+                const nonceResponse = await fetch(`${apiUrl}/api/auth/wallet/nonce`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: currentAccount })
+                });
+
+                if (!nonceResponse.ok) {
+                    throw new Error(`获取 nonce 失败: ${nonceResponse.statusText}`);
+                }
+
+                const nonceData = await nonceResponse.json();
+                const { message } = nonceData.data;
+
+                showResponse(`SIWE 消息:\n${message}`, 'info');
+
+                // 2. 签名消息
+                statusDiv.textContent = '状态：请在钱包中签名消息...';
+                const signature = await ethereum.request({
+                    method: 'personal_sign',
+                    params: [message, currentAccount]
+                });
+
+                // 3. 验证登录
+                statusDiv.textContent = '状态：验证签名...';
+                const loginResponse = await fetch(`${apiUrl}/api/auth/wallet/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message,
+                        signature,
+                        username: `用户${currentAccount.slice(0, 6)}`,
+                        avatar: `https://api.dicebear.com/7.x/identicon/svg?seed=${currentAccount}`
+                    })
+                });
+
+                if (!loginResponse.ok) {
+                    throw new Error(`登录失败: ${loginResponse.statusText}`);
+                }
+
+                const loginData = await loginResponse.json();
+                accessToken = loginData.data.tokens.accessToken;
+                
+                // 显示用户信息
+                showUserInfo(loginData.data.user);
+                
+                statusDiv.textContent = '状态：登录成功！';
+                loginBtn.classList.add('hidden');
+                logoutBtn.classList.remove('hidden');
+                chatSection.classList.remove('hidden');
+                
+                showResponse('登录成功！', 'success');
+
+            } catch (error) {
+                statusDiv.textContent = '状态：登录失败';
+                showResponse(`登录失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 显示用户信息
+        function showUserInfo(user) {
+            userDetailsDiv.innerHTML = `
+                <p><strong>ID:</strong> ${user.id}</p>
+                <p><strong>用户名:</strong> ${user.username || '未设置'}</p>
+                <p><strong>钱包地址:</strong> ${user.walletAddress}</p>
+                <p><strong>余额:</strong> ${user.balance || '0.0'} ETH</p>
+                <p><strong>创建时间:</strong> ${new Date(user.createdAt).toLocaleString()}</p>
+                ${user.avatar ? `<p><img src="${user.avatar}" alt="头像" style="width: 50px; height: 50px; border-radius: 50%;"></p>` : ''}
+            `;
+            userInfoDiv.classList.remove('hidden');
+        }
+
+        // 登出
+        async function logout() {
+            try {
+                if (accessToken) {
+                    await fetch(`${apiUrl}/api/auth/logout`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+                }
+                
+                accessToken = null;
+                userInfoDiv.classList.add('hidden');
+                chatSection.classList.add('hidden');
+                loginBtn.classList.remove('hidden');
+                logoutBtn.classList.add('hidden');
+                loginBtn.disabled = false;
+                
+                statusDiv.textContent = `状态：已登出，钱包仍连接 ${currentAccount.slice(0, 6)}...${currentAccount.slice(-4)}`;
+                showResponse('已成功登出', 'success');
+                
+            } catch (error) {
+                showResponse(`登出失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 发送聊天消息
+        async function sendChatMessage() {
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            try {
+                chatResponse.textContent = '发送中...';
+                
+                const response = await fetch(`${apiUrl}/api/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`
+                    },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: 'user', content: message }
+                        ]
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`聊天请求失败: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                chatResponse.innerHTML = `
+                    <strong>用户:</strong> ${message}<br>
+                    <strong>AI:</strong> ${data.choices[0].message.content}
+                `;
+                chatInput.value = '';
+
+            } catch (error) {
+                chatResponse.textContent = `聊天失败: ${error.message}`;
+            }
+        }
+
+        // 显示响应信息
+        function showResponse(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerHTML = message.replace(/\n/g, '<br>');
+            responseArea.appendChild(div);
+            
+            // 自动滚动到底部
+            div.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 事件监听器
+        connectBtn.addEventListener('click', connectWallet);
+        loginBtn.addEventListener('click', walletLogin);
+        logoutBtn.addEventListener('click', logout);
+        sendChatBtn.addEventListener('click', sendChatMessage);
+        
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        });
+
+        // 初始化
+        checkWallet();
+    </script>
+</body>
+</html> 

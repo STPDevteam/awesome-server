@@ -8,6 +8,10 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { MCPManager } from './services/mcpManager.js';
 import { MCPToolAdapter } from './services/mcpToolAdapter.js';
 import { OfficialMCPAdapter } from './services/officialMcpAdapter.js';
+import authRoutes from './routes/auth.js';
+import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
+import { db } from './config/database.js';
+import { migrationService } from './scripts/migrate-database.js';
 
 dotenv.config();
 
@@ -16,6 +20,7 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+app.use(generalRateLimit); // 全局速率限制
 
 // LangChain 配置 - 使用支持函数调用的模型
 const llm = new ChatOpenAI({
@@ -51,8 +56,11 @@ function convertToLangChainMessages(messages: any[]) {
   });
 }
 
-// API 路由
-app.post('/api/chat', async (req, res) => {
+// 认证路由
+app.use('/api/auth', authRoutes);
+
+// API 路由 - 保护聊天端点，需要登录
+app.post('/api/chat', requireAuth, async (req, res) => {
   try {
     const { messages, config } = req.body;
     
@@ -184,8 +192,8 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// 流式聊天端点
-app.post('/api/chat/stream', async (req, res) => {
+// 流式聊天端点 - 保护端点，需要登录
+app.post('/api/chat/stream', requireAuth, async (req, res) => {
   try {
     const { messages, config } = req.body;
     
@@ -233,8 +241,8 @@ app.post('/api/chat/stream', async (req, res) => {
   }
 });
 
-// MCP 连接端点
-app.post('/api/mcp/connect', async (req, res) => {
+// MCP 连接端点 - 保护端点，需要登录
+app.post('/api/mcp/connect', requireAuth, async (req, res) => {
   try {
     const { name, command, args, env } = req.body;
     
@@ -254,8 +262,8 @@ app.post('/api/mcp/connect', async (req, res) => {
   }
 });
 
-// MCP 断开连接端点
-app.post('/api/mcp/disconnect', async (req, res) => {
+// MCP 断开连接端点 - 保护端点，需要登录
+app.post('/api/mcp/disconnect', requireAuth, async (req, res) => {
   try {
     const { name } = req.body;
     
@@ -282,8 +290,8 @@ app.post('/api/mcp/disconnect', async (req, res) => {
   }
 });
 
-// 获取 MCP 列表
-app.get('/api/mcp/list', async (req, res) => {
+// 获取 MCP 列表 - 保护端点，需要登录
+app.get('/api/mcp/list', requireAuth, async (req, res) => {
   try {
     const connectedMCPs = mcpManager.getConnectedMCPs();
     
@@ -315,8 +323,8 @@ app.get('/api/mcp/list', async (req, res) => {
   }
 });
 
-// 获取 MCP 工具
-app.get('/api/mcp/:name/tools', async (req, res) => {
+// 获取 MCP 工具 - 保护端点，需要登录
+app.get('/api/mcp/:name/tools', requireAuth, async (req, res) => {
   try {
     const { name } = req.params;
     const tools = await mcpManager.getTools(name);
@@ -327,8 +335,8 @@ app.get('/api/mcp/:name/tools', async (req, res) => {
   }
 });
 
-// MCP 工具调用端点
-app.post('/api/mcp/tool', async (req, res) => {
+// MCP 工具调用端点 - 保护端点，需要登录
+app.post('/api/mcp/tool', requireAuth, async (req, res) => {
   try {
     const { mcpName, toolName, arguments: toolArgs } = req.body;
     const result = await mcpManager.callTool(mcpName, toolName, toolArgs);
@@ -340,16 +348,87 @@ app.post('/api/mcp/tool', async (req, res) => {
 });
 
 // 健康检查
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  try {
+    const dbStatus = await db.checkConnection();
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      database: dbStatus ? 'connected' : 'disconnected'
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'error', 
+      timestamp: new Date().toISOString(),
+      database: 'error',
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// 数据库初始化和服务器启动
+async function startServer() {
+  try {
+    console.log('🔌 Connecting to database...');
+    
+    // 检查数据库连接
+    const isConnected = await db.checkConnection();
+    if (!isConnected) {
+      throw new Error('Failed to connect to database');
+    }
+    console.log('✅ Database connected successfully');
+    
+    // 运行数据库迁移
+    console.log('🚀 Running database migrations...');
+    await migrationService.runMigrations();
+    console.log('✅ Database migrations completed');
+    
+    // 启动服务器
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📊 Health check: http://localhost:${PORT}/health`);
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+// 启动服务器
+startServer();
 
 // 优雅关闭
 process.on('SIGINT', async () => {
-  await mcpManager.disconnectAll();
-  process.exit(0);
+  console.log('\n🔄 Shutting down gracefully...');
+  
+  try {
+    // 断开 MCP 连接
+    console.log('📡 Disconnecting MCP clients...');
+    await mcpManager.disconnectAll();
+    
+    // 关闭数据库连接
+    console.log('🔌 Closing database connections...');
+    await db.close();
+    
+    console.log('✅ Server shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🔄 Received SIGTERM, shutting down gracefully...');
+  
+  try {
+    await mcpManager.disconnectAll();
+    await db.close();
+    console.log('✅ Server shutdown completed');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error during shutdown:', error);
+    process.exit(1);
+  }
 });
