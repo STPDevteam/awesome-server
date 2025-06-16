@@ -1,6 +1,6 @@
-import { db } from './src/config/database.js';
-import { migrationService } from './src/scripts/migrate-database.js';
-import { userService } from './src/services/auth/userService.js';
+import { db } from '../src/config/database.js';
+import { migrationService } from '../src/scripts/migrate-database.js';
+import { userService } from '../src/services/auth/userService.js';
 
 async function testDatabase() {
   console.log('🧪 开始数据库测试...\n');
