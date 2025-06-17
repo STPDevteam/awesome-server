@@ -19,14 +19,22 @@
 npm install
 ```
 
-2. 创建 `.env` 文件：
+2. 配置环境变量：
 
-```env
-PORT=3001
-OPENAI_API_KEY=sk-your-openai-api-key-here
-JWT_ACCESS_SECRET=your-super-secret-access-key-here
-JWT_REFRESH_SECRET=your-super-secret-refresh-key-here
+```bash
+# 复制环境变量模板
+cp .env.example .env
+
+# 编辑配置文件
+vim .env
 ```
+
+**必需配置**：
+- `OPENAI_API_KEY`: OpenAI API 密钥
+- `DB_PASSWORD`: 数据库密码
+- `JWT_ACCESS_SECRET` 和 `JWT_REFRESH_SECRET`: JWT 令牌密钥
+
+详细配置请参考：[ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md)
 
 3. 启动服务：
 
@@ -65,13 +73,30 @@ npm run dev
 - `GET /api/mcp/:name/tools` - 获取 MCP 工具列表
 - `POST /api/mcp/tool` - 调用 MCP 工具
 
+## 📁 项目结构
+
+```
+mcp-server/
+├── src/                    # 后端源代码
+├── deployment/            # 部署相关文件
+│   ├── docker-compose.yml     # 主要编排（后端+数据库）
+│   ├── deploy.sh              # 部署脚本
+│   └── Dockerfile             # Docker 镜像构建
+├── docs/                  # 项目文档
+├── examples/              # 示例代码
+├── test/                  # 测试文件
+├── .env                   # 环境变量配置
+└── package.json          # 项目依赖
+```
+
 ## 详细文档
 
 - 📖 **[API 文档](./docs/API.md)** - 完整的 API 接口文档
 - 📋 **[API 概览](./docs/API_OVERVIEW.md)** - 快速查看所有端点
 - 🔧 **[Postman 集合](./docs/MCP_LangChain_API.postman_collection.json)** - 导入 Postman 进行 API 测试
-- 🔐 **[认证设置](./AUTH_SETUP.md)** - 认证系统设置指南
-- 🗄️ **[数据库设置](./DATABASE_SETUP.md)** - 数据库配置指南
+- 🔐 **[认证设置](./docs/AUTH_SETUP.md)** - 认证系统设置指南
+- 🗄️ **[数据库设置](./docs/DATABASE_SETUP.md)** - 数据库配置指南
+- 🚀 **[MVP 部署指南](./docs/README_MVP.md)** - 快速部署指南
 
 ## API 测试
 
