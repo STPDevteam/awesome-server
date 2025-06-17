@@ -158,6 +158,85 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS migrations CASCADE');
         console.log('✅ Dropped migrations table');
       }
+    },
+    {
+      version: 5,
+      name: 'create_tasks_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS tasks (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            content TEXT NOT NULL,
+            status VARCHAR(50) NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'in_progress', 'completed', 'failed')),
+            mcp_workflow JSONB, -- 存储MCP工作流配置
+            result JSONB, -- 存储任务执行结果
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP WITH TIME ZONE
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_user_id 
+          ON tasks(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_status 
+          ON tasks(status)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_created_at 
+          ON tasks(created_at)
+        `);
+
+        console.log('✅ Created tasks table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS tasks CASCADE');
+        console.log('✅ Dropped tasks table');
+      }
+    },
+    {
+      version: 6,
+      name: 'create_task_steps_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS task_steps (
+            id VARCHAR(255) PRIMARY KEY,
+            task_id VARCHAR(255) NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            step_type VARCHAR(100) NOT NULL, -- 步骤类型，如 'analysis', 'mcp_selection', 'deliverables', 'workflow'
+            title VARCHAR(255) NOT NULL, -- 步骤标题
+            content TEXT, -- 步骤内容
+            reasoning TEXT, -- LLM推理过程
+            reasoning_time INTEGER, -- 推理用时（毫秒）
+            order_index INTEGER NOT NULL, -- 步骤顺序
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_task_steps_task_id 
+          ON task_steps(task_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_task_steps_order 
+          ON task_steps(order_index)
+        `);
+
+        console.log('✅ Created task_steps table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS task_steps CASCADE');
+        console.log('✅ Dropped task_steps table');
+      }
     }
   ];
 
