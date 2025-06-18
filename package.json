@@ -11,7 +11,8 @@
     "migrate:up": "node --loader ts-node/esm src/scripts/migrate-database.ts up",
     "migrate:down": "node --loader ts-node/esm src/scripts/migrate-database.ts down",
     "db:setup": "npm run migrate:up",
-    "test:db": "node --loader ts-node/esm test/test-database.js"
+    "test:db": "NODE_ENV=test DB_SSL_MODE=disable node --loader ts-node/esm test/test-database.js",
+    "test:db:ssl": "NODE_ENV=test DB_SSL_REJECT_UNAUTHORIZED=false node --loader ts-node/esm test/test-database.js"
   },
   "dependencies": {
     "@langchain/community": "^0.0.40",
