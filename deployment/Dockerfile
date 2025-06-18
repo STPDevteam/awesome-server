@@ -29,7 +29,7 @@ RUN apk add --no-cache python3 py3-pip docker-cli curl
 WORKDIR /app
 
 # Install Python packages for MCP services
-RUN pip3 install --no-cache-dir uv uvx
+RUN pip3 install --no-cache-dir --break-system-packages uv uvx
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
