@@ -3,7 +3,7 @@ FROM node:18-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat python3 make g++ docker-cli
+RUN apk add --no-cache libc6-compat make g++
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
@@ -25,11 +25,8 @@ RUN npm run build
 
 # Production image
 FROM node:18-alpine AS runner
-RUN apk add --no-cache python3 py3-pip docker-cli curl
+RUN apk add --no-cache curl
 WORKDIR /app
-
-# Install Python packages for MCP services
-RUN pip3 install --no-cache-dir --break-system-packages uv uvx
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs
