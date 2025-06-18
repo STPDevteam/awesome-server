@@ -1,52 +1,41 @@
-# Multi-stage Dockerfile for mcp-server
-FROM node:18-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat make g++
+############################
+# 1) 构建阶段：安装依赖并打包
+############################
+FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
-RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci; \
-  elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
-  else echo "Lockfile not found." && exit 1; \
-  fi
+# 安装构建时需要的工具（仅必需的）
+RUN apk add --no-cache make g++
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# 复制锁文件
+COPY package.json package-lock.json ./
+
+# 安装依赖
+RUN npm ci --only=production --no-audit
+
+# 复制源代码并构建
 COPY . .
-
 RUN npm run build
 
-# Production image
-FROM node:18-alpine AS runner
-RUN apk add --no-cache curl
+############################
+# 2) 运行阶段：最小化运行时
+############################
+FROM node:20-alpine AS runner
 WORKDIR /app
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# 只安装运行时需要的用户（如果需要）
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
 
-# Copy built application
+# 复制构建产物和必要文件
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
-# Create necessary directories
-RUN mkdir -p /app/logs /app/data
-RUN chown -R nextjs:nodejs /app
+# 设置用户权限
+RUN chown -R nodejs:nodejs /app
+USER nodejs
 
-USER nextjs
-
+# 暴露端口并启动
 EXPOSE 3001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3001/health || exit 1
-
-CMD ["node", "dist/index.js"] 
+CMD ["node", "dist/index.js"]

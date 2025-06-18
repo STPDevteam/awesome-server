@@ -32,7 +32,6 @@ services:
       - DB_NAME=${DB_NAME:-mcp_db}
       - DB_USER=${DB_USER:-postgres}
       - DB_PASSWORD=${DB_PASSWORD:-password}
-      - DB_SSL_MODE=${DB_SSL_MODE:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:-default-secret}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-default-refresh-secret}
