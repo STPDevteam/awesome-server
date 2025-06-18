@@ -21,7 +21,7 @@ export const databaseConfig: DatabaseConfig = {
   database: process.env.DB_NAME || 'mcp_server',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'password',
-  ssl: process.env.NODE_ENV === 'production',
+  ssl: process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development',
   max: 20, // 最大连接数
   idleTimeoutMillis: 30000, // 空闲超时
   connectionTimeoutMillis: 5000, // 连接超时
