@@ -11,7 +11,7 @@
     "migrate:up": "node --loader ts-node/esm src/scripts/migrate-database.ts up",
     "migrate:down": "node --loader ts-node/esm src/scripts/migrate-database.ts down",
     "db:setup": "npm run migrate:up",
-    "test:db": "node --loader ts-node/esm test-database.js"
+    "test:db": "node --loader ts-node/esm test/test-database.js"
   },
   "dependencies": {
     "@langchain/community": "^0.0.40",
