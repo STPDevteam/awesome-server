@@ -1,7 +1,9 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { logger } from '../../utils/logger.js';
-
+import { HttpsProxyAgent } from 'https-proxy-agent';
+const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
+const agent = new HttpsProxyAgent(proxy);
 /**
  * 任务标题生成服务
  * 根据用户输入的任务内容，使用LLM生成简洁明了的任务标题
@@ -14,6 +16,9 @@ export class TitleGeneratorService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: 'gpt-3.5-turbo', // 可以使用更轻量级的模型来节省成本
       temperature: 0.3, // 较低的温度，保证生成稳定的标题
+      configuration: {
+        httpAgent: agent, // ✅ 使用代理关键设置
+      },
     });
   }
 

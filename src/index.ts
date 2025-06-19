@@ -13,7 +13,9 @@ import taskRoutes from './routes/task.js';
 import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
 import { db } from './config/database.js';
 import { migrationService } from './scripts/migrate-database.js';
-
+import { HttpsProxyAgent } from 'https-proxy-agent';
+const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
+const agent = new HttpsProxyAgent(proxy);
 dotenv.config();
 
 const app = express();
@@ -28,6 +30,9 @@ const llm = new ChatOpenAI({
   openAIApiKey: process.env.OPENAI_API_KEY,
   modelName: 'gpt-3.5-turbo',
   temperature: 0.7,
+  configuration: {
+    httpAgent: agent, // ✅ 使用代理关键设置
+  },
 });
 
 // MCP 客户端管理

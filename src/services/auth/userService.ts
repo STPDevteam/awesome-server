@@ -112,7 +112,7 @@ class UserService {
       const userResult = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
       if (userResult.rows.length === 0) return null;
       
-      const userRow: UserRow = userResult.rows[0];
+      const userRow = userResult.rows[0] as unknown as UserRow;
       
       // 获取登录方法
       const loginMethodsResult = await db.query(
@@ -120,7 +120,7 @@ class UserService {
         [userId]
       );
       
-      return this.mapRowToUser(userRow, loginMethodsResult.rows);
+      return this.mapRowToUser(userRow, loginMethodsResult.rows as unknown as LoginMethodRow[]);
     } catch (error) {
       console.error('获取用户失败:', error);
       return null;
@@ -143,7 +143,7 @@ class UserService {
       
       if (result.rows.length === 0) return null;
       
-      const userRow: UserRow = result.rows[0];
+      const userRow = result.rows[0] as unknown as UserRow;
       
       // 获取所有登录方法
       const loginMethodsResult = await db.query(
@@ -151,7 +151,7 @@ class UserService {
         [userRow.id]
       );
       
-      return this.mapRowToUser(userRow, loginMethodsResult.rows);
+      return this.mapRowToUser(userRow, loginMethodsResult.rows as unknown as LoginMethodRow[]);
     } catch (error) {
       console.error('通过钱包地址获取用户失败:', error);
       return null;
@@ -163,7 +163,7 @@ class UserService {
       const result = await db.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
       if (result.rows.length === 0) return null;
       
-      const userRow: UserRow = result.rows[0];
+      const userRow = result.rows[0] as unknown as UserRow;
       
       // 获取登录方法
       const loginMethodsResult = await db.query(
@@ -171,7 +171,7 @@ class UserService {
         [userRow.id]
       );
       
-      return this.mapRowToUser(userRow, loginMethodsResult.rows);
+      return this.mapRowToUser(userRow, loginMethodsResult.rows as unknown as LoginMethodRow[]);
     } catch (error) {
       console.error('通过邮箱获取用户失败:', error);
       return null;
@@ -190,7 +190,7 @@ class UserService {
       
       if (result.rows.length === 0) return null;
       
-      const userRow: UserRow = result.rows[0];
+      const userRow = result.rows[0] as unknown as UserRow;
       
       // 获取所有登录方法
       const loginMethodsResult = await db.query(
@@ -198,7 +198,7 @@ class UserService {
         [userRow.id]
       );
       
-      return this.mapRowToUser(userRow, loginMethodsResult.rows);
+      return this.mapRowToUser(userRow, loginMethodsResult.rows as unknown as LoginMethodRow[]);
     } catch (error) {
       console.error('通过Google ID获取用户失败:', error);
       return null;
@@ -217,7 +217,7 @@ class UserService {
       
       if (result.rows.length === 0) return null;
       
-      const userRow: UserRow = result.rows[0];
+      const userRow = result.rows[0] as unknown as UserRow;
       
       // 获取所有登录方法
       const loginMethodsResult = await db.query(
@@ -225,7 +225,7 @@ class UserService {
         [userRow.id]
       );
       
-      return this.mapRowToUser(userRow, loginMethodsResult.rows);
+      return this.mapRowToUser(userRow, loginMethodsResult.rows as unknown as LoginMethodRow[]);
     } catch (error) {
       console.error('通过GitHub ID获取用户失败:', error);
       return null;
@@ -335,7 +335,7 @@ class UserService {
   async deleteUser(userId: string): Promise<boolean> {
     try {
       const result = await db.query('DELETE FROM users WHERE id = $1', [userId]);
-      return result.rowCount > 0;
+      return result.rowCount !== null && result.rowCount > 0;
     } catch (error) {
       console.error('删除用户失败:', error);
       return false;

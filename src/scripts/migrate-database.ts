@@ -237,6 +237,41 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS task_steps CASCADE');
         console.log('✅ Dropped task_steps table');
       }
+    },
+    {
+      version: 7,
+      name: 'create_mcp_auth_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS mcp_auth (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            mcp_name VARCHAR(100) NOT NULL,
+            auth_data JSONB NOT NULL DEFAULT '{}',
+            is_verified BOOLEAN NOT NULL DEFAULT false,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, mcp_name)
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_mcp_auth_user_id 
+          ON mcp_auth(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_mcp_auth_mcp_name 
+          ON mcp_auth(mcp_name)
+        `);
+
+        console.log('✅ Created mcp_auth table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS mcp_auth CASCADE');
+        console.log('✅ Dropped mcp_auth table');
+      }
     }
   ];
 
