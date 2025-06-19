@@ -1,6 +1,9 @@
+import dotenv from 'dotenv';
+// 确保在其他导入之前加载环境变量
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage, AIMessage, ToolMessage } from '@langchain/core/messages';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -13,15 +16,22 @@ import taskRoutes from './routes/task.js';
 import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
 import { db } from './config/database.js';
 import { migrationService } from './scripts/migrate-database.js';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
-const agent = new HttpsProxyAgent(proxy);
-dotenv.config();
+import paymentRoutes from './routes/payment.js';
+import { getS3AvatarService } from './services/s3AvatarService.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// 初始化 S3 头像服务
+const s3AvatarService = getS3AvatarService();
+
 app.use(cors());
+
+// 特殊处理 webhook 路由 - 需要原始请求体
+app.use('/api/payment/webhooks/coinbase', express.raw({ type: 'application/json' }));
+
+// 其他路由使用 JSON 解析
 app.use(express.json());
 app.use(generalRateLimit); // 全局速率限制
 
@@ -30,9 +40,6 @@ const llm = new ChatOpenAI({
   openAIApiKey: process.env.OPENAI_API_KEY,
   modelName: 'gpt-3.5-turbo',
   temperature: 0.7,
-  configuration: {
-    httpAgent: agent, // ✅ 使用代理关键设置
-  },
 });
 
 // MCP 客户端管理
@@ -65,8 +72,13 @@ function convertToLangChainMessages(messages: any[]) {
 // 认证路由
 app.use('/api/auth', authRoutes);
 
+
 // 任务相关路由
 app.use('/api/task', taskRoutes);
+
+// 支付路由
+app.use('/api/payment', paymentRoutes);
+
 
 // API 路由 - 保护聊天端点，需要登录
 app.post('/api/chat', requireAuth, async (req, res) => {
@@ -391,6 +403,19 @@ async function startServer() {
     console.log('🚀 Running database migrations...');
     await migrationService.runMigrations();
     console.log('✅ Database migrations completed');
+    
+    // 验证 S3 配置（如果配置了）
+    if (process.env.AWS_S3_BUCKET_NAME) {
+      console.log('🪣 Validating S3 avatar service configuration...');
+      const isS3Valid = await s3AvatarService.validateConfiguration();
+      if (isS3Valid) {
+        console.log('✅ S3 avatar service configured successfully');
+      } else {
+        console.log('⚠️  S3 avatar service configuration invalid - avatar randomization disabled');
+      }
+    } else {
+      console.log('ℹ️  S3 avatar service not configured - avatar randomization disabled');
+    }
     
     // 启动服务器
     app.listen(PORT, () => {

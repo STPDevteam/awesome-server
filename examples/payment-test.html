@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>支付流程测试</title>
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .step {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        .step.active {
+            background-color: #e3f2fd;
+            border-color: #2196f3;
+        }
+        .step.completed {
+            background-color: #e8f5e9;
+            border-color: #4caf50;
+        }
+        button {
+            background-color: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #1976d2;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: #f44336;
+            margin: 10px 0;
+        }
+        .success {
+            color: #4caf50;
+            margin: 10px 0;
+        }
+        .info {
+            color: #2196f3;
+            margin: 10px 0;
+        }
+        .result {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        .payment-link {
+            display: inline-block;
+            background-color: #4caf50;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-size: 18px;
+        }
+        .payment-link:hover {
+            background-color: #45a049;
+        }
+        .membership-info {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 支付流程测试</h1>
+        
+        <div class="step" id="step1">
+            <h3>步骤 1: 连接钱包</h3>
+            <button onclick="connectWallet()">连接 MetaMask</button>
+            <div id="walletInfo"></div>
+        </div>
+
+        <div class="step" id="step2">
+            <h3>步骤 2: 登录认证</h3>
+            <button onclick="login()" disabled id="loginBtn">使用钱包登录</button>
+            <div id="loginInfo"></div>
+        </div>
+
+        <div class="step" id="step3">
+            <h3>步骤 3: 创建支付订单</h3>
+            <div>
+                <label>会员类型：</label>
+                <select id="membershipType">
+                    <option value="plus">Plus (1 USDT/月 - 测试价格)</option>
+                    <option value="pro">Pro (200 USDT/月)</option>
+                </select>
+                <br><br>
+                <label>订阅方式：</label>
+                <select id="subscriptionType">
+                    <option value="monthly">月付</option>
+                    <option value="yearly">年付</option>
+                </select>
+            </div>
+            <br>
+            <button onclick="createPayment()" disabled id="paymentBtn">创建支付订单</button>
+            <div id="paymentInfo"></div>
+        </div>
+
+        <div class="step" id="step4">
+            <h3>步骤 4: 完成支付</h3>
+            <div id="checkoutLink"></div>
+            <button onclick="checkPaymentStatus()" disabled id="checkBtn">检查支付状态</button>
+            <div id="paymentStatus"></div>
+        </div>
+
+        <div class="step" id="step5">
+            <h3>步骤 5: 验证会员状态</h3>
+            <button onclick="checkMembership()" disabled id="membershipBtn">检查会员状态</button>
+            <div id="membershipStatus"></div>
+        </div>
+
+        <div class="step">
+            <h3>日志</h3>
+            <div id="logs" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001';
+        let provider, signer, address, token, currentPaymentId;
+
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const time = new Date().toLocaleTimeString();
+            const color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'blue';
+            logs.innerHTML += `<div style="color: ${color}">[${time}] ${message}</div>`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        async function connectWallet() {
+            try {
+                if (typeof window.ethereum === 'undefined') {
+                    throw new Error('请安装 MetaMask!');
+                }
+
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                address = await signer.getAddress();
+
+                document.getElementById('walletInfo').innerHTML = 
+                    `<div class="success">✅ 已连接钱包: ${address}</div>`;
+                document.getElementById('loginBtn').disabled = false;
+                document.getElementById('step1').classList.add('completed');
+                
+                log(`钱包连接成功: ${address}`, 'success');
+            } catch (error) {
+                document.getElementById('walletInfo').innerHTML = 
+                    `<div class="error">❌ ${error.message}</div>`;
+                log(error.message, 'error');
+            }
+        }
+
+        async function login() {
+            try {
+                document.getElementById('step2').classList.add('active');
+                log('开始登录流程...');
+
+                // 获取 nonce
+                const nonceResponse = await fetch(`${API_BASE}/api/auth/wallet/nonce`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address })
+                });
+                const { nonce } = await nonceResponse.json();
+                log(`获取 nonce: ${nonce}`);
+
+                // 创建 SIWE 消息
+                const domain = window.location.host || 'localhost:3001';
+                const uri = window.location.origin || 'http://localhost:3001';
+                const statement = 'Sign in with Ethereum to the app.';
+                const chainId = await signer.getChainId();
+                const issuedAt = new Date().toISOString();
+
+                const message = `${domain} wants you to sign in with your Ethereum account:
+${address}
+
+${statement}
+
+URI: ${uri}
+Version: 1
+Chain ID: ${chainId}
+Nonce: ${nonce}
+Issued At: ${issuedAt}`;
+
+                log('请在 MetaMask 中签名...');
+
+                // 签名
+                const signature = await signer.signMessage(message);
+                log('签名成功');
+
+                // 登录
+                const loginResponse = await fetch(`${API_BASE}/api/auth/wallet/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, signature })
+                });
+                
+                const loginData = await loginResponse.json();
+                if (!loginResponse.ok) {
+                    throw new Error(loginData.error || '登录失败');
+                }
+
+                token = loginData.accessToken;
+                document.getElementById('loginInfo').innerHTML = 
+                    `<div class="success">✅ 登录成功！用户ID: ${loginData.user.id}</div>`;
+                document.getElementById('paymentBtn').disabled = false;
+                document.getElementById('step2').classList.remove('active');
+                document.getElementById('step2').classList.add('completed');
+                
+                log('登录成功!', 'success');
+            } catch (error) {
+                document.getElementById('loginInfo').innerHTML = 
+                    `<div class="error">❌ ${error.message}</div>`;
+                log(error.message, 'error');
+            }
+        }
+
+        async function createPayment() {
+            try {
+                document.getElementById('step3').classList.add('active');
+                const membershipType = document.getElementById('membershipType').value;
+                const subscriptionType = document.getElementById('subscriptionType').value;
+                
+                log(`创建支付订单: ${membershipType} ${subscriptionType}`);
+
+                const response = await fetch(`${API_BASE}/api/payment/create-payment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ membershipType, subscriptionType })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '创建支付失败');
+                }
+
+                currentPaymentId = data.data.paymentId;
+                const checkoutUrl = data.data.checkoutUrl;
+
+                document.getElementById('paymentInfo').innerHTML = 
+                    `<div class="success">✅ 支付订单创建成功！</div>
+                     <div class="info">支付ID: ${currentPaymentId}</div>`;
+                
+                document.getElementById('checkoutLink').innerHTML = 
+                    `<a href="${checkoutUrl}" target="_blank" class="payment-link">
+                        点击前往 Coinbase Commerce 支付
+                    </a>
+                    <div class="info">支付金额: 1 USDT (测试价格)</div>`;
+                
+                document.getElementById('checkBtn').disabled = false;
+                document.getElementById('membershipBtn').disabled = false;
+                document.getElementById('step3').classList.remove('active');
+                document.getElementById('step3').classList.add('completed');
+                document.getElementById('step4').classList.add('active');
+                
+                log('支付订单创建成功!', 'success');
+                log(`支付链接: ${checkoutUrl}`);
+            } catch (error) {
+                document.getElementById('paymentInfo').innerHTML = 
+                    `<div class="error">❌ ${error.message}</div>`;
+                log(error.message, 'error');
+            }
+        }
+
+        async function checkPaymentStatus() {
+            try {
+                log('检查支付状态...');
+
+                const response = await fetch(`${API_BASE}/api/payment/payment/${currentPaymentId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '获取支付状态失败');
+                }
+
+                const payment = data.data;
+                let statusHtml = `
+                    <div class="membership-info">
+                        <strong>支付状态:</strong> ${payment.status}<br>
+                        <strong>会员类型:</strong> ${payment.membershipType}<br>
+                        <strong>订阅方式:</strong> ${payment.subscriptionType}<br>
+                        <strong>创建时间:</strong> ${new Date(payment.createdAt).toLocaleString()}
+                `;
+
+                if (payment.confirmedAt) {
+                    statusHtml += `<br><strong>确认时间:</strong> ${new Date(payment.confirmedAt).toLocaleString()}`;
+                    document.getElementById('step4').classList.remove('active');
+                    document.getElementById('step4').classList.add('completed');
+                    document.getElementById('step5').classList.add('active');
+                }
+
+                statusHtml += '</div>';
+                document.getElementById('paymentStatus').innerHTML = statusHtml;
+                
+                log(`支付状态: ${payment.status}`, payment.status === 'confirmed' ? 'success' : 'info');
+            } catch (error) {
+                document.getElementById('paymentStatus').innerHTML = 
+                    `<div class="error">❌ ${error.message}</div>`;
+                log(error.message, 'error');
+            }
+        }
+
+        async function checkMembership() {
+            try {
+                log('检查会员状态...');
+
+                const response = await fetch(`${API_BASE}/api/payment/membership-status`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || '获取会员状态失败');
+                }
+
+                const membership = data.data;
+                let statusHtml = `
+                    <div class="membership-info">
+                        <strong>会员激活:</strong> ${membership.isActive ? '✅ 是' : '❌ 否'}<br>
+                `;
+
+                if (membership.isActive) {
+                    statusHtml += `
+                        <strong>会员类型:</strong> ${membership.membershipType}<br>
+                        <strong>订阅方式:</strong> ${membership.subscriptionType}<br>
+                        <strong>到期时间:</strong> ${new Date(membership.expiresAt).toLocaleString()}
+                    `;
+                    document.getElementById('step5').classList.remove('active');
+                    document.getElementById('step5').classList.add('completed');
+                }
+
+                statusHtml += '</div>';
+                document.getElementById('membershipStatus').innerHTML = statusHtml;
+                
+                log(`会员状态: ${membership.isActive ? '激活' : '未激活'}`, 
+                    membership.isActive ? 'success' : 'info');
+            } catch (error) {
+                document.getElementById('membershipStatus').innerHTML = 
+                    `<div class="error">❌ ${error.message}</div>`;
+                log(error.message, 'error');
+            }
+        }
+
+        // 页面加载时的提示
+        window.onload = function() {
+            log('支付测试页面已加载');
+            log('Plus 月付已设置为 1 USDT 测试价格');
+            log('请先连接 MetaMask 钱包开始测试');
+        };
+    </script>
+</body>
+</html> 

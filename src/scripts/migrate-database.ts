@@ -161,6 +161,91 @@ class MigrationService {
     },
     {
       version: 5,
+      name: 'add_user_membership_fields',
+      up: async () => {
+        await db.query(`
+          ALTER TABLE users 
+          ADD COLUMN IF NOT EXISTS membership_type VARCHAR(10) CHECK (membership_type IN ('plus', 'pro')),
+          ADD COLUMN IF NOT EXISTS subscription_type VARCHAR(10) CHECK (subscription_type IN ('monthly', 'yearly')),
+          ADD COLUMN IF NOT EXISTS membership_expires_at TIMESTAMP WITH TIME ZONE
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_users_membership_type 
+          ON users(membership_type) 
+          WHERE membership_type IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_users_membership_expires_at 
+          ON users(membership_expires_at) 
+          WHERE membership_expires_at IS NOT NULL
+        `);
+
+        console.log('✅ Added membership fields to users table');
+      },
+      down: async () => {
+        await db.query(`
+          ALTER TABLE users 
+          DROP COLUMN IF EXISTS membership_type,
+          DROP COLUMN IF EXISTS subscription_type,
+          DROP COLUMN IF EXISTS membership_expires_at
+        `);
+        console.log('✅ Removed membership fields from users table');
+      }
+    },
+    {
+      version: 6,
+      name: 'create_payments_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS payments (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            charge_id VARCHAR(255) NOT NULL UNIQUE,
+            membership_type VARCHAR(10) NOT NULL CHECK (membership_type IN ('plus', 'pro')),
+            subscription_type VARCHAR(10) NOT NULL CHECK (subscription_type IN ('monthly', 'yearly')),
+            amount VARCHAR(50) NOT NULL,
+            currency VARCHAR(10) NOT NULL CHECK (currency IN ('USDT', 'USDC')),
+            status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'confirmed', 'failed', 'expired', 'resolved')),
+            expires_at TIMESTAMP WITH TIME ZONE,
+            confirmed_at TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_payments_user_id 
+          ON payments(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_payments_charge_id 
+          ON payments(charge_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_payments_status 
+          ON payments(status)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_payments_created_at 
+          ON payments(created_at)
+        `);
+
+        console.log('✅ Created payments table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS payments CASCADE');
+        console.log('✅ Dropped payments table');
+      }
+    },
+    {
+      version: 7,
       name: 'create_tasks_table',
       up: async () => {
         await db.query(`
@@ -202,7 +287,7 @@ class MigrationService {
       }
     },
     {
-      version: 6,
+      version: 8,
       name: 'create_task_steps_table',
       up: async () => {
         await db.query(`
@@ -239,7 +324,7 @@ class MigrationService {
       }
     },
     {
-      version: 7,
+      version: 9,
       name: 'create_mcp_auth_table',
       up: async () => {
         await db.query(`

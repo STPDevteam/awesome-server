@@ -6,6 +6,12 @@ export interface User {
   balance?: string;
   email?: string;
   
+  // 会员信息
+  membershipType?: 'plus' | 'pro' | null;
+  subscriptionType?: 'monthly' | 'yearly' | null;
+  membershipExpiresAt?: Date;
+  isActive: boolean;
+  
   // 登录方式标识
   loginMethods: {
     wallet?: {
@@ -29,7 +35,6 @@ export interface User {
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt?: Date;
-  isActive: boolean;
 }
 
 export interface CreateUserParams {
@@ -45,4 +50,40 @@ export interface UserSession {
   userId: string;
   user: User;
   expiresAt: Date;
-} 
+}
+
+// 新增支付相关接口
+export interface Payment {
+  id: string;
+  userId: string;
+  chargeId: string; // Coinbase Commerce charge ID
+  membershipType: 'plus' | 'pro';
+  subscriptionType: 'monthly' | 'yearly';
+  amount: string;
+  currency: 'USDT' | 'USDC';
+  status: 'pending' | 'confirmed' | 'failed' | 'expired' | 'resolved';
+  expiresAt?: Date;
+  confirmedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreatePaymentParams {
+  userId: string;
+  membershipType: 'plus' | 'pro';
+  subscriptionType: 'monthly' | 'yearly';
+  amount: string;
+  currency: 'USDT' | 'USDC';
+}
+
+// 会员定价配置
+export const MEMBERSHIP_PRICING = {
+  plus: {
+    monthly: { amount: '0.01', currency: 'USDT' },
+    yearly: { amount: '200', currency: 'USDT' }
+  },
+  pro: {
+    monthly: { amount: '200', currency: 'USDT' },
+    yearly: { amount: '2000', currency: 'USDT' }
+  }
+} as const; 

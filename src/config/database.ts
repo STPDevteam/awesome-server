@@ -9,10 +9,35 @@ export interface DatabaseConfig extends PoolConfig {
   database: string;
   user: string;
   password: string;
-  ssl?: boolean;
+  ssl?: boolean | { rejectUnauthorized: boolean; [key: string]: any };
   max?: number;
   idleTimeoutMillis?: number;
   connectionTimeoutMillis?: number;
+}
+
+// SSL 配置函数
+function getSSLConfig() {
+  const nodeEnv = process.env.NODE_ENV;
+  const sslMode = process.env.DB_SSL_MODE;
+  
+  // 如果明确设置为 false，则不使用 SSL
+  if (sslMode === 'false' || sslMode === 'disable') {
+    return false;
+  }
+  
+  // 如果是测试环境且没有明确要求 SSL，则不使用
+  if (nodeEnv === 'test' && !sslMode) {
+    return false;
+  }
+  
+  // 如果是生产环境或开发环境，使用 SSL
+  if (nodeEnv === 'production' || nodeEnv === 'development' || sslMode === 'require') {
+    return {
+      rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false'
+    };
+  }
+  
+  return false;
 }
 
 export const databaseConfig: DatabaseConfig = {
@@ -21,7 +46,7 @@ export const databaseConfig: DatabaseConfig = {
   database: process.env.DB_NAME || 'mcp_server',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'password',
-  ssl: process.env.NODE_ENV === 'production',
+  ssl: getSSLConfig(),
   max: 20, // 最大连接数
   idleTimeoutMillis: 30000, // 空闲超时
   connectionTimeoutMillis: 5000, // 连接超时

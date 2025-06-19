@@ -1,0 +1,65 @@
+services:
+  # Database - 生产环境必需
+  postgres:
+    image: postgres:15-alpine
+    container_name: mcp-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-mcp_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mcp-network
+
+  # MCP Server - 核心后端服务
+  mcp-server:
+    build:
+      context: ../
+      dockerfile: deployment/Dockerfile
+    container_name: mcp-server
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-mcp_db}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET:-default-secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-default-refresh-secret}
+      - MCP_MODE=${MCP_MODE:-http}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - USE_OFFICIAL_MCP_ADAPTER=${USE_OFFICIAL_MCP_ADAPTER:-true}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+
+
+volumes:
+  postgres_data:
+
+networks:
+  mcp-network:
+    driver: bridge
+    name: mcp-network  # 使用固定名称，可以与前端共享网络 

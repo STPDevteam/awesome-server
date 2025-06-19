@@ -4,12 +4,15 @@ MCP-LangChain是一个基于Model Context Protocol (MCP)和LangChain的智能任
 
 ## 核心特性
 
-- 🧠 **智能任务分析** - 自动分析用户自然语言需求并拆解为具体步骤
-- 🛠️ **MCP工具集成** - 自动选择最适合的MCP工具组合
-- 🔄 **自动化工作流** - 构建高效的MCP工作流来执行任务
-- 💧 **流式响应** - 实时返回处理进度和结果
-- 🔐 **多种登录方式** - 支持传统账号和Web3钱包登录
-- 🔑 **MCP授权管理** - 管理和存储各种MCP工具的授权信息
+- 🔐 **钱包登录** - 支持 EIP-4361 "Sign-In with Ethereum" 标准
+- 🤖 **AI 聊天** - 集成 OpenAI GPT 模型
+- 🔧 **MCP 集成** - 支持 Model Context Protocol 工具调用
+- 👤 **用户管理** - 用户信息、头像、余额管理
+- 🛡️ **安全保护** - JWT 令牌、速率限制、签名验证
+- 📱 **多登录支持** - 预留 Google、GitHub 等登录方式
+- 💳 **加密支付** - Coinbase Commerce 集成，支持 USDT/USDC 支付
+- 👑 **会员系统** - Plus/Pro 会员订阅管理
+
 
 ## 快速开始
 
@@ -26,27 +29,26 @@ cd mcp-server
 npm install
 ```
 
-3. 创建 `.env` 文件：
 
-```env
-PORT=3001
-OPENAI_API_KEY=your-openai-api-key
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=mcp_server
-DB_USER=postgres
-DB_PASSWORD=yourpassword
-JWT_ACCESS_SECRET=your-access-secret
-JWT_REFRESH_SECRET=your-refresh-secret
-```
-
-4. 设置数据库：
+2. 配置环境变量：
 
 ```bash
-npm run migrate-database
+# 复制环境变量模板
+cp .env.example .env
+
+# 编辑配置文件
+vim .env
 ```
 
-5. 启动服务：
+**必需配置**：
+- `OPENAI_API_KEY`: OpenAI API 密钥
+- `DB_PASSWORD`: 数据库密码
+- `JWT_ACCESS_SECRET` 和 `JWT_REFRESH_SECRET`: JWT 令牌密钥
+
+详细配置请参考：[ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md)
+
+3. 启动服务：
+
 
 ```bash
 npm run dev
@@ -110,6 +112,7 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 - `GET /api/task/:id/mcp-alternatives/:mcpName` - 获取替代MCP选项
 - `POST /api/task/:id/replace-mcp` - 替换工作流中的MCP
 
+
 ## 文档导航
 
 - 📚 [系统概述](./docs/SYSTEM_OVERVIEW.md) - 系统架构、组件和工作流程
@@ -120,6 +123,44 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 - 🔌 [MCP连接管理](./docs/mcp-connection-management.md) - MCP连接管理指南
 - 🛠️ [数据库设置](./docs/DATABASE_SETUP.md) - 数据库配置指南
 - 🔐 [认证设置](./docs/AUTH_SETUP.md) - 认证系统设置指南
+
+### 支付和会员 (需要登录)
+
+- `GET /api/payment/pricing` - 获取会员定价
+- `POST /api/payment/create-payment` - 创建支付订单
+- `GET /api/payment/payment/:id` - 获取支付状态
+- `GET /api/payment/payments` - 获取支付历史
+- `GET /api/payment/membership-status` - 获取会员状态
+- `POST /api/payment/webhooks/coinbase` - Coinbase Commerce webhook 回调
+
+## 📁 项目结构
+
+```
+mcp-server/
+├── src/                    # 后端源代码
+├── deployment/            # 部署相关文件
+│   ├── docker-compose.yml     # 主要编排（后端+数据库）
+│   ├── deploy.sh              # 部署脚本
+│   └── Dockerfile             # Docker 镜像构建
+├── docs/                  # 项目文档
+├── examples/              # 示例代码
+├── test/                  # 测试文件
+├── .env                   # 环境变量配置
+└── package.json          # 项目依赖
+```
+
+## 详细文档
+
+- 📖 **[API 文档](./docs/API.md)** - 完整的 API 接口文档
+- 📋 **[API 概览](./docs/API_OVERVIEW.md)** - 快速查看所有端点
+- 🔧 **[Postman 集合](./docs/MCP_LangChain_API.postman_collection.json)** - 导入 Postman 进行 API 测试
+- 🔐 **[认证设置](./docs/AUTH_SETUP.md)** - 认证系统设置指南
+- 🗄️ **[数据库设置](./docs/DATABASE_SETUP.md)** - 数据库配置指南
+- 🚀 **[MVP 部署指南](./docs/README_MVP.md)** - 快速部署指南
+- 💳 **[支付 API 文档](./docs/PAYMENT_API.md)** - 支付功能使用指南
+- 🏪 **[Coinbase Commerce 集成](./docs/COINBASE_COMMERCE_INTEGRATION.md)** - 官方接入文档
+- 💰 **[Coinbase Commerce 设置指南](./docs/COINBASE_COMMERCE_SETUP_GUIDE.md)** - 账户配置必读
+>>>>>>> main
 
 ## 技术栈
 
