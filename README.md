@@ -10,6 +10,8 @@
 - 👤 **用户管理** - 用户信息、头像、余额管理
 - 🛡️ **安全保护** - JWT 令牌、速率限制、签名验证
 - 📱 **多登录支持** - 预留 Google、GitHub 等登录方式
+- 💳 **加密支付** - Coinbase Commerce 集成，支持 USDT/USDC 支付
+- 👑 **会员系统** - Plus/Pro 会员订阅管理
 
 ## 快速开始
 
@@ -73,6 +75,15 @@ npm run dev
 - `GET /api/mcp/:name/tools` - 获取 MCP 工具列表
 - `POST /api/mcp/tool` - 调用 MCP 工具
 
+### 支付和会员 (需要登录)
+
+- `GET /api/payment/pricing` - 获取会员定价
+- `POST /api/payment/create-payment` - 创建支付订单
+- `GET /api/payment/payment/:id` - 获取支付状态
+- `GET /api/payment/payments` - 获取支付历史
+- `GET /api/payment/membership-status` - 获取会员状态
+- `POST /api/payment/webhooks/coinbase` - Coinbase Commerce webhook 回调
+
 ## 📁 项目结构
 
 ```
@@ -97,6 +108,8 @@ mcp-server/
 - 🔐 **[认证设置](./docs/AUTH_SETUP.md)** - 认证系统设置指南
 - 🗄️ **[数据库设置](./docs/DATABASE_SETUP.md)** - 数据库配置指南
 - 🚀 **[MVP 部署指南](./docs/README_MVP.md)** - 快速部署指南
+- 💳 **[支付 API 文档](./docs/PAYMENT_API.md)** - 支付功能使用指南
+- 🏪 **[Coinbase Commerce 集成](./docs/COINBASE_COMMERCE_INTEGRATION.md)** - 官方接入文档
 
 ## API 测试
 

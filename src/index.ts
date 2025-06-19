@@ -9,6 +9,7 @@ import { MCPManager } from './services/mcpManager.js';
 import { MCPToolAdapter } from './services/mcpToolAdapter.js';
 import { OfficialMCPAdapter } from './services/officialMcpAdapter.js';
 import authRoutes from './routes/auth.js';
+import paymentRoutes from './routes/payment.js';
 import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
 import { db } from './config/database.js';
 import { migrationService } from './scripts/migrate-database.js';
@@ -58,6 +59,9 @@ function convertToLangChainMessages(messages: any[]) {
 
 // 认证路由
 app.use('/api/auth', authRoutes);
+
+// 支付路由
+app.use('/api/payment', paymentRoutes);
 
 // API 路由 - 保护聊天端点，需要登录
 app.post('/api/chat', requireAuth, async (req, res) => {
