@@ -171,12 +171,29 @@ router.get('/membership-status', requireAuth, async (req, res) => {
 /**
  * Coinbase Commerce Webhook 处理器
  */
-router.post('/webhooks/coinbase', express.raw({ type: 'application/json' }), async (req, res) => {
+router.post('/webhooks/coinbase', async (req, res) => {
   try {
     const signature = req.get('X-CC-Webhook-Signature') as string;
-    const rawBody = req.body.toString();
+    
+    // 确保 rawBody 是字符串格式
+    let rawBody: string;
+    if (Buffer.isBuffer(req.body)) {
+      rawBody = req.body.toString('utf8');
+    } else if (typeof req.body === 'string') {
+      rawBody = req.body;
+    } else {
+      rawBody = JSON.stringify(req.body);
+    }
+
+    console.log('Webhook received:', {
+      signature: signature ? signature.substring(0, 20) + '...' : 'missing',
+      bodyType: typeof req.body,
+      bodyLength: rawBody.length,
+      isBuffer: Buffer.isBuffer(req.body)
+    });
 
     if (!signature) {
+      console.error('Missing webhook signature');
       return res.status(400).json({
         success: false,
         error: 'Missing webhook signature'

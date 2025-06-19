@@ -47,6 +47,11 @@ export class CoinbaseCommerceService {
       throw new Error('Coinbase Commerce API key not configured');
     }
 
+    // 检查 resources 是否正确初始化
+    if (!resources || !resources.Charge) {
+      throw new Error('Coinbase Commerce resources not properly initialized');
+    }
+
     // 获取定价信息
     const pricing = MEMBERSHIP_PRICING[membershipType][subscriptionType];
     
@@ -59,7 +64,7 @@ export class CoinbaseCommerceService {
         name: `${membershipType.toUpperCase()} ${subscriptionType} 会员`,
         description: `${membershipType.toUpperCase()} 会员 - ${subscriptionType === 'monthly' ? '月付' : '年付'}`,
         local_price: {
-          amount: pricing.amount,
+          amount: pricing.amount.toString(), // 确保是字符串
           currency: 'USD'
         },
         pricing_type: 'fixed_price' as const,
@@ -72,7 +77,55 @@ export class CoinbaseCommerceService {
         }
       };
 
-      const charge: any = await resources.Charge.create(chargeData);
+      console.log('Creating Coinbase charge with data:', JSON.stringify(chargeData, null, 2));
+
+      // Create charge using callback pattern as shown in the README
+      const charge: any = await new Promise((resolve, reject) => {
+        resources.Charge.create(chargeData, (error: any, response: any) => {
+          if (error) {
+            console.error('Coinbase API error:', error);
+            console.error('Error details:', {
+              message: error.message,
+              type: error.type,
+              response: error.response?.data
+            });
+            
+            // Handle specific error cases
+            if (error.message?.includes('merchant has no settlement or home address set')) {
+              reject(new Error(
+                'Coinbase Commerce account not configured. Please log into your Coinbase Commerce dashboard and set up your business address and settlement preferences.'
+              ));
+            } else {
+              reject(error);
+            }
+          } else {
+            console.log('Coinbase API response:', response);
+            
+            // The callback might succeed but still return undefined in some cases
+            if (!response) {
+              reject(new Error('Charge creation succeeded but no response data was returned'));
+            } else {
+              resolve(response);
+            }
+          }
+        });
+      });
+
+      // 检查 charge 是否正确返回
+      if (!charge) {
+        throw new Error('Charge creation returned null or undefined');
+      }
+
+      if (!charge.id) {
+        console.error('Invalid charge response:', JSON.stringify(charge, null, 2));
+        throw new Error('Charge creation returned invalid response: missing id');
+      }
+
+      console.log('Charge created successfully:', {
+        id: charge.id,
+        hosted_url: charge.hosted_url,
+        expires_at: charge.expires_at
+      });
 
       // 保存支付记录到数据库
       const payment: Payment = {
@@ -95,9 +148,27 @@ export class CoinbaseCommerceService {
         payment,
         checkoutUrl: charge.hosted_url
       };
-    } catch (error) {
-      console.error('Create payment error:', error);
-      throw new Error('Failed to create payment');
+    } catch (error: any) {
+      console.error('Create payment error - Full details:', error);
+      console.error('Error type:', error?.constructor?.name);
+      console.error('Error message:', error?.message);
+      console.error('Error stack:', error?.stack);
+      
+      // 如果是 API 响应错误，尝试获取更多信息
+      if (error?.response) {
+        console.error('API Response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
+      
+      // 重新抛出更详细的错误信息
+      if (error?.message) {
+        throw new Error(`Failed to create payment: ${error.message}`);
+      } else {
+        throw new Error('Failed to create payment: Unknown error');
+      }
     }
   }
 
@@ -189,6 +260,12 @@ export class CoinbaseCommerceService {
    */
   async handleWebhook(rawBody: string, signature: string): Promise<void> {
     try {
+      console.log('Processing webhook:', {
+        bodyLength: rawBody.length,
+        signatureLength: signature.length,
+        hasWebhookSecret: !!this.webhookSecret
+      });
+
       // 检查 webhook secret 是否配置
       if (!this.webhookSecret) {
         console.warn('Webhook secret not configured, skipping signature verification');
@@ -206,20 +283,50 @@ export class CoinbaseCommerceService {
         return;
       }
 
+      // 检查必要的依赖
+      if (!Webhook || !Webhook.verifySigHeader) {
+        console.error('Webhook verification not available');
+        throw new Error('Webhook verification not available');
+      }
+
+      console.log('Attempting webhook signature verification...');
+      
       // 验证 webhook 签名
       const event = Webhook.verifySigHeader(rawBody, signature, this.webhookSecret);
 
+      console.log('Webhook signature verified successfully');
       console.log('Webhook event received:', event.type, event.id);
 
-      if (event.type === 'charge:confirmed') {
-        await this.handlePaymentConfirmed(event.data);
-      } else if (event.type === 'charge:failed') {
-        await this.handlePaymentFailed(event.data);
-      } else if (event.type === 'charge:resolved') {
-        await this.handlePaymentResolved(event.data);
+      // 处理不同类型的事件
+      switch (event.type) {
+        case 'charge:confirmed':
+          await this.handlePaymentConfirmed(event.data);
+          break;
+        case 'charge:failed':
+          await this.handlePaymentFailed(event.data);
+          break;
+        case 'charge:resolved':
+          await this.handlePaymentResolved(event.data);
+          break;
+        default:
+          console.log('Unhandled webhook event type:', event.type);
       }
-    } catch (error) {
-      console.error('Webhook verification failed:', error);
+    } catch (error: any) {
+      console.error('Webhook processing error:', {
+        message: error.message,
+        type: error.constructor.name,
+        stack: error.stack
+      });
+      
+      // 如果是签名验证错误，提供更详细的信息
+      if (error.message?.includes('signature') || error.name === 'SignatureVerificationError') {
+        console.error('Signature verification failed:', {
+          providedSignature: signature.substring(0, 20) + '...',
+          bodyPreview: rawBody.substring(0, 100) + '...',
+          secretConfigured: !!this.webhookSecret
+        });
+      }
+      
       throw new Error('Invalid webhook signature');
     }
   }

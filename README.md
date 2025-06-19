@@ -110,6 +110,7 @@ mcp-server/
 - 🚀 **[MVP 部署指南](./docs/README_MVP.md)** - 快速部署指南
 - 💳 **[支付 API 文档](./docs/PAYMENT_API.md)** - 支付功能使用指南
 - 🏪 **[Coinbase Commerce 集成](./docs/COINBASE_COMMERCE_INTEGRATION.md)** - 官方接入文档
+- 💰 **[Coinbase Commerce 设置指南](./docs/COINBASE_COMMERCE_SETUP_GUIDE.md)** - 账户配置必读
 
 ## API 测试
 

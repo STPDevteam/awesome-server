@@ -1,16 +1,20 @@
-import { Router, Request, Response } from 'express';
-import { walletAuthService } from '../services/auth/walletAuthService.js';
+import express from 'express';
+import { getS3AvatarService } from '../services/s3AvatarService.js';
 import { userService } from '../services/auth/userService.js';
+import { walletAuthService } from '../services/auth/walletAuthService.js';
 import { jwtService } from '../services/auth/jwtService.js';
 import { requireAuth, loginRateLimit } from '../middleware/auth.js';
 
-const router = Router();
+const router = express.Router();
+
+// 初始化 S3 头像服务
+const s3AvatarService = getS3AvatarService();
 
 /**
  * 获取钱包登录nonce
  * POST /api/auth/wallet/nonce
  */
-router.post('/wallet/nonce', loginRateLimit, async (req: Request, res: Response) => {
+router.post('/wallet/nonce', loginRateLimit, async (req: express.Request, res: express.Response) => {
   try {
     const { address } = req.body;
 
@@ -63,7 +67,7 @@ router.post('/wallet/nonce', loginRateLimit, async (req: Request, res: Response)
  * 钱包登录
  * POST /api/auth/wallet/login
  */
-router.post('/wallet/login', loginRateLimit, async (req: Request, res: Response) => {
+router.post('/wallet/login', loginRateLimit, async (req: express.Request, res: express.Response) => {
   try {
     const { message, signature, username, avatar } = req.body;
 
@@ -96,10 +100,19 @@ router.post('/wallet/login', loginRateLimit, async (req: Request, res: Response)
       // 获取钱包余额
       const balance = await walletAuthService.getWalletBalance(walletAddress);
       
+      // 如果没有提供头像，从S3随机选择一个
+      let userAvatar = avatar;
+      if (!userAvatar) {
+        const randomAvatar = await s3AvatarService.getRandomAvatar();
+        if (randomAvatar) {
+          userAvatar = randomAvatar;
+        }
+      }
+      
       // 创建新用户
       user = await userService.createUser({
         username: username || `用户${walletAddress.slice(0, 6)}`,
-        avatar: avatar,
+        avatar: userAvatar,
         walletAddress: walletAddress,
         loginMethod: 'wallet',
         loginData: { address: walletAddress }
@@ -159,7 +172,7 @@ router.post('/wallet/login', loginRateLimit, async (req: Request, res: Response)
  * 刷新令牌
  * POST /api/auth/refresh
  */
-router.post('/refresh', async (req: Request, res: Response) => {
+router.post('/refresh', async (req: express.Request, res: express.Response) => {
   try {
     const { refreshToken } = req.body;
 
@@ -214,7 +227,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
  * 登出
  * POST /api/auth/logout
  */
-router.post('/logout', requireAuth, async (req: Request, res: Response) => {
+router.post('/logout', requireAuth, async (req: express.Request, res: express.Response) => {
   try {
     const { refreshToken } = req.body;
 
@@ -239,7 +252,7 @@ router.post('/logout', requireAuth, async (req: Request, res: Response) => {
  * 获取用户信息
  * GET /api/auth/me
  */
-router.get('/me', requireAuth, async (req: Request, res: Response) => {
+router.get('/me', requireAuth, async (req: express.Request, res: express.Response) => {
   try {
     const user = req.user!;
     
@@ -281,7 +294,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
  * 更新用户信息
  * PUT /api/auth/me
  */
-router.put('/me', requireAuth, async (req: Request, res: Response) => {
+router.put('/me', requireAuth, async (req: express.Request, res: express.Response) => {
   try {
     const { username, avatar } = req.body;
     const userId = req.userId!;
@@ -336,7 +349,7 @@ router.put('/me', requireAuth, async (req: Request, res: Response) => {
  * 撤销所有令牌（强制登出所有设备）
  * POST /api/auth/revoke-all
  */
-router.post('/revoke-all', requireAuth, async (req: Request, res: Response) => {
+router.post('/revoke-all', requireAuth, async (req: express.Request, res: express.Response) => {
   try {
     const userId = req.userId!;
     await jwtService.revokeAllUserTokens(userId);
