@@ -141,7 +141,7 @@ class JWTService {
         WHERE token_hash = $1
       `, [tokenHash]);
       
-      return result.rowCount > 0;
+      return result.rowCount !== null && result.rowCount > 0;
     } catch (error) {
       console.error('撤销刷新令牌失败:', error);
       return false;
@@ -210,7 +210,7 @@ class JWTService {
         WHERE expires_at <= CURRENT_TIMESTAMP AND is_revoked = false
       `);
       
-      if (result.rowCount > 0) {
+      if (result.rowCount !== null && result.rowCount > 0) {
         console.log(`清理了 ${result.rowCount} 个过期的刷新令牌`);
       }
     } catch (error) {

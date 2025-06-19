@@ -1,6 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { logger } from '../utils/logger.js';
+import { MCPConnection, MCPTool, MCPCallResult } from '../models/mcp.js';
 
 interface MCPClient {
   client: Client;
@@ -10,8 +11,17 @@ interface MCPClient {
   env?: Record<string, string>;
 }
 
+/**
+ * MCP管理器
+ * 负责连接、断开和管理MCP工具
+ */
 export class MCPManager {
   private clients: Map<string, MCPClient> = new Map();
+  private connectedMCPs: Map<string, MCPConnection>;
+
+  constructor() {
+    this.connectedMCPs = new Map();
+  }
 
   async connect(name: string, command: string, args: string[] = [], env?: Record<string, string>): Promise<void> {
     try {

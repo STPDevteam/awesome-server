@@ -1,4 +1,4 @@
-import { Pool, PoolConfig } from 'pg';
+import { Pool, PoolConfig, QueryResult } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -52,6 +52,11 @@ export const databaseConfig: DatabaseConfig = {
   connectionTimeoutMillis: 5000, // 连接超时
 };
 
+// 增强的查询结果类型
+export interface TypedQueryResult<T = Record<string, any>> extends QueryResult {
+  rows: T[];
+}
+
 class DatabaseService {
   private pool: Pool;
   
@@ -72,11 +77,11 @@ class DatabaseService {
   /**
    * 执行查询
    */
-  async query(text: string, params?: any[]): Promise<any> {
+  async query<T = Record<string, any>>(text: string, params?: any[]): Promise<TypedQueryResult<T>> {
     const client = await this.pool.connect();
     try {
       const result = await client.query(text, params);
-      return result;
+      return result as TypedQueryResult<T>;
     } finally {
       client.release();
     }
@@ -85,15 +90,15 @@ class DatabaseService {
   /**
    * 执行事务
    */
-  async transaction(queries: Array<{ text: string; params?: any[] }>): Promise<any[]> {
+  async transaction<T = Record<string, any>>(queries: Array<{ text: string; params?: any[] }>): Promise<TypedQueryResult<T>[]> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const results = [];
+      const results: TypedQueryResult<T>[] = [];
       
       for (const query of queries) {
         const result = await client.query(query.text, query.params);
-        results.push(result);
+        results.push(result as TypedQueryResult<T>);
       }
       
       await client.query('COMMIT');

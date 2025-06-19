@@ -1,8 +1,8 @@
-# LangChain MCP 后端服务
+# MCP-LangChain 智能任务处理系统
 
-支持钱包登录的 AI 聊天服务，集成了 MCP (Model Context Protocol) 和用户认证系统。
+MCP-LangChain是一个基于Model Context Protocol (MCP)和LangChain的智能任务处理平台，支持用户自然语言任务分析、智能工具选择和流式任务执行。
 
-## 功能特性
+## 核心特性
 
 - 🔐 **钱包登录** - 支持 EIP-4361 "Sign-In with Ethereum" 标准
 - 🤖 **AI 聊天** - 集成 OpenAI GPT 模型
@@ -13,13 +13,22 @@
 - 💳 **加密支付** - Coinbase Commerce 集成，支持 USDT/USDC 支付
 - 👑 **会员系统** - Plus/Pro 会员订阅管理
 
+
 ## 快速开始
 
-1. 安装依赖：
+1. 克隆仓库：
+
+```bash
+git clone https://github.com/yourusername/mcp-server.git
+cd mcp-server
+```
+
+2. 安装依赖：
 
 ```bash
 npm install
 ```
+
 
 2. 配置环境变量：
 
@@ -40,40 +49,80 @@ vim .env
 
 3. 启动服务：
 
+
 ```bash
 npm run dev
 ```
 
 服务将在 http://localhost:3001 启动。
 
-## API 端点
+## 系统架构
 
-### 认证相关 (无需登录)
+MCP-LangChain系统采用分层架构设计：
 
-- `POST /api/auth/wallet/nonce` - 获取钱包登录随机数
+- **API服务层**：处理HTTP请求，提供RESTful接口
+- **业务逻辑层**：实现核心业务逻辑，如任务管理、MCP工具适配等
+- **AI处理层**：负责任务分析、工具选择和结果生成
+- **数据存取层**：处理数据库操作和持久化
+- **基础设施层**：提供数据库连接、日志记录等基础服务
+
+详细架构说明请查看[系统概述文档](./docs/SYSTEM_OVERVIEW.md)。
+
+## 任务处理流程
+
+系统的任务处理流程如下：
+
+1. **任务创建** - 用户提交任务内容，系统生成任务标题
+2. **任务分析** - 系统分析任务需求，识别适用的MCP工具
+3. **工作流构建** - 创建最佳的MCP工具调用顺序
+4. **MCP授权** - 用户提供必要的MCP工具授权信息
+5. **任务执行** - 系统按照工作流顺序调用MCP工具
+6. **结果呈现** - 将执行结果整合并呈现给用户
+
+## API文档
+
+API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
+
+主要API端点包括：
+
+### 认证接口
+
+- `POST /api/auth/register` - 用户注册
+- `POST /api/auth/login` - 用户登录
 - `POST /api/auth/wallet/login` - 钱包登录
 - `POST /api/auth/refresh` - 刷新访问令牌
-- `GET /health` - 健康检查
 
-### 用户相关 (需要登录)
+### 任务管理接口
 
-- `POST /api/auth/logout` - 登出
-- `GET /api/auth/me` - 获取当前用户信息
-- `PUT /api/auth/me` - 更新用户信息
-- `POST /api/auth/revoke-all` - 撤销所有令牌
+- `POST /api/task` - 创建任务
+- `GET /api/task` - 获取任务列表
+- `GET /api/task/:id` - 获取任务详情
+- `POST /api/task/title` - 生成任务标题
 
-### AI 聊天 (需要登录)
+### 任务分析和执行接口
 
-- `POST /api/chat` - 普通聊天完成
-- `POST /api/chat/stream` - 流式聊天
+- `POST /api/task/:id/analyze` - 分析任务
+- `POST /api/task/:id/analyze/stream` - 流式分析任务
+- `POST /api/task/:id/execute` - 执行任务
+- `POST /api/task/:id/execute/stream` - 流式执行任务
 
-### MCP 服务 (需要登录)
+### MCP授权接口
 
-- `POST /api/mcp/connect` - 连接 MCP 服务
-- `POST /api/mcp/disconnect` - 断开 MCP 服务
-- `GET /api/mcp/list` - 获取已连接的 MCP 列表
-- `GET /api/mcp/:name/tools` - 获取 MCP 工具列表
-- `POST /api/mcp/tool` - 调用 MCP 工具
+- `POST /api/task/:id/verify-auth` - 验证MCP授权
+- `GET /api/task/:id/mcp-alternatives/:mcpName` - 获取替代MCP选项
+- `POST /api/task/:id/replace-mcp` - 替换工作流中的MCP
+
+
+## 文档导航
+
+- 📚 [系统概述](./docs/SYSTEM_OVERVIEW.md) - 系统架构、组件和工作流程
+- 📘 [API参考](./docs/API_REFERENCE.md) - 详细API规范和示例
+- 📖 [用户指南](./docs/USER_GUIDE.md) - 系统使用方法和最佳实践
+- 🔧 [MCP适配器配置](./docs/adapter-configuration.md) - 配置和扩展MCP适配器
+- 🔄 [自动工具调用](./docs/auto-tool-calling.md) - 自动工具调用机制说明
+- 🔌 [MCP连接管理](./docs/mcp-connection-management.md) - MCP连接管理指南
+- 🛠️ [数据库设置](./docs/DATABASE_SETUP.md) - 数据库配置指南
+- 🔐 [认证设置](./docs/AUTH_SETUP.md) - 认证系统设置指南
 
 ### 支付和会员 (需要登录)
 
@@ -111,38 +160,39 @@ mcp-server/
 - 💳 **[支付 API 文档](./docs/PAYMENT_API.md)** - 支付功能使用指南
 - 🏪 **[Coinbase Commerce 集成](./docs/COINBASE_COMMERCE_INTEGRATION.md)** - 官方接入文档
 - 💰 **[Coinbase Commerce 设置指南](./docs/COINBASE_COMMERCE_SETUP_GUIDE.md)** - 账户配置必读
+>>>>>>> main
 
-## API 测试
+## 技术栈
 
-### 使用 Postman
+- **后端框架**：Node.js, Express, TypeScript
+- **数据库**：PostgreSQL
+- **AI接口**：LangChain, OpenAI
+- **认证**：JWT, 钱包签名验证
+- **实时通讯**：Server-Sent Events (SSE)
 
-1. 导入 `docs/MCP_LangChain_API.postman_collection.json` 到 Postman
-2. 设置环境变量 `baseUrl` 为 `http://localhost:3001`
-3. 按顺序执行请求：获取 nonce → 钱包登录 → 使用其他 API
+## 本地测试
 
-### 使用 cURL
+对于本地测试，可以使用以下方法：
 
 ```bash
-# 1. 获取 nonce
-curl -X POST http://localhost:3001/api/auth/wallet/nonce \
+# 使用curl测试API
+curl -X POST "http://localhost:3001/api/task" \
   -H "Content-Type: application/json" \
-  -d '{"address":"YOUR_WALLET_ADDRESS"}'
+  -d '{"content": "分析最近的股市趋势", "userId": "1"}'
 
-# 2. 钱包登录（需要先用钱包签名）
-curl -X POST http://localhost:3001/api/auth/wallet/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "SIWE_MESSAGE",
-    "signature": "WALLET_SIGNATURE"
-  }'
+# 获取任务列表
+curl -X GET "http://localhost:3001/api/task?userId=1" \
+  -H "Content-Type: application/json"
 
-# 3. AI 聊天
-curl -X POST http://localhost:3001/api/chat \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "你好"}
-    ]
-  }'
-``` 
+# 获取任务详情
+curl -X GET "http://localhost:3001/api/task/YOUR_TASK_ID?userId=1" \
+  -H "Content-Type: application/json"
+```
+
+## 贡献指南
+
+欢迎对MCP-LangChain项目做出贡献。请先fork仓库，创建特性分支，然后提交PR。
+
+## 许可证
+
+MIT 
