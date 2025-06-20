@@ -368,6 +368,164 @@ data: [DONE]
 
 ---
 
+### AWE代币支付 API
+
+#### 1. 计算AWE支付价格
+
+**端点**: `GET /api/payment/calculate-awe-price`
+
+**描述**: 计算指定会员类型和订阅周期所需的AWE代币数量
+
+**认证**: 需要访问令牌
+
+**查询参数**:
+- `membershipType`: `"plus"` 或 `"pro"`
+- `subscriptionType`: `"monthly"` 或 `"yearly"`
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "membershipType": "plus",
+    "subscriptionType": "monthly",
+    "usdPrice": "4.99",
+    "aweAmount": "49.900000",
+    "aweAmountInWei": "49900000000000000000",
+    "aweUsdPrice": 0.1,
+    "tokenAddress": "0x1B4617734C43F6159F3a70b7E06d883647512778",
+    "receiverAddress": "0x1cAb57bDD051613214D761Ce1429f94975dD0116",
+    "chainId": 8453,
+    "chainName": "Base"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 无效的会员类型或订阅周期
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 2. 确认AWE支付
+
+**端点**: `POST /api/payment/confirm-awe-payment`
+
+**描述**: 验证交易并创建支付记录
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "membershipType": "plus",
+  "subscriptionType": "monthly",
+  "transactionHash": "0x..."
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "paymentId": "uuid",
+    "status": "confirmed",
+    "amount": "50.000000",
+    "transactionHash": "0x...",
+    "confirmedAt": "2024-12-17T10:00:00.000Z",
+    "membershipType": "plus",
+    "subscriptionType": "monthly"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 
+  - 无效的会员类型或订阅周期
+  - 交易哈希为空或无效
+  - 交易未找到
+  - 交易确认数不足
+  - 支付金额不足
+  - 交易已被其他用户使用
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 3. 获取AWE支付状态
+
+**端点**: `GET /api/payment/awe-payment/:paymentId`
+
+**描述**: 获取指定支付记录的详细信息
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `paymentId`: 支付记录ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "userId": "user-id",
+    "membershipType": "plus",
+    "subscriptionType": "monthly",
+    "amount": "50.000000",
+    "amountInWei": "50000000000000000000",
+    "usdValue": "4.99",
+    "status": "confirmed",
+    "transactionHash": "0x...",
+    "blockNumber": 12345678,
+    "fromAddress": "0x...",
+    "confirmedAt": "2024-12-17T10:00:00.000Z",
+    "createdAt": "2024-12-17T10:00:00.000Z",
+    "updatedAt": "2024-12-17T10:00:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该支付记录
+- `404 Not Found`: 支付记录不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 4. 获取AWE支付历史
+
+**端点**: `GET /api/payment/awe-payments`
+
+**描述**: 获取当前用户的所有AWE支付记录
+
+**认证**: 需要访问令牌
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "membershipType": "plus",
+      "subscriptionType": "monthly",
+      "amount": "50.000000",
+      "status": "confirmed",
+      "transactionHash": "0x...",
+      "createdAt": "2024-12-17T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
 ## 错误代码
 
 | 状态码 | 错误类型 | 描述 |
