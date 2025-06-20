@@ -1,16 +1,33 @@
+
 /**
  * 测试AWE支付功能
  * 
  * 运行方式:
  * node test/test-awe-payment-v2.cjs
  */
+require('dotenv').config();
+const jwt = require('jsonwebtoken');
 
 const axios = require('axios');
 
 const API_BASE_URL = 'http://localhost:3001/api';
 
-// 测试用的JWT token - 请替换为实际的token
-const AUTH_TOKEN = process.env.TEST_JWT_TOKEN || 'your_test_jwt_token_here';
+const AUTH_TOKEN = createTestToken();
+function createTestToken(userId = 'test-user-1750416355521') {
+  const payload = {
+    userId,
+    walletAddress: '0x1234567890123456789012345678901234567890'
+  };
+  
+  // 使用正确的JWT_ACCESS_SECRET
+  const secret = 'snP4E5RY1uzK4LUft7iWKlZ1Zhrv+obKiCkgXoUg9KeQUVfNJDXhrLoRahekbpHsbQpC0/PvIkSrJEbaSVqkGQ==';
+  if (!secret) {
+    console.error('❌ JWT_ACCESS_SECRET not found in environment variables');
+    process.exit(1);
+  }
+  
+  return jwt.sign(payload, secret, { expiresIn: '1h' });
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,

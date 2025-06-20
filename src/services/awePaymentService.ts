@@ -167,6 +167,9 @@ export class AwePaymentService {
     }
 
     // 创建支付记录
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24小时后过期（已确认的支付设置较长的过期时间）
+    
     const payment: AwePayment = {
       id: uuidv4(),
       userId,
@@ -179,9 +182,10 @@ export class AwePaymentService {
       transactionHash,
       blockNumber: receipt.blockNumber,
       fromAddress: transferEvent.from,
-      confirmedAt: new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date()
+      expiresAt,
+      confirmedAt: now,
+      createdAt: now,
+      updatedAt: now
     };
 
     await this.savePayment(payment);
@@ -253,8 +257,8 @@ export class AwePaymentService {
         id, user_id, membership_type, subscription_type, 
         amount, amount_in_wei, usd_value, status, 
         transaction_hash, block_number, from_address,
-        confirmed_at, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        expires_at, confirmed_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     `;
 
     await db.query(query, [
@@ -269,6 +273,7 @@ export class AwePaymentService {
       payment.transactionHash,
       payment.blockNumber,
       payment.fromAddress,
+      payment.expiresAt,
       payment.confirmedAt,
       payment.createdAt,
       payment.updatedAt
