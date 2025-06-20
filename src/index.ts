@@ -18,6 +18,7 @@ import { db } from './config/database.js';
 import { migrationService } from './scripts/migrate-database.js';
 import paymentRoutes from './routes/payment.js';
 import { getS3AvatarService } from './services/s3AvatarService.js';
+import { awePaymentService } from './services/awePaymentService.js';
 
 
 const app = express();
@@ -415,6 +416,14 @@ async function startServer() {
       }
     } else {
       console.log('ℹ️  S3 avatar service not configured - avatar randomization disabled');
+    }
+    
+    // AWE 支付服务状态
+    if (process.env.BASE_RPC_URL) {
+      console.log('💎 AWE payment service configured');
+      console.log('✅ AWE payment service ready');
+    } else {
+      console.log('ℹ️  BASE_RPC_URL not configured - AWE payment features disabled');
     }
     
     // 启动服务器

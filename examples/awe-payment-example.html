@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWE Token Payment Example</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .membership-options {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .membership-card {
+            flex: 1;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .membership-card:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+        }
+        .membership-card.selected {
+            border-color: #007bff;
+            background-color: #f0f7ff;
+        }
+        .membership-card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .price {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        .features {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .features li {
+            padding: 5px 0;
+            color: #666;
+        }
+        .features li:before {
+            content: "✓ ";
+            color: #28a745;
+            font-weight: bold;
+        }
+        .payment-section {
+            display: none;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e0e0e0;
+        }
+        .payment-info {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .payment-info h4 {
+            margin: 0 0 15px 0;
+            color: #333;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            color: #666;
+        }
+        .info-value {
+            font-family: monospace;
+            color: #333;
+            word-break: break-all;
+        }
+        .qr-section {
+            text-align: center;
+            margin: 20px 0;
+        }
+        #qrcode {
+            display: inline-block;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .button:hover {
+            background-color: #0056b3;
+        }
+        .button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .button.secondary {
+            background-color: #6c757d;
+        }
+        .button.secondary:hover {
+            background-color: #5a6268;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .status.pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status.confirmed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.expired {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AWE Token Payment</h1>
+        <p class="subtitle">Pay with AWE tokens on Base Chain</p>
+
+        <div class="membership-options">
+            <div class="membership-card" data-type="plus" data-period="monthly">
+                <h3>Plus Monthly</h3>
+                <div class="price">$0.01/month</div>
+                <ul class="features">
+                    <li>Basic features</li>
+                    <li>Monthly billing</li>
+                    <li>Cancel anytime</li>
+                </ul>
+            </div>
+            <div class="membership-card" data-type="plus" data-period="yearly">
+                <h3>Plus Yearly</h3>
+                <div class="price">$200/year</div>
+                <ul class="features">
+                    <li>Basic features</li>
+                    <li>Save on yearly billing</li>
+                    <li>Priority support</li>
+                </ul>
+            </div>
+            <div class="membership-card" data-type="pro" data-period="monthly">
+                <h3>Pro Monthly</h3>
+                <div class="price">$200/month</div>
+                <ul class="features">
+                    <li>All features</li>
+                    <li>Monthly billing</li>
+                    <li>Premium support</li>
+                </ul>
+            </div>
+            <div class="membership-card" data-type="pro" data-period="yearly">
+                <h3>Pro Yearly</h3>
+                <div class="price">$2000/year</div>
+                <ul class="features">
+                    <li>All features</li>
+                    <li>Best value</li>
+                    <li>24/7 support</li>
+                </ul>
+            </div>
+        </div>
+
+        <button id="createPaymentBtn" class="button" disabled>Select a membership plan</button>
+
+        <div id="paymentSection" class="payment-section">
+            <div class="payment-info">
+                <h4>Payment Details</h4>
+                <div class="info-row">
+                    <span class="info-label">Payment ID:</span>
+                    <span class="info-value" id="paymentId">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Amount:</span>
+                    <span class="info-value" id="aweAmount">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">USD Value:</span>
+                    <span class="info-value" id="usdValue">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Send to:</span>
+                    <span class="info-value" id="receiverAddress">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Token Contract:</span>
+                    <span class="info-value" id="tokenAddress">-</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Network:</span>
+                    <span class="info-value">Base (Chain ID: 8453)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Expires:</span>
+                    <span class="info-value" id="expiresAt">-</span>
+                </div>
+            </div>
+
+            <div class="qr-section">
+                <h4>Scan to Pay with Wallet</h4>
+                <div id="qrcode"></div>
+            </div>
+
+            <button id="payWithMetaMaskBtn" class="button">Pay with MetaMask</button>
+            <button id="checkStatusBtn" class="button secondary">Check Payment Status</button>
+
+            <div id="paymentStatus" class="status pending" style="display: none;">
+                <span id="statusText">Waiting for payment...</span>
+                <span id="loadingSpinner" class="loading"></span>
+            </div>
+        </div>
+
+        <div id="errorMessage" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:3001';
+        const AWE_TOKEN_ADDRESS = '0x1B4617734C43F6159F3a70b7E06d883647512778';
+        const BASE_CHAIN_ID = 8453;
+
+        // State
+        let selectedMembership = null;
+        let currentPayment = null;
+        let authToken = null;
+
+        // Get auth token (in real app, this would come from login)
+        function getAuthToken() {
+            // For demo purposes, create a simple token
+            // In production, this should come from proper authentication
+            return 'Bearer ' + btoa(JSON.stringify({
+                userId: 'demo-user-' + Date.now(),
+                exp: Date.now() + 3600000
+            }));
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            authToken = getAuthToken();
+            setupEventListeners();
+        });
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Membership card selection
+            document.querySelectorAll('.membership-card').forEach(card => {
+                card.addEventListener('click', () => selectMembership(card));
+            });
+
+            // Create payment button
+            document.getElementById('createPaymentBtn').addEventListener('click', createPayment);
+
+            // Pay with MetaMask button
+            document.getElementById('payWithMetaMaskBtn').addEventListener('click', payWithMetaMask);
+
+            // Check status button
+            document.getElementById('checkStatusBtn').addEventListener('click', checkPaymentStatus);
+        }
+
+        // Select membership
+        function selectMembership(card) {
+            // Remove previous selection
+            document.querySelectorAll('.membership-card').forEach(c => c.classList.remove('selected'));
+            
+            // Add selection
+            card.classList.add('selected');
+            
+            // Update state
+            selectedMembership = {
+                type: card.dataset.type,
+                period: card.dataset.period
+            };
+            
+            // Enable create payment button
+            const btn = document.getElementById('createPaymentBtn');
+            btn.disabled = false;
+            btn.textContent = `Create ${selectedMembership.type} ${selectedMembership.period} Payment`;
+        }
+
+        // Create payment
+        async function createPayment() {
+            if (!selectedMembership) return;
+
+            try {
+                showError('');
+                const btn = document.getElementById('createPaymentBtn');
+                btn.disabled = true;
+                btn.innerHTML = 'Creating payment... <span class="loading"></span>';
+
+                const response = await fetch(`${API_BASE_URL}/api/payment/create-awe-payment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': authToken
+                    },
+                    body: JSON.stringify({
+                        membershipType: selectedMembership.type,
+                        subscriptionType: selectedMembership.period
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to create payment');
+                }
+
+                currentPayment = data.data;
+                displayPayment(currentPayment);
+
+                // Show payment section
+                document.getElementById('paymentSection').style.display = 'block';
+                
+                // Scroll to payment section
+                document.getElementById('paymentSection').scrollIntoView({ behavior: 'smooth' });
+
+            } catch (error) {
+                showError('Error creating payment: ' + error.message);
+            } finally {
+                const btn = document.getElementById('createPaymentBtn');
+                btn.disabled = false;
+                btn.innerHTML = btn.textContent.replace(' <span class="loading"></span>', '');
+            }
+        }
+
+        // Display payment details
+        function displayPayment(payment) {
+            document.getElementById('paymentId').textContent = payment.paymentId;
+            document.getElementById('aweAmount').textContent = `${payment.amount} AWE`;
+            document.getElementById('usdValue').textContent = `$${payment.usdValue}`;
+            document.getElementById('receiverAddress').textContent = payment.receiverAddress;
+            document.getElementById('tokenAddress').textContent = payment.tokenAddress;
+            document.getElementById('expiresAt').textContent = new Date(payment.expiresAt).toLocaleString();
+
+            // Generate QR code
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = '';
+            QRCode.toCanvas(document.createElement('canvas'), payment.qrData, {
+                width: 200,
+                margin: 2
+            }, (error, canvas) => {
+                if (error) {
+                    console.error('QR code error:', error);
+                } else {
+                    qrContainer.appendChild(canvas);
+                }
+            });
+        }
+
+        // Pay with MetaMask
+        async function payWithMetaMask() {
+            if (!currentPayment) return;
+
+            try {
+                // Check if MetaMask is installed
+                if (typeof window.ethereum === 'undefined') {
+                    throw new Error('Please install MetaMask to use this feature');
+                }
+
+                const btn = document.getElementById('payWithMetaMaskBtn');
+                btn.disabled = true;
+                btn.innerHTML = 'Connecting to MetaMask... <span class="loading"></span>';
+
+                // Request account access
+                const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                const account = accounts[0];
+
+                // Switch to Base chain
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: `0x${BASE_CHAIN_ID.toString(16)}` }],
+                    });
+                } catch (switchError) {
+                    // This error code indicates that the chain has not been added to MetaMask.
+                    if (switchError.code === 4902) {
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [{
+                                chainId: `0x${BASE_CHAIN_ID.toString(16)}`,
+                                chainName: 'Base',
+                                nativeCurrency: {
+                                    name: 'Ethereum',
+                                    symbol: 'ETH',
+                                    decimals: 18
+                                },
+                                rpcUrls: ['https://mainnet.base.org'],
+                                blockExplorerUrls: ['https://basescan.org']
+                            }],
+                        });
+                    } else {
+                        throw switchError;
+                    }
+                }
+
+                // Create contract instance
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const signer = await provider.getSigner();
+                
+                // ERC20 ABI for transfer
+                const abi = ['function transfer(address to, uint256 amount) returns (bool)'];
+                const contract = new ethers.Contract(AWE_TOKEN_ADDRESS, abi, signer);
+
+                btn.innerHTML = 'Sending transaction... <span class="loading"></span>';
+
+                // Send transaction
+                const tx = await contract.transfer(
+                    currentPayment.receiverAddress,
+                    currentPayment.amountInWei
+                );
+
+                btn.innerHTML = 'Waiting for confirmation... <span class="loading"></span>';
+
+                // Wait for transaction
+                const receipt = await tx.wait();
+
+                showError('');
+                updatePaymentStatus('confirmed');
+                
+                // Check status after transaction
+                setTimeout(checkPaymentStatus, 2000);
+
+            } catch (error) {
+                showError('MetaMask error: ' + error.message);
+            } finally {
+                const btn = document.getElementById('payWithMetaMaskBtn');
+                btn.disabled = false;
+                btn.innerHTML = 'Pay with MetaMask';
+            }
+        }
+
+        // Check payment status
+        async function checkPaymentStatus() {
+            if (!currentPayment) return;
+
+            try {
+                const btn = document.getElementById('checkStatusBtn');
+                btn.disabled = true;
+                btn.innerHTML = 'Checking status... <span class="loading"></span>';
+
+                const response = await fetch(`${API_BASE_URL}/api/payment/awe-payment/${currentPayment.paymentId}`, {
+                    headers: {
+                        'Authorization': authToken
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to check status');
+                }
+
+                updatePaymentStatus(data.data.status, data.data);
+
+            } catch (error) {
+                showError('Error checking status: ' + error.message);
+            } finally {
+                const btn = document.getElementById('checkStatusBtn');
+                btn.disabled = false;
+                btn.innerHTML = 'Check Payment Status';
+            }
+        }
+
+        // Update payment status display
+        function updatePaymentStatus(status, paymentData = null) {
+            const statusEl = document.getElementById('paymentStatus');
+            const statusText = document.getElementById('statusText');
+            const spinner = document.getElementById('loadingSpinner');
+            
+            statusEl.style.display = 'block';
+            statusEl.className = 'status ' + status;
+            
+            switch (status) {
+                case 'pending':
+                    statusText.textContent = 'Waiting for payment...';
+                    spinner.style.display = 'inline-block';
+                    break;
+                case 'confirmed':
+                    statusText.textContent = 'Payment confirmed! ✓';
+                    spinner.style.display = 'none';
+                    if (paymentData && paymentData.transactionHash) {
+                        statusText.innerHTML += `<br><a href="${currentPayment.explorerUrl}/tx/${paymentData.transactionHash}" target="_blank">View transaction</a>`;
+                    }
+                    break;
+                case 'expired':
+                    statusText.textContent = 'Payment expired';
+                    spinner.style.display = 'none';
+                    break;
+                case 'failed':
+                    statusText.textContent = 'Payment failed';
+                    spinner.style.display = 'none';
+                    break;
+            }
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            if (message) {
+                errorEl.textContent = message;
+                errorEl.style.display = 'block';
+            } else {
+                errorEl.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html> 
