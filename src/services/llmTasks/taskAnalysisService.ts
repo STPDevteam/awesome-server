@@ -6,8 +6,12 @@ import { getTaskService } from '../taskService.js';
 import { TaskStep, TaskStepType } from '../../models/task.js';
 import { MCPToolAdapter } from '../mcpToolAdapter.js';
 import { OfficialMCPAdapter } from '../officialMcpAdapter.js';
+import { SimpleMCPAdapter } from '../simpleMcpAdapter.js';
+import { HTTPMCPAdapter } from '../httpMcpAdapter.js';
 import { MCPInfo } from '../../models/mcp.js';
-
+import { HttpsProxyAgent } from 'https-proxy-agent';
+const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
+const agent = new HttpsProxyAgent(proxy);
 // 获取taskService实例
 const taskService = getTaskService();
 
@@ -79,25 +83,40 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
 export class TaskAnalysisService {
   private llm: ChatOpenAI;
   private mcpManager: MCPManager;
-  private mcpToolAdapter: MCPToolAdapter | OfficialMCPAdapter;
-  
-  constructor(mcpManager: MCPManager, adapter?: MCPToolAdapter | OfficialMCPAdapter) {
+  private mcpAdapter: MCPToolAdapter | OfficialMCPAdapter | SimpleMCPAdapter | HTTPMCPAdapter;
+
+  constructor(mcpManager: MCPManager, adapter?: MCPToolAdapter | OfficialMCPAdapter | SimpleMCPAdapter) {
     this.mcpManager = mcpManager;
     
-    // 如果没有提供adapter，使用默认适配器
+    // 如果没有提供adapter，根据环境选择适当的适配器
     if (!adapter) {
-      const useOfficialAdapter = process.env.USE_OFFICIAL_MCP_ADAPTER === 'true';
-      this.mcpToolAdapter = useOfficialAdapter
-        ? new OfficialMCPAdapter(mcpManager)
-        : new MCPToolAdapter(mcpManager);
+      const adapterType = process.env.MCP_ADAPTER_TYPE || 'http';
+      
+      if (adapterType === 'http') {
+        // 使用SimpleMCPAdapter，它会根据环境自动选择stdio或HTTP模式
+        this.mcpAdapter = new HTTPMCPAdapter();
+        logger.info('TaskAnalysisService使用SimpleMCPAdapter，自动选择适当模式');
+      } else if (adapterType === 'official') {
+        // 使用官方适配器
+        this.mcpAdapter = new OfficialMCPAdapter(mcpManager);
+        logger.info('TaskAnalysisService使用OfficialMCPAdapter');
+      } else {
+        // 使用默认适配器
+        this.mcpAdapter = new MCPToolAdapter(mcpManager);
+        logger.info('TaskAnalysisService使用MCPToolAdapter');
+      }
     } else {
-      this.mcpToolAdapter = adapter;
+      this.mcpAdapter = adapter;
+      logger.info(`TaskAnalysisService使用外部提供的适配器: ${adapter.constructor.name}`);
     }
     
     this.llm = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
       temperature: 0.2, // 较低温度，保证推理的准确性
+      configuration: {
+        httpAgent: agent, // ✅ 使用代理关键设置
+      },
     });
   }
   
@@ -452,7 +471,7 @@ export class TaskAnalysisService {
    * @param taskContent 任务内容
    * @returns 需求分析结果
    */
-  private async analyzeRequirements(taskContent: string): Promise<{
+  public async analyzeRequirements(taskContent: string): Promise<{
     content: string;
     reasoning: string;
   }> {
@@ -508,7 +527,7 @@ export class TaskAnalysisService {
    * @param requirementsAnalysis 需求分析结果
    * @returns 推荐的MCP列表
    */
-  private async identifyRelevantMCPs(
+  public async identifyRelevantMCPs(
     taskContent: string,
     requirementsAnalysis: string
   ): Promise<{
@@ -521,6 +540,7 @@ export class TaskAnalysisService {
       
       // 动态获取可用的MCP列表，而不是使用静态列表
       const availableMCPs = await this.getAvailableMCPs();
+      logger.info(`【MCP调试】可用的MCP工具列表: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
       
       const response = await this.llm.invoke([
         new SystemMessage(`你是一位MCP（Model Context Protocol）专家，负责为用户任务选择最合适的工具。
@@ -546,16 +566,32 @@ ${JSON.stringify(availableMCPs, null, 2)}
         new HumanMessage(taskContent)
       ]);
       
+      logger.info(`【MCP调试】LLM响应成功，开始解析MCP选择结果`);
+      
       // 解析返回的JSON
       const responseText = response.content.toString();
+      logger.info(`【MCP调试】LLM原始响应: ${responseText}`);
+      
       try {
-        const parsedResponse = JSON.parse(responseText);
+        // 清理可能的Markdown格式
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        
+        logger.info(`【MCP调试】清理后的响应: ${cleanedText}`);
+        
+        const parsedResponse = JSON.parse(cleanedText);
         const selectedMCPNames: string[] = parsedResponse.selected_mcps || [];
+        
+        logger.info(`【MCP调试】LLM选择的MCP: ${JSON.stringify(selectedMCPNames)}`);
         
         // 获取推荐的MCP详细信息
         const recommendedMCPs = availableMCPs.filter(mcp => 
           selectedMCPNames.includes(mcp.name)
         );
+        
+        logger.info(`【MCP调试】成功匹配${recommendedMCPs.length}个推荐MCP: ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
         
         return {
           content: parsedResponse.selection_explanation || "未能提供工具选择说明",
@@ -564,6 +600,8 @@ ${JSON.stringify(availableMCPs, null, 2)}
         };
       } catch (parseError) {
         logger.error('识别相关MCP结果解析失败:', parseError);
+        logger.info(`【MCP调试】尝试从非结构化文本中提取MCP名称`);
+        
         // 尝试从文本中提取MCP名称
         const mcpNamesMatch = responseText.match(/["']selected_mcps["']\s*:\s*\[(.*?)\]/s);
         let selectedNames: string[] = [];
@@ -574,11 +612,15 @@ ${JSON.stringify(availableMCPs, null, 2)}
             .split(',')
             .map(name => name.trim().replace(/["']/g, ''))
             .filter(name => name.length > 0);
+          
+          logger.info(`【MCP调试】从文本中提取的MCP名称: ${JSON.stringify(selectedNames)}`);
         }
         
         const recommendedMCPs = availableMCPs.filter(mcp => 
           selectedNames.includes(mcp.name)
         );
+        
+        logger.info(`【MCP调试】成功匹配${recommendedMCPs.length}个推荐MCP (从文本提取): ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
         
         // 提取解释部分
         const explanationMatch = responseText.match(/["']selection_explanation["']\s*:\s*["'](.+?)["']/s);
@@ -603,7 +645,7 @@ ${JSON.stringify(availableMCPs, null, 2)}
    * @param recommendedMCPs 推荐的MCP列表
    * @returns 可交付内容确认结果
    */
-  private async confirmDeliverables(
+  public async confirmDeliverables(
     taskContent: string,
     requirementsAnalysis: string,
     recommendedMCPs: MCPInfo[]
@@ -647,7 +689,15 @@ ${JSON.stringify(recommendedMCPs, null, 2)}
       // 解析返回的JSON
       const responseText = response.content.toString();
       try {
-        const parsedResponse = JSON.parse(responseText);
+        // 清理可能的Markdown格式
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        
+        logger.info(`【MCP调试】清理后的可交付内容响应: ${cleanedText}`);
+        
+        const parsedResponse = JSON.parse(cleanedText);
         
         return {
           content: parsedResponse.conclusion || "无法确定可交付内容",
@@ -694,7 +744,7 @@ ${JSON.stringify(recommendedMCPs, null, 2)}
    * @param deliverables 可交付内容列表
    * @returns MCP工作流
    */
-  private async buildMCPWorkflow(
+  public async buildMCPWorkflow(
     taskContent: string,
     requirementsAnalysis: string,
     recommendedMCPs: MCPInfo[],
@@ -763,12 +813,27 @@ ${deliverables.join('\n')}
       // 解析返回的JSON
       const responseText = response.content.toString();
       try {
-        const parsedResponse = JSON.parse(responseText);
+        // 清理可能的Markdown格式
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        
+        logger.info(`【MCP调试】清理后的工作流响应: ${cleanedText}`);
+        
+        const parsedResponse = JSON.parse(cleanedText);
+        
+        const workflow = parsedResponse.workflow || [];
+        
+        logger.info(`📋 工作流步骤数量: ${workflow.length}`);
+        workflow.forEach((step: any, index: number) => {
+          logger.info(`📝 工作流步骤${index + 1}: MCP=${step.mcp}, 操作=${step.action}`);
+        });
         
         return {
           content: parsedResponse.workflow_summary || "未提供工作流摘要",
           reasoning: parsedResponse.detailed_reasoning || "无详细推理",
-          workflow: parsedResponse.workflow || []
+          workflow: workflow
         };
       } catch (parseError) {
         logger.error('构建MCP工作流结果解析失败:', parseError);
@@ -813,14 +878,96 @@ ${deliverables.join('\n')}
   // 新增方法：动态获取可用MCP列表
   private async getAvailableMCPs(): Promise<MCPInfo[]> {
     try {
-      // 获取所有已连接的MCP
-      const connectedMCPs = this.mcpManager.getConnectedMCPs();
+      logger.info(`【MCP调试】开始获取可用MCP列表`);
+      
+      // 根据适配器类型获取已连接的MCP
+      let connectedMCPs: Array<{ name: string; command: string; args: string[]; env?: Record<string, string> }> = [];
+      
+      if (this.mcpAdapter instanceof HTTPMCPAdapter) {
+        // 如果是HTTPMCPAdapter，直接从serviceEndpoints获取服务信息
+        logger.info(`【MCP调试】使用HTTPMCPAdapter获取MCP服务`);
+        
+        // 获取HTTPMCPAdapter中的serviceEndpoints
+        const serviceEndpoints = (this.mcpAdapter as any).serviceEndpoints;
+        if (serviceEndpoints && serviceEndpoints instanceof Map) {
+          // 将serviceEndpoints转换为connectedMCPs格式
+          connectedMCPs = Array.from(serviceEndpoints.entries()).map(([name, endpoint]: [string, any]) => ({
+            name: name,
+            command: 'http',
+            args: [endpoint.baseUrl || ''],
+            env: {}
+          }));
+        }
+        
+        logger.info(`【MCP调试】HTTPMCPAdapter服务端点转换为MCP列表: ${JSON.stringify(connectedMCPs)}`);
+        
+        // 尝试获取工具，如果失败则直接使用默认列表
+        try {
+          const allTools = await this.mcpAdapter.getAllTools();
+          if (allTools.length === 0) {
+            logger.warn(`【MCP调试】HTTPMCPAdapter未找到任何工具，使用默认MCP列表 AVAILABLE_MCPS`);
+            return AVAILABLE_MCPS;
+          }
+        } catch (error) {
+          logger.warn(`【MCP调试】HTTPMCPAdapter获取工具失败，使用默认MCP列表 AVAILABLE_MCPS: ${error}`);
+          return AVAILABLE_MCPS;
+        }
+      } else if (this.mcpAdapter instanceof SimpleMCPAdapter) {
+        // 如果是SimpleMCPAdapter，使用其特有的方法
+        logger.info(`【MCP调试】使用SimpleMCPAdapter获取已连接MCP`);
+        connectedMCPs = this.mcpAdapter.getConnectedMCPs();
+        logger.info(`【MCP调试】SimpleMCPAdapter返回的已连接MCP: ${JSON.stringify(connectedMCPs)}`);
+      } else if (this.mcpAdapter instanceof OfficialMCPAdapter) {
+        // 如果是OfficialMCPAdapter，获取其信息
+        logger.info(`【MCP调试】使用OfficialMCPAdapter获取已连接MCP`);
+        const adapterInfo = this.mcpAdapter.getAdapterInfo();
+        connectedMCPs = adapterInfo.connectedMcps;
+        logger.info(`【MCP调试】OfficialMCPAdapter返回的已连接MCP: ${JSON.stringify(connectedMCPs)}`);
+      } else {
+        // 否则使用MCPManager
+        logger.info(`【MCP调试】使用MCPManager获取已连接MCP`);
+        connectedMCPs = this.mcpManager.getConnectedMCPs();
+        logger.info(`【MCP调试】MCPManager返回的已连接MCP: ${JSON.stringify(connectedMCPs)}`);
+      }
+      
       const result: MCPInfo[] = [];
       
       for (const mcp of connectedMCPs) {
         try {
+          logger.info(`【MCP调试】开始获取MCP工具信息 [MCP: ${mcp.name}]`);
           // 获取该MCP的所有工具
-          const mcpTools = await this.mcpManager.getTools(mcp.name);
+          let mcpTools: any[] = [];
+          
+          if (this.mcpAdapter instanceof HTTPMCPAdapter) {
+            // 使用HTTPMCPAdapter的getAllTools或getToolsFromService方法
+            logger.info(`【MCP调试】使用HTTPMCPAdapter获取MCP工具 [MCP: ${mcp.name}]`);
+            try {
+              // 尝试使用私有方法getToolsFromService
+              const serviceEndpoint = (this.mcpAdapter as any).serviceEndpoints.get(mcp.name);
+              if (serviceEndpoint) {
+                mcpTools = await (this.mcpAdapter as any).getToolsFromService(mcp.name, serviceEndpoint);
+              } else {
+                // 如果找不到特定服务，尝试获取所有工具
+                mcpTools = await this.mcpAdapter.getAllTools();
+                // 过滤出属于当前MCP的工具
+                mcpTools = mcpTools.filter(tool => tool.name.startsWith(mcp.name));
+              }
+            } catch (e) {
+              // 如果上述方法失败，尝试获取所有工具
+              mcpTools = await this.mcpAdapter.getAllTools();
+            }
+            logger.info(`【MCP调试】HTTPMCPAdapter返回的工具数量: ${mcpTools.length} [MCP: ${mcp.name}]`);
+          } else if (this.mcpAdapter instanceof SimpleMCPAdapter) {
+            // 使用SimpleMCPAdapter的特有方法
+            logger.info(`【MCP调试】使用SimpleMCPAdapter获取MCP工具 [MCP: ${mcp.name}]`);
+            mcpTools = await this.mcpAdapter.getMCPTools(mcp.name);
+            logger.info(`【MCP调试】SimpleMCPAdapter返回的工具数量: ${mcpTools.length} [MCP: ${mcp.name}]`);
+          } else {
+            // 否则使用MCPManager
+            logger.info(`【MCP调试】使用MCPManager获取MCP工具 [MCP: ${mcp.name}]`);
+            mcpTools = await this.mcpManager.getTools(mcp.name);
+            logger.info(`【MCP调试】MCPManager返回的工具数量: ${mcpTools.length} [MCP: ${mcp.name}]`);
+          }
           
           // 获取工具能力列表
           const capabilities = mcpTools.map(tool => 
@@ -840,19 +987,24 @@ ${deliverables.join('\n')}
             authRequired,
             authFields: authRequired ? authFields : undefined
           });
+          
+          logger.info(`【MCP调试】成功添加MCP信息 [MCP: ${mcp.name}, 工具数量: ${mcpTools.length}, 需要授权: ${authRequired}]`);
         } catch (error) {
-          logger.error(`获取MCP工具信息失败 [${mcp.name}]:`, error);
+          logger.error(`【MCP调试】获取MCP工具信息失败 [${mcp.name}]:`, error);
         }
       }
       
       // 如果没有找到任何MCP，使用默认列表(以确保系统能正常工作)
       if (result.length === 0) {
+        logger.warn(`【MCP调试】未找到任何已连接的MCP，使用默认MCP列表 AVAILABLE_MCPS`);
         return AVAILABLE_MCPS;
       }
       
+      logger.info(`【MCP调试】成功获取可用MCP列表，共${result.length}个MCP: ${JSON.stringify(result)}`);
       return result;
     } catch (error) {
-      logger.error('获取可用MCP列表失败:', error);
+      logger.error(`【MCP调试】获取可用MCP列表失败:`, error);
+      logger.warn(`【MCP调试】使用默认MCP列表作为备选方案`);
       return AVAILABLE_MCPS; // 失败时返回默认列表
     }
   }

@@ -9,6 +9,7 @@ import { TaskAnalysisService } from '../services/llmTasks/taskAnalysisService.js
 import { MCPAlternativeService } from '../services/mcpAlternativeService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
 import { MCPManager } from '../services/mcpManager.js';
+import { SimpleMCPAdapter } from '../services/simpleMcpAdapter.js';
 import { AVAILABLE_MCPS } from '../services/llmTasks/taskAnalysisService.js';
 
 const router = Router();
@@ -16,10 +17,44 @@ const router = Router();
 // 创建服务实例
 const taskService = getTaskService();
 const mcpManager = new MCPManager();
+
+// 根据环境选择适当的MCP适配器
+const adapterType = process.env.MCP_ADAPTER_TYPE || 'simple';
+let mcpAdapter;
+
+if (adapterType === 'simple') {
+  // 使用SimpleMCPAdapter，它会根据环境自动选择stdio或HTTP模式
+  mcpAdapter = new SimpleMCPAdapter();
+  logger.info('Task路由使用SimpleMCPAdapter，自动选择适当模式');
+} else {
+  // 使用传统的MCPManager
+  mcpAdapter = null;
+  logger.info('Task路由使用传统的MCPManager');
+}
+
 const mcpAuthService = new MCPAuthService(mcpManager);
 const taskAnalysisService = new TaskAnalysisService(mcpManager);
 const mcpAlternativeService = new MCPAlternativeService(AVAILABLE_MCPS);
 const taskExecutorService = new TaskExecutorService(mcpManager, mcpAuthService);
+
+// 如果使用SimpleMCPAdapter，预先连接常用MCP
+if (mcpAdapter instanceof SimpleMCPAdapter) {
+  // 在应用启动时连接常用MCP
+  (async () => {
+    try {
+      // 使用Node.js内置模块作为MCP工具的命令
+      // 这些命令在大多数系统上都存在，可以作为模拟MCP使用
+      await mcpAdapter.connectMCP('GitHubTool', 'node', ['-e', 'console.log(JSON.stringify({name:"GitHubTool"}))']);
+      await mcpAdapter.connectMCP('GoogleSearchTool', 'node', ['-e', 'console.log(JSON.stringify({name:"GoogleSearchTool"}))']);
+      await mcpAdapter.connectMCP('FileSystemTool', 'node', ['-e', 'console.log(JSON.stringify({name:"FileSystemTool"}))']);
+      await mcpAdapter.connectMCP('WebBrowserTool', 'node', ['-e', 'console.log(JSON.stringify({name:"WebBrowserTool"}))']);
+      
+      logger.info('预连接常用MCP成功');
+    } catch (error) {
+      logger.error('预连接MCP失败:', error);
+    }
+  })();
+}
 
 // 验证请求内容的Schema
 const generateTitleSchema = z.object({
@@ -87,12 +122,77 @@ router.post('/title', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 创建任务
- * POST /api/task
+ * 创建或更新任务
+ * POST /api/task[/:id]
  */
-router.post('/', optionalAuth, async (req: Request, res: Response) => {
+router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => {
   try {
-
+    const taskId = req.params.id;
+    
+    // 如果提供了任务ID，则是更新操作
+    if (taskId) {
+      // 获取现有任务
+      const existingTask = await taskService.getTaskById(taskId);
+      
+      if (!existingTask) {
+        return res.status(404).json({
+          success: false,
+          error: 'Not Found',
+          message: '任务不存在'
+        });
+      }
+      
+      // 从URL查询参数获取userId或使用req.user.id
+      const userId = req.user?.id || req.body.userId;
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        });
+      }
+      
+      // 确保用户只能更新自己的任务
+      if (existingTask.userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: '无权更新该任务'
+        });
+      }
+      
+      // 更新任务
+      const updateData = {
+        ...req.body
+      };
+      
+      // 如果提供了新的标题，更新标题
+      if (req.body.title) {
+        updateData.title = req.body.title;
+      }
+      
+      // 如果提供了新的内容，更新内容
+      if (req.body.content) {
+        updateData.content = req.body.content;
+      }
+      
+      // 如果提供了MCP工作流，更新工作流
+      if (req.body.mcpWorkflow) {
+        updateData.mcpWorkflow = req.body.mcpWorkflow;
+      }
+      
+      // 更新任务
+      const updatedTask = await taskService.updateTask(taskId, updateData);
+      
+      return res.json({
+        success: true,
+        data: {
+          task: updatedTask
+        }
+      });
+    } else {
+      // 创建新任务
     const validationResult = createTaskSchema.safeParse(req.body);
     if (!validationResult.success) {
       return res.status(400).json({
@@ -108,31 +208,32 @@ router.post('/', optionalAuth, async (req: Request, res: Response) => {
     // 如果未提供标题，使用LLM生成
     const taskTitle = title || await titleGeneratorService.generateTitle(content);
 
-    // 创建任务 - 如果req.user不存在，则使用请求体中的userId
-    const userId = req.user?.id || req.body.userId;
-    
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
-      });
-    }
+      // 创建任务 - 如果req.user不存在，则使用请求体中的userId
+      const userId = req.user?.id || req.body.userId;
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
+        });
+      }
 
     const task = await taskService.createTask({
-      userId,
+        userId,
       title: taskTitle,
       content
     });
 
-    res.json({
+      return res.json({
       success: true,
       data: {
         task
       }
     });
+    }
   } catch (error) {
-    logger.error('创建任务错误:', error);
+    logger.error('创建或更新任务错误:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -276,22 +377,121 @@ router.post('/:id/analyze', optionalAuth, async (req: Request, res: Response) =>
       });
     }
     
-    // 执行任务分析（异步处理）
-    const analysisStarted = await taskAnalysisService.analyzeTask(taskId);
+    // 更新任务状态为处理中
+    await taskService.updateTask(taskId, { status: 'in_progress' });
     
-    if (!analysisStarted) {
-      return res.status(500).json({
-        success: false,
-        error: 'Internal Server Error',
-        message: '任务分析启动失败'
-      });
-    }
+    // 执行任务分析（同步处理）
+    const startTime = Date.now();
     
+    // 步骤1: 分析任务需求
+    const requirementsResult = await taskAnalysisService.analyzeRequirements(task.content);
+    
+    // 记录步骤1结果
+    await taskService.createTaskStep({
+      taskId,
+      stepType: 'analysis',
+      title: '分析任务需求',
+      content: requirementsResult.content,
+      reasoning: requirementsResult.reasoning,
+      reasoningTime: Date.now() - startTime,
+      orderIndex: 1
+    });
+    
+    // 步骤2: 识别最相关的MCP
+    const mcpStartTime = Date.now();
+    const mcpResult = await taskAnalysisService.identifyRelevantMCPs(
+      task.content, 
+      requirementsResult.content
+    );
+    
+    // 记录步骤2结果
+    await taskService.createTaskStep({
+      taskId,
+      stepType: 'mcp_selection',
+      title: '识别最相关的MCP工具',
+      content: mcpResult.content,
+      reasoning: mcpResult.reasoning,
+      reasoningTime: Date.now() - mcpStartTime,
+      orderIndex: 2
+    });
+    
+    // 步骤3: 确认可交付内容
+    const deliverablesStartTime = Date.now();
+    const deliverablesResult = await taskAnalysisService.confirmDeliverables(
+      task.content,
+      requirementsResult.content,
+      mcpResult.recommendedMCPs
+    );
+    
+    // 记录步骤3结果
+    await taskService.createTaskStep({
+      taskId,
+      stepType: 'deliverables',
+      title: '确认可交付内容',
+      content: deliverablesResult.content,
+      reasoning: deliverablesResult.reasoning,
+      reasoningTime: Date.now() - deliverablesStartTime,
+      orderIndex: 3
+    });
+    
+    // 步骤4: 构建MCP工作流
+    const workflowStartTime = Date.now();
+    const workflowResult = await taskAnalysisService.buildMCPWorkflow(
+      task.content,
+      requirementsResult.content,
+      mcpResult.recommendedMCPs,
+      deliverablesResult.canBeFulfilled,
+      deliverablesResult.deliverables
+    );
+    
+    // 记录步骤4结果
+    await taskService.createTaskStep({
+      taskId,
+      stepType: 'workflow',
+      title: '构建MCP工作流',
+      content: workflowResult.content,
+      reasoning: workflowResult.reasoning,
+      reasoningTime: Date.now() - workflowStartTime,
+      orderIndex: 4
+    });
+    
+    // 创建MCP工作流信息
+    const mcpWorkflow = {
+      mcps: mcpResult.recommendedMCPs.map(mcp => ({
+        name: mcp.name,
+        description: mcp.description,
+        authRequired: mcp.authRequired,
+        authFields: mcp.authFields || [], // 确保返回认证字段
+        capabilities: mcp.capabilities || [] // 返回工具能力
+      })),
+      workflow: workflowResult.workflow
+    };
+    
+    // 更新任务的MCP工作流信息
+    await taskService.updateTask(taskId, { mcpWorkflow });
+    
+    // 返回分析结果
     res.json({
       success: true,
       data: {
-        message: '任务分析已启动',
-        taskId
+        message: '任务分析完成',
+        taskId,
+        analysis: {
+          requirements: requirementsResult,
+          mcps: mcpResult.recommendedMCPs.map(mcp => ({
+            name: mcp.name,
+            description: mcp.description,
+            authRequired: mcp.authRequired,
+            authFields: mcp.authFields || [],
+            capabilities: mcp.capabilities || []
+          })),
+          deliverables: {
+            canBeFulfilled: deliverablesResult.canBeFulfilled,
+            items: deliverablesResult.deliverables
+          },
+          workflow: workflowResult.workflow
+        },
+        mcpWorkflow
       }
     });
   } catch (error) {
@@ -533,7 +733,9 @@ router.post('/:id/execute', optionalAuth, async (req: Request, res: Response) =>
       });
     }
     
-    // 检查是否所有需要授权的MCP都已验证
+    // 检查是否所有需要授权的MCP都已验证，除非skipAuthCheck参数为true（测试用途）
+    const skipAuthCheck = req.body.skipAuthCheck === true;
+    if (!skipAuthCheck) {
     const allVerified = await mcpAuthService.checkAllMCPsVerified(taskId);
     
     if (!allVerified) {
@@ -542,6 +744,9 @@ router.post('/:id/execute', optionalAuth, async (req: Request, res: Response) =>
         error: 'Bad Request',
         message: '请先验证所有必要的MCP授权'
       });
+      }
+    } else {
+      logger.info(`跳过MCP授权检查 [任务ID: ${taskId}, 测试模式]`);
     }
     
     // 开始执行任务（异步处理）

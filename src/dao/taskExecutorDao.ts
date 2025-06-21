@@ -56,6 +56,9 @@ export class TaskExecutorDao {
     result: any
   ): Promise<boolean> {
     try {
+      // 确保result是一个对象，而不是字符串
+      const resultJson = typeof result === 'string' ? JSON.parse(result) : result;
+      
       await db.query(
         `
         UPDATE tasks
@@ -63,7 +66,7 @@ export class TaskExecutorDao {
             completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
         WHERE id = $3
         `,
-        [status, JSON.stringify(result), taskId]
+        [status, resultJson, taskId]
       );
       
       return true;
