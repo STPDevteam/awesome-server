@@ -415,6 +415,120 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS awe_payments CASCADE');
         console.log('✅ Dropped awe_payments table');
       }
+    },
+    {
+      version: 11,
+      name: 'create_conversations_and_messages_tables',
+      up: async () => {
+        // 创建对话表
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS conversations (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title VARCHAR(255) NOT NULL,
+            last_message_content TEXT,
+            last_message_at TIMESTAMP WITH TIME ZONE,
+            task_count INTEGER NOT NULL DEFAULT 0,
+            message_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_conversations_user_id 
+          ON conversations(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at 
+          ON conversations(last_message_at) 
+          WHERE last_message_at IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_conversations_created_at 
+          ON conversations(created_at)
+        `);
+
+        // 创建消息表
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS messages (
+            id VARCHAR(255) PRIMARY KEY,
+            conversation_id VARCHAR(255) NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+            content TEXT NOT NULL,
+            type VARCHAR(20) NOT NULL CHECK (type IN ('user', 'assistant', 'system')),
+            intent VARCHAR(20) CHECK (intent IN ('chat', 'task', 'unknown')),
+            task_id VARCHAR(255) REFERENCES tasks(id) ON DELETE SET NULL,
+            metadata JSONB,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_conversation_id 
+          ON messages(conversation_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_task_id 
+          ON messages(task_id) 
+          WHERE task_id IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_type 
+          ON messages(type)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_intent 
+          ON messages(intent) 
+          WHERE intent IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_created_at 
+          ON messages(created_at)
+        `);
+
+        console.log('✅ Created conversations and messages tables');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS messages CASCADE');
+        await db.query('DROP TABLE IF EXISTS conversations CASCADE');
+        console.log('✅ Dropped conversations and messages tables');
+      }
+    },
+    {
+      version: 12,
+      name: 'add_conversation_id_to_tasks',
+      up: async () => {
+        // 向任务表添加对话ID字段
+        await db.query(`
+          ALTER TABLE tasks
+          ADD COLUMN conversation_id VARCHAR(255) REFERENCES conversations(id) ON DELETE SET NULL
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_conversation_id 
+          ON tasks(conversation_id)
+          WHERE conversation_id IS NOT NULL
+        `);
+
+        console.log('✅ Added conversation_id column to tasks table');
+      },
+      down: async () => {
+        // 删除外键约束和列
+        await db.query(`
+          ALTER TABLE tasks
+          DROP COLUMN IF EXISTS conversation_id
+        `);
+        console.log('✅ Dropped conversation_id column from tasks table');
+      }
     }
   ];
 

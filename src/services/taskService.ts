@@ -2,6 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger.js';
 import { taskDao, TaskDbRow, TaskStepDbRow } from '../dao/taskDao.js';
 import { Task, TaskStatus, TaskStep, TaskStepType } from '../models/task.js';
+import { messageDao } from '../dao/messageDao.js';
+import { conversationDao } from '../dao/conversationDao.js';
+import { MessageIntent, MessageType } from '../models/conversation.js';
 
 // 任务服务 - 负责业务逻辑
 export class TaskService {
@@ -10,18 +13,55 @@ export class TaskService {
     userId: string;
     title: string;
     content: string;
+    conversationId?: string; // 关联的对话ID
   }): Promise<Task> {
     try {
-      // 调用DAO层创建任务
-      const taskRecord = await taskDao.createTask(data);
+      // 调用DAO层创建任务，直接传入conversationId
+      const taskRecord = await taskDao.createTask({
+        userId: data.userId,
+        title: data.title,
+        content: data.content,
+        conversationId: data.conversationId
+      });
       
       // 将数据库记录映射为应用层实体
       const task = this.mapTaskFromDb(taskRecord);
       logger.info(`任务创建成功: ${task.id}`);
+      
+      // 如果提供了conversationId，创建系统消息通知
+      if (data.conversationId) {
+        await this.addTaskNotificationToConversation(task.id, data.conversationId, task.title);
+        // 增加对话任务计数
+        await conversationDao.incrementTaskCount(data.conversationId);
+      }
+      
       return task;
     } catch (error) {
       logger.error('创建任务失败:', error);
       throw error;
+    }
+  }
+
+  // 添加任务通知到对话（内部方法）
+  private async addTaskNotificationToConversation(
+    taskId: string, 
+    conversationId: string, 
+    taskTitle: string
+  ): Promise<void> {
+    try {
+      // 创建系统消息，通知任务已创建
+      await messageDao.createMessage({
+        conversationId,
+        content: `已创建任务: ${taskTitle}`,
+        type: MessageType.SYSTEM,
+        intent: MessageIntent.TASK,
+        taskId
+      });
+      
+      logger.info(`已添加任务通知到对话 [任务ID: ${taskId}, 对话ID: ${conversationId}]`);
+    } catch (error) {
+      logger.error(`添加任务通知到对话失败 [任务ID: ${taskId}, 对话ID: ${conversationId}]:`, error);
+      // 非关键错误，不抛出异常
     }
   }
 
@@ -67,6 +107,10 @@ export class TaskService {
       if (updates.result !== undefined) {
         daoUpdates.result = updates.result;
       }
+      
+      if (updates.conversationId !== undefined) {
+        daoUpdates.conversationId = updates.conversationId;
+      }
 
       // 调用DAO层更新任务
       const updatedTaskRecord = await taskDao.updateTask(taskId, daoUpdates);
@@ -91,6 +135,7 @@ export class TaskService {
     offset?: number;
     sortBy?: string;
     sortDir?: 'asc' | 'desc';
+    conversationId?: string; // 新增：按对话过滤
   }): Promise<{ tasks: Task[]; total: number }> {
     try {
       // 调用DAO层获取任务列表
@@ -100,6 +145,17 @@ export class TaskService {
       return { tasks, total: result.total };
     } catch (error) {
       logger.error(`获取用户任务列表失败 [UserID: ${userId}]:`, error);
+      throw error;
+    }
+  }
+
+  // 获取对话关联的任务
+  async getConversationTasks(conversationId: string): Promise<Task[]> {
+    try {
+      const taskRecords = await taskDao.getConversationTasks(conversationId);
+      return taskRecords.map(record => this.mapTaskFromDb(record));
+    } catch (error) {
+      logger.error(`获取对话关联任务失败 [对话ID: ${conversationId}]:`, error);
       throw error;
     }
   }
@@ -118,6 +174,7 @@ export class TaskService {
       status: row.status as TaskStatus,
       mcpWorkflow: row.mcp_workflow ? row.mcp_workflow : undefined,
       result: row.result ? row.result : undefined,
+      conversationId: row.conversation_id || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined

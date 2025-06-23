@@ -32,6 +32,7 @@ export interface Task {
   status: TaskStatus;
   mcpWorkflow?: MCPWorkflow;
   result?: any;
+  conversationId?: string;  // 任务创建来源的对话ID，一个任务只能来自一个对话
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;

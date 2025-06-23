@@ -12,6 +12,7 @@ import { HTTPMCPAdapter } from '../services/httpMcpAdapter.js';
 import { spawn } from 'child_process';
 import { getPredefinedMCP } from '../services/predefinedMCPs.js';
 import { MCPService } from '../services/mcpManager.js';
+import { getConversationService } from '../services/conversationService.js';
 
 const router = Router();
 
@@ -45,7 +46,8 @@ const generateTitleSchema = z.object({
 const createTaskSchema = z.object({
   // todo 最大要限制多少
   content: z.string().min(1, '任务内容至少需要1个字符'),
-  title: z.string().optional() // 标题可选，如果未提供将使用LLM生成
+  title: z.string().optional(), // 标题可选，如果未提供将使用LLM生成
+  conversationId: z.string().optional() // 关联到对话
 });
 
 // MCP验证Schema
@@ -374,22 +376,22 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
       });
     } else {
       // 创建新任务
-    const validationResult = createTaskSchema.safeParse(req.body);
-    if (!validationResult.success) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: '无效的请求参数',
-        details: validationResult.error.errors
-      });
-    }
+      const validationResult = createTaskSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: '无效的请求参数',
+          details: validationResult.error.errors
+        });
+      }
 
-    const { content, title } = validationResult.data;
+      const { content, title, conversationId } = validationResult.data;
 
-    // 如果未提供标题，并且有OPENAI_API_KEY，才使用LLM生成
-    const taskTitle = (!title && process.env.OPENAI_API_KEY) 
-      ? await titleGeneratorService.generateTitle(content)
-      : title || content.substring(0, 30); // 如果没有提供标题也没有key，使用内容作为标题
+      // 如果未提供标题，并且有OPENAI_API_KEY，才使用LLM生成
+      const taskTitle = (!title && process.env.OPENAI_API_KEY) 
+        ? await titleGeneratorService.generateTitle(content)
+        : title || content.substring(0, 30); // 如果没有提供标题也没有key，使用内容作为标题
 
       // 创建任务 - 如果req.user不存在，则使用请求体中的userId
       const userId = req.user?.id || req.body.userId;
@@ -402,18 +404,28 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
         });
       }
 
-    const task = await taskService.createTask({
+      const task = await taskService.createTask({
         userId,
-      title: taskTitle,
-      content
-    });
+        title: taskTitle,
+        content,
+        conversationId // 关联到对话
+      });
+
+      // 如果是从对话创建的任务，返回更多信息
+      const responseData = conversationId 
+        ? {
+            task,
+            conversationId,
+            message: '已成功创建任务并关联到对话'
+          }
+        : {
+            task
+          };
 
       return res.json({
-      success: true,
-      data: {
-        task
-      }
-    });
+        success: true,
+        data: responseData
+      });
     }
   } catch (error) {
     logger.error('创建或更新任务错误:', error);
@@ -758,13 +770,50 @@ router.post('/:id/execute', async (req, res) => {
     const taskId = req.params.id;
     const taskExecutorService = req.app.get('taskExecutorService');
     
-    // 异步执行，立即返回响应
-    taskExecutorService.executeTask(taskId, { skipAuthCheck: true });
+    // 获取用户ID（可选认证）
+    const userId = req.user?.id || req.body.userId;
     
-    res.json({ success: true, message: '任务执行已异步启动' });
+    // 验证任务归属权
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: '任务不存在'
+      });
+    }
+    
+    if (userId && task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: '无权执行该任务'
+      });
+    }
+    
+    // 执行任务并获取详细结果
+    const executionResult = await taskExecutorService.executeTask(taskId, { skipAuthCheck: true });
+    
+    // 返回详细执行结果
+    res.json({
+      success: executionResult.success,
+      data: {
+        taskId: taskId,
+        status: executionResult.status,
+        summary: executionResult.summary,
+        message: executionResult.success ? '任务执行成功' : '任务执行失败',
+        steps: executionResult.steps,
+        error: executionResult.error
+      }
+    });
   } catch (error) {
     logger.error(`执行任务路由错误 [任务ID: ${req.params.id}]:`, error);
-    res.status(500).json({ success: false, error: 'Internal Server Error', message: '启动任务执行失败' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal Server Error', 
+      message: '启动任务执行失败',
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
@@ -1018,6 +1067,77 @@ router.post('/execute-playwright-search', async (req, res) => {
     res.status(500).json({ 
       error: '百度搜索执行失败', 
       details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+/**
+ * 获取与任务关联的对话
+ * GET /api/task/:id/conversation
+ */
+router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const task = await taskService.getTaskById(taskId);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: '任务不存在'
+      });
+    }
+    
+    // 从URL查询参数获取userId或使用req.user.id
+    const userId = req.user?.id || req.query.userId as string;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+      });
+    }
+    
+    // 确保用户只能访问自己的任务
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: '无权访问该任务'
+      });
+    }
+    
+    // 检查任务是否关联到对话
+    if (!task.conversationId) {
+      return res.json({
+        success: true,
+        data: {
+          taskId,
+          conversation: null,
+          message: '此任务未关联到任何对话'
+        }
+      });
+    }
+    
+    // 获取关联的对话
+    const conversationService = req.app.get('conversationService') || 
+      getConversationService(req.app.get('mcpToolAdapter'), taskExecutorService);
+    const conversation = await conversationService.getConversation(task.conversationId);
+    
+    res.json({
+      success: true,
+      data: {
+        taskId,
+        conversation
+      }
+    });
+  } catch (error) {
+    logger.error(`获取任务相关对话错误 [任务ID: ${req.params.id}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: '服务器内部错误'
     });
   }
 });

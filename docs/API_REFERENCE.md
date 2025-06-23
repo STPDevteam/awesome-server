@@ -6,6 +6,7 @@
 
 - [通用规范](#通用规范)
 - [认证接口](#认证接口)
+- [会话管理接口](#会话管理接口)
 - [任务管理接口](#任务管理接口)
 - [任务分析接口](#任务分析接口)
 - [MCP授权接口](#MCP授权接口)
@@ -184,6 +185,257 @@ POST /auth/refresh
 }
 ```
 
+## 会话管理接口
+
+### 创建新会话
+
+```
+POST /conversation
+```
+
+**请求体**
+```json
+{
+  "title": "会话标题（可选）"
+}
+```
+
+**响应**
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "会话ID",
+      "userId": "用户ID",
+      "title": "会话标题",
+      "taskCount": 0,
+      "messageCount": 0,
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间"
+    }
+  }
+}
+```
+
+### 获取会话列表
+
+```
+GET /conversation
+```
+
+**请求参数**
+```
+limit: 每页数量，默认10
+offset: 起始偏移量，默认0
+sortBy: 排序字段，默认last_message_at
+sortDir: 排序方向，asc升序/desc降序，默认desc
+userId: 用户ID（使用URL参数时）
+```
+
+**响应**
+```json
+{
+  "success": true,
+  "data": {
+    "conversations": [
+      {
+        "id": "会话ID",
+        "userId": "用户ID",
+        "title": "会话标题",
+        "lastMessageContent": "最后一条消息内容",
+        "lastMessageAt": "最后一条消息时间",
+        "taskCount": 1,
+        "messageCount": 5,
+        "createdAt": "创建时间",
+        "updatedAt": "更新时间"
+      },
+      // 更多会话...
+    ],
+    "total": 100 // 总会话数
+  }
+}
+```
+
+### 获取会话详情
+
+```
+GET /conversation/:id
+```
+
+**请求参数**
+```
+id: 会话ID（URL路径参数）
+userId: 用户ID（使用URL参数时）
+```
+
+**响应**
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "会话ID",
+      "userId": "用户ID",
+      "title": "会话标题",
+      "lastMessageContent": "最后一条消息内容",
+      "lastMessageAt": "最后一条消息时间",
+      "taskCount": 1,
+      "messageCount": 5,
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间"
+    },
+    "messages": [
+      {
+        "id": "消息ID",
+        "conversationId": "会话ID",
+        "content": "消息内容",
+        "type": "user", // user, assistant 或 system
+        "intent": "chat", // chat, task 或 unknown
+        "taskId": "关联的任务ID（如果有）",
+        "createdAt": "创建时间"
+      },
+      // 更多消息...
+    ]
+  }
+}
+```
+
+### 发送消息
+
+```
+POST /conversation/:id/message
+```
+
+**请求参数**
+```
+id: 会话ID（URL路径参数）
+```
+
+**请求体**
+```json
+{
+  "content": "消息内容",
+  "userId": "用户ID（非JWT认证时需要）"
+}
+```
+
+**响应**
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": {
+      "id": "用户消息ID",
+      "conversationId": "会话ID",
+      "content": "消息内容",
+      "type": "user",
+      "intent": "chat", // 或 "task"
+      "createdAt": "创建时间"
+    },
+    "assistantResponse": {
+      "id": "助手响应ID",
+      "conversationId": "会话ID",
+      "content": "助手响应内容",
+      "type": "assistant",
+      "intent": "chat", // 或 "task"
+      "taskId": "关联的任务ID（如果有）",
+      "createdAt": "创建时间"
+    },
+    "intent": "chat", // 或 "task"
+    "taskId": "关联的任务ID（如果意图为task）"
+  }
+}
+```
+
+### 流式发送消息
+
+```
+POST /conversation/:id/message/stream
+```
+
+**请求参数**
+```
+id: 会话ID（URL路径参数）
+```
+
+**请求体**
+```json
+{
+  "content": "消息内容",
+  "userId": "用户ID（非JWT认证时需要）"
+}
+```
+
+**响应**
+
+使用Server-Sent Events (SSE)返回流式响应。每个事件以`data: `前缀开始，内容为JSON格式。
+
+事件类型:
+1. `processing_start`: 开始处理消息
+2. `intent_detection`: 意图检测进展和结果
+3. `chat_response`: 聊天响应内容（当意图为chat）
+4. `task_processing`: 任务处理进展（当意图为task）
+5. `processing_complete`: 处理完成
+6. `error`: 发生错误
+7. `[DONE]`: 标记流结束
+
+示例:
+```
+data: {"event":"processing_start","data":{"messageId":"msg123"}}
+
+data: {"event":"intent_detection","data":{"status":"processing"}}
+
+data: {"event":"intent_detection","data":{"status":"completed","intent":"chat","confidence":0.95,"explanation":"用户在询问一个问题，没有明确要求执行任务"}}
+
+data: {"event":"chat_response","data":{"content":"这是"}}
+
+data: {"event":"chat_response","data":{"content":"一个"}}
+
+data: {"event":"chat_response","data":{"content":"流式响应"}}
+
+data: {"event":"processing_complete","data":{"messageId":"msg123","responseId":"resp456","intent":"chat"}}
+
+data: [DONE]
+```
+
+### 获取会话关联的任务
+
+```
+GET /conversation/:id/tasks
+```
+
+**请求参数**
+```
+id: 会话ID（URL路径参数）
+userId: 用户ID（使用URL参数时）
+```
+
+**响应**
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "会话ID",
+    "tasks": [
+      {
+        "id": "任务ID",
+        "userId": "用户ID",
+        "title": "任务标题",
+        "content": "任务内容",
+        "status": "created", // 或 "in_progress", "completed", "failed"
+        "conversationId": "会话ID",
+        "createdAt": "创建时间",
+        "updatedAt": "更新时间",
+        "completedAt": "完成时间（如果已完成）"
+      },
+      // 更多任务...
+    ],
+    "count": 3 // 任务数量
+  }
+}
+```
+
 ## 任务管理接口
 
 ### 创建任务
@@ -196,7 +448,8 @@ POST /task
 ```json
 {
   "content": "任务内容",
-  "title": "任务标题（可选）"
+  "title": "任务标题（可选）",
+  "conversationId": "关联的会话ID（可选）"
 }
 ```
 
@@ -211,9 +464,12 @@ POST /task
       "title": "任务标题",
       "content": "任务内容",
       "status": "created",
+      "conversationId": "关联的会话ID（如果有）",
       "createdAt": "创建时间",
       "updatedAt": "更新时间"
-    }
+    },
+    "conversationId": "关联的会话ID（如果是从会话创建的任务）",
+    "message": "已成功创建任务并关联到对话（如果是从会话创建的任务）"
   }
 }
 ```
@@ -306,6 +562,7 @@ GET /task/:id
       "status": "任务状态",
       "mcpWorkflow": "工作流配置（可选）",
       "result": "任务结果（可选）",
+      "conversationId": "关联的会话ID（如果有）",
       "createdAt": "创建时间",
       "updatedAt": "更新时间",
       "completedAt": "完成时间（可选）"
@@ -325,6 +582,40 @@ GET /task/:id
       }
       // 更多步骤...
     ]
+  }
+}
+```
+
+### 获取任务关联的会话
+
+```
+GET /task/:id/conversation
+```
+
+**路径参数**
+- `id`: 任务ID
+
+**查询参数**
+- `userId`: 用户ID（仅本地测试模式使用）
+
+**响应**
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "任务ID",
+    "conversation": {
+      "id": "会话ID",
+      "userId": "用户ID",
+      "title": "会话标题",
+      "lastMessageContent": "最后一条消息内容",
+      "lastMessageAt": "最后一条消息时间",
+      "taskCount": 1,
+      "messageCount": 5,
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间"
+    },
+    "message": "此任务未关联到任何对话（当没有关联会话时）" 
   }
 }
 ```
