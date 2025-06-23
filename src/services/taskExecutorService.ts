@@ -42,10 +42,16 @@ export class TaskExecutorService {
   /**
    * 执行任务工作流
    * @param taskId 任务ID
-   * @returns 是否执行成功
+   * @returns 执行结果对象，包含执行状态和总结信息
    * todo 核心流程，重点思考调试
    */
-  async executeTask(taskId: string, options: { skipAuthCheck?: boolean } = {}): Promise<boolean> {
+  async executeTask(taskId: string, options: { skipAuthCheck?: boolean } = {}): Promise<{
+    success: boolean;
+    summary?: string;
+    status: string;
+    steps?: any[];
+    error?: string;
+  }> {
     try {
       logger.info(`🚀 开始执行任务 [任务ID: ${taskId}]`);
       
@@ -53,7 +59,11 @@ export class TaskExecutorService {
       const task = await taskService.getTaskById(taskId);
       if (!task) {
         logger.error(`❌ 任务不存在 [ID: ${taskId}]`);
-        return false;
+        return {
+          success: false,
+          status: 'failed',
+          error: '任务不存在'
+        };
       }
       
       logger.info(`📋 任务详情: [标题: ${task.title}, 用户ID: ${task.userId}]`);
@@ -66,7 +76,11 @@ export class TaskExecutorService {
           await taskExecutorDao.updateTaskResult(taskId, 'failed', {
             error: '任务执行失败: 请先验证所有必要的MCP授权'
           });
-          return false;
+          return {
+            success: false,
+            status: 'failed',
+            error: '任务执行失败: 请先验证所有必要的MCP授权'
+          };
         }
         logger.info(`✅ 所有MCP授权已验证 [任务ID: ${taskId}]`);
       } else {
@@ -85,7 +99,11 @@ export class TaskExecutorService {
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
           error: '任务执行失败: 没有有效的工作流, 请先调用任务分析接口 /api/task/:id/analyze'
         });
-        return false;
+        return {
+          success: false,
+          status: 'failed',
+          error: '任务执行失败: 没有有效的工作流, 请先调用任务分析接口 /api/task/:id/analyze'
+        };
       }
       
       logger.info(`📊 工作流步骤总数: ${mcpWorkflow.workflow.length} [任务ID: ${taskId}]`);
@@ -175,7 +193,12 @@ export class TaskExecutorService {
       });
       
       logger.info(`任务执行完成 [任务ID: ${taskId}]`);
-      return true;
+      return {
+        success: true,
+        status: 'completed',
+        summary: resultSummary,
+        steps: workflowResults
+      };
     } catch (error) {
       logger.error(`任务执行过程中发生错误 [任务ID: ${taskId}]:`, error);
       
@@ -184,7 +207,11 @@ export class TaskExecutorService {
         error: error instanceof Error ? error.message : String(error)
       });
       
-      return false;
+      return {
+        success: false,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error)
+      };
     }
   }
   
@@ -274,23 +301,49 @@ export class TaskExecutorService {
     try {
       logger.info('生成任务结果摘要');
       
+      // 计算成功和失败步骤数
+      const successSteps = stepResults.filter(step => step.success).length;
+      const failedSteps = stepResults.length - successSteps;
+      
+      // 准备步骤结果详情
+      const stepDetails = stepResults.map(step => {
+        if (step.success) {
+          return `步骤${step.step}: 成功执行 - ${typeof step.result === 'string' && step.result.length > 100 ? 
+            step.result.substring(0, 100) + '...' : step.result}`;
+        } else {
+          return `步骤${step.step}: 执行失败 - ${step.error}`;
+        }
+      }).join('\n');
+      
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位专业的任务总结工作者，你的职责是将复杂的工作流执行结果总结为简洁明了的摘要。
-请根据原始任务需求和执行结果，生成一个全面但简洁的摘要，突出以下几点：
-1. 任务是否成功完成
-2. 主要成果和发现
-3. 如果有任何步骤失败，简要说明失败原因
-4. 整体结论和建议（如适用）
+        new SystemMessage(`你是一位专业的任务总结工作者，你的职责是将复杂的工作流执行结果总结为详细但易于理解的报告。
+请根据原始任务需求和执行结果，生成一个全面的报告，包括以下内容：
 
-请使用清晰、专业的语言，避免技术术语，确保用户容易理解。`),
-        new SystemMessage(`工作流执行结果：${JSON.stringify(stepResults, null, 2)}`),
-        new HumanMessage(taskContent)
+1. 任务执行概述 - 总步骤数、成功步骤数、失败步骤数
+2. 成功完成的操作和获得的结果
+3. 如果有任何步骤失败，详细说明失败原因和影响
+4. 总体任务成果和价值
+5. 对用户的建议（如适用）
+
+请注意，这个总结将直接呈现给用户，应当使用友好的语言和格式，确保用户能够理解任务执行的完整过程和结果。
+避免技术术语，但要保持专业性和准确性。请特别强调任务为用户带来的价值和成果。`),
+        new HumanMessage(`任务内容: ${taskContent}
+
+执行统计:
+- 总步骤数: ${stepResults.length}
+- 成功步骤数: ${successSteps}
+- 失败步骤数: ${failedSteps}
+
+步骤详情:
+${stepDetails}
+
+请针对以上任务执行情况，生成一份完整的执行报告，重点说明这个任务为用户做了什么，达成了哪些具体成果。`)
       ]);
       
       return response.content.toString();
     } catch (error) {
       logger.error('生成结果摘要失败:', error);
-      return '无法生成结果摘要，请查看详细的步骤结果。';
+      return `任务执行完成，共执行了${stepResults.length}个步骤，成功${stepResults.filter(s => s.success).length}个，失败${stepResults.filter(s => !s.success).length}个。请查看详细的步骤结果了解更多信息。`;
     }
   }
 
@@ -506,29 +559,55 @@ export class TaskExecutorService {
     try {
       logger.info('流式生成任务结果摘要');
       
+      // 计算成功和失败步骤数
+      const successSteps = stepResults.filter(step => step.success).length;
+      const failedSteps = stepResults.length - successSteps;
+      
+      // 准备步骤结果详情
+      const stepDetails = stepResults.map(step => {
+        if (step.success) {
+          return `步骤${step.step}: 成功执行 - ${typeof step.result === 'string' && step.result.length > 100 ? 
+            step.result.substring(0, 100) + '...' : step.result}`;
+        } else {
+          return `步骤${step.step}: 执行失败 - ${step.error}`;
+        }
+      }).join('\n');
+      
       // 创建流式LLM实例
       const streamingLlm = new ChatOpenAI({
         openAIApiKey: process.env.OPENAI_API_KEY,
         modelName: process.env.TASK_EXECUTION_MODEL || 'gpt-4o',
         temperature: 0.3,
         streaming: true,
-        configuration: {
-          httpAgent: agent, // ✅ 使用代理关键设置
-        },
+        // configuration: {
+        //   httpAgent: agent, // ✅ 使用代理关键设置
+        // },
       });
       
       // 创建消息
       const messages = [
-        new SystemMessage(`你是一位专业的任务总结工作者，你的职责是将复杂的工作流执行结果总结为简洁明了的摘要。
-请根据原始任务需求和执行结果，生成一个全面但简洁的摘要，突出以下几点：
-1. 任务是否成功完成
-2. 主要成果和发现
-3. 如果有任何步骤失败，简要说明失败原因
-4. 整体结论和建议（如适用）
+        new SystemMessage(`你是一位专业的任务总结工作者，你的职责是将复杂的工作流执行结果总结为详细但易于理解的报告。
+请根据原始任务需求和执行结果，生成一个全面的报告，包括以下内容：
 
-请使用清晰、专业的语言，避免技术术语，确保用户容易理解。`),
-        new SystemMessage(`工作流执行结果：${JSON.stringify(stepResults, null, 2)}`),
-        new HumanMessage(taskContent)
+1. 任务执行概述 - 总步骤数、成功步骤数、失败步骤数
+2. 成功完成的操作和获得的结果
+3. 如果有任何步骤失败，详细说明失败原因和影响
+4. 总体任务成果和价值
+5. 对用户的建议（如适用）
+
+请注意，这个总结将直接呈现给用户，应当使用友好的语言和格式，确保用户能够理解任务执行的完整过程和结果。
+避免技术术语，但要保持专业性和准确性。请特别强调任务为用户带来的价值和成果。`),
+        new HumanMessage(`任务内容: ${taskContent}
+
+执行统计:
+- 总步骤数: ${stepResults.length}
+- 成功步骤数: ${successSteps}
+- 失败步骤数: ${failedSteps}
+
+步骤详情:
+${stepDetails}
+
+请针对以上任务执行情况，生成一份完整的执行报告，重点说明这个任务为用户做了什么，达成了哪些具体成果。`)
       ];
       
       // 获取流
@@ -547,7 +626,7 @@ export class TaskExecutorService {
       }
     } catch (error) {
       logger.error('流式生成结果摘要失败:', error);
-      streamCallback('无法流式生成结果摘要，请查看详细的步骤结果。');
+      streamCallback(`任务执行完成，共执行了${stepResults.length}个步骤，成功${stepResults.filter(s => s.success).length}个，失败${stepResults.filter(s => !s.success).length}个。请查看详细的步骤结果了解更多信息。`);
     }
   }
 } 

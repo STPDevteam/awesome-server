@@ -758,13 +758,50 @@ router.post('/:id/execute', async (req, res) => {
     const taskId = req.params.id;
     const taskExecutorService = req.app.get('taskExecutorService');
     
-    // 异步执行，立即返回响应
-    taskExecutorService.executeTask(taskId, { skipAuthCheck: true });
+    // 获取用户ID（可选认证）
+    const userId = req.user?.id || req.body.userId;
     
-    res.json({ success: true, message: '任务执行已异步启动' });
+    // 验证任务归属权
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: '任务不存在'
+      });
+    }
+    
+    if (userId && task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: '无权执行该任务'
+      });
+    }
+    
+    // 执行任务并获取详细结果
+    const executionResult = await taskExecutorService.executeTask(taskId, { skipAuthCheck: true });
+    
+    // 返回详细执行结果
+    res.json({
+      success: executionResult.success,
+      data: {
+        taskId: taskId,
+        status: executionResult.status,
+        summary: executionResult.summary,
+        message: executionResult.success ? '任务执行成功' : '任务执行失败',
+        steps: executionResult.steps,
+        error: executionResult.error
+      }
+    });
   } catch (error) {
     logger.error(`执行任务路由错误 [任务ID: ${req.params.id}]:`, error);
-    res.status(500).json({ success: false, error: 'Internal Server Error', message: '启动任务执行失败' });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal Server Error', 
+      message: '启动任务执行失败',
+      details: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
