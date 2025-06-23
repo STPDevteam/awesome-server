@@ -12,7 +12,10 @@ export const predefinedMCPs: MCPService[] = [
         command: 'npx',
         args: ['@playwright/mcp@latest'],
         env: {},
-        connected: false
+        connected: false,
+        category: '自动化工具',
+        imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+        githubUrl: 'https://github.com/microsoft/playwright'
     }
 ];
 
@@ -22,9 +25,9 @@ export const predefinedMCPs: MCPService[] = [
  * @returns MCP服务配置
  */
 export function getPredefinedMCP(name: string): MCPService | undefined {
-    if (name === 'playwright') {
+    if (name === 'playwright' || name === 'playwright-mcp-service') {
         // 记录更多调试信息
-        logger.info(`【MCP调试】获取Playwright MCP配置`);
+        logger.info(`【MCP调试】获取Playwright MCP配置，请求名称: ${name}`);
         
         // 使用npx直接运行，这在Docker中应该更可靠
         return {
@@ -33,7 +36,10 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
             command: 'npx',
             args: ['@playwright/mcp@latest'],
             env: {},
-            connected: false
+            connected: false,
+            category: '自动化工具',
+            imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+            githubUrl: 'https://github.com/microsoft/playwright'
         };
     }
     

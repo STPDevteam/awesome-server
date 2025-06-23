@@ -3,6 +3,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { logger } from '../utils/logger.js';
 import { MCPInfo } from '../models/mcp.js';
 import { mcpAlternativeDao } from '../dao/mcpAlternativeDao.js';
+import { mcpInfoService } from './mcpInfoService.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
@@ -28,8 +29,9 @@ export class MCPAlternativeService {
   // 可用的MCP列表
   private availableMCPs: MCPInfo[];
   
-  constructor(availableMCPs: MCPInfo[]) {
-    this.availableMCPs = availableMCPs;
+  constructor() {
+    // 使用mcpInfoService中的数据
+    this.availableMCPs = mcpInfoService.getAllMCPs();
     this.llm = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.MCP_ALTERNATIVE_MODEL || 'gpt-4o',
@@ -38,6 +40,16 @@ export class MCPAlternativeService {
         httpAgent: agent, // ✅ 使用代理关键设置
       },
     });
+    
+    logger.info(`MCPAlternativeService 已初始化，加载了 ${this.availableMCPs.length} 个可用MCP`);
+  }
+  
+  /**
+   * 获取最新的MCP列表
+   * 确保每次都使用最新的MCP信息
+   */
+  private getAvailableMCPs(): MCPInfo[] {
+    return mcpInfoService.getAllMCPs();
   }
   
   /**
@@ -50,21 +62,34 @@ export class MCPAlternativeService {
     try {
       logger.info(`获取MCP替代选项 [MCP: ${mcpName}]`);
       
+      // 获取最新的MCP列表
+      const availableMCPs = this.getAvailableMCPs();
+      
+      // 硬编码playwright-mcp-service的替代选项
+      if (mcpName === 'playwright-mcp-service' || mcpName === 'playwright') {
+        logger.info(`返回playwright的硬编码替代选项`);
+        // 返回WebBrowserTool作为替代
+        const webBrowserTool = mcpInfoService.getMCPById('WebBrowserTool');
+        return webBrowserTool ? [webBrowserTool] : [];
+      }
+      
       // 先从预定义映射中获取可能的替代项
       const predefinedAlternatives = this.alternativeMap[mcpName] || [];
       
       // 获取这些替代项的详细信息
-      const alternativeMCPs = this.availableMCPs.filter(mcp => 
+      const alternativeMCPs = availableMCPs.filter(mcp => 
         predefinedAlternatives.includes(mcp.name)
       );
       
-      // 如果没有预定义的替代项，使用LLM推荐
+      // 跳过LLM调用，直接返回预定义的替代项
       if (alternativeMCPs.length === 0) {
-        return this.recommendAlternatives(mcpName, taskContent);
+        // 如果没有预定义的替代项，返回一个默认的列表
+        logger.info(`没有找到预定义替代项，返回默认替代项`);
+        return availableMCPs.slice(0, 2);  // 返回最多2个可用工具作为替代
       }
       
-      // 使用LLM根据任务内容对替代项进行排序
-      return this.rankAlternatives(mcpName, alternativeMCPs, taskContent);
+      // 直接返回找到的替代项，不调用LLM排序
+      return alternativeMCPs;
     } catch (error) {
       logger.error(`获取MCP替代选项失败 [MCP: ${mcpName}]:`, error);
       // 返回空替代项
@@ -79,7 +104,8 @@ export class MCPAlternativeService {
    */
   private async recommendAlternatives(mcpName: string, taskContent: string): Promise<MCPInfo[]> {
     try {
-      const mcpToReplace = this.availableMCPs.find(mcp => mcp.name === mcpName);
+      const availableMCPs = this.getAvailableMCPs();
+      const mcpToReplace = availableMCPs.find(mcp => mcp.name === mcpName);
       
       if (!mcpToReplace) {
         return [];
@@ -93,7 +119,7 @@ export class MCPAlternativeService {
 ${JSON.stringify(mcpToReplace, null, 2)}
 
 可选的其他MCP工具：
-${JSON.stringify(this.availableMCPs.filter(mcp => mcp.name !== mcpName), null, 2)}
+${JSON.stringify(availableMCPs.filter(mcp => mcp.name !== mcpName), null, 2)}
 
 请根据用户的任务内容，推荐最多3个能够替代${mcpName}的工具。这些工具应该能够尽可能完成相同或类似的功能。
 
@@ -114,7 +140,7 @@ ${JSON.stringify(this.availableMCPs.filter(mcp => mcp.name !== mcpName), null, 2
         const alternativeNames: string[] = parsedResponse.alternatives || [];
         
         // 获取这些替代项的详细信息
-        const alternatives = this.availableMCPs.filter(mcp => 
+        const alternatives = availableMCPs.filter(mcp => 
           alternativeNames.includes(mcp.name)
         );
         
@@ -140,13 +166,13 @@ ${JSON.stringify(this.availableMCPs.filter(mcp => mcp.name !== mcpName), null, 2
             .map(name => name.trim().replace(/^["']|["']$/g, ''))
             .filter(name => name.length > 0);
           
-          return this.availableMCPs.filter(mcp => 
+          return availableMCPs.filter(mcp => 
             alternativeNames.includes(mcp.name)
           );
         }
         
         // 如果无法提取，随机返回1-3个其他工具
-        return this.availableMCPs
+        return availableMCPs
           .filter(mcp => mcp.name !== mcpName)
           .sort(() => Math.random() - 0.5)
           .slice(0, 3);
@@ -237,7 +263,7 @@ ${JSON.stringify(alternatives, null, 2)}
       logger.info(`替换任务工作流中的MCP [任务: ${taskId}, 原MCP: ${originalMcpName}, 新MCP: ${newMcpName}]`);
       
       // 获取新MCP的详细信息
-      const newMCP = this.availableMCPs.find(mcp => mcp.name === newMcpName);
+      const newMCP = mcpInfoService.getMCPById(newMcpName);
       if (!newMCP) {
         logger.error(`替换失败：找不到指定的新MCP [${newMcpName}]`);
         return false;
@@ -249,7 +275,13 @@ ${JSON.stringify(alternatives, null, 2)}
         originalMcpName,
         newMcpName,
         newMCP.description,
-        newMCP.authRequired
+        newMCP.authRequired,
+        {
+          category: newMCP.category,
+          imageUrl: newMCP.imageUrl,
+          githubUrl: newMCP.githubUrl,
+          authParams: newMCP.authParams
+        }
       );
     } catch (error) {
       logger.error(`替换任务工作流中的MCP失败 [任务: ${taskId}]:`, error);

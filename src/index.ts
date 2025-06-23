@@ -91,6 +91,9 @@ function convertToLangChainMessages(messages: any[]) {
 // 认证路由
 app.use('/api/auth', authRoutes);
 
+// MCP路由
+import mcpRoutes from './routes/mcp.js';
+app.use('/api/mcp', mcpRoutes);
 
 // 任务相关路由
 app.use('/api/task', taskRoutes);
@@ -442,6 +445,42 @@ async function startServer() {
       console.log('ℹ️  S3 avatar service not configured - avatar randomization disabled');
     }
     
+
+    // 连接预定义的MCP服务
+    console.log('🔌 Connecting to predefined MCP services...');
+    
+    // 尝试连接AWE Core MCP
+    const aweMCP = getPredefinedMCP('AWE Core MCP Server');
+    if (aweMCP) {
+      try {
+        console.log('🌐 Connecting to AWE Core MCP...');
+        const connected = await mcpManager.connectPredefined(aweMCP);
+        if (connected) {
+          console.log('✅ AWE Core MCP connected successfully');
+        } else {
+          console.log('⚠️ Failed to connect to AWE Core MCP');
+        }
+      } catch (error) {
+        console.error('❌ Error connecting to AWE Core MCP:', error);
+      }
+    }
+    
+    // 尝试连接Playwright MCP
+    const playwrightMCP = getPredefinedMCP('playwright');
+    if (playwrightMCP) {
+      try {
+        console.log('🎭 Connecting to Playwright MCP...');
+        const connected = await mcpManager.connectPredefined(playwrightMCP);
+        if (connected) {
+          console.log('✅ Playwright MCP connected successfully');
+        } else {
+          console.log('⚠️ Failed to connect to Playwright MCP');
+        }
+      } catch (error) {
+        console.error('❌ Error connecting to Playwright MCP:', error);
+      }
+    }
+
     // AWE 支付服务状态
     if (process.env.BASE_RPC_URL) {
       console.log('💎 AWE payment service configured');

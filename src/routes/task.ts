@@ -9,7 +9,6 @@ import { TaskAnalysisService } from '../services/llmTasks/taskAnalysisService.js
 import { MCPAlternativeService } from '../services/mcpAlternativeService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
 import { HTTPMCPAdapter } from '../services/httpMcpAdapter.js';
-import { AVAILABLE_MCPS } from '../services/llmTasks/taskAnalysisService.js';
 import { spawn } from 'child_process';
 import { getPredefinedMCP } from '../services/predefinedMCPs.js';
 import { MCPService } from '../services/mcpManager.js';
@@ -21,7 +20,7 @@ const taskService = getTaskService();
 const httpMcpAdapter = new HTTPMCPAdapter();
 const mcpAuthService = new MCPAuthService();
 const taskAnalysisService = new TaskAnalysisService(httpMcpAdapter);
-const mcpAlternativeService = new MCPAlternativeService(AVAILABLE_MCPS);
+const mcpAlternativeService = new MCPAlternativeService();
 
 // 获取mcpManager实例，将在应用启动时通过app.set设置
 let mcpManager: any;
@@ -631,7 +630,7 @@ router.post('/:id/verify-auth',  async (req: Request, res: Response) => {
  * 获取MCP替代选项
  * GET /api/task/:id/mcp-alternatives/:mcpName
  */
-router.get('/:id/mcp-alternatives/:mcpName',  async (req: Request, res: Response) => {
+router.get('/:id/mcp-alternatives/:mcpName', optionalAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const mcpName = req.params.mcpName;
@@ -646,8 +645,11 @@ router.get('/:id/mcp-alternatives/:mcpName',  async (req: Request, res: Response
       });
     }
     
+    // 从请求体获取userId或使用req.user.id
+    const userId = req.user?.id || req.query.userId as string;
+    
     // 确保用户只能为自己的任务获取替代选项
-    if (task.userId !== req.user!.id) {
+    if (userId && task.userId !== userId) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',

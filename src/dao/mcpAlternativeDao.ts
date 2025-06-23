@@ -38,7 +38,13 @@ export class MCPAlternativeDao {
     originalMcpName: string,
     newMcpName: string,
     newMcpDescription: string,
-    newMcpAuthRequired: boolean
+    newMcpAuthRequired: boolean,
+    extraInfo?: {
+      category?: string;
+      imageUrl?: string;
+      githubUrl?: string;
+      authParams?: Record<string, any>;
+    }
   ): Promise<boolean> {
     try {
       // 获取当前工作流
@@ -59,7 +65,9 @@ export class MCPAlternativeDao {
             name: newMcpName,
             description: newMcpDescription,
             authRequired: newMcpAuthRequired,
-            authVerified: false // 新替换的MCP需要重新验证授权
+            authVerified: false, // 新替换的MCP需要重新验证授权
+            // 添加额外信息
+            ...(extraInfo || {}),
           };
         }
       }

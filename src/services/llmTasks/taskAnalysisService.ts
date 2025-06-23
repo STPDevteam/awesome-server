@@ -25,65 +25,115 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     description: 'GitHub 代码仓库操作工具，可以访问和管理GitHub仓库',
     capabilities: ['查看仓库信息', '获取文件内容', '创建Issue', '提交PR', '查看提交历史'],
     authRequired: true,
-    authFields: ['GITHUB_TOKEN']
+    authFields: ['GITHUB_TOKEN'],
+    category: '开发工具',
+    imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    githubUrl: 'https://github.com/features/actions',
+    authParams: {
+      tokenName: 'GITHUB_TOKEN',
+      tokenDescription: 'GitHub个人访问令牌，需要repo权限'
+    }
   },
   {
     name: 'GoogleSearchTool',
     description: '谷歌搜索工具，可以执行网络搜索并获取结果',
     capabilities: ['执行网络搜索', '获取最新信息', '回答常识问题'],
     authRequired: true,
-    authFields: ['GOOGLE_API_KEY', 'CUSTOM_SEARCH_ENGINE_ID']
+    authFields: ['GOOGLE_API_KEY', 'CUSTOM_SEARCH_ENGINE_ID'],
+    category: '搜索工具',
+    imageUrl: 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png',
+    githubUrl: 'https://github.com/googleapis/google-api-nodejs-client',
+    authParams: {
+      apiKeyName: 'GOOGLE_API_KEY',
+      engineIdName: 'CUSTOM_SEARCH_ENGINE_ID'
+    }
   },
   {
     name: 'FileSystemTool',
     description: '本地文件系统操作工具',
     capabilities: ['读取文件', '写入文件', '列出目录内容', '创建目录'],
-    authRequired: false
+    authRequired: false,
+    category: '系统工具',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/3767/3767084.png',
+    githubUrl: 'https://github.com/nodejs/node'
   },
   {
     name: 'WebBrowserTool',
     description: '网页浏览和信息抓取工具',
     capabilities: ['访问网页', '抓取网页内容', '提取结构化数据'],
-    authRequired: false
+    authRequired: false,
+    category: '网络工具',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/2985/2985975.png',
+    githubUrl: 'https://github.com/puppeteer/puppeteer'
   },
   {
     name: 'DatabaseQueryTool',
     description: '数据库查询工具，支持各种SQL和NoSQL数据库',
     capabilities: ['执行SQL查询', '获取数据统计', '数据可视化'],
     authRequired: true,
-    authFields: ['DB_CONNECTION_STRING']
+    authFields: ['DB_CONNECTION_STRING'],
+    category: '数据工具',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/2772/2772128.png',
+    githubUrl: 'https://github.com/sequelize/sequelize',
+    authParams: {
+      connectionStringName: 'DB_CONNECTION_STRING',
+      connectionStringDescription: '数据库连接字符串'
+    }
   },
   {
     name: 'ImageAnalysisTool',
     description: '图像分析工具，可以分析和处理图像',
     capabilities: ['对象识别', '场景描述', '文字识别', '图像分类'],
     authRequired: true,
-    authFields: ['VISION_API_KEY']
+    authFields: ['VISION_API_KEY'],
+    category: '媒体工具',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/2659/2659360.png',
+    githubUrl: 'https://github.com/googleapis/nodejs-vision',
+    authParams: {
+      apiKeyName: 'VISION_API_KEY',
+      apiKeyDescription: '视觉API访问密钥'
+    }
   },
   {
     name: 'TextAnalysisTool',
     description: '文本分析工具，可以分析文本内容和情感',
     capabilities: ['情感分析', '关键词提取', '实体识别', '文本分类'],
-    authRequired: false
+    authRequired: false,
+    category: '媒体工具',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/1950/1950715.png',
+    githubUrl: 'https://github.com/NaturalNode/natural'
   },
   {
     name: 'WeatherTool',
     description: '天气信息工具，提供全球天气数据',
     capabilities: ['获取当前天气', '天气预报', '历史天气数据'],
     authRequired: true,
-    authFields: ['WEATHER_API_KEY']
+    authFields: ['WEATHER_API_KEY'],
+    category: '信息服务',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/1163/1163763.png',
+    githubUrl: 'https://github.com/chubin/wttr.in',
+    authParams: {
+      apiKeyName: 'WEATHER_API_KEY',
+      apiKeyDescription: '天气API访问密钥'
+    }
   },
   {
     name: 'cook-mcp-service',
     description: '多功能工具集合，包含浏览器自动化、烹饪指导和网页访问功能',
     capabilities: ['打开浏览器', '访问网页', '填写表单', '点击元素', '获取页面内容', '查找烹饪食谱', '获取食材信息'],
-    authRequired: false
+    authRequired: false,
+    category: '生活服务',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/1830/1830839.png',
+    githubUrl: 'https://github.com/cook-mcp/cook-mcp'
   },
   {
     name: 'playwright-mcp-service',
     description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
     capabilities: ['打开浏览器', '访问网页', '填写表单', '点击元素', '获取页面内容'],
-    authRequired: false
+    authRequired: false,
+    category: '自动化工具',
+    imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+    githubUrl: 'https://github.com/microsoft/playwright'
   }
 ];
 
@@ -419,7 +469,11 @@ export class TaskAnalysisService {
           name: playwrightToolInfo.name,
           description: playwrightToolInfo.description,
           authRequired: playwrightToolInfo.authRequired,
-          authVerified: true // 默认设置为已验证，跳过验证步骤
+          authVerified: true, // 默认设置为已验证，跳过验证步骤
+          category: playwrightToolInfo.category,
+          imageUrl: playwrightToolInfo.imageUrl,
+          githubUrl: playwrightToolInfo.githubUrl,
+          authParams: playwrightToolInfo.authParams
         }],
         workflow: workflow
       };
