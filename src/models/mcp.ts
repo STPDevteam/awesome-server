@@ -7,6 +7,10 @@ export interface MCPInfo {
   capabilities: string[];
   authRequired: boolean;
   authFields?: string[];
+  category?: string;
+  imageUrl?: string;
+  githubUrl?: string;
+  authParams?: Record<string, any>;
 }
 
 /**

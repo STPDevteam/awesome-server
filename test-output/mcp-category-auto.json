@@ -1,0 +1,1 @@
+{"success":true,"data":{"category":"自动化工具","mcps":[{"name":"playwright","description":"Playwright 浏览器自动化工具，可以控制浏览器访问网页","capabilities":["browser","web-automation","screenshot","navigation"],"authRequired":false,"category":"自动化工具","imageUrl":"https://playwright.dev/img/playwright-logo.svg","githubUrl":"https://github.com/microsoft/playwright"}]}}

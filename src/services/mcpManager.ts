@@ -23,6 +23,10 @@ export interface MCPService {
   tools?: string[];
   toolCount?: number;
   status?: string;
+  category?: string;
+  imageUrl?: string;
+  githubUrl?: string;
+  authParams?: Record<string, any>;
 }
 
 /**
@@ -184,18 +188,56 @@ export class MCPManager {
   getConnectedMCPs(): Array<MCPService> {
     logger.info(`【MCP调试】MCPManager.getConnectedMCPs() 获取已连接的MCP列表`);
     
-    const result = Array.from(this.clients.values()).map(({ name, command, args, env }) => ({
-      name,
-      description: `MCP服务: ${name}`,
-      command,
-      args,
-      env,
-      connected: true,
-      status: 'connected'
-    }));
+    const result = Array.from(this.clients.values()).map(({ name, command, args, env }) => {
+      // 根据MCP名称获取额外信息
+      const extraInfo = this.getMCPExtraInfo(name);
+      
+      return {
+        name,
+        description: extraInfo.description || `MCP服务: ${name}`,
+        command,
+        args,
+        env,
+        connected: true,
+        status: 'connected',
+        category: extraInfo.category,
+        imageUrl: extraInfo.imageUrl,
+        githubUrl: extraInfo.githubUrl,
+        authParams: extraInfo.authParams
+      };
+    });
     
     logger.info(`【MCP调试】已连接的MCP列表: ${JSON.stringify(result)}`);
     return result;
+  }
+
+  /**
+   * 获取MCP的额外信息
+   * 根据MCP名称返回预设的额外信息
+   * @param name MCP名称
+   */
+  private getMCPExtraInfo(name: string): {
+    description?: string;
+    category?: string;
+    imageUrl?: string;
+    githubUrl?: string;
+    authParams?: Record<string, any>;
+  } {
+    // 处理特定的MCP
+    if (name === 'playwright' || name === 'playwright-mcp-service') {
+      return {
+        description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
+        category: '自动化工具',
+        imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+        githubUrl: 'https://github.com/microsoft/playwright'
+      };
+    }
+    
+    // 处理更多特定MCP...
+    // 如果需要可以添加更多映射
+    
+    // 默认返回空对象
+    return {};
   }
 
   /**
