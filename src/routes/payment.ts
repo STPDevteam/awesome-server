@@ -222,35 +222,8 @@ router.post('/webhooks/coinbase', async (req, res) => {
  */
 router.get('/calculate-awe-price', requireAuth, async (req, res) => {
   try {
-    const { membershipType, subscriptionType } = req.query;
-
-    // 验证输入
-    if (!membershipType || !subscriptionType) {
-      return res.status(400).json({
-        success: false,
-        error: 'membershipType and subscriptionType are required'
-      });
-    }
-
-    if (!['plus', 'pro'].includes(membershipType as string)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid membershipType. Must be "plus" or "pro"'
-      });
-    }
-
-    if (!['monthly', 'yearly'].includes(subscriptionType as string)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid subscriptionType. Must be "monthly" or "yearly"'
-      });
-    }
-
-    // 计算价格
-    const priceInfo = await awePaymentService.calculatePrice(
-      membershipType as 'plus' | 'pro',
-      subscriptionType as 'monthly' | 'yearly'
-    );
+    // 获取完整价格信息
+    const priceInfo = await awePaymentService.getFullPriceInfo();
 
     res.json({
       success: true,

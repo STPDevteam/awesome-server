@@ -80,11 +80,11 @@ export interface CreatePaymentParams {
 export const MEMBERSHIP_PRICING = {
   plus: {
     monthly: { amount: '0.01', currency: 'USDT' },
-    yearly: { amount: '200', currency: 'USDT' }
+    yearly: { amount: '0.02', currency: 'USDT' }
   },
   pro: {
-    monthly: { amount: '200', currency: 'USDT' },
-    yearly: { amount: '2000', currency: 'USDT' }
+    monthly: { amount: '0.01', currency: 'USDT' },
+    yearly: { amount: '0.02', currency: 'USDT' }
   }
 } as const;
 

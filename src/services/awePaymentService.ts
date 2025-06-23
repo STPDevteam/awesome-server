@@ -15,6 +15,26 @@ const AWE_TOKEN_CONFIG = {
   explorerUrl: 'https://basescan.org'
 };
 
+// CoinMarketCap配置
+const CMC_CONFIG = {
+  apiKey: process.env.CMC_API_KEY || '',
+  baseUrl: 'https://pro-api.coinmarketcap.com/v1',
+  aweTokenId: '4006'
+};
+
+// CoinMarketCap API响应类型
+interface CoinMarketCapResponse {
+  data: {
+    [tokenId: string]: {
+      quote: {
+        USD: {
+          price: number;
+        };
+      };
+    };
+  };
+}
+
 // ERC20 ABI (只包含必要的方法)
 const ERC20_ABI = [
   'event Transfer(address indexed from, address indexed to, uint256 value)'
@@ -32,6 +52,23 @@ export interface AwePriceInfo {
   receiverAddress: string;
   chainId: number;
   chainName: string;
+}
+
+// 完整价格信息接口
+export interface FullPriceInfo {
+  success: boolean;
+  data: {
+    usdPrice: string;
+    aweUsdPrice: string;
+    aweAmountForPlusMonthly: number;
+    aweAmountForPlusYearly: number;
+    aweAmountForProMonthly: number;
+    aweAmountForProYearly: number;
+    tokenAddress: string;
+    receiverAddress: string;
+    chainId: number;
+    chainName: string;
+  };
 }
 
 // 交易验证参数
@@ -69,7 +106,64 @@ export class AwePaymentService {
   constructor() {
     this.provider = new ethers.JsonRpcProvider(AWE_TOKEN_CONFIG.rpcUrl);
     this.aweToken = new ethers.Contract(AWE_TOKEN_CONFIG.address, ERC20_ABI, this.provider);
-    this.priceCache = new NodeCache({ stdTTL: 300 }); // 5分钟缓存
+    this.priceCache = new NodeCache({ stdTTL: 45 }); // 45秒缓存
+  }
+
+  /**
+   * 获取完整的价格信息
+   */
+  async getFullPriceInfo(): Promise<FullPriceInfo> {
+    const cacheKey = 'full_price_info';
+    const cached = this.priceCache.get<FullPriceInfo>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const aweUsdPrice = await this.getAweUsdPrice();
+      
+      // 计算各种会员类型的AWE金额
+      const aweAmountForPlusMonthly = parseFloat(MEMBERSHIP_PRICING.plus.monthly.amount) / aweUsdPrice;
+      const aweAmountForPlusYearly = parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) / aweUsdPrice;
+      const aweAmountForProMonthly = parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) / aweUsdPrice;
+      const aweAmountForProYearly = parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) / aweUsdPrice;
+
+      const priceInfo: FullPriceInfo = {
+        success: true,
+        data: {
+          usdPrice: "4.99", // 这里可以根据需要调整为实际的USD价格
+          aweUsdPrice: aweUsdPrice.toString(),
+          aweAmountForPlusMonthly,
+          aweAmountForPlusYearly,
+          aweAmountForProMonthly,
+          aweAmountForProYearly,
+          tokenAddress: AWE_TOKEN_CONFIG.address,
+          receiverAddress: AWE_TOKEN_CONFIG.receiverAddress,
+          chainId: AWE_TOKEN_CONFIG.chainId,
+          chainName: 'Base'
+        }
+      };
+
+      this.priceCache.set(cacheKey, priceInfo);
+      return priceInfo;
+    } catch (error) {
+      logger.error('Error getting full price info:', error);
+      return {
+        success: false,
+        data: {
+          usdPrice: "4.99",
+          aweUsdPrice: "0.1",
+          aweAmountForPlusMonthly: 0.1,
+          aweAmountForPlusYearly: 0.1,
+          aweAmountForProMonthly: 0.1,
+          aweAmountForProYearly: 0.1,
+          tokenAddress: AWE_TOKEN_CONFIG.address,
+          receiverAddress: AWE_TOKEN_CONFIG.receiverAddress,
+          chainId: AWE_TOKEN_CONFIG.chainId,
+          chainName: 'Base'
+        }
+      };
+    }
   }
 
   /**
@@ -308,8 +402,50 @@ export class AwePaymentService {
    * 获取AWE代币USD价格
    */
   private async getAweUsdPrice(): Promise<number> {
-    // TODO: 接入价格预言机或API
-    return 0.1; // $0.1 per AWE
+    const cacheKey = 'awe_usd_price';
+    const cached = this.priceCache.get<number>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      if (!CMC_CONFIG.apiKey) {
+        throw new Error('CMC_API_KEY environment variable is not set');
+      }
+
+      const url = `${CMC_CONFIG.baseUrl}/cryptocurrency/quotes/latest?id=${CMC_CONFIG.aweTokenId}`;
+      const response = await fetch(url, {
+        headers: {
+          'X-CMC_PRO_API_KEY': CMC_CONFIG.apiKey,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`CoinMarketCap API error: ${response.status}`);
+      }
+
+      const data = await response.json() as CoinMarketCapResponse;
+      
+      if (!data.data || !data.data[CMC_CONFIG.aweTokenId]) {
+        throw new Error('Invalid CoinMarketCap API response');
+      }
+
+      const price = data.data[CMC_CONFIG.aweTokenId].quote.USD.price;
+      
+      if (typeof price !== 'number' || price <= 0) {
+        throw new Error('Invalid price from CoinMarketCap');
+      }
+
+      this.priceCache.set(cacheKey, price);
+      logger.info(`AWE token price updated: $${price}`);
+      
+      return price;
+    } catch (error) {
+      logger.error('Error fetching AWE price from CoinMarketCap:', error);
+      // 返回默认价格作为备用
+      return 0.1;
+    }
   }
 
   /**
