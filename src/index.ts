@@ -14,6 +14,7 @@ import { OfficialMCPAdapter } from './services/officialMcpAdapter.js';
 import { predefinedMCPs, getPredefinedMCP } from './services/predefinedMCPs.js';
 import authRoutes from './routes/auth.js';
 import taskRoutes from './routes/task.js';
+import conversationRoutes from './routes/conversation.js';
 import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
 import { db } from './config/database.js';
 import { migrationService } from './scripts/migrate-database.js';
@@ -24,6 +25,7 @@ import { TaskAnalysisService } from './services/llmTasks/taskAnalysisService.js'
 import { TaskExecutorService } from './services/taskExecutorService.js';
 import { MCPAuthService } from './services/mcpAuthService.js';
 import { awePaymentService } from './services/awePaymentService.js';
+import { getConversationService } from './services/conversationService.js';
 
 
 
@@ -101,6 +103,8 @@ app.use('/api/task', taskRoutes);
 // 支付路由
 app.use('/api/payment', paymentRoutes);
 
+// 对话路由 - 新增
+app.use('/api/conversation', conversationRoutes);
 
 // API 路由 - 保护聊天端点，需要登录
 app.post('/api/chat', requireAuth, async (req, res) => {
@@ -414,6 +418,7 @@ app.set('mcpManager', mcpManager);
 app.set('taskAnalysisService', taskAnalysisService);
 app.set('taskExecutorService', taskExecutorService);
 app.set('mcpAuthService', mcpAuthService);
+app.set('mcpToolAdapter', mcpToolAdapter);
 
 // 数据库初始化和服务器启动
 async function startServer() {

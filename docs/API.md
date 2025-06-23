@@ -2,7 +2,7 @@
 
 ## 概述
 
-MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In with Ethereum (SIWE) 标准进行用户认证。
+MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In with Ethereum (SIWE) 标准进行用户认证。该服务支持会话管理、任务创建和执行，以及MCP工具调用。
 
 **基础URL**: `http://localhost:3001`
 
@@ -526,6 +526,363 @@ data: [DONE]
 - `401 Unauthorized`: 无效的访问令牌
 - `500 Internal Server Error`: 服务器内部错误
 
+### 会话管理 API
+
+会话系统提供了一种整合对话和任务的方式，允许用户在自然对话中触发任务执行，并在同一个界面中查看结果。
+
+#### 1. 创建新会话
+
+**端点**: `POST /api/conversation`
+
+**描述**: 创建一个新的会话
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "title": "会话标题（可选）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_123456",
+      "userId": "user_id",
+      "title": "会话标题",
+      "taskCount": 0,
+      "messageCount": 0,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:00:00.000Z"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 2. 获取会话列表
+
+**端点**: `GET /api/conversation`
+
+**描述**: 获取用户的所有会话
+
+**认证**: 需要访问令牌
+
+**查询参数**:
+- `limit`: 每页数量（可选，默认10）
+- `offset`: 偏移量（可选，默认0）
+- `sortBy`: 排序字段（可选，默认last_message_at）
+- `sortDir`: 排序方向，asc或desc（可选，默认desc）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversations": [
+      {
+        "id": "conv_123456",
+        "userId": "user_id",
+        "title": "会话标题",
+        "lastMessageContent": "最后一条消息内容",
+        "lastMessageAt": "2023-06-20T09:30:00.000Z",
+        "taskCount": 2,
+        "messageCount": 15,
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T09:30:00.000Z"
+      },
+      // 更多会话...
+    ],
+    "total": 25
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 3. 获取会话详情
+
+**端点**: `GET /api/conversation/:id`
+
+**描述**: 获取特定会话的详情和消息历史
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: 会话ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_123456",
+      "userId": "user_id",
+      "title": "会话标题",
+      "lastMessageContent": "最后一条消息内容",
+      "lastMessageAt": "2023-06-20T09:30:00.000Z",
+      "taskCount": 2,
+      "messageCount": 15,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T09:30:00.000Z"
+    },
+    "messages": [
+      {
+        "id": "msg_1",
+        "conversationId": "conv_123456",
+        "content": "你好，我想搜索一下MCP协议",
+        "type": "user",
+        "intent": "chat",
+        "createdAt": "2023-06-20T08:05:00.000Z"
+      },
+      {
+        "id": "msg_2",
+        "conversationId": "conv_123456",
+        "content": "您好！我很乐意帮您搜索MCP协议相关信息。请告诉我您具体想了解哪方面的内容？",
+        "type": "assistant",
+        "intent": "chat",
+        "createdAt": "2023-06-20T08:05:10.000Z"
+      },
+      // 更多消息...
+    ]
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该会话
+- `404 Not Found`: 会话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 4. 发送消息
+
+**端点**: `POST /api/conversation/:id/message`
+
+**描述**: 向会话发送消息，系统会自动识别是聊天还是任务意图
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: 会话ID
+
+**请求体**:
+```json
+{
+  "content": "消息内容"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": {
+      "id": "msg_3",
+      "conversationId": "conv_123456",
+      "content": "使用Playwright访问百度并搜索MCP协议",
+      "type": "user",
+      "intent": "task",
+      "createdAt": "2023-06-20T08:10:00.000Z"
+    },
+    "assistantResponse": {
+      "id": "msg_4",
+      "conversationId": "conv_123456",
+      "content": "已为您创建任务：使用Playwright访问百度并搜索MCP协议\n任务ID：task_123\n我将开始执行此任务。",
+      "type": "assistant",
+      "intent": "task",
+      "taskId": "task_123",
+      "createdAt": "2023-06-20T08:10:05.000Z"
+    },
+    "intent": "task",
+    "taskId": "task_123"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该会话
+- `404 Not Found`: 会话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 5. 流式发送消息
+
+**端点**: `POST /api/conversation/:id/message/stream`
+
+**描述**: 以流式方式向会话发送消息，实时获取响应
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: 会话ID
+
+**请求体**:
+```json
+{
+  "content": "消息内容"
+}
+```
+
+**响应**: Server-Sent Events (SSE) 流
+
+示例事件流：
+```
+data: {"event":"processing_start","data":{"messageId":"msg_5"}}
+
+data: {"event":"intent_detection","data":{"status":"processing"}}
+
+data: {"event":"intent_detection","data":{"status":"completed","intent":"chat","confidence":0.95}}
+
+data: {"event":"chat_response","data":{"content":"您好！"}}
+
+data: {"event":"chat_response","data":{"content":"我可以"}}
+
+data: {"event":"chat_response","data":{"content":"帮助您。"}}
+
+data: {"event":"processing_complete","data":{"messageId":"msg_5","responseId":"msg_6","intent":"chat"}}
+
+data: [DONE]
+```
+
+对于任务意图，事件流将包含任务处理状态：
+```
+data: {"event":"processing_start","data":{"messageId":"msg_7"}}
+
+data: {"event":"intent_detection","data":{"status":"completed","intent":"task","confidence":0.98}}
+
+data: {"event":"task_processing","data":{"status":"creating_task"}}
+
+data: {"event":"task_processing","data":{"status":"task_created","taskId":"task_456","title":"使用Playwright访问百度"}}
+
+data: {"event":"task_processing","data":{"status":"executing_task"}}
+
+data: {"event":"task_processing","data":{"step":1,"status":"success","action":"browser_navigate"}}
+
+data: {"event":"processing_complete","data":{"messageId":"msg_7","responseId":"msg_8","intent":"task","taskId":"task_456"}}
+
+data: [DONE]
+```
+
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
+
+---
+
+#### 6. 获取会话关联的任务
+
+**端点**: `GET /api/conversation/:id/tasks`
+
+**描述**: 获取与特定会话关联的所有任务
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: 会话ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "conv_123456",
+    "tasks": [
+      {
+        "id": "task_123",
+        "userId": "user_id",
+        "title": "使用Playwright访问百度并搜索MCP协议",
+        "content": "使用Playwright访问百度并搜索MCP协议",
+        "status": "completed",
+        "conversationId": "conv_123456",
+        "createdAt": "2023-06-20T08:10:05.000Z",
+        "updatedAt": "2023-06-20T08:11:30.000Z",
+        "completedAt": "2023-06-20T08:11:30.000Z"
+      },
+      // 更多任务...
+    ],
+    "count": 2
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该会话
+- `404 Not Found`: 会话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+### 任务管理 API
+
+#### 获取任务关联的会话
+
+**端点**: `GET /api/task/:id/conversation`
+
+**描述**: 获取与特定任务关联的会话信息
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: 任务ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123",
+    "conversation": {
+      "id": "conv_123456",
+      "userId": "user_id",
+      "title": "会话标题",
+      "lastMessageContent": "最后一条消息内容",
+      "lastMessageAt": "2023-06-20T09:30:00.000Z",
+      "taskCount": 2,
+      "messageCount": 15,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T09:30:00.000Z"
+    }
+  }
+}
+```
+
+当任务没有关联的会话时：
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123",
+    "conversation": null,
+    "message": "此任务未关联到任何会话"
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该任务
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
 ## 错误代码
 
 | 状态码 | 错误类型 | 描述 |
@@ -630,3 +987,59 @@ curl -X POST http://localhost:3001/api/chat \
    - 使用Server-Sent Events (SSE)
    - 适合长文本生成场景
    - 需要正确处理连接关闭 
+
+## 使用示例
+
+### 会话-任务流程示例
+
+以下是一个完整的会话-任务流程示例：
+
+1. 创建新会话
+
+```bash
+curl -X POST http://localhost:3001/api/conversation \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"title":"自动化任务会话"}'
+```
+
+2. 在会话中发送消息（询问信息）
+
+```bash
+curl -X POST http://localhost:3001/api/conversation/conv_123456/message \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"content":"你能告诉我什么是MCP协议吗？"}'
+```
+
+3. 在会话中发送任务请求
+
+```bash
+curl -X POST http://localhost:3001/api/conversation/conv_123456/message \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"content":"帮我使用Playwright访问百度并搜索MCP协议"}'
+```
+
+4. 获取会话关联的任务
+
+```bash
+curl -X GET http://localhost:3001/api/conversation/conv_123456/tasks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+5. 获取任务详情
+
+```bash
+curl -X GET http://localhost:3001/api/task/task_123 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+6. 查看任务结果后，继续在会话中对话
+
+```bash
+curl -X POST http://localhost:3001/api/conversation/conv_123456/message \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"content":"搜索结果看起来不错，可以帮我总结一下MCP协议的主要特点吗？"}'
+``` 

@@ -6,11 +6,8 @@ import { TaskStep, TaskStepType } from '../../models/task.js';
 import { HTTPMCPAdapter } from '../httpMcpAdapter.js';
 import { MCPInfo } from '../../models/mcp.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-
-// 使用 'host.docker.internal' 来从容器内部访问宿主机的服务
-const proxy = process.env.HTTPS_PROXY || 'http://host.docker.internal:7897';
+const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
-
 // 获取taskService实例
 const taskService = getTaskService();
 
@@ -152,9 +149,9 @@ export class TaskAnalysisService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
       temperature: 0.2, // 较低温度，保证推理的准确性
-      // configuration: {
-      //   httpAgent: agent, // ✅ 使用代理关键设置
-      // },
+      configuration: {
+        httpAgent: agent, // ✅ 使用代理关键设置
+      },
     });
   }
   

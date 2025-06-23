@@ -16,9 +16,9 @@ export class TitleGeneratorService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: 'gpt-3.5-turbo', // 可以使用更轻量级的模型来节省成本
       temperature: 0.3, // 较低的温度，保证生成稳定的标题
-      // configuration: {
-      //   httpAgent: agent, // ✅ 使用代理关键设置
-      // },
+      configuration: {
+        httpAgent: agent, // ✅ 使用代理关键设置
+      },
     });
   }
 

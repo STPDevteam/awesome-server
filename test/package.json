@@ -2,5 +2,9 @@
   "name": "mcp-test",
   "version": "1.0.0",
   "type": "module",
-  "description": "测试MCP连接"
-} 
+  "description": "测试MCP连接",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

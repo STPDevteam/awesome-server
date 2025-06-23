@@ -12,6 +12,7 @@ export interface TaskDbRow {
   status: string;
   mcp_workflow?: any;
   result?: any;
+  conversation_id?: string;
   created_at: string;
   updated_at: string;
   completed_at?: string;
@@ -41,16 +42,17 @@ export class TaskDao {
     userId: string;
     title: string;
     content: string;
+    conversationId?: string;
   }): Promise<TaskDbRow> {
     try {
       const taskId = uuidv4();
       const result = await db.query<TaskDbRow>(
         `
-        INSERT INTO tasks (id, user_id, title, content, status)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO tasks (id, user_id, title, content, status, conversation_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
         `,
-        [taskId, data.userId, data.title, data.content, 'created']
+        [taskId, data.userId, data.title, data.content, 'created', data.conversationId || null]
       );
 
       logger.info(`任务记录创建成功: ${taskId}`);
@@ -90,6 +92,7 @@ export class TaskDao {
     status?: string;
     mcpWorkflow?: any;
     result?: any;
+    conversationId?: string;
     completedAt?: Date;
   }): Promise<TaskDbRow | null> {
     try {
@@ -135,6 +138,12 @@ export class TaskDao {
         valueIndex++;
       }
 
+      if (updates.conversationId !== undefined) {
+        updateFields.push(`conversation_id = $${valueIndex}`);
+        values.push(updates.conversationId);
+        valueIndex++;
+      }
+
       // 如果没有字段需要更新，则直接返回null
       if (updateFields.length === 0) {
         return this.getTaskById(taskId);
@@ -176,6 +185,7 @@ export class TaskDao {
     offset?: number;
     sortBy?: string;
     sortDir?: 'asc' | 'desc';
+    conversationId?: string;
   }): Promise<{ rows: TaskDbRow[]; total: number }> {
     try {
       // 构建查询条件
@@ -186,6 +196,12 @@ export class TaskDao {
       if (options?.status) {
         conditions.push(`status = $${paramIndex}`);
         values.push(options.status);
+        paramIndex++;
+      }
+
+      if (options?.conversationId) {
+        conditions.push(`conversation_id = $${paramIndex}`);
+        values.push(options.conversationId);
         paramIndex++;
       }
 
@@ -220,6 +236,28 @@ export class TaskDao {
       return { rows: result.rows, total };
     } catch (error) {
       logger.error(`获取用户任务列表失败 [UserID: ${userId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取对话关联的任务
+   */
+  async getConversationTasks(conversationId: string): Promise<TaskDbRow[]> {
+    try {
+      const result = await db.query<TaskDbRow>(
+        `
+        SELECT *
+        FROM tasks
+        WHERE conversation_id = $1
+        ORDER BY created_at DESC
+        `,
+        [conversationId]
+      );
+
+      return result.rows;
+    } catch (error) {
+      logger.error(`获取对话关联任务失败 [对话ID: ${conversationId}]:`, error);
       throw error;
     }
   }
@@ -265,13 +303,14 @@ export class TaskDao {
   }
 
   /**
-   * 获取任务的所有步骤
+   * 获取任务步骤
    */
   async getTaskSteps(taskId: string): Promise<TaskStepDbRow[]> {
     try {
       const result = await db.query<TaskStepDbRow>(
         `
-        SELECT * FROM task_steps
+        SELECT *
+        FROM task_steps
         WHERE task_id = $1
         ORDER BY order_index ASC
         `,
@@ -280,11 +319,11 @@ export class TaskDao {
 
       return result.rows;
     } catch (error) {
-      logger.error(`获取任务步骤记录失败 [任务: ${taskId}]:`, error);
+      logger.error(`获取任务步骤记录失败 [任务ID: ${taskId}]:`, error);
       throw error;
     }
   }
 }
 
-// 导出DAO单例
+// 创建DAO实例
 export const taskDao = new TaskDao();

@@ -19,6 +19,17 @@
 | PUT | `/api/auth/me` | 更新用户信息 | ✅ |
 | POST | `/api/auth/revoke-all` | 撤销所有令牌 | ✅ |
 
+### 会话管理相关 API
+
+| 方法 | 端点 | 描述 | 认证 |
+|------|------|------|------|
+| POST | `/api/conversation` | 创建新会话 | ❌* |
+| GET | `/api/conversation` | 获取会话列表 | ❌* |
+| GET | `/api/conversation/:id` | 获取会话详情与消息 | ❌* |
+| POST | `/api/conversation/:id/message` | 发送消息（聊天或任务） | ❌* |
+| POST | `/api/conversation/:id/message/stream` | 流式发送消息 | ❌* |
+| GET | `/api/conversation/:id/tasks` | 获取会话关联的任务 | ❌* |
+
 ### 聊天相关 API
 
 | 方法 | 端点 | 描述 | 认证 |
@@ -47,10 +58,11 @@ _* 标记为❌的接口支持可选认证，可以使用userId参数跳过认�
 | 方法 | 端点 | 描述 | 认证 |
 |------|------|------|------|
 | POST | `/api/task/title` | 生成任务标题 | ✅ |
-| POST | `/api/task` | 创建任务 | ❌* |
+| POST | `/api/task` | 创建任务（可关联到会话） | ❌* |
 | POST | `/api/task/:id` | 更新任务 | ❌* |
 | GET | `/api/task` | 获取任务列表 | ❌* |
 | GET | `/api/task/:id` | 获取任务详情 | ❌* |
+| GET | `/api/task/:id/conversation` | 获取任务关联的会话 | ❌* |
 | POST | `/api/task/:id/analyze` | 分析任务 | ❌* |
 | POST | `/api/task/:id/analyze/stream` | 流式分析任务 | ❌* |
 | POST | `/api/task/:id/verify-auth` | 验证MCP授权 | ✅ |
@@ -83,7 +95,35 @@ curl -X POST http://localhost:3001/api/auth/wallet/login \
   }'
 ```
 
-### 2. 使用API
+### 2. 使用会话API
+
+```bash
+# 创建会话
+curl -X POST http://localhost:3001/api/conversation \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "title": "测试会话"
+  }'
+
+# 获取会话列表
+curl -X GET http://localhost:3001/api/conversation \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 发送会话消息
+curl -X POST http://localhost:3001/api/conversation/{conversation_id}/message \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "content": "你能帮我搜索一下MCP协议相关信息吗？"
+  }'
+
+# 获取会话关联的任务
+curl -X GET http://localhost:3001/api/conversation/{conversation_id}/tasks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### 3. 使用API
 
 ```bash
 # 获取用户信息
@@ -114,7 +154,7 @@ curl -X POST http://localhost:3001/api/task/test-playwright-mcp \
   -d '{"url":"https://www.baidu.com","searchText":"MCP协议"}'
 ```
 
-### 3. MCP使用流程
+### 4. MCP使用流程
 
 ```bash
 # 1. 获取所有可用MCP
@@ -125,32 +165,34 @@ curl -X GET http://localhost:3001/api/mcp \
 curl -X GET http://localhost:3001/api/mcp/playwright \
   -H "Content-Type: application/json"
 
-# 3. 创建任务
-curl -X POST http://localhost:3001/api/task \
+# 3. 创建会话
+curl -X POST http://localhost:3001/api/conversation \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{
-    "content": "使用Playwright访问百度并搜索MCP协议",
-    "title": "Playwright百度搜索测试",
-    "userId": "your_user_id"
+    "title": "Playwright测试会话"
   }'
 
-# 4. 分析任务
-curl -X POST "http://localhost:3001/api/task/{task_id}/analyze" \
+# 4. 在会话中发送任务请求消息
+curl -X POST http://localhost:3001/api/conversation/{conversation_id}/message \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{
-    "userId": "your_user_id"
+    "content": "使用Playwright访问百度并搜索MCP协议"
   }'
 
-# 5. 执行任务
+# 5. 获取会话关联的任务
+curl -X GET http://localhost:3001/api/conversation/{conversation_id}/tasks \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 6. 执行任务
 curl -X POST "http://localhost:3001/api/task/{task_id}/execute" \
   -H "Content-Type: application/json" \
-  -d '{
-    "userId": "your_user_id"
-  }'
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
-# 6. 获取任务执行结果
-curl -X GET "http://localhost:3001/api/task/{task_id}?userId=your_user_id" \
-  -H "Content-Type: application/json"
+# 7. 获取任务执行结果
+curl -X GET "http://localhost:3001/api/task/{task_id}" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
 ## 状态码
