@@ -631,7 +631,7 @@ router.post('/:id/verify-auth',  async (req: Request, res: Response) => {
  * 获取MCP替代选项
  * GET /api/task/:id/mcp-alternatives/:mcpName
  */
-router.get('/:id/mcp-alternatives/:mcpName',  async (req: Request, res: Response) => {
+router.get('/:id/mcp-alternatives/:mcpName', optionalAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const mcpName = req.params.mcpName;
@@ -646,8 +646,11 @@ router.get('/:id/mcp-alternatives/:mcpName',  async (req: Request, res: Response
       });
     }
     
+    // 从请求体获取userId或使用req.user.id
+    const userId = req.user?.id || req.query.userId as string;
+    
     // 确保用户只能为自己的任务获取替代选项
-    if (task.userId !== req.user!.id) {
+    if (userId && task.userId !== userId) {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
