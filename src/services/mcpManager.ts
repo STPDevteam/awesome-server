@@ -2,6 +2,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { logger } from '../utils/logger.js';
 import { MCPConnection, MCPTool, MCPCallResult } from '../models/mcp.js';
+import fs from 'fs';
+import path from 'path';
 
 interface MCPClient {
   client: Client;
@@ -9,6 +11,18 @@ interface MCPClient {
   command: string;
   args: string[];
   env?: Record<string, string>;
+}
+
+export interface MCPService {
+  name: string;
+  description: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  connected: boolean;
+  tools?: string[];
+  toolCount?: number;
+  status?: string;
 }
 
 /**
@@ -35,6 +49,27 @@ export class MCPManager {
     logger.info(`【MCP调试】连接参数: ${JSON.stringify(args)}`);
     logger.info(`【MCP调试】环境变量: ${env ? Object.keys(env).join(', ') : '无'}`);
     
+    // 检查命令是否存在
+    try {
+      if (args[0] && args[0].startsWith('/')) {
+        // 检查文件是否存在
+        if (fs.existsSync(args[0])) {
+          logger.info(`【MCP调试】文件存在: ${args[0]}`);
+          // 检查文件权限
+          try {
+            fs.accessSync(args[0], fs.constants.X_OK);
+            logger.info(`【MCP调试】文件可执行: ${args[0]}`);
+          } catch (error) {
+            logger.warn(`【MCP调试】文件不可执行: ${args[0]}, 错误: ${error}`);
+          }
+        } else {
+          logger.warn(`【MCP调试】文件不存在: ${args[0]}`);
+        }
+      }
+    } catch (error) {
+      logger.warn(`【MCP调试】检查文件时出错: ${error}`);
+    }
+    
     // 检查是否已连接
     if (this.clients.has(name)) {
       logger.info(`【MCP调试】MCP已经连接，先断开现有连接 [MCP: ${name}]`);
@@ -48,6 +83,8 @@ export class MCPManager {
         args,
         env: env ? { ...process.env, ...env } as Record<string, string> : process.env as Record<string, string>,
       });
+
+      logger.info(`【MCP调试】已创建StdioClientTransport，准备连接`);
 
       // 创建客户端
       const client = new Client(
@@ -65,7 +102,9 @@ export class MCPManager {
       );
 
       // 连接
+      logger.info(`【MCP调试】开始连接客户端...`);
       await client.connect(transport);
+      logger.info(`【MCP调试】客户端连接成功`);
 
       // 保存客户端
       this.clients.set(name, {
@@ -80,6 +119,25 @@ export class MCPManager {
     } catch (error) {
       logger.error(`【MCP调试】MCP连接失败 [MCP: ${name}]:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * 连接预定义的MCP服务
+   * @param mcpService 预定义的MCP服务配置
+   */
+  async connectPredefined(mcpService: MCPService): Promise<boolean> {
+    try {
+      await this.connect(
+        mcpService.name,
+        mcpService.command,
+        mcpService.args || [],
+        mcpService.env
+      );
+      return true;
+    } catch (error) {
+      logger.error(`连接预定义MCP失败 [${mcpService.name}]:`, error);
+      return false;
     }
   }
 
@@ -123,14 +181,17 @@ export class MCPManager {
   /**
    * 获取已连接的MCP列表
    */
-  getConnectedMCPs(): Array<{ name: string; command: string; args: string[]; env?: Record<string, string> }> {
+  getConnectedMCPs(): Array<MCPService> {
     logger.info(`【MCP调试】MCPManager.getConnectedMCPs() 获取已连接的MCP列表`);
     
     const result = Array.from(this.clients.values()).map(({ name, command, args, env }) => ({
       name,
+      description: `MCP服务: ${name}`,
       command,
       args,
       env,
+      connected: true,
+      status: 'connected'
     }));
     
     logger.info(`【MCP调试】已连接的MCP列表: ${JSON.stringify(result)}`);
@@ -151,9 +212,10 @@ export class MCPManager {
     }
     
     try {
-      const tools = await mcpClient.client.listTools();
+      const toolsResponse = await mcpClient.client.listTools();
+      const tools = toolsResponse.tools || [];
       logger.info(`【MCP调试】获取到MCP工具列表 [MCP: ${name}, 工具数量: ${tools.length}]`);
-      return tools.tools || [];
+      return tools;
     } catch (error) {
       logger.error(`【MCP调试】获取MCP工具列表失败 [MCP: ${name}]:`, error);
       throw error;

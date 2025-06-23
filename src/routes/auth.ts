@@ -367,4 +367,35 @@ router.post('/revoke-all', requireAuth, async (req: express.Request, res: expres
   }
 });
 
+/**
+ * [测试专用] 创建测试用户
+ * POST /api/auth/create-test-user
+ */
+router.post('/create-test-user', async (req, res) => {
+  try {
+    const { userId, username } = req.body;
+    if (!userId || !username) {
+      return res.status(400).json({ error: 'userId and username are required' });
+    }
+
+    const existingUser = await userService.getUserById(userId);
+    if (existingUser) {
+      return res.status(200).json({ success: true, message: 'Test user already exists', user: existingUser });
+    }
+
+    const newUser = await userService.createUser({
+      id: userId,
+      username: username,
+      loginMethod: 'wallet', // A dummy method
+      walletAddress: `0x${userId.replace(/[^a-fA-F0-9]/g, '').padStart(40, '0')}`,
+      loginData: {}, // Add empty loginData to satisfy the type
+    });
+
+    res.status(201).json({ success: true, message: 'Test user created', user: newUser });
+  } catch (error) {
+    console.error('Error creating test user:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 export default router; 

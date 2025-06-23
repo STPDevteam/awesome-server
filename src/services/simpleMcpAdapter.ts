@@ -21,7 +21,7 @@ export class SimpleMCPAdapter {
       this.httpAdapter = new HTTPMCPAdapter();
     }
 
-    logger.info(`SimpleMCPAdapter initialized in ${this.useHttpMode ? 'HTTP' : 'stdio'} mode`);
+    logger.info(`【MCP调试】SimpleMCPAdapter初始化完成，使用${this.useHttpMode ? 'HTTP' : 'stdio'}模式`);
   }
 
   /**
@@ -29,15 +29,23 @@ export class SimpleMCPAdapter {
    */
   async getAllTools(): Promise<DynamicStructuredTool[]> {
     try {
+      logger.info(`【MCP调试】SimpleMCPAdapter.getAllTools() 开始获取所有工具`);
+      
       if (this.useHttpMode && this.httpAdapter) {
         // HTTP 模式：调用外部 MCP 微服务
-        return await this.httpAdapter.getAllTools();
+        logger.info(`【MCP调试】使用HTTP模式获取所有工具`);
+        const tools = await this.httpAdapter.getAllTools();
+        logger.info(`【MCP调试】HTTP模式获取到${tools.length}个工具`);
+        return tools;
       } else {
         // stdio 模式：使用传统的 MCPManager
-        return await this.getStdioTools();
+        logger.info(`【MCP调试】使用stdio模式获取所有工具`);
+        const tools = await this.getStdioTools();
+        logger.info(`【MCP调试】stdio模式获取到${tools.length}个工具`);
+        return tools;
       }
     } catch (error) {
-      logger.error('Failed to get tools:', error);
+      logger.error('【MCP调试】获取所有工具失败:', error);
       return [];
     }
   }
@@ -225,58 +233,54 @@ export class SimpleMCPAdapter {
   }
 
   /**
-   * 连接 MCP 服务 (仅 stdio 模式使用)
-   */
-  async connectMCP(name: string, command: string, args: string[] = [], env?: Record<string, string>): Promise<void> {
-    if (!this.useHttpMode) {
-      await this.mcpManager.connect(name, command, args, env);
-    } else {
-      logger.warn('connectMCP called in HTTP mode - ignoring');
-    }
-  }
-
-  /**
-   * 断开 MCP 服务 (仅 stdio 模式使用)
-   */
-  async disconnectMCP(name: string): Promise<void> {
-    if (!this.useHttpMode) {
-      await this.mcpManager.disconnect(name);
-    } else {
-      logger.warn('disconnectMCP called in HTTP mode - ignoring');
-    }
-  }
-
-  /**
    * 获取已连接的 MCP 列表
    */
-  getConnectedMCPs(): Array<{ name: string; command: string; args: string[]; env?: Record<string, string> }> {
-    if (this.useHttpMode) {
-      // HTTP 模式：返回配置的服务列表
-      return [
-        { name: 'x-mcp-service', command: 'http', args: [] },
-        { name: 'github-mcp-service', command: 'http', args: [] },
-        { name: 'base-mcp-service', command: 'http', args: [] },
-      ];
-    } else {
-      return this.mcpManager.getConnectedMCPs();
-    }
-  }
+  // getConnectedMCPs(): Array<{ name: string; command: string; args: string[]; env?: Record<string, string> }> {
+  //   if (this.useHttpMode) {
+  //     // HTTP 模式：返回配置的服务列表
+  //     logger.info(`【MCP调试】SimpleMCPAdapter.getConnectedMCPs() HTTP模式返回预配置的MCP列表`);
+  //     const mcps = [
+  //       { name: 'x-mcp-service', command: 'http', args: [] },
+  //       { name: 'github-mcp-service', command: 'http', args: [] },
+  //       { name: 'base-mcp-service', command: 'http', args: [] },
+  //     ];
+  //     logger.info(`【MCP调试】HTTP模式返回的MCP列表: ${JSON.stringify(mcps)}`);
+  //     return mcps;
+  //   } else {
+  //     logger.info(`【MCP调试】SimpleMCPAdapter.getConnectedMCPs() stdio模式从MCPManager获取MCP列表`);
+  //     const mcps = this.mcpManager.getConnectedMCPs();
+  //     logger.info(`【MCP调试】stdio模式从MCPManager获取到的MCP列表: ${JSON.stringify(mcps)}`);
+  //     return mcps;
+  //   }
+  // }
 
   /**
    * 获取 MCP 工具列表
    */
   async getMCPTools(name: string): Promise<any[]> {
+    logger.info(`【MCP调试】SimpleMCPAdapter.getMCPTools() 开始获取MCP工具 [MCP: ${name}]`);
+    
     if (this.useHttpMode && this.httpAdapter) {
       // HTTP 模式：通过 HTTP 适配器获取
       try {
+        logger.info(`【MCP调试】HTTP模式: 尝试获取MCP工具 [MCP: ${name}]`);
         // 这里需要实现获取特定服务工具的方法
+        logger.warn(`【MCP调试】HTTP模式: 获取特定MCP工具的方法未实现，返回空数组 [MCP: ${name}]`);
         return [];
       } catch (error) {
-        logger.error(`Failed to get tools from ${name} in HTTP mode:`, error);
+        logger.error(`【MCP调试】HTTP模式: 获取MCP工具失败 [MCP: ${name}]:`, error);
         return [];
       }
     } else {
-      return await this.mcpManager.getTools(name);
+      logger.info(`【MCP调试】stdio模式: 从MCPManager获取MCP工具 [MCP: ${name}]`);
+      try {
+        const tools = await this.mcpManager.getTools(name);
+        logger.info(`【MCP调试】stdio模式: 成功获取到${tools.length}个工具 [MCP: ${name}]`);
+        return tools;
+      } catch (error) {
+        logger.error(`【MCP调试】stdio模式: 获取MCP工具失败 [MCP: ${name}]:`, error);
+        return [];
+      }
     }
   }
 
@@ -284,10 +288,68 @@ export class SimpleMCPAdapter {
    * 调用 MCP 工具
    */
   async callMCPTool(mcpName: string, toolName: string, args: any): Promise<any> {
-    if (this.useHttpMode && this.httpAdapter) {
-      return await this.httpAdapter.callTool(mcpName, toolName, args);
+    logger.info(`【MCP调试】SimpleMCPAdapter.callMCPTool() 开始调用MCP工具 [MCP: ${mcpName}, 工具: ${toolName}]`);
+    logger.info(`【MCP调试】调用参数: ${JSON.stringify(args)}`);
+    
+    try {
+      if (this.useHttpMode && this.httpAdapter) {
+        logger.info(`【MCP调试】HTTP模式: 使用HttpAdapter调用MCP工具 [MCP: ${mcpName}, 工具: ${toolName}]`);
+        const result = await this.httpAdapter.callTool(mcpName, toolName, args);
+        logger.info(`【MCP调试】HTTP模式: 调用成功 [MCP: ${mcpName}, 工具: ${toolName}]`);
+        logger.info(`【MCP调试】调用结果: ${JSON.stringify(result)}`);
+        return result;
+      } else {
+        logger.info(`【MCP调试】stdio模式: 使用MCPManager调用MCP工具 [MCP: ${mcpName}, 工具: ${toolName}]`);
+        const result = await this.mcpManager.callTool(mcpName, toolName, args);
+        logger.info(`【MCP调试】stdio模式: 调用成功 [MCP: ${mcpName}, 工具: ${toolName}]`);
+        logger.info(`【MCP调试】调用结果: ${JSON.stringify(result)}`);
+        return result;
+      }
+    } catch (error) {
+      logger.error(`【MCP调试】调用MCP工具失败 [MCP: ${mcpName}, 工具: ${toolName}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 连接 MCP 服务 (仅 stdio 模式使用)
+   */
+  async connectMCP(name: string, command: string, args: string[] = [], env?: Record<string, string>): Promise<void> {
+    logger.info(`【MCP调试】SimpleMCPAdapter.connectMCP() 开始连接MCP [MCP: ${name}, 命令: ${command}]`);
+    logger.info(`【MCP调试】连接参数: ${JSON.stringify(args)}`);
+    logger.info(`【MCP调试】环境变量: ${env ? Object.keys(env).join(', ') : '无'}`);
+    
+    if (!this.useHttpMode) {
+      try {
+        logger.info(`【MCP调试】stdio模式: 使用MCPManager连接MCP [MCP: ${name}]`);
+        await this.mcpManager.connect(name, command, args, env);
+        logger.info(`【MCP调试】stdio模式: MCP连接成功 [MCP: ${name}]`);
+      } catch (error) {
+        logger.error(`【MCP调试】stdio模式: MCP连接失败 [MCP: ${name}]:`, error);
+        throw error;
+      }
     } else {
-      return await this.mcpManager.callTool(mcpName, toolName, args);
+      logger.warn(`【MCP调试】HTTP模式下调用了connectMCP方法，此操作被忽略 [MCP: ${name}]`);
+    }
+  }
+
+  /**
+   * 断开 MCP 服务 (仅 stdio 模式使用)
+   */
+  async disconnectMCP(name: string): Promise<void> {
+    logger.info(`【MCP调试】SimpleMCPAdapter.disconnectMCP() 开始断开MCP连接 [MCP: ${name}]`);
+    
+    if (!this.useHttpMode) {
+      try {
+        logger.info(`【MCP调试】stdio模式: 使用MCPManager断开MCP连接 [MCP: ${name}]`);
+        await this.mcpManager.disconnect(name);
+        logger.info(`【MCP调试】stdio模式: MCP断开连接成功 [MCP: ${name}]`);
+      } catch (error) {
+        logger.error(`【MCP调试】stdio模式: MCP断开连接失败 [MCP: ${name}]:`, error);
+        throw error;
+      }
+    } else {
+      logger.warn(`【MCP调试】HTTP模式下调用了disconnectMCP方法，此操作被忽略 [MCP: ${name}]`);
     }
   }
 

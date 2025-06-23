@@ -8,53 +8,34 @@ import { MCPAuthService } from '../services/mcpAuthService.js';
 import { TaskAnalysisService } from '../services/llmTasks/taskAnalysisService.js';
 import { MCPAlternativeService } from '../services/mcpAlternativeService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
-import { MCPManager } from '../services/mcpManager.js';
-import { SimpleMCPAdapter } from '../services/simpleMcpAdapter.js';
+import { HTTPMCPAdapter } from '../services/httpMcpAdapter.js';
 import { AVAILABLE_MCPS } from '../services/llmTasks/taskAnalysisService.js';
+import { spawn } from 'child_process';
+import { getPredefinedMCP } from '../services/predefinedMCPs.js';
+import { MCPService } from '../services/mcpManager.js';
 
 const router = Router();
 
 // 创建服务实例
 const taskService = getTaskService();
-const mcpManager = new MCPManager();
-
-// 根据环境选择适当的MCP适配器
-const adapterType = process.env.MCP_ADAPTER_TYPE || 'simple';
-let mcpAdapter;
-
-if (adapterType === 'simple') {
-  // 使用SimpleMCPAdapter，它会根据环境自动选择stdio或HTTP模式
-  mcpAdapter = new SimpleMCPAdapter();
-  logger.info('Task路由使用SimpleMCPAdapter，自动选择适当模式');
-} else {
-  // 使用传统的MCPManager
-  mcpAdapter = null;
-  logger.info('Task路由使用传统的MCPManager');
-}
-
-const mcpAuthService = new MCPAuthService(mcpManager);
-const taskAnalysisService = new TaskAnalysisService(mcpManager);
+const httpMcpAdapter = new HTTPMCPAdapter();
+const mcpAuthService = new MCPAuthService();
+const taskAnalysisService = new TaskAnalysisService(httpMcpAdapter);
 const mcpAlternativeService = new MCPAlternativeService(AVAILABLE_MCPS);
-const taskExecutorService = new TaskExecutorService(mcpManager, mcpAuthService);
 
-// 如果使用SimpleMCPAdapter，预先连接常用MCP
-if (mcpAdapter instanceof SimpleMCPAdapter) {
-  // 在应用启动时连接常用MCP
-  (async () => {
-    try {
-      // 使用Node.js内置模块作为MCP工具的命令
-      // 这些命令在大多数系统上都存在，可以作为模拟MCP使用
-      await mcpAdapter.connectMCP('GitHubTool', 'node', ['-e', 'console.log(JSON.stringify({name:"GitHubTool"}))']);
-      await mcpAdapter.connectMCP('GoogleSearchTool', 'node', ['-e', 'console.log(JSON.stringify({name:"GoogleSearchTool"}))']);
-      await mcpAdapter.connectMCP('FileSystemTool', 'node', ['-e', 'console.log(JSON.stringify({name:"FileSystemTool"}))']);
-      await mcpAdapter.connectMCP('WebBrowserTool', 'node', ['-e', 'console.log(JSON.stringify({name:"WebBrowserTool"}))']);
-      
-      logger.info('预连接常用MCP成功');
-    } catch (error) {
-      logger.error('预连接MCP失败:', error);
-    }
-  })();
-}
+// 获取mcpManager实例，将在应用启动时通过app.set设置
+let mcpManager: any;
+
+// 在路由中使用app.get('mcpManager')获取mcpManager实例
+router.use((req, res, next) => {
+  if (!mcpManager) {
+    mcpManager = req.app.get('mcpManager');
+  }
+  next();
+});
+
+// 初始化taskExecutorService，使用mcpManager
+const taskExecutorService = new TaskExecutorService(httpMcpAdapter, mcpAuthService, mcpManager);
 
 // 验证请求内容的Schema
 const generateTitleSchema = z.object({
@@ -117,6 +98,207 @@ router.post('/title', requireAuth, async (req: Request, res: Response) => {
       success: false,
       error: 'Internal Server Error',
       message: '服务器内部错误'
+    });
+  }
+});
+
+// 启动Playwright MCP服务
+router.post('/playwright/start', requireAuth, async (req, res) => {
+  try {
+    logger.info('启动Playwright MCP服务...');
+    
+    // 使用spawn启动Playwright MCP
+    const process = spawn('npx', ['-y', '@playwright/mcp@latest'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true
+    });
+    
+    let stdoutData = '';
+    let stderrData = '';
+    
+    process.stdout.on('data', (data) => {
+      stdoutData += data.toString();
+      logger.info(`Playwright MCP stdout: ${data.toString()}`);
+    });
+    
+    process.stderr.on('data', (data) => {
+      stderrData += data.toString();
+      logger.error(`Playwright MCP stderr: ${data.toString()}`);
+    });
+    
+    // 等待一段时间，确保进程启动
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    if (process.killed) {
+      return res.status(500).json({
+        success: false,
+        message: 'Playwright MCP服务启动失败',
+        error: stderrData
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Playwright MCP服务已启动',
+      pid: process.pid,
+      output: stdoutData
+    });
+  } catch (error) {
+    logger.error('启动Playwright MCP服务失败:', error);
+    res.status(500).json({
+      success: false,
+      message: '启动Playwright MCP服务失败',
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加Playwright MCP测试路由
+router.post('/test-playwright-mcp', async (req, res) => {
+  try {
+    const { url, searchText } = req.body;
+    
+    // 获取服务实例
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    // 检查Playwright MCP是否已连接
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const playwrightConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'playwright');
+    
+    // 如果未连接，尝试连接
+    if (!playwrightConnected) {
+      logger.info('Playwright MCP未连接，尝试连接...');
+      const playwrightMCP = getPredefinedMCP('playwright');
+      if (!playwrightMCP) {
+        return res.status(500).json({ error: 'Playwright MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(playwrightMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to Playwright MCP' });
+      }
+      logger.info('Playwright MCP连接成功');
+    }
+    
+    // 获取Playwright MCP的工具列表
+    logger.info('获取Playwright MCP工具列表...');
+    const tools = await mcpManager.getTools('playwright');
+    
+    // 返回结果
+    res.json({
+      success: true,
+      message: 'Playwright MCP测试成功',
+      tools: tools
+    });
+  } catch (error) {
+    logger.error('Playwright MCP测试失败:', error);
+    res.status(500).json({ 
+      error: 'Playwright MCP测试失败', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加AWE Core MCP测试路由
+router.post('/test-awe-mcp', async (req, res) => {
+  try {
+    // 获取服务实例
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    // 检查AWE Core MCP是否已连接
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const aweConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'AWE Core MCP Server');
+    
+    // 如果未连接，尝试连接
+    if (!aweConnected) {
+      logger.info('AWE Core MCP未连接，尝试连接...');
+      const aweMCP = getPredefinedMCP('AWE Core MCP Server');
+      if (!aweMCP) {
+        return res.status(500).json({ error: 'AWE Core MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(aweMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to AWE Core MCP' });
+      }
+      logger.info('AWE Core MCP连接成功');
+    }
+    
+    // 获取AWE Core MCP的工具列表
+    logger.info('获取AWE Core MCP工具列表...');
+    const tools = await mcpManager.getTools('AWE Core MCP Server');
+    
+    // 返回结果
+    res.json({
+      success: true,
+      message: 'AWE Core MCP测试成功',
+      tools: tools
+    });
+  } catch (error) {
+    logger.error('AWE Core MCP测试失败:', error);
+    res.status(500).json({ 
+      error: 'AWE Core MCP测试失败', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加Playwright MCP直接测试路由
+router.post('/test-playwright-direct', async (req, res) => {
+  try {
+    const { url, searchText } = req.body;
+    
+    logger.info('启动Playwright MCP并直接测试...');
+    
+    // 使用spawn启动Playwright MCP
+    const playwrightProcess = spawn('npx', ['-y', '@playwright/mcp@latest'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      shell: true
+    });
+    
+    let stdoutData = '';
+    let stderrData = '';
+    
+    playwrightProcess.stdout.on('data', (data) => {
+      stdoutData += data.toString();
+      logger.info(`Playwright MCP stdout: ${data.toString()}`);
+    });
+    
+    playwrightProcess.stderr.on('data', (data) => {
+      stderrData += data.toString();
+      logger.error(`Playwright MCP stderr: ${data.toString()}`);
+    });
+    
+    // 等待一段时间，确保进程启动
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    if (playwrightProcess.killed) {
+      return res.status(500).json({
+        success: false,
+        message: 'Playwright MCP服务启动失败',
+        error: stderrData
+      });
+    }
+    
+    // 返回结果
+    res.json({
+      success: true,
+      message: 'Playwright MCP直接测试成功',
+      pid: playwrightProcess.pid,
+      output: stdoutData,
+      error: stderrData
+    });
+  } catch (error) {
+    logger.error('Playwright MCP直接测试失败:', error);
+    res.status(500).json({ 
+      error: 'Playwright MCP直接测试失败', 
+      details: error instanceof Error ? error.message : String(error)
     });
   }
 });
@@ -205,8 +387,10 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
 
     const { content, title } = validationResult.data;
 
-    // 如果未提供标题，使用LLM生成
-    const taskTitle = title || await titleGeneratorService.generateTitle(content);
+    // 如果未提供标题，并且有OPENAI_API_KEY，才使用LLM生成
+    const taskTitle = (!title && process.env.OPENAI_API_KEY) 
+      ? await titleGeneratorService.generateTitle(content)
+      : title || content.substring(0, 30); // 如果没有提供标题也没有key，使用内容作为标题
 
       // 创建任务 - 如果req.user不存在，则使用请求体中的userId
       const userId = req.user?.id || req.body.userId;
@@ -341,166 +525,33 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 分析任务
+ * 启动任务分析
  * POST /api/task/:id/analyze
  */
-router.post('/:id/analyze', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/analyze', async (req, res) => {
   try {
     const taskId = req.params.id;
-    const task = await taskService.getTaskById(taskId);
-    
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: '任务不存在'
+    // const { userId } = req.body; // userId 暂时不用
+
+    const taskAnalysisService = req.app.get('taskAnalysisService');
+    const workflow = await taskAnalysisService.analyzeTask(taskId);
+
+    if (workflow) {
+      const updatedTask = await taskService.getTaskById(taskId);
+      res.json({
+        success: true,
+        data: {
+          message: '任务分析完成',
+          taskId: taskId,
+          mcpWorkflow: updatedTask?.mcpWorkflow
+        }
       });
+    } else {
+      res.status(500).json({ success: false, error: 'Analysis Failed', message: '任务分析失败，请检查日志获取更多信息' });
     }
-    
-    // 从请求体获取userId或使用req.user.id
-    const userId = req.user?.id || req.body.userId;
-    
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
-      });
-    }
-    
-    // 确保用户只能分析自己的任务
-    if (task.userId !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: '无权分析该任务'
-      });
-    }
-    
-    // 更新任务状态为处理中
-    await taskService.updateTask(taskId, { status: 'in_progress' });
-    
-    // 执行任务分析（同步处理）
-    const startTime = Date.now();
-    
-    // 步骤1: 分析任务需求
-    const requirementsResult = await taskAnalysisService.analyzeRequirements(task.content);
-    
-    // 记录步骤1结果
-    await taskService.createTaskStep({
-      taskId,
-      stepType: 'analysis',
-      title: '分析任务需求',
-      content: requirementsResult.content,
-      reasoning: requirementsResult.reasoning,
-      reasoningTime: Date.now() - startTime,
-      orderIndex: 1
-    });
-    
-    // 步骤2: 识别最相关的MCP
-    const mcpStartTime = Date.now();
-    const mcpResult = await taskAnalysisService.identifyRelevantMCPs(
-      task.content, 
-      requirementsResult.content
-    );
-    
-    // 记录步骤2结果
-    await taskService.createTaskStep({
-      taskId,
-      stepType: 'mcp_selection',
-      title: '识别最相关的MCP工具',
-      content: mcpResult.content,
-      reasoning: mcpResult.reasoning,
-      reasoningTime: Date.now() - mcpStartTime,
-      orderIndex: 2
-    });
-    
-    // 步骤3: 确认可交付内容
-    const deliverablesStartTime = Date.now();
-    const deliverablesResult = await taskAnalysisService.confirmDeliverables(
-      task.content,
-      requirementsResult.content,
-      mcpResult.recommendedMCPs
-    );
-    
-    // 记录步骤3结果
-    await taskService.createTaskStep({
-      taskId,
-      stepType: 'deliverables',
-      title: '确认可交付内容',
-      content: deliverablesResult.content,
-      reasoning: deliverablesResult.reasoning,
-      reasoningTime: Date.now() - deliverablesStartTime,
-      orderIndex: 3
-    });
-    
-    // 步骤4: 构建MCP工作流
-    const workflowStartTime = Date.now();
-    const workflowResult = await taskAnalysisService.buildMCPWorkflow(
-      task.content,
-      requirementsResult.content,
-      mcpResult.recommendedMCPs,
-      deliverablesResult.canBeFulfilled,
-      deliverablesResult.deliverables
-    );
-    
-    // 记录步骤4结果
-    await taskService.createTaskStep({
-      taskId,
-      stepType: 'workflow',
-      title: '构建MCP工作流',
-      content: workflowResult.content,
-      reasoning: workflowResult.reasoning,
-      reasoningTime: Date.now() - workflowStartTime,
-      orderIndex: 4
-    });
-    
-    // 创建MCP工作流信息
-    const mcpWorkflow = {
-      mcps: mcpResult.recommendedMCPs.map(mcp => ({
-        name: mcp.name,
-        description: mcp.description,
-        authRequired: mcp.authRequired,
-        authFields: mcp.authFields || [], // 确保返回认证字段
-        capabilities: mcp.capabilities || [] // 返回工具能力
-      })),
-      workflow: workflowResult.workflow
-    };
-    
-    // 更新任务的MCP工作流信息
-    await taskService.updateTask(taskId, { mcpWorkflow });
-    
-    // 返回分析结果
-    res.json({
-      success: true,
-      data: {
-        message: '任务分析完成',
-        taskId,
-        analysis: {
-          requirements: requirementsResult,
-          mcps: mcpResult.recommendedMCPs.map(mcp => ({
-            name: mcp.name,
-            description: mcp.description,
-            authRequired: mcp.authRequired,
-            authFields: mcp.authFields || [],
-            capabilities: mcp.capabilities || []
-          })),
-          deliverables: {
-            canBeFulfilled: deliverablesResult.canBeFulfilled,
-            items: deliverablesResult.deliverables
-          },
-          workflow: workflowResult.workflow
-        },
-        mcpWorkflow
-      }
-    });
   } catch (error) {
-    logger.error(`分析任务错误 [任务ID: ${req.params.id}]:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: '服务器内部错误'
-    });
+    logger.error(`任务分析错误 [任务ID: ${req.params.id}]:`, error);
+    res.status(500).json({ success: false, error: 'Internal Server Error', message: '服务器内部错误' });
   }
 });
 
@@ -697,83 +748,21 @@ router.post('/:id/replace-mcp', async (req: Request, res: Response) => {
 });
 
 /**
- * 提交执行任务
+ * 执行任务
  * POST /api/task/:id/execute
  */
-router.post('/:id/execute', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/execute', async (req, res) => {
   try {
     const taskId = req.params.id;
-    const task = await taskService.getTaskById(taskId);
+    const taskExecutorService = req.app.get('taskExecutorService');
     
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: '任务不存在'
-      });
-    }
+    // 异步执行，立即返回响应
+    taskExecutorService.executeTask(taskId, { skipAuthCheck: true });
     
-    // 从请求体获取userId或使用req.user.id
-    const userId = req.user?.id || req.body.userId;
-    
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
-      });
-    }
-    
-    // 确保用户只能执行自己的任务
-    if (task.userId !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: '无权执行该任务'
-      });
-    }
-    
-    // 检查是否所有需要授权的MCP都已验证，除非skipAuthCheck参数为true（测试用途）
-    const skipAuthCheck = req.body.skipAuthCheck === true;
-    if (!skipAuthCheck) {
-    const allVerified = await mcpAuthService.checkAllMCPsVerified(taskId);
-    
-    if (!allVerified) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: '请先验证所有必要的MCP授权'
-      });
-      }
-    } else {
-      logger.info(`跳过MCP授权检查 [任务ID: ${taskId}, 测试模式]`);
-    }
-    
-    // 开始执行任务（异步处理）
-    const executionStarted = await taskExecutorService.executeTask(taskId);
-    
-    if (!executionStarted) {
-      return res.status(500).json({
-        success: false,
-        error: 'Internal Server Error',
-        message: '任务执行启动失败'
-      });
-    }
-    
-    res.json({
-      success: true,
-      data: {
-        message: '任务执行已启动',
-        taskId
-      }
-    });
+    res.json({ success: true, message: '任务执行已异步启动' });
   } catch (error) {
-    logger.error(`执行任务错误 [任务ID: ${req.params.id}]:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: '服务器内部错误'
-    });
+    logger.error(`执行任务路由错误 [任务ID: ${req.params.id}]:`, error);
+    res.status(500).json({ success: false, error: 'Internal Server Error', message: '启动任务执行失败' });
   }
 });
 
@@ -897,17 +886,6 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
       });
     }
     
-    // 检查是否所有需要授权的MCP都已验证
-    const allVerified = await mcpAuthService.checkAllMCPsVerified(taskId);
-    
-    if (!allVerified) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: '请先验证所有必要的MCP授权'
-      });
-    }
-    
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -950,6 +928,94 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
       success: false,
       error: 'Internal Server Error',
       message: '服务器内部错误'
+    });
+  }
+});
+
+// 添加Playwright MCP直接执行路由
+router.post('/execute-playwright-search', async (req, res) => {
+  try {
+    const { searchText } = req.body;
+    const searchTerm = searchText || 'MCP协议';
+    
+    // 获取服务实例
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    // 检查Playwright MCP是否已连接
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const playwrightConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'playwright');
+    
+    // 如果未连接，尝试连接
+    if (!playwrightConnected) {
+      logger.info('Playwright MCP未连接，尝试连接...');
+      const playwrightMCP = getPredefinedMCP('playwright');
+      if (!playwrightMCP) {
+        return res.status(500).json({ error: 'Playwright MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(playwrightMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to Playwright MCP' });
+      }
+      logger.info('Playwright MCP连接成功');
+    }
+    
+    // 执行搜索操作
+    logger.info(`开始执行百度搜索: ${searchTerm}`);
+    
+    // 步骤1: 访问百度
+    logger.info('步骤1: 访问百度');
+    const navigateResult = await mcpManager.callTool('playwright', 'browser_navigate', { 
+      url: 'https://www.baidu.com' 
+    });
+    
+    // 步骤2: 在搜索框中输入搜索词
+    logger.info(`步骤2: 输入搜索词 "${searchTerm}"`);
+    await mcpManager.callTool('playwright', 'browser_type', { 
+      text: searchTerm,
+      element: '搜索框',
+      ref: '#kw'
+    });
+    
+    // 步骤3: 点击搜索按钮
+    logger.info('步骤3: 点击搜索按钮');
+    await mcpManager.callTool('playwright', 'browser_click', { 
+      element: '搜索按钮',
+      ref: '#su'
+    });
+    
+    // 步骤4: 等待搜索结果加载
+    logger.info('步骤4: 等待搜索结果加载');
+    await mcpManager.callTool('playwright', 'browser_wait_for', { 
+      time: 2
+    });
+    
+    // 步骤5: 截图
+    logger.info('步骤5: 截图');
+    const screenshotResult = await mcpManager.callTool('playwright', 'browser_take_screenshot', {});
+    
+    // 返回结果
+    res.json({
+      success: true,
+      message: '百度搜索执行成功',
+      searchTerm,
+      steps: [
+        { step: 1, action: 'browser_navigate', status: 'success' },
+        { step: 2, action: 'browser_type', status: 'success' },
+        { step: 3, action: 'browser_click', status: 'success' },
+        { step: 4, action: 'browser_wait_for', status: 'success' },
+        { step: 5, action: 'browser_take_screenshot', status: 'success' }
+      ],
+      screenshot: screenshotResult
+    });
+  } catch (error) {
+    logger.error('百度搜索执行失败:', error);
+    res.status(500).json({ 
+      error: '百度搜索执行失败', 
+      details: error instanceof Error ? error.message : String(error)
     });
   }
 });

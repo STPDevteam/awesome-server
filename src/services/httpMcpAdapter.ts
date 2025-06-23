@@ -31,29 +31,24 @@ export class HTTPMCPAdapter {
   }
 
   private initializeServices(): void {
-    // Load service endpoints from environment variables
+    // Load service endpoints from environment variables or use defaults for docker-compose
     const services: MCPServiceEndpoint[] = [
       {
-        name: 'x-mcp-service',
-        baseUrl: process.env.X_MCP_SERVICE_URL || 'http://x-mcp-service:3010',
-        timeout: 30000,
-        retries: 3
-      },
-      {
         name: 'github-mcp-service',
-        baseUrl: process.env.GITHUB_MCP_SERVICE_URL || 'http://github-mcp-service:3011',
+        // 尝试使用不同的API路径
+        baseUrl: process.env.GITHUB_MCP_SERVICE_URL || 'http://github-mcp-bridge:3000',
         timeout: 30000,
         retries: 3
       },
       {
-        name: 'base-mcp-service',
-        baseUrl: process.env.BASE_MCP_SERVICE_URL || 'http://base-mcp-service:3012',
+        name: 'cook-mcp-service',
+        baseUrl: process.env.COOK_MCP_SERVICE_URL || 'http://cook-mcp-service:3010',
         timeout: 30000,
         retries: 3
       },
       {
-        name: 'coingecko-mcp-service',
-        baseUrl: process.env.COINGECKO_MCP_SERVICE_URL || 'http://coingecko-mcp-service:3013',
+        name: 'playwright-mcp-service',
+        baseUrl: process.env.PLAYWRIGHT_MCP_SERVICE_URL || 'http://host.docker.internal:3000',
         timeout: 30000,
         retries: 3
       }
@@ -162,16 +157,36 @@ export class HTTPMCPAdapter {
         arguments: args
       };
 
+      console.log(`\n==== HTTP MCP请求详情 ====`);
+      console.log(`时间: ${new Date().toISOString()}`);
+      console.log(`服务名称: ${serviceName}`);
+      console.log(`服务端点: ${endpoint.baseUrl}`);
+      console.log(`工具名称: ${toolName}`);
+      console.log(`请求路径: ${endpoint.baseUrl}/api/call-tool`);
+      console.log(`请求方法: POST`);
+      console.log(`请求载荷: ${JSON.stringify(payload, null, 2)}`);
+
       const response = await this.makeRequest(endpoint, '/api/call-tool', 'POST', payload);
       this.requestCount++;
+
+      console.log(`\n==== HTTP MCP响应详情 ====`);
+      console.log(`状态码: ${response.status}`);
+      console.log(`响应数据: ${JSON.stringify(response.data, null, 2)}`);
 
       if (response.data.success) {
         return response.data.result;
       } else {
+        console.log(`\n==== HTTP MCP错误详情 ====`);
+        console.log(`错误信息: ${response.data.error || 'Tool call failed'}`);
         throw new Error(response.data.error || 'Tool call failed');
       }
     } catch (error) {
       this.errorCount++;
+      console.log(`\n==== HTTP MCP异常详情 ====`);
+      console.log(`错误类型: ${error instanceof Error ? error.constructor.name : typeof error}`);
+      console.log(`错误信息: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`错误堆栈: ${error instanceof Error ? error.stack : 'No stack trace'}`);
+      
       logger.error(`Tool call failed for ${serviceName}:${toolName}:`, error);
       throw error;
     }
@@ -191,6 +206,11 @@ export class HTTPMCPAdapter {
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
+        console.log(`\n==== HTTP请求详情(尝试 ${attempt}/${retries}) ====`);
+        console.log(`URL: ${url}`);
+        console.log(`方法: ${method}`);
+        console.log(`数据: ${data ? JSON.stringify(data, null, 2) : 'undefined'}`);
+        
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), endpoint.timeout || 30000);
 
@@ -206,13 +226,31 @@ export class HTTPMCPAdapter {
 
         clearTimeout(timeoutId);
 
+        const responseText = await response.text();
+        console.log(`\n==== HTTP响应详情 ====`);
+        console.log(`状态码: ${response.status}`);
+        console.log(`状态文本: ${response.statusText}`);
+        console.log(`响应头: ${JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2)}`);
+        console.log(`响应体: ${responseText}`);
+        
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const responseData = await response.json();
+        let responseData;
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (e) {
+          console.log(`响应不是有效的JSON: ${responseText}`);
+          responseData = { text: responseText };
+        }
+
         return { data: responseData, status: response.status };
       } catch (error) {
+        console.log(`\n==== HTTP请求错误(尝试 ${attempt}/${retries}) ====`);
+        console.log(`错误类型: ${error instanceof Error ? error.constructor.name : typeof error}`);
+        console.log(`错误信息: ${error instanceof Error ? error.message : String(error)}`);
+        
         logger.warn(`Request attempt ${attempt} failed for ${url}:`, {
           error: error instanceof Error ? error.message : String(error)
         });

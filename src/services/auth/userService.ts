@@ -14,6 +14,11 @@ interface UserRow {
   is_active: boolean;
 }
 
+// 允许在创建时传入可选的ID
+interface InternalCreateUserParams extends CreateUserParams {
+  id?: string;
+}
+
 interface LoginMethodRow {
   id: number;
   user_id: string;
@@ -26,8 +31,8 @@ interface LoginMethodRow {
 
 class UserService {
   
-  async createUser(params: CreateUserParams): Promise<User> {
-    const userId = this.generateUserId();
+  async createUser(params: InternalCreateUserParams): Promise<User> {
+    const userId = params.id || this.generateUserId();
     const now = new Date();
     
     try {
