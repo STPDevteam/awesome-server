@@ -11,6 +11,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { MCPManager } from './services/mcpManager.js';
 import { MCPToolAdapter } from './services/mcpToolAdapter.js';
 import { OfficialMCPAdapter } from './services/officialMcpAdapter.js';
+import { predefinedMCPs, getPredefinedMCP } from './services/predefinedMCPs.js';
 import authRoutes from './routes/auth.js';
 import taskRoutes from './routes/task.js';
 import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
@@ -18,7 +19,12 @@ import { db } from './config/database.js';
 import { migrationService } from './scripts/migrate-database.js';
 import paymentRoutes from './routes/payment.js';
 import { getS3AvatarService } from './services/s3AvatarService.js';
+import { HTTPMCPAdapter } from './services/httpMcpAdapter.js';
+import { TaskAnalysisService } from './services/llmTasks/taskAnalysisService.js';
+import { TaskExecutorService } from './services/taskExecutorService.js';
+import { MCPAuthService } from './services/mcpAuthService.js';
 import { awePaymentService } from './services/awePaymentService.js';
+
 
 
 const app = express();
@@ -53,6 +59,18 @@ const mcpToolAdapter = USE_OFFICIAL_ADAPTER
   : new MCPToolAdapter(mcpManager);
 
 console.log(`🔧 Using ${USE_OFFICIAL_ADAPTER ? 'Official' : 'Custom'} MCP Adapter`);
+
+// 初始化HTTP MCP适配器
+const httpMcpAdapter = new HTTPMCPAdapter();
+
+// 初始化MCP认证服务
+const mcpAuthService = new MCPAuthService();
+
+// 初始化任务分析服务
+const taskAnalysisService = new TaskAnalysisService(httpMcpAdapter);
+
+// 初始化任务执行服务
+const taskExecutorService = new TaskExecutorService(httpMcpAdapter, mcpAuthService, mcpManager);
 
 // 转换消息格式的辅助函数
 function convertToLangChainMessages(messages: any[]) {
@@ -388,6 +406,12 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// 将mcpManager实例挂载到app上，以便在路由处理器中访问
+app.set('mcpManager', mcpManager);
+app.set('taskAnalysisService', taskAnalysisService);
+app.set('taskExecutorService', taskExecutorService);
+app.set('mcpAuthService', mcpAuthService);
+
 // 数据库初始化和服务器启动
 async function startServer() {
   try {
@@ -418,12 +442,48 @@ async function startServer() {
       console.log('ℹ️  S3 avatar service not configured - avatar randomization disabled');
     }
     
+<<<<<<< HEAD
+    // 连接预定义的MCP服务
+    console.log('🔌 Connecting to predefined MCP services...');
+    
+    // 尝试连接AWE Core MCP
+    const aweMCP = getPredefinedMCP('AWE Core MCP Server');
+    if (aweMCP) {
+      try {
+        console.log('🌐 Connecting to AWE Core MCP...');
+        const connected = await mcpManager.connectPredefined(aweMCP);
+        if (connected) {
+          console.log('✅ AWE Core MCP connected successfully');
+        } else {
+          console.log('⚠️ Failed to connect to AWE Core MCP');
+        }
+      } catch (error) {
+        console.error('❌ Error connecting to AWE Core MCP:', error);
+      }
+    }
+    
+    // 尝试连接Playwright MCP
+    const playwrightMCP = getPredefinedMCP('playwright');
+    if (playwrightMCP) {
+      try {
+        console.log('🎭 Connecting to Playwright MCP...');
+        const connected = await mcpManager.connectPredefined(playwrightMCP);
+        if (connected) {
+          console.log('✅ Playwright MCP connected successfully');
+        } else {
+          console.log('⚠️ Failed to connect to Playwright MCP');
+        }
+      } catch (error) {
+        console.error('❌ Error connecting to Playwright MCP:', error);
+      }
+=======
     // AWE 支付服务状态
     if (process.env.BASE_RPC_URL) {
       console.log('💎 AWE payment service configured');
       console.log('✅ AWE payment service ready');
     } else {
       console.log('ℹ️  BASE_RPC_URL not configured - AWE payment features disabled');
+>>>>>>> fa30f283cef30d30c2a3301a4304a5fe805b184a
     }
     
     // 启动服务器

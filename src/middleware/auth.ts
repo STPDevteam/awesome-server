@@ -17,6 +17,31 @@ declare global {
  * 认证中间件 - 要求用户必须登录
  */
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  // 在测试环境中，可以设置一个环境变量来跳过认证
+  if (process.env.MCP_SKIP_AUTH === 'true') {
+    // 模拟一个用户附加到请求上，以便后续中间件或路由处理器使用
+    req.user = {
+      id: 'test-user-id',
+      username: 'test-user',
+      email: 'test@example.com',
+      avatar: 'https://i.pravatar.cc/150?u=test-user-id',
+      walletAddress: '0x0000000000000000000000000000000000000000',
+      balance: '0',
+      loginMethods: {
+        wallet: {
+          address: '0x0000000000000000000000000000000000000000',
+          verified: true
+        }
+      },
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastLoginAt: new Date(),
+    } as User;
+    req.userId = 'test-user-id';
+    return next();
+  }
+
   try {
     const token = jwtService.extractTokenFromHeader(req.headers.authorization);
     

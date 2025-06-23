@@ -7,10 +7,9 @@ import { MCPAuthData, AuthVerificationResult } from '../models/mcpAuth.js';
  * MCP授权管理服务
  */
 export class MCPAuthService {
-  private mcpManager: MCPManager;
-  
-  constructor(mcpManager: MCPManager) {
-    this.mcpManager = mcpManager;
+  constructor() {
+    // The mcpManager dependency was here, but it was unused.
+    // It has been removed as part of the refactoring to a pure HTTP architecture.
   }
   
   /**

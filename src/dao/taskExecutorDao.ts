@@ -60,10 +60,10 @@ export class TaskExecutorDao {
         `
         UPDATE tasks
         SET status = $1, result = $2, updated_at = NOW(),
-            completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
+            completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE completed_at END
         WHERE id = $3
         `,
-        [status, JSON.stringify(result), taskId]
+        [status, result, taskId]
       );
       
       return true;
@@ -141,7 +141,7 @@ export class TaskExecutorDao {
         SET result = $1, updated_at = NOW()
         WHERE id = $2
         `,
-        [JSON.stringify(taskResult), taskId]
+        [taskResult, taskId]
       );
       
       return true;

@@ -1,5 +1,5 @@
 // 任务状态类型
-export type TaskStatus = 'created' | 'in_progress' | 'completed' | 'failed';
+export type TaskStatus = 'created' | 'in_progress' | 'completed' | 'failed' | 'analyzed';
 
 // MCP工作流配置类型
 export interface MCPWorkflow {

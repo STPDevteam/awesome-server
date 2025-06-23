@@ -86,4 +86,10 @@ export const MEMBERSHIP_PRICING = {
     monthly: { amount: '200', currency: 'USDT' },
     yearly: { amount: '2000', currency: 'USDT' }
   }
-} as const; 
+} as const;
+
+/**
+ * 登录方式
+ * 支持钱包、Google、GitHub等多种方式
+ */
+export type LoginMethod = 'wallet' | 'google' | 'github' | 'test'; 
