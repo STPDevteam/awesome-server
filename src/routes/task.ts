@@ -9,7 +9,6 @@ import { TaskAnalysisService } from '../services/llmTasks/taskAnalysisService.js
 import { MCPAlternativeService } from '../services/mcpAlternativeService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
 import { HTTPMCPAdapter } from '../services/httpMcpAdapter.js';
-import { AVAILABLE_MCPS } from '../services/llmTasks/taskAnalysisService.js';
 import { spawn } from 'child_process';
 import { getPredefinedMCP } from '../services/predefinedMCPs.js';
 import { MCPService } from '../services/mcpManager.js';
@@ -21,7 +20,7 @@ const taskService = getTaskService();
 const httpMcpAdapter = new HTTPMCPAdapter();
 const mcpAuthService = new MCPAuthService();
 const taskAnalysisService = new TaskAnalysisService(httpMcpAdapter);
-const mcpAlternativeService = new MCPAlternativeService(AVAILABLE_MCPS);
+const mcpAlternativeService = new MCPAlternativeService();
 
 // 获取mcpManager实例，将在应用启动时通过app.set设置
 let mcpManager: any;

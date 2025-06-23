@@ -10,6 +10,7 @@
 - [任务分析接口](#任务分析接口)
 - [MCP授权接口](#MCP授权接口)
 - [任务执行接口](#任务执行接口)
+- [MCP API 参考](#MCP-API-参考)
 
 ## 通用规范
 
@@ -565,4 +566,360 @@ POST /task/:id/execute/stream
 执行完成或发生错误时，会发送结束标记：
 ```
 data: [DONE]
+```
+
+## MCP API 参考
+
+### MCP 数据模型
+
+#### MCPInfo 结构
+
+```typescript
+interface MCPInfo {
+  name: string;           // MCP名称
+  description: string;    // MCP描述
+  capabilities: string[]; // MCP能力
+  authRequired: boolean;  // 是否需要认证
+  authFields?: string[];  // 认证字段
+  category?: string;      // 分类
+  imageUrl?: string;      // 图像URL
+  githubUrl?: string;     // GitHub URL
+  authParams?: Record<string, any>; // 认证参数
+}
+```
+
+#### MCPTool 结构
+
+```typescript
+interface MCPTool {
+  name: string;        // 工具名称
+  description?: string; // 工具描述
+  parameters?: any;     // 工具参数
+  returnType?: string;  // 返回类型
+}
+```
+
+#### MCPConnection 结构
+
+```typescript
+interface MCPConnection {
+  name: string;       // MCP名称
+  path: string;       // 路径
+  args: string[];     // 参数
+  env?: Record<string, string>; // 环境变量
+  isConnected: boolean; // 是否已连接
+}
+```
+
+### MCP 接口
+
+#### 获取所有MCP信息
+
+```
+GET /api/mcp
+```
+
+**响应示例**：
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "playwright",
+      "description": "Playwright 浏览器自动化工具，可以控制浏览器访问网页",
+      "capabilities": ["browser", "web-automation", "screenshot", "navigation"],
+      "authRequired": false,
+      "category": "自动化工具",
+      "imageUrl": "https://playwright.dev/img/playwright-logo.svg",
+      "githubUrl": "https://github.com/microsoft/playwright"
+    },
+    // 其他MCP...
+  ]
+}
+```
+
+#### 获取所有MCP类别
+
+```
+GET /api/mcp/categories
+```
+
+**响应示例**：
+
+```json
+{
+  "status": "success",
+  "data": ["自动化工具", "开发工具", "网络工具", "系统工具"]
+}
+```
+
+#### 获取指定类别的MCP
+
+```
+GET /api/mcp/category/:category
+```
+
+**参数**：
+- `category`: MCP类别
+
+**响应示例**：
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "playwright",
+      "description": "Playwright 浏览器自动化工具，可以控制浏览器访问网页",
+      "capabilities": ["browser", "web-automation", "screenshot", "navigation"],
+      "authRequired": false,
+      "category": "自动化工具",
+      "imageUrl": "https://playwright.dev/img/playwright-logo.svg",
+      "githubUrl": "https://github.com/microsoft/playwright"
+    }
+    // 该类别的其他MCP...
+  ]
+}
+```
+
+#### 获取指定ID的MCP详情
+
+```
+GET /api/mcp/:id
+```
+
+**参数**：
+- `id`: MCP ID
+
+**响应示例**：
+
+```json
+{
+  "status": "success",
+  "data": {
+    "name": "playwright",
+    "description": "Playwright 浏览器自动化工具，可以控制浏览器访问网页",
+    "capabilities": ["browser", "web-automation", "screenshot", "navigation"],
+    "authRequired": false,
+    "category": "自动化工具",
+    "imageUrl": "https://playwright.dev/img/playwright-logo.svg",
+    "githubUrl": "https://github.com/microsoft/playwright"
+  }
+}
+```
+
+#### 测试Playwright MCP
+
+```
+POST /api/task/test-playwright-mcp
+```
+
+**请求体**：
+
+```json
+{
+  "url": "https://www.baidu.com",
+  "searchText": "MCP协议"
+}
+```
+
+**响应示例**：
+
+```json
+{
+  "status": "success",
+  "data": {
+    "tools": [
+      {
+        "name": "browser_open",
+        "description": "打开浏览器并访问指定URL",
+        "parameters": {
+          "url": "要访问的URL"
+        }
+      },
+      {
+        "name": "search_text",
+        "description": "在当前页面搜索文本",
+        "parameters": {
+          "text": "要搜索的文本"
+        }
+      },
+      // 其他工具...
+    ]
+  }
+}
+```
+
+### MCP与任务集成
+
+#### 任务分析（识别所需MCP）
+
+```
+POST /api/task/:id/analyze
+```
+
+**请求体**：
+```json
+{
+  "userId": "用户ID"
+}
+```
+
+**响应示例**：
+```json
+{
+  "status": "success",
+  "data": {
+    "taskId": "33c1becd-bf59-46f6-a296-689b85e8eb3a",
+    "analysis": {
+      "tools": ["browser", "search"],
+      "mcps": [
+        {
+          "name": "playwright",
+          "description": "Playwright 浏览器自动化工具",
+          "authRequired": false,
+          "category": "自动化工具"
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "description": "打开浏览器访问百度",
+          "mcp": "playwright",
+          "tool": "browser_open",
+          "params": {
+            "url": "https://www.baidu.com"
+          }
+        },
+        {
+          "step": 2,
+          "description": "搜索MCP协议",
+          "mcp": "playwright",
+          "tool": "search_text",
+          "params": {
+            "text": "MCP协议"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+#### 流式任务分析
+
+```
+POST /api/task/:id/analyze/stream
+```
+
+**请求体**：
+```json
+{
+  "userId": "用户ID"
+}
+```
+
+**响应**：
+流式事件序列，每个事件格式如下：
+
+```
+data: {"type":"thinking","content":"正在分析任务..."}
+
+data: {"type":"tools","content":["browser","search"]}
+
+data: {"type":"mcps","content":[{"name":"playwright","description":"Playwright 浏览器自动化工具","authRequired":false}]}
+
+data: {"type":"workflow","content":[{"step":1,"description":"打开浏览器访问百度","mcp":"playwright","tool":"browser_open","params":{"url":"https://www.baidu.com"}}]}
+
+data: {"type":"workflow","content":[{"step":2,"description":"搜索MCP协议","mcp":"playwright","tool":"search_text","params":{"text":"MCP协议"}}]}
+
+data: [DONE]
+```
+
+#### 获取MCP替代方案
+
+```
+GET /api/task/:id/mcp-alternatives/:mcpName
+```
+
+**参数**：
+- `id`: 任务ID
+- `mcpName`: MCP名称
+- `userId`: 用户ID (查询参数)
+
+**响应示例**：
+```json
+{
+  "status": "success",
+  "data": {
+    "original": "playwright",
+    "alternatives": [
+      {
+        "name": "WebBrowserTool",
+        "description": "通用网页浏览工具",
+        "category": "网络工具",
+        "authRequired": false,
+        "matchScore": 0.92
+      }
+    ],
+    "context": "基于任务需要访问网页和执行搜索的需求，推荐这些替代MCP"
+  }
+}
+```
+
+#### 替换任务中的MCP
+
+```
+POST /api/task/:id/replace-mcp
+```
+
+**请求体**：
+```json
+{
+  "userId": "用户ID",
+  "originalMcp": "playwright",
+  "newMcp": "WebBrowserTool"
+}
+```
+
+**响应示例**：
+```json
+{
+  "status": "success",
+  "data": {
+    "taskId": "33c1becd-bf59-46f6-a296-689b85e8eb3a",
+    "message": "成功替换MCP",
+    "workflow": {
+      "mcps": [
+        {
+          "name": "WebBrowserTool",
+          "description": "通用网页浏览工具",
+          "authRequired": false,
+          "category": "网络工具"
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "description": "打开浏览器访问百度",
+          "mcp": "WebBrowserTool",
+          "tool": "visit-webpage",
+          "params": {
+            "url": "https://www.baidu.com"
+          }
+        },
+        {
+          "step": 2,
+          "description": "搜索MCP协议",
+          "mcp": "WebBrowserTool",
+          "tool": "get-content",
+          "params": {
+            "query": "MCP协议"
+          }
+        }
+      ]
+    }
+  }
+}
 ``` 

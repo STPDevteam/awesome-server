@@ -1,0 +1,1 @@
+{"success":true,"data":{"task":{"id":"33c1becd-bf59-46f6-a296-689b85e8eb3a","userId":"test_user_123","title":"Playwright百度搜索测试","content":"自动化测试任务：使用Playwright访问百度并搜索MCP协议","status":"created","createdAt":"2025-06-23T06:18:14.313Z","updatedAt":"2025-06-23T06:18:14.313Z"},"steps":[]}}

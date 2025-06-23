@@ -91,6 +91,9 @@ function convertToLangChainMessages(messages: any[]) {
 // 认证路由
 app.use('/api/auth', authRoutes);
 
+// MCP路由
+import mcpRoutes from './routes/mcp.js';
+app.use('/api/mcp', mcpRoutes);
 
 // 任务相关路由
 app.use('/api/task', taskRoutes);

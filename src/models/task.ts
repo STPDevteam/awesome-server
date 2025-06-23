@@ -9,6 +9,10 @@ export interface MCPWorkflow {
     authRequired: boolean;
     authVerified?: boolean;
     authData?: Record<string, any>;
+    category?: string;
+    imageUrl?: string;
+    githubUrl?: string;
+    authParams?: Record<string, any>;
   }>;
   workflow: Array<{
     step: number;

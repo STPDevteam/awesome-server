@@ -12,7 +12,10 @@ export const predefinedMCPs: MCPService[] = [
         command: 'npx',
         args: ['@playwright/mcp@latest'],
         env: {},
-        connected: false
+        connected: false,
+        category: '自动化工具',
+        imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+        githubUrl: 'https://github.com/microsoft/playwright'
     }
 ];
 
@@ -33,7 +36,10 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
             command: 'npx',
             args: ['@playwright/mcp@latest'],
             env: {},
-            connected: false
+            connected: false,
+            category: '自动化工具',
+            imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+            githubUrl: 'https://github.com/microsoft/playwright'
         };
     }
     
