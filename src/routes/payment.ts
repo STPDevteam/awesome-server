@@ -1,5 +1,6 @@
 import express from 'express';
 import { coinbaseCommerceService } from '../services/coinbaseCommerceService.js';
+import { awePaymentService } from '../services/awePaymentService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MEMBERSHIP_PRICING } from '../models/User.js';
 
@@ -212,6 +213,182 @@ router.post('/webhooks/coinbase', async (req, res) => {
     res.status(400).json({
       success: false,
       error: 'Webhook processing failed'
+    });
+  }
+});
+
+/**
+ * 计算AWE支付价格
+ */
+router.get('/calculate-awe-price', requireAuth, async (req, res) => {
+  try {
+    const { membershipType, subscriptionType } = req.query;
+
+    // 验证输入
+    if (!membershipType || !subscriptionType) {
+      return res.status(400).json({
+        success: false,
+        error: 'membershipType and subscriptionType are required'
+      });
+    }
+
+    if (!['plus', 'pro'].includes(membershipType as string)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid membershipType. Must be "plus" or "pro"'
+      });
+    }
+
+    if (!['monthly', 'yearly'].includes(subscriptionType as string)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid subscriptionType. Must be "monthly" or "yearly"'
+      });
+    }
+
+    // 计算价格
+    const priceInfo = await awePaymentService.calculatePrice(
+      membershipType as 'plus' | 'pro',
+      subscriptionType as 'monthly' | 'yearly'
+    );
+
+    res.json({
+      success: true,
+      data: priceInfo
+    });
+  } catch (error) {
+    console.error('Calculate AWE price error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to calculate AWE price'
+    });
+  }
+});
+
+/**
+ * 确认AWE支付
+ */
+router.post('/confirm-awe-payment', requireAuth, async (req, res) => {
+  try {
+    const { membershipType, subscriptionType, transactionHash } = req.body;
+    const userId = req.userId!;
+
+    // 验证输入
+    if (!membershipType || !subscriptionType || !transactionHash) {
+      return res.status(400).json({
+        success: false,
+        error: 'membershipType, subscriptionType and transactionHash are required'
+      });
+    }
+
+    if (!['plus', 'pro'].includes(membershipType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid membershipType. Must be "plus" or "pro"'
+      });
+    }
+
+    if (!['monthly', 'yearly'].includes(subscriptionType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid subscriptionType. Must be "monthly" or "yearly"'
+      });
+    }
+
+    // 检查用户是否已有有效会员
+    const membershipStatus = await coinbaseCommerceService.checkMembershipStatus(userId);
+    if (membershipStatus.isActive) {
+      return res.status(400).json({
+        success: false,
+        error: 'User already has active membership',
+        data: membershipStatus
+      });
+    }
+
+    // 验证交易并创建支付记录
+    const payment = await awePaymentService.verifyAndCreatePayment({
+      userId,
+      membershipType,
+      subscriptionType,
+      transactionHash
+    });
+
+    res.json({
+      success: true,
+      data: {
+        paymentId: payment.id,
+        status: payment.status,
+        amount: payment.amount,
+        transactionHash: payment.transactionHash,
+        confirmedAt: payment.confirmedAt,
+        membershipType: payment.membershipType,
+        subscriptionType: payment.subscriptionType
+      }
+    });
+  } catch (error: any) {
+    console.error('Confirm AWE payment error:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to confirm AWE payment'
+    });
+  }
+});
+
+/**
+ * 获取AWE支付状态
+ */
+router.get('/awe-payment/:paymentId', requireAuth, async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const userId = req.userId!;
+
+    const payment = await awePaymentService.getPayment(paymentId);
+    
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        error: 'Payment not found'
+      });
+    }
+
+    // 确保用户只能查看自己的支付记录
+    if (payment.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: payment
+    });
+  } catch (error) {
+    console.error('Get AWE payment error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get AWE payment'
+    });
+  }
+});
+
+/**
+ * 获取用户的AWE支付历史
+ */
+router.get('/awe-payments', requireAuth, async (req, res) => {
+  try {
+    const userId = req.userId!;
+    const payments = await awePaymentService.getUserPayments(userId);
+
+    res.json({
+      success: true,
+      data: payments
+    });
+  } catch (error) {
+    console.error('Get AWE payments error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get AWE payments'
     });
   }
 });

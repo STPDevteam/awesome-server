@@ -23,6 +23,8 @@ import { HTTPMCPAdapter } from './services/httpMcpAdapter.js';
 import { TaskAnalysisService } from './services/llmTasks/taskAnalysisService.js';
 import { TaskExecutorService } from './services/taskExecutorService.js';
 import { MCPAuthService } from './services/mcpAuthService.js';
+import { awePaymentService } from './services/awePaymentService.js';
+
 
 
 const app = express();
@@ -440,6 +442,7 @@ async function startServer() {
       console.log('ℹ️  S3 avatar service not configured - avatar randomization disabled');
     }
     
+<<<<<<< HEAD
     // 连接预定义的MCP服务
     console.log('🔌 Connecting to predefined MCP services...');
     
@@ -473,6 +476,14 @@ async function startServer() {
       } catch (error) {
         console.error('❌ Error connecting to Playwright MCP:', error);
       }
+=======
+    // AWE 支付服务状态
+    if (process.env.BASE_RPC_URL) {
+      console.log('💎 AWE payment service configured');
+      console.log('✅ AWE payment service ready');
+    } else {
+      console.log('ℹ️  BASE_RPC_URL not configured - AWE payment features disabled');
+>>>>>>> fa30f283cef30d30c2a3301a4304a5fe805b184a
     }
     
     // 启动服务器

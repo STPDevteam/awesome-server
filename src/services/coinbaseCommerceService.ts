@@ -270,8 +270,10 @@ export class CoinbaseCommerceService {
       if (!this.webhookSecret) {
         console.warn('Webhook secret not configured, skipping signature verification');
         // 解析 JSON 数据而不验证签名（仅用于测试）
-        const event = JSON.parse(rawBody);
+        const webhookData = JSON.parse(rawBody);
+        const event = webhookData.event || webhookData;
         console.log('Webhook event received (unverified):', event.type, event.id);
+        console.log('Webhook full structure (unverified):', JSON.stringify(webhookData, null, 2));
         
         if (event.type === 'charge:confirmed') {
           await this.handlePaymentConfirmed(event.data);
@@ -279,23 +281,31 @@ export class CoinbaseCommerceService {
           await this.handlePaymentFailed(event.data);
         } else if (event.type === 'charge:resolved') {
           await this.handlePaymentResolved(event.data);
+        } else if (event.type === 'charge:pending') {
+          console.log('Payment is pending for charge (unverified):', event.data.id);
+        } else if (event.type === 'charge:created') {
+          console.log('Charge created (unverified):', event.data.id);
+        } else {
+          console.log('Unhandled webhook event type (unverified):', event.type);
+          console.log('Event data (unverified):', JSON.stringify(event, null, 2));
         }
         return;
       }
 
       // 检查必要的依赖
-      if (!Webhook || !Webhook.verifySigHeader) {
+      if (!Webhook || !Webhook.verifyEventBody) {
         console.error('Webhook verification not available');
         throw new Error('Webhook verification not available');
       }
 
       console.log('Attempting webhook signature verification...');
       
-      // 验证 webhook 签名
-      const event = Webhook.verifySigHeader(rawBody, signature, this.webhookSecret);
+      // 验证 webhook 签名并获取事件数据
+      const event = Webhook.verifyEventBody(rawBody, signature, this.webhookSecret);
 
       console.log('Webhook signature verified successfully');
       console.log('Webhook event received:', event.type, event.id);
+      console.log('Event data:', JSON.stringify(event.data, null, 2));
 
       // 处理不同类型的事件
       switch (event.type) {
@@ -308,8 +318,15 @@ export class CoinbaseCommerceService {
         case 'charge:resolved':
           await this.handlePaymentResolved(event.data);
           break;
+        case 'charge:pending':
+          console.log('Payment is pending for charge:', event.data.id);
+          break;
+        case 'charge:created':
+          console.log('Charge created:', event.data.id);
+          break;
         default:
           console.log('Unhandled webhook event type:', event.type);
+          console.log('Event data:', JSON.stringify(event, null, 2));
       }
     } catch (error: any) {
       console.error('Webhook processing error:', {

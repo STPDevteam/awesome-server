@@ -357,6 +357,64 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS mcp_auth CASCADE');
         console.log('✅ Dropped mcp_auth table');
       }
+    },
+    {
+      version: 10,
+      name: 'create_awe_payments_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS awe_payments (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            membership_type VARCHAR(10) NOT NULL CHECK (membership_type IN ('plus', 'pro')),
+            subscription_type VARCHAR(10) NOT NULL CHECK (subscription_type IN ('monthly', 'yearly')),
+            amount VARCHAR(50) NOT NULL, -- AWE代币数量
+            amount_in_wei VARCHAR(100) NOT NULL, -- Wei单位的数量
+            usd_value VARCHAR(50) NOT NULL, -- USD价值
+            status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'confirmed', 'failed', 'expired')),
+            transaction_hash VARCHAR(100),
+            block_number INTEGER,
+            from_address VARCHAR(100),
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            confirmed_at TIMESTAMP WITH TIME ZONE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_payments_user_id 
+          ON awe_payments(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_payments_status 
+          ON awe_payments(status)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_payments_amount_in_wei 
+          ON awe_payments(amount_in_wei)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_payments_transaction_hash 
+          ON awe_payments(transaction_hash) 
+          WHERE transaction_hash IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_payments_created_at 
+          ON awe_payments(created_at)
+        `);
+
+        console.log('✅ Created awe_payments table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS awe_payments CASCADE');
+        console.log('✅ Dropped awe_payments table');
+      }
     }
   ];
 
