@@ -50,6 +50,18 @@ export class MCPAlternativeService {
     try {
       logger.info(`获取MCP替代选项 [MCP: ${mcpName}]`);
       
+      // 硬编码playwright-mcp-service的替代选项
+      if (mcpName === 'playwright-mcp-service' || mcpName === 'playwright') {
+        logger.info(`返回playwright的硬编码替代选项`);
+        // 返回一个默认的替代项列表
+        return [{
+          name: 'WebBrowserTool',
+          description: '网页浏览工具，可以用于访问网页并获取信息',
+          capabilities: ['打开浏览器', '访问网页', '获取页面内容'],
+          authRequired: false
+        }];
+      }
+      
       // 先从预定义映射中获取可能的替代项
       const predefinedAlternatives = this.alternativeMap[mcpName] || [];
       
@@ -58,13 +70,15 @@ export class MCPAlternativeService {
         predefinedAlternatives.includes(mcp.name)
       );
       
-      // 如果没有预定义的替代项，使用LLM推荐
+      // 跳过LLM调用，直接返回预定义的替代项
       if (alternativeMCPs.length === 0) {
-        return this.recommendAlternatives(mcpName, taskContent);
+        // 如果没有预定义的替代项，返回一个默认的列表
+        logger.info(`没有找到预定义替代项，返回默认替代项`);
+        return this.availableMCPs.slice(0, 2);  // 返回最多2个可用工具作为替代
       }
       
-      // 使用LLM根据任务内容对替代项进行排序
-      return this.rankAlternatives(mcpName, alternativeMCPs, taskContent);
+      // 直接返回找到的替代项，不调用LLM排序
+      return alternativeMCPs;
     } catch (error) {
       logger.error(`获取MCP替代选项失败 [MCP: ${mcpName}]:`, error);
       // 返回空替代项
