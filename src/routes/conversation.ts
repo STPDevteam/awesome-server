@@ -32,7 +32,7 @@ const createConversationSchema = z.object({
 });
 
 const sendMessageSchema = z.object({
-  content: z.string().min(1, '消息内容不能为空')
+  content: z.string().min(1, 'Message content cannot be empty')
 });
 
 /**
@@ -46,7 +46,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '无效的请求参数',
+        message: 'Invalid request parameters',
         details: validationResult.error.errors
       });
     }
@@ -54,7 +54,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     const { title } = validationResult.data;
     const userId = req.user!.id;
 
-    logger.info(`创建对话请求 [用户ID: ${userId}]`);
+    logger.info(`Creating conversation request [User ID: ${userId}]`);
 
     // 获取对话服务
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
@@ -67,11 +67,11 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error('创建对话错误:', error);
+    logger.error('Error creating conversation:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -91,7 +91,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
       });
     }
 
@@ -109,11 +109,11 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       data: result
     });
   } catch (error) {
-    logger.error('获取对话列表错误:', error);
+    logger.error('Error getting conversation list:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -133,7 +133,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
       });
     }
 
@@ -147,7 +147,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '对话不存在'
+        message: 'Conversation not found'
       });
     }
     
@@ -156,7 +156,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权访问该对话'
+        message: 'No permission to access this conversation'
       });
     }
     
@@ -171,11 +171,11 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error(`获取对话详情错误 [ID: ${req.params.id}]:`, error);
+    logger.error(`Error getting conversation details [ID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -193,7 +193,7 @@ router.post('/:id/message', optionalAuth, async (req: Request, res: Response) =>
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '无效的请求参数',
+        message: 'Invalid request parameters',
         details: validationResult.error.errors
       });
     }
@@ -207,7 +207,7 @@ router.post('/:id/message', optionalAuth, async (req: Request, res: Response) =>
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
       });
     }
 
@@ -221,7 +221,7 @@ router.post('/:id/message', optionalAuth, async (req: Request, res: Response) =>
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '对话不存在'
+        message: 'Conversation not found'
       });
     }
     
@@ -229,7 +229,7 @@ router.post('/:id/message', optionalAuth, async (req: Request, res: Response) =>
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权访问该对话'
+        message: 'No permission to access this conversation'
       });
     }
     
@@ -246,11 +246,11 @@ router.post('/:id/message', optionalAuth, async (req: Request, res: Response) =>
       }
     });
   } catch (error) {
-    logger.error(`发送消息错误 [对话ID: ${req.params.id}]:`, error);
+    logger.error(`Error sending message [Conversation ID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -268,7 +268,7 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '无效的请求参数',
+        message: 'Invalid request parameters',
         details: validationResult.error.errors
       });
     }
@@ -282,7 +282,7 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
       });
     }
 
@@ -296,7 +296,7 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(400).json({
         success: false,
         error: 'Not Found',
-        message: '对话不存在'
+        message: 'Conversation not found'
       });
     }
     
@@ -304,7 +304,7 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权访问该对话'
+        message: 'No permission to access this conversation'
       });
     }
     
@@ -342,11 +342,11 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
         res.end();
       })
       .catch((error) => {
-        logger.error(`流式处理用户消息错误 [对话ID: ${conversationId}]:`, error);
+        logger.error(`Error processing user message stream [Conversation ID: ${conversationId}]:`, error);
         res.write(`data: ${JSON.stringify({
           event: 'error',
           data: {
-            message: '处理消息时发生错误',
+            message: 'Error processing message',
             details: error instanceof Error ? error.message : String(error)
           }
         })}\n\n`);
@@ -354,13 +354,13 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
         res.end();
       });
   } catch (error) {
-    logger.error(`初始化流式处理错误 [对话ID: ${req.params.id}]:`, error);
+    logger.error(`Error initializing stream processing [Conversation ID: ${req.params.id}]:`, error);
     
     // 对于初始设置错误，使用标准JSON响应
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -380,7 +380,7 @@ router.get('/:id/tasks', optionalAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
       });
     }
 
@@ -392,7 +392,7 @@ router.get('/:id/tasks', optionalAuth, async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '对话不存在'
+        message: 'Conversation not found'
       });
     }
     
@@ -401,7 +401,7 @@ router.get('/:id/tasks', optionalAuth, async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权访问该对话'
+        message: 'No permission to access this conversation'
       });
     }
     
@@ -420,11 +420,11 @@ router.get('/:id/tasks', optionalAuth, async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error(`获取对话关联任务错误 [对话ID: ${req.params.id}]:`, error);
+    logger.error(`Error getting conversation related tasks [Conversation ID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });

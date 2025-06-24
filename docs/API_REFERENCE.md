@@ -728,63 +728,89 @@ POST /task/:id/verify-auth
 }
 ```
 
-### 获取MCP替代选项
+### 获取MCP替代方案
 
 ```
-GET /task/:id/mcp-alternatives/:mcpName
+GET /api/task/:id/mcp-alternatives/:mcpName
 ```
 
-**路径参数**
+**参数**：
 - `id`: 任务ID
-- `mcpName`: 原MCP名称
+- `mcpName`: MCP名称
+- `userId`: 用户ID (查询参数)
 
-**查询参数**
-- `userId`: 用户ID（仅本地测试模式使用）
-
-**响应**
+**响应示例**：
 ```json
 {
-  "success": true,
+  "status": "success",
   "data": {
-    "originalMcp": "原MCP名称",
+    "original": "playwright",
     "alternatives": [
       {
-        "mcpName": "替代MCP名称",
-        "description": "描述",
-        "compatibilityScore": 兼容性评分
+        "name": "WebBrowserTool",
+        "description": "通用网页浏览工具",
+        "category": "网络工具",
+        "authRequired": false,
+        "matchScore": 0.92
       }
-      // 更多替代选项...
-    ]
+    ],
+    "context": "基于任务需要访问网页和执行搜索的需求，推荐这些替代MCP"
   }
 }
 ```
 
-### 替换MCP
+### 替换任务中的MCP
 
 ```
-POST /task/:id/replace-mcp
+POST /api/task/:id/replace-mcp
 ```
 
-**路径参数**
-- `id`: 任务ID
-
-**请求体**
+**请求体**：
 ```json
 {
-  "originalMcpName": "原MCP名称",
-  "newMcpName": "新MCP名称",
-  "userId": "用户ID（仅本地测试模式使用）"
+  "userId": "用户ID",
+  "originalMcp": "playwright",
+  "newMcp": "WebBrowserTool"
 }
 ```
 
-**响应**
+**响应示例**：
 ```json
 {
-  "success": true,
+  "status": "success",
   "data": {
-    "message": "MCP替换成功",
-    "originalMcpName": "原MCP名称",
-    "newMcpName": "新MCP名称"
+    "taskId": "33c1becd-bf59-46f6-a296-689b85e8eb3a",
+    "message": "成功替换MCP",
+    "workflow": {
+      "mcps": [
+        {
+          "name": "WebBrowserTool",
+          "description": "通用网页浏览工具",
+          "authRequired": false,
+          "category": "网络工具"
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "description": "打开浏览器访问百度",
+          "mcp": "WebBrowserTool",
+          "tool": "visit-webpage",
+          "params": {
+            "url": "https://www.baidu.com"
+          }
+        },
+        {
+          "step": 2,
+          "description": "搜索MCP协议",
+          "mcp": "WebBrowserTool",
+          "tool": "get-content",
+          "params": {
+            "query": "MCP协议"
+          }
+        }
+      ]
+    }
   }
 }
 ```
@@ -930,20 +956,41 @@ GET /api/mcp
 }
 ```
 
-#### 获取所有MCP类别
+#### 获取MCP类别
 
 ```
 GET /api/mcp/categories
 ```
 
-**响应示例**：
+**描述**: 获取所有可用的MCP类别及其对应的MCP数量
 
+**响应**:
 ```json
 {
-  "status": "success",
-  "data": ["自动化工具", "开发工具", "网络工具", "系统工具"]
+  "success": true,
+  "data": [
+    {
+      "name": "开发工具",
+      "count": 2
+    },
+    {
+      "name": "网络工具",
+      "count": 2
+    },
+    {
+      "name": "自动化工具",
+      "count": 1
+    },
+    {
+      "name": "系统工具",
+      "count": 1
+    }
+  ]
 }
 ```
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
 
 #### 获取指定类别的MCP
 
@@ -952,25 +999,31 @@ GET /api/mcp/category/:category
 ```
 
 **参数**：
-- `category`: MCP类别
+- `category`: 类别名称
 
 **响应示例**：
-
 ```json
 {
   "status": "success",
-  "data": [
-    {
-      "name": "playwright",
-      "description": "Playwright 浏览器自动化工具，可以控制浏览器访问网页",
-      "capabilities": ["browser", "web-automation", "screenshot", "navigation"],
-      "authRequired": false,
-      "category": "自动化工具",
-      "imageUrl": "https://playwright.dev/img/playwright-logo.svg",
-      "githubUrl": "https://github.com/microsoft/playwright"
-    }
-    // 该类别的其他MCP...
-  ]
+  "data": {
+    "category": "开发工具",
+    "mcps": [
+      {
+        "name": "github",
+        "description": "GitHub 工具，提供代码仓库管理、PR创建等功能",
+        "capabilities": ["repository", "pull-request", "issue"],
+        "authRequired": true,
+        "category": "开发工具"
+      },
+      {
+        "name": "langchain",
+        "description": "LangChain 工具集成，提供文档处理、向量搜索等能力",
+        "capabilities": ["document-processing", "vector-search", "agents"],
+        "authRequired": true,
+        "category": "开发工具"
+      }
+    ]
+  }
 }
 ```
 
@@ -998,6 +1051,24 @@ GET /api/mcp/:id
     "githubUrl": "https://github.com/microsoft/playwright"
   }
 }
+```
+
+#### 流式事件序列示例
+
+流式事件序列，每个事件格式如下：
+
+```
+data: {"type":"thinking","content":"正在分析任务..."}
+
+data: {"type":"tools","content":["browser","search"]}
+
+data: {"type":"mcps","content":[{"name":"playwright","description":"Playwright 浏览器自动化工具","authRequired":false}]}
+
+data: {"type":"workflow","content":[{"step":1,"description":"打开浏览器访问百度","mcp":"playwright","tool":"browser_open","params":{"url":"https://www.baidu.com"}}]}
+
+data: {"type":"workflow","content":[{"step":2,"description":"搜索MCP协议","mcp":"playwright","tool":"search_text","params":{"text":"MCP协议"}}]}
+
+data: [DONE]
 ```
 
 #### 测试Playwright MCP
@@ -1035,9 +1106,39 @@ POST /api/task/test-playwright-mcp
         "parameters": {
           "text": "要搜索的文本"
         }
-      },
-      // 其他工具...
+      }
     ]
+  }
+}
+```
+
+#### 获取MCP替代方案
+
+```
+GET /api/task/:id/mcp-alternatives/:mcpName
+```
+
+**参数**：
+- `id`: 任务ID
+- `mcpName`: MCP名称
+- `userId`: 用户ID (查询参数)
+
+**响应示例**：
+```json
+{
+  "status": "success",
+  "data": {
+    "original": "playwright",
+    "alternatives": [
+      {
+        "name": "WebBrowserTool",
+        "description": "通用网页浏览工具",
+        "category": "网络工具",
+        "authRequired": false,
+        "matchScore": 0.92
+      }
+    ],
+    "context": "基于任务需要访问网页和执行搜索的需求，推荐这些替代MCP"
   }
 }
 ```
@@ -1114,51 +1215,6 @@ POST /api/task/:id/analyze/stream
 **响应**：
 流式事件序列，每个事件格式如下：
 
-```
-data: {"type":"thinking","content":"正在分析任务..."}
-
-data: {"type":"tools","content":["browser","search"]}
-
-data: {"type":"mcps","content":[{"name":"playwright","description":"Playwright 浏览器自动化工具","authRequired":false}]}
-
-data: {"type":"workflow","content":[{"step":1,"description":"打开浏览器访问百度","mcp":"playwright","tool":"browser_open","params":{"url":"https://www.baidu.com"}}]}
-
-data: {"type":"workflow","content":[{"step":2,"description":"搜索MCP协议","mcp":"playwright","tool":"search_text","params":{"text":"MCP协议"}}]}
-
-data: [DONE]
-```
-
-#### 获取MCP替代方案
-
-```
-GET /api/task/:id/mcp-alternatives/:mcpName
-```
-
-**参数**：
-- `id`: 任务ID
-- `mcpName`: MCP名称
-- `userId`: 用户ID (查询参数)
-
-**响应示例**：
-```json
-{
-  "status": "success",
-  "data": {
-    "original": "playwright",
-    "alternatives": [
-      {
-        "name": "WebBrowserTool",
-        "description": "通用网页浏览工具",
-        "category": "网络工具",
-        "authRequired": false,
-        "matchScore": 0.92
-      }
-    ],
-    "context": "基于任务需要访问网页和执行搜索的需求，推荐这些替代MCP"
-  }
-}
-```
-
 #### 替换任务中的MCP
 
 ```
@@ -1213,4 +1269,4 @@ POST /api/task/:id/replace-mcp
     }
   }
 }
-``` 
+```

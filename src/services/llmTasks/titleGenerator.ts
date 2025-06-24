@@ -5,8 +5,8 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
 /**
- * 任务标题生成服务
- * 根据用户输入的任务内容，使用LLM生成简洁明了的任务标题
+ * Task Title Generation Service
+ * Uses LLM to generate concise and clear task titles based on user input task content
  */
 export class TitleGeneratorService {
   private llm: ChatOpenAI;
@@ -32,13 +32,13 @@ export class TitleGeneratorService {
       logger.info('Generating title for task content');
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一个专业的任务标题生成器。你的职责是基于用户描述的任务内容，生成一个简洁、明确、有描述性的标题。
-        标题需要满足以下要求：
-        1. 长度不超过20个汉字或40个英文字符
-        2. 能够清晰表达任务的核心目标
-        3. 使用动词开头，如"开发"、"分析"、"设计"等
-        4. 不要使用过于技术性的术语，保持通俗易懂
-        5. 只返回标题，无需其他解释`),
+        new SystemMessage(`You are a professional task title generator. Your responsibility is to generate a concise, clear, and descriptive title based on the user's task description.
+        The title should meet the following requirements:
+        1. Length should not exceed 40 characters
+        2. Clearly express the core objective of the task
+        3. Start with a verb, such as "Develop", "Analyze", "Design", etc.
+        4. Avoid overly technical terminology, keep it easy to understand
+        5. Return only the title, no additional explanation`),
         new HumanMessage(content)
       ]);
 
@@ -46,7 +46,7 @@ export class TitleGeneratorService {
       return response.content.toString().trim();
     } catch (error) {
       logger.error('Error generating title:', error);
-      throw new Error('标题生成失败');
+      throw new Error('Title generation failed');
     }
   }
 }

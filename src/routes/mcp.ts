@@ -19,11 +19,11 @@ router.get('/', optionalAuth, async (_req: Request, res: Response) => {
       data: mcps
     });
   } catch (error) {
-    logger.error(`获取MCP列表失败:`, error);
+    logger.error(`Error getting MCP list:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -45,11 +45,11 @@ router.get('/category/:category', optionalAuth, async (req: Request, res: Respon
       }
     });
   } catch (error) {
-    logger.error(`获取指定类别的MCP列表失败:`, error);
+    logger.error(`Error getting MCP list by category:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -67,11 +67,11 @@ router.get('/categories', optionalAuth, async (_req: Request, res: Response) => 
       data: categories
     });
   } catch (error) {
-    logger.error(`获取MCP类别列表失败:`, error);
+    logger.error(`Error getting MCP category list:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -89,7 +89,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: `未找到ID为 ${mcpId} 的MCP`
+        message: `MCP with ID ${mcpId} not found`
       });
     }
     
@@ -98,11 +98,11 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       data: mcp
     });
   } catch (error) {
-    logger.error(`获取MCP详情失败 [MCP ID: ${req.params.id}]:`, error);
+    logger.error(`Error getting MCP details [MCP ID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });

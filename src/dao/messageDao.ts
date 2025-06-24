@@ -215,6 +215,33 @@ export class MessageDao {
   }
 
   /**
+   * 更新消息内容
+   */
+  async updateMessageContent(messageId: string, content: string): Promise<Message | null> {
+    try {
+      const result = await db.query<MessageDbRow>(
+        `
+        UPDATE messages
+        SET content = $1
+        WHERE id = $2
+        RETURNING *
+        `,
+        [content, messageId]
+      );
+
+      if (result.rows.length === 0) {
+        return null;
+      }
+
+      logger.info(`Message content updated successfully [ID: ${messageId}]`);
+      return this.mapMessageFromDb(result.rows[0]);
+    } catch (error) {
+      logger.error(`Failed to update message content [ID: ${messageId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * 将数据库行映射为消息对象
    */
   private mapMessageFromDb(row: MessageDbRow): Message {

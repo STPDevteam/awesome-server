@@ -39,28 +39,28 @@ const taskExecutorService = new TaskExecutorService(httpMcpAdapter, mcpAuthServi
 
 // 验证请求内容的Schema
 const generateTitleSchema = z.object({
-  content: z.string().min(1, '任务内容至少需要1个字符')
+  content: z.string().min(1, 'Task content must have at least 1 character')
 });
 
 // 创建任务的Schema
 const createTaskSchema = z.object({
   // todo 最大要限制多少
-  content: z.string().min(1, '任务内容至少需要1个字符'),
+  content: z.string().min(1, 'Task content must have at least 1 character'),
   title: z.string().optional(), // 标题可选，如果未提供将使用LLM生成
   conversationId: z.string().optional() // 关联到对话
 });
 
 // MCP验证Schema
 const verifyMCPAuthSchema = z.object({
-  mcpName: z.string().min(1, 'MCP名称不能为空'),
+  mcpName: z.string().min(1, 'MCP name cannot be empty'),
   authData: z.record(z.string(), z.string()),
   saveForLater: z.boolean().optional()
 });
 
 // 替换MCP Schema
 const replaceMCPSchema = z.object({
-  originalMcpName: z.string().min(1, '原MCP名称不能为空'),
-  newMcpName: z.string().min(1, '新MCP名称不能为空')
+  originalMcpName: z.string().min(1, 'Original MCP name cannot be empty'),
+  newMcpName: z.string().min(1, 'New MCP name cannot be empty')
 });
 
 /**
@@ -75,13 +75,13 @@ router.post('/title', requireAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '无效的请求参数',
+        message: 'Invalid request parameters',
         details: validationResult.error.errors
       });
     }
 
     const { content } = validationResult.data;
-    logger.info(`接收到生成标题请求 [用户ID: ${req.user?.id}]`);
+    logger.info(`Received title generation request [User ID: ${req.user?.id}]`);
 
     // 调用标题生成服务
     const title = await titleGeneratorService.generateTitle(content);
@@ -94,11 +94,11 @@ router.post('/title', requireAuth, async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error('生成标题错误:', error);
+    logger.error('Title generation error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -106,7 +106,7 @@ router.post('/title', requireAuth, async (req: Request, res: Response) => {
 // 启动Playwright MCP服务
 router.post('/playwright/start', requireAuth, async (req, res) => {
   try {
-    logger.info('启动Playwright MCP服务...');
+    logger.info('Starting Playwright MCP service...');
     
     // 使用spawn启动Playwright MCP
     const process = spawn('npx', ['-y', '@playwright/mcp@latest'], {
@@ -133,22 +133,22 @@ router.post('/playwright/start', requireAuth, async (req, res) => {
     if (process.killed) {
       return res.status(500).json({
         success: false,
-        message: 'Playwright MCP服务启动失败',
+        message: 'Playwright MCP service failed to start',
         error: stderrData
       });
     }
     
     res.json({
       success: true,
-      message: 'Playwright MCP服务已启动',
+      message: 'Playwright MCP service started',
       pid: process.pid,
       output: stdoutData
     });
   } catch (error) {
-    logger.error('启动Playwright MCP服务失败:', error);
+    logger.error('Failed to start Playwright MCP service:', error);
     res.status(500).json({
       success: false,
-      message: '启动Playwright MCP服务失败',
+      message: 'Failed to start Playwright MCP service',
       error: error instanceof Error ? error.message : String(error)
     });
   }
@@ -171,7 +171,7 @@ router.post('/test-playwright-mcp', async (req, res) => {
     
     // 如果未连接，尝试连接
     if (!playwrightConnected) {
-      logger.info('Playwright MCP未连接，尝试连接...');
+      logger.info('Playwright MCP not connected, attempting to connect...');
       const playwrightMCP = getPredefinedMCP('playwright');
       if (!playwrightMCP) {
         return res.status(500).json({ error: 'Playwright MCP configuration not found' });
@@ -181,23 +181,23 @@ router.post('/test-playwright-mcp', async (req, res) => {
       if (!connected) {
         return res.status(500).json({ error: 'Failed to connect to Playwright MCP' });
       }
-      logger.info('Playwright MCP连接成功');
+      logger.info('Playwright MCP connected successfully');
     }
     
     // 获取Playwright MCP的工具列表
-    logger.info('获取Playwright MCP工具列表...');
+    logger.info('Getting Playwright MCP tools list...');
     const tools = await mcpManager.getTools('playwright');
     
     // 返回结果
     res.json({
       success: true,
-      message: 'Playwright MCP测试成功',
+      message: 'Playwright MCP test successful',
       tools: tools
     });
   } catch (error) {
-    logger.error('Playwright MCP测试失败:', error);
+    logger.error('Playwright MCP test failed:', error);
     res.status(500).json({ 
-      error: 'Playwright MCP测试失败', 
+      error: 'Playwright MCP test failed', 
       details: error instanceof Error ? error.message : String(error)
     });
   }
@@ -321,7 +321,7 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
         return res.status(404).json({
           success: false,
           error: 'Not Found',
-          message: '任务不存在'
+          message: 'Task not found'
         });
       }
       
@@ -332,7 +332,7 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
         return res.status(400).json({
           success: false,
           error: 'Bad Request',
-          message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+          message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
         });
       }
       
@@ -341,7 +341,7 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
         return res.status(403).json({
           success: false,
           error: 'Forbidden',
-          message: '无权更新该任务'
+          message: 'No permission to update this task'
         });
       }
       
@@ -381,7 +381,7 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
         return res.status(400).json({
           success: false,
           error: 'Bad Request',
-          message: '无效的请求参数',
+          message: 'Invalid request parameters',
           details: validationResult.error.errors
         });
       }
@@ -400,7 +400,7 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
         return res.status(400).json({
           success: false,
           error: 'Bad Request',
-          message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
+          message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
         });
       }
 
@@ -428,11 +428,11 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
       });
     }
   } catch (error) {
-    logger.error('创建或更新任务错误:', error);
+    logger.error('Error creating or updating task:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -452,7 +452,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
       });
     }
     
@@ -469,11 +469,11 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       data: result
     });
   } catch (error) {
-    logger.error('获取任务列表错误:', error);
+    logger.error('Error getting task list:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -491,7 +491,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -502,7 +502,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
       });
     }
     
@@ -511,7 +511,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权访问该任务'
+        message: 'No permission to access this task'
       });
     }
     
@@ -526,11 +526,11 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error('获取任务详情错误:', error);
+    logger.error('Error getting task details:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -552,17 +552,17 @@ router.post('/:id/analyze', async (req, res) => {
       res.json({
         success: true,
         data: {
-          message: '任务分析完成',
+          message: 'Task analysis completed',
           taskId: taskId,
           mcpWorkflow: updatedTask?.mcpWorkflow
         }
       });
     } else {
-      res.status(500).json({ success: false, error: 'Analysis Failed', message: '任务分析失败，请检查日志获取更多信息' });
+      res.status(500).json({ success: false, error: 'Analysis Failed', message: 'Task analysis failed, please check logs for more information' });
     }
   } catch (error) {
-    logger.error(`任务分析错误 [任务ID: ${req.params.id}]:`, error);
-    res.status(500).json({ success: false, error: 'Internal Server Error', message: '服务器内部错误' });
+    logger.error(`Task analysis error [Task ID: ${req.params.id}]:`, error);
+    res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Internal server error' });
   }
 });
 
@@ -579,7 +579,7 @@ router.post('/:id/verify-auth',  async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '无效的请求参数',
+        message: 'Invalid request parameters',
         details: validationResult.error.errors
       });
     }
@@ -591,7 +591,7 @@ router.post('/:id/verify-auth',  async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -600,7 +600,7 @@ router.post('/:id/verify-auth',  async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权为该任务验证授权'
+        message: 'No permission to verify authorization for this task'
       });
     }
     
@@ -629,11 +629,11 @@ router.post('/:id/verify-auth',  async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error(`验证MCP授权错误 [任务ID: ${req.params.id}]:`, error);
+    logger.error(`MCP authorization verification error [Task ID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -653,7 +653,7 @@ router.get('/:id/mcp-alternatives/:mcpName', optionalAuth, async (req: Request, 
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -665,7 +665,7 @@ router.get('/:id/mcp-alternatives/:mcpName', optionalAuth, async (req: Request, 
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权为该任务获取替代选项'
+        message: 'No permission to get alternatives for this task'
       });
     }
     
@@ -715,7 +715,7 @@ router.post('/:id/replace-mcp', async (req: Request, res: Response) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -724,7 +724,7 @@ router.post('/:id/replace-mcp', async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权为该任务替换MCP'
+        message: 'No permission to replace MCP for this task'
       });
     }
     
@@ -779,7 +779,7 @@ router.post('/:id/execute', async (req, res) => {
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -787,7 +787,7 @@ router.post('/:id/execute', async (req, res) => {
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权执行该任务'
+        message: 'No permission to execute this task'
       });
     }
     
@@ -830,7 +830,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -841,7 +841,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
       });
     }
     
@@ -850,7 +850,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权分析该任务'
+        message: 'No permission to analyze this task'
       });
     }
     
@@ -871,7 +871,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
     analysisStarted
       .then((success: boolean) => {
         if (!success) {
-          res.write(`data: ${JSON.stringify({ event: 'error', data: { message: '任务分析失败' } })}\n\n`);
+          res.write(`data: ${JSON.stringify({ event: 'error', data: { message: 'Task analysis failed' } })}\n\n`);
         }
         res.write('data: [DONE]\n\n');
         res.end();
@@ -881,7 +881,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
         res.write(`data: ${JSON.stringify({ 
           event: 'error', 
           data: { 
-            message: '任务分析过程中发生错误',
+            message: 'Error occurred during task analysis',
             details: error instanceof Error ? error.message : String(error)
           } 
         })}\n\n`);
@@ -895,7 +895,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -913,7 +913,7 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -924,7 +924,7 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
       });
     }
     
@@ -933,7 +933,7 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权执行该任务'
+        message: 'No permission to execute this task'
       });
     }
     
@@ -954,7 +954,7 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
     executionStarted
       .then((success: boolean) => {
         if (!success) {
-          res.write(`data: ${JSON.stringify({ event: 'error', data: { message: '任务执行失败' } })}\n\n`);
+          res.write(`data: ${JSON.stringify({ event: 'error', data: { message: 'Task execution failed' } })}\n\n`);
         }
         res.write('data: [DONE]\n\n');
         res.end();
@@ -964,7 +964,7 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
         res.write(`data: ${JSON.stringify({ 
           event: 'error', 
           data: { 
-            message: '任务执行过程中发生错误',
+            message: 'Error occurred during task execution',
             details: error instanceof Error ? error.message : String(error)
           } 
         })}\n\n`);
@@ -978,7 +978,7 @@ router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Respo
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 });
@@ -1084,7 +1084,7 @@ router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: '任务不存在'
+        message: 'Task not found'
       });
     }
     
@@ -1095,7 +1095,7 @@ router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '缺少用户ID，请提供userId查询参数或使用有效的认证令牌'
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
       });
     }
     
@@ -1104,7 +1104,7 @@ router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response
       return res.status(403).json({
         success: false,
         error: 'Forbidden',
-        message: '无权访问该任务'
+        message: 'No permission to access this task'
       });
     }
     

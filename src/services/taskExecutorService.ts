@@ -15,8 +15,8 @@ const agent = new HttpsProxyAgent(proxy);
 const taskService = getTaskService();
 
 /**
- * 任务执行器服务
- * 负责执行MCP工作流并生成结果
+ * Task Executor Service
+ * Responsible for executing MCP workflows and generating results
  */
 export class TaskExecutorService {
   private llm: ChatOpenAI;
@@ -40,10 +40,10 @@ export class TaskExecutorService {
   }
   
   /**
-   * 执行任务工作流
-   * @param taskId 任务ID
-   * @returns 执行结果对象，包含执行状态和总结信息
-   * todo 核心流程，重点思考调试
+   * Execute task workflow
+   * @param taskId Task ID
+   * @returns Execution result object, including execution status and summary information
+   * todo Core process, focus on debugging
    */
   async executeTask(taskId: string, options: { skipAuthCheck?: boolean } = {}): Promise<{
     success: boolean;
@@ -53,65 +53,65 @@ export class TaskExecutorService {
     error?: string;
   }> {
     try {
-      logger.info(`🚀 开始执行任务 [任务ID: ${taskId}]`);
+      logger.info(`🚀 Starting task execution [Task ID: ${taskId}]`);
       
-      // 获取任务详情
+      // Get task details
       const task = await taskService.getTaskById(taskId);
       if (!task) {
-        logger.error(`❌ 任务不存在 [ID: ${taskId}]`);
+        logger.error(`❌ Task not found [ID: ${taskId}]`);
         return {
           success: false,
           status: 'failed',
-          error: '任务不存在'
+          error: 'Task not found'
         };
       }
       
-      logger.info(`📋 任务详情: [标题: ${task.title}, 用户ID: ${task.userId}]`);
+      logger.info(`📋 Task details: [Title: ${task.title}, User ID: ${task.userId}]`);
       
-      // 检查是否所有需要授权的MCP都已验证
+      // Check if all required MCPs are verified
       if (!options.skipAuthCheck) {
         const allVerified = await this.mcpAuthService.checkAllMCPsVerified(taskId);
         if (!allVerified) {
-          logger.error(`❌ 任务执行失败: 有MCP未验证授权 [任务ID: ${taskId}]`);
+          logger.error(`❌ Task execution failed: Some MCPs are not verified [Task ID: ${taskId}]`);
           await taskExecutorDao.updateTaskResult(taskId, 'failed', {
-            error: '任务执行失败: 请先验证所有必要的MCP授权'
+            error: 'Task execution failed: Please verify all required MCP authorizations first'
           });
           return {
             success: false,
             status: 'failed',
-            error: '任务执行失败: 请先验证所有必要的MCP授权'
+            error: 'Task execution failed: Please verify all required MCP authorizations first'
           };
         }
-        logger.info(`✅ 所有MCP授权已验证 [任务ID: ${taskId}]`);
+        logger.info(`✅ All MCP authorizations verified [Task ID: ${taskId}]`);
       } else {
-        logger.info(`- 授权检查已跳过 [任务ID: ${taskId}]`);
+        logger.info(`- Authorization check skipped [Task ID: ${taskId}]`);
       }
       
-      // 更新任务状态
+      // Update task status
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
-      logger.info(`📝 任务状态已更新为 'in_progress' [任务ID: ${taskId}]`);
+      logger.info(`📝 Task status updated to 'in_progress' [Task ID: ${taskId}]`);
       
-      // 获取任务的工作流
+      // Get task workflow
       const mcpWorkflow = task.mcpWorkflow;
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
-        logger.error(`❌ 任务执行失败: 没有有效的工作流 [任务ID: ${taskId}]`);
-        // 确保使用对象而非字符串
+        logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
+        // Ensure using object instead of string
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
-          error: '任务执行失败: 没有有效的工作流, 请先调用任务分析接口 /api/task/:id/analyze'
+          error: 'Task execution failed: No valid workflow, please call the task analysis API /api/task/:id/analyze first'
         });
         return {
           success: false,
           status: 'failed',
-          error: '任务执行失败: 没有有效的工作流, 请先调用任务分析接口 /api/task/:id/analyze'
+          error: 'Task execution failed: No valid workflow, please call the task analysis API /api/task/:id/analyze first'
         };
       }
       
-      logger.info(`📊 工作流步骤总数: ${mcpWorkflow.workflow.length} [任务ID: ${taskId}]`);
+      logger.info(`📊 Total workflow steps: ${mcpWorkflow.workflow.length} [Task ID: ${taskId}]`);
       
-      // 初始化工作流结果
+      // Initialize workflow results
       const workflowResults: any[] = [];
       
-      // 分步执行工作流
+      // Execute workflow step by step
       let finalResult = null;
       for (const step of mcpWorkflow.workflow) {
         const stepNumber = step.step;
@@ -119,27 +119,27 @@ export class TaskExecutorService {
         const actionName = step.action;
         let input = step.input || task.content;
 
-        // 如果input是JSON字符串，尝试解析它
+        // If input is a JSON string, try to parse it
         try {
           if (typeof input === 'string' && input.startsWith('{') && input.endsWith('}')) {
             input = JSON.parse(input);
           }
         } catch (e) {
-          logger.warn(`步骤 ${stepNumber} 的输入不是有效的JSON字符串，将作为普通字符串处理: ${input}`);
+          logger.warn(`Input for step ${stepNumber} is not a valid JSON string, will be processed as regular string: ${input}`);
         }
         
         try {
-          logger.info(`执行工作流步骤${stepNumber}: ${mcpName} - ${actionName}`);
+          logger.info(`Executing workflow step ${stepNumber}: ${mcpName} - ${actionName}`);
           
-          // 调用MCP工具
+          // Call MCP tool
           let stepResult: any;
           try {
             stepResult = await this.callMCPTool(mcpName, actionName, input);
           } catch (error) {
-            logger.error(`步骤${stepNumber}执行失败:`, error);
+            logger.error(`Step ${stepNumber} execution failed:`, error);
             const errorMsg = error instanceof Error ? error.message : String(error);
             
-            // 使用DAO记录步骤失败结果
+            // Use DAO to record step failure result
             await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
             
             workflowResults.push({
@@ -150,28 +150,28 @@ export class TaskExecutorService {
             continue;
           }
           
-          // 处理不同适配器可能有的不同返回格式
+          // Handle different return formats from different adapters
           const processedResult = this.processToolResult(stepResult);
           
-          // 使用DAO记录步骤成功结果
+          // Use DAO to record step success result
           await taskExecutorDao.saveStepResult(taskId, stepNumber, true, processedResult);
           
-          // 记录步骤结果
+          // Record step result
           workflowResults.push({
             step: stepNumber,
             success: true,
             result: processedResult
           });
           
-          // 最后一步的结果作为最终结果
+          // Use the last step result as final result
           if (stepNumber === mcpWorkflow.workflow.length) {
             finalResult = processedResult;
           }
         } catch (error) {
-          logger.error(`步骤${stepNumber}执行出错:`, error);
+          logger.error(`Error executing step ${stepNumber}:`, error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           
-          // 使用DAO记录步骤失败结果
+          // Use DAO to record step failure result
           await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
           
           workflowResults.push({
@@ -182,17 +182,17 @@ export class TaskExecutorService {
         }
       }
       
-      // 生成最终结果摘要
+      // Generate final result summary
       const resultSummary = await this.generateResultSummary(task.content, workflowResults);
       
-      // 使用DAO更新任务结果
+      // Use DAO to update task result
       await taskExecutorDao.updateTaskResult(taskId, 'completed', {
         summary: resultSummary,
         steps: workflowResults,
         finalResult: finalResult
       });
       
-      logger.info(`任务执行完成 [任务ID: ${taskId}]`);
+      logger.info(`Task execution completed [Task ID: ${taskId}]`);
       return {
         success: true,
         status: 'completed',
@@ -200,9 +200,9 @@ export class TaskExecutorService {
         steps: workflowResults
       };
     } catch (error) {
-      logger.error(`任务执行过程中发生错误 [任务ID: ${taskId}]:`, error);
+      logger.error(`Error occurred during task execution [Task ID: ${taskId}]:`, error);
       
-      // 使用DAO更新任务状态为失败
+      // Use DAO to update task status to failed
       await taskExecutorDao.updateTaskResult(taskId, 'failed', {
         error: error instanceof Error ? error.message : String(error)
       });
