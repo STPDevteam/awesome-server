@@ -154,7 +154,7 @@ export const loginRateLimit = rateLimit({
 
 export const generalRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分钟
-  max: 100, // 最多100次请求
+  max: 1000, // 最多100次请求
   message: {
     error: 'Too Many Requests',
     message: '请求次数过多，请稍后再试'
