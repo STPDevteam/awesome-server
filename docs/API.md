@@ -526,6 +526,55 @@ data: [DONE]
 - `401 Unauthorized`: 无效的访问令牌
 - `500 Internal Server Error`: 服务器内部错误
 
+#### 5. 获取会员状态
+
+**端点**: `GET /api/payment/membership-status`
+
+**描述**: 获取当前用户的会员状态信息
+
+**认证**: 需要访问令牌
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "isActive": true,
+    "membershipType": "plus",
+    "subscriptionType": "monthly",
+    "expiresAt": "2024-02-01T11:30:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 6. 清除会员状态
+
+**端点**: `DELETE /api/payment/membership`
+
+**描述**: 清除当前用户的会员状态，将用户的会员类型、订阅类型和过期时间重置为空
+
+**认证**: 需要访问令牌
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "会员状态已成功清除"
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
 ### 会话管理 API
 
 会话系统提供了一种整合对话和任务的方式，允许用户在自然对话中触发任务执行，并在同一个界面中查看结果。

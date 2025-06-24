@@ -3,6 +3,7 @@ import { coinbaseCommerceService } from '../services/coinbaseCommerceService.js'
 import { awePaymentService } from '../services/awePaymentService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { MEMBERSHIP_PRICING } from '../models/User.js';
+import { db } from '../config/database.js';
 
 const router = express.Router();
 
@@ -165,6 +166,37 @@ router.get('/membership-status', requireAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get membership status'
+    });
+  }
+});
+
+/**
+ * 清除用户会员状态
+ */
+router.delete('/membership', requireAuth, async (req, res) => {
+  try {
+    const userId = req.userId!;
+
+    // 清除用户的会员信息
+    await db.query(
+      `UPDATE users 
+       SET membership_type = NULL, 
+           subscription_type = NULL, 
+           membership_expires_at = NULL, 
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      message: '会员状态已成功清除'
+    });
+  } catch (error) {
+    console.error('Clear membership status error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to clear membership status'
     });
   }
 });

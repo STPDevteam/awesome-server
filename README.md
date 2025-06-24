@@ -131,6 +131,7 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 - `GET /api/payment/payment/:id` - 获取支付状态
 - `GET /api/payment/payments` - 获取支付历史
 - `GET /api/payment/membership-status` - 获取会员状态
+- `DELETE /api/payment/membership` - 清除用户会员状态
 - `POST /api/payment/webhooks/coinbase` - Coinbase Commerce webhook 回调
 
 ## 📁 项目结构

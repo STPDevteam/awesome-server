@@ -150,7 +150,27 @@ Authorization: Bearer <token>
 }
 ```
 
-### 6. Webhook 端点
+### 6. 清除用户会员状态
+```
+DELETE /api/payment/membership
+Authorization: Bearer <token>
+```
+
+**描述：** 清除当前用户的会员状态，将用户的会员类型、订阅类型和过期时间重置为空。
+
+**响应示例：**
+```json
+{
+  "success": true,
+  "message": "会员状态已成功清除"
+}
+```
+
+**错误响应：**
+- `401 Unauthorized`: 未授权（需要登录）
+- `500 Internal Server Error`: 服务器内部错误
+
+### 7. Webhook 端点
 ```
 POST /api/payment/webhooks/coinbase
 Content-Type: application/json
