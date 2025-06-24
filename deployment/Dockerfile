@@ -16,7 +16,7 @@ RUN npm config set registry https://registry.npmjs.org/ \
  && npm cache clean --force
 
 # 安装生产依赖并跳过安全审计
-RUN npm ci --omit=dev --no-audit
+RUN npm ci --no-audit
 
 # 复制源码并构建
 COPY . .

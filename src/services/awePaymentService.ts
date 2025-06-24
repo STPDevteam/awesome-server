@@ -102,11 +102,62 @@ export class AwePaymentService {
   private provider: ethers.Provider;
   private aweToken: ethers.Contract;
   private priceCache: NodeCache;
+  private checkInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(AWE_TOKEN_CONFIG.rpcUrl);
     this.aweToken = new ethers.Contract(AWE_TOKEN_CONFIG.address, ERC20_ABI, this.provider);
     this.priceCache = new NodeCache({ stdTTL: 45 }); // 45秒缓存
+    
+    // 启动定时检查任务（每30秒检查一次）
+    this.startPendingPaymentChecker();
+  }
+
+  /**
+   * 启动待确认支付的定时检查任务
+   */
+  private startPendingPaymentChecker(): void {
+    // 先清理可能存在的旧任务
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+    }
+
+    // 每30秒检查一次
+    this.checkInterval = setInterval(async () => {
+      try {
+        await this.checkPendingPayments();
+      } catch (error) {
+        logger.error('Error in pending payment checker:', error);
+      }
+    }, 30000);
+
+    // 立即执行一次
+    this.checkPendingPayments().catch(error => {
+      logger.error('Error in initial pending payment check:', error);
+    });
+  }
+
+  /**
+   * 检查所有待确认的支付
+   */
+  private async checkPendingPayments(): Promise<void> {
+    const query = `
+      SELECT * FROM awe_payments 
+      WHERE status = 'pending' 
+      AND created_at > NOW() - INTERVAL '24 hours'
+      ORDER BY created_at ASC
+    `;
+    
+    const result = await db.query(query);
+    const pendingPayments = result.rows.map(row => this.mapRowToPayment(row));
+
+    if (pendingPayments.length > 0) {
+      logger.info(`Checking ${pendingPayments.length} pending AWE payments...`);
+    }
+
+    for (const payment of pendingPayments) {
+      await this.updatePaymentStatus(payment);
+    }
   }
 
   /**
@@ -213,6 +264,10 @@ export class AwePaymentService {
       if (existingPayment.userId !== userId) {
         throw new Error('Transaction already used by another user');
       }
+      // 如果是pending状态，检查是否可以更新为confirmed
+      if (existingPayment.status === 'pending') {
+        return await this.updatePaymentStatus(existingPayment);
+      }
       return existingPayment;
     }
 
@@ -229,13 +284,6 @@ export class AwePaymentService {
 
     if (receipt.status !== 1) {
       throw new Error('Transaction failed');
-    }
-
-    // 验证确认数
-    const currentBlock = await this.provider.getBlockNumber();
-    const confirmations = currentBlock - receipt.blockNumber;
-    if (confirmations < 3) {
-      throw new Error('Insufficient confirmations. Please wait for 3 confirmations');
     }
 
     // 解析Transfer事件
@@ -260,9 +308,14 @@ export class AwePaymentService {
       );
     }
 
+    // 检查确认数
+    const currentBlock = await this.provider.getBlockNumber();
+    const confirmations = currentBlock - receipt.blockNumber;
+    const isConfirmed = confirmations >= 3;
+
     // 创建支付记录
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24小时后过期（已确认的支付设置较长的过期时间）
+    const expiresAt = new Date(now.getTime() + (isConfirmed ? 365 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000)); // confirmed: 1年，pending: 24小时
     
     const payment: AwePayment = {
       id: uuidv4(),
@@ -272,20 +325,70 @@ export class AwePaymentService {
       amount: ethers.formatUnits(actualAmount, AWE_TOKEN_CONFIG.decimals),
       amountInWei: actualAmount.toString(),
       usdValue: priceInfo.usdPrice,
-      status: 'confirmed',
+      status: isConfirmed ? 'confirmed' : 'pending',
       transactionHash,
       blockNumber: receipt.blockNumber,
       fromAddress: transferEvent.from,
       expiresAt,
-      confirmedAt: now,
+      confirmedAt: isConfirmed ? now : undefined,
       createdAt: now,
       updatedAt: now
     };
 
     await this.savePayment(payment);
-    await this.updateUserMembership(userId, membershipType, subscriptionType);
+    
+    // 只有在确认后才更新用户会员信息
+    if (isConfirmed) {
+      await this.updateUserMembership(userId, membershipType, subscriptionType);
+    }
 
-    logger.info(`AWE payment confirmed: ${payment.id} (tx: ${transactionHash})`);
+    logger.info(`AWE payment ${isConfirmed ? 'confirmed' : 'pending'}: ${payment.id} (tx: ${transactionHash}, confirmations: ${confirmations})`);
+    return payment;
+  }
+
+  /**
+   * 更新支付状态（检查pending支付是否已确认）
+   */
+  async updatePaymentStatus(payment: AwePayment): Promise<AwePayment> {
+    if (payment.status !== 'pending' || !payment.transactionHash || !payment.blockNumber) {
+      return payment;
+    }
+
+    try {
+      const currentBlock = await this.provider.getBlockNumber();
+      const confirmations = currentBlock - payment.blockNumber;
+      
+      if (confirmations >= 3) {
+        // 更新为已确认状态
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 1年
+        
+        await db.query(
+          `UPDATE awe_payments 
+           SET status = 'confirmed', confirmed_at = $1, expires_at = $2, updated_at = $3 
+           WHERE id = $4`,
+          [now, expiresAt, now, payment.id]
+        );
+
+        // 更新用户会员信息
+        await this.updateUserMembership(
+          payment.userId, 
+          payment.membershipType, 
+          payment.subscriptionType
+        );
+
+        // 返回更新后的支付记录
+        payment.status = 'confirmed';
+        payment.confirmedAt = now;
+        payment.expiresAt = expiresAt;
+        payment.updatedAt = now;
+
+        logger.info(`AWE payment confirmed after recheck: ${payment.id} (confirmations: ${confirmations})`);
+      }
+    } catch (error) {
+      logger.error(`Error updating payment status for ${payment.id}:`, error);
+    }
+
     return payment;
   }
 
