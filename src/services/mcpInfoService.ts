@@ -2,140 +2,152 @@ import { MCPInfo } from '../models/mcp.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * MCP信息服务
- * 用于管理和提供MCP的元数据信息
+ * MCP Information Service
+ * Used to manage and provide metadata information for MCPs
  */
 export class MCPInfoService {
-  // 预定义的MCP列表
+  // Predefined MCP list
   private mcpList: MCPInfo[] = [
     {
       name: 'playwright',
-      description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
+      description: 'Playwright browser automation tool, can control browsers to access web pages',
       capabilities: ['browser', 'web-automation', 'screenshot', 'navigation'],
       authRequired: false,
-      category: '自动化工具',
+      category: 'Automation Tools',
       imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
       githubUrl: 'https://github.com/microsoft/playwright'
     },
     {
       name: 'langchain',
-      description: 'LangChain 工具集成，提供文档处理、向量搜索等能力',
+      description: 'LangChain tool integration, provides document processing, vector search and other capabilities',
       capabilities: ['document-processing', 'vector-search', 'agents'],
       authRequired: true,
       authFields: ['api_key'],
-      category: '开发工具',
+      category: 'Development Tools',
       imageUrl: 'https://langchain.com/images/logo.svg',
       githubUrl: 'https://github.com/langchain-ai/langchainjs'
     },
     {
       name: 'github',
-      description: 'GitHub 工具，提供代码仓库管理、PR创建等功能',
+      description: 'GitHub tool, provides repository management, PR creation and other features',
       capabilities: ['repository', 'pull-request', 'issue'],
       authRequired: true,
       authFields: ['token'],
-      category: '开发工具',
+      category: 'Development Tools',
       imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
       githubUrl: 'https://github.com/octokit/octokit.js'
     },
     {
       name: 'WebBrowserTool',
-      description: '通用网页浏览工具，可以用于访问网页并获取信息',
+      description: 'General web browsing tool, can be used to access websites and retrieve information',
       capabilities: ['open-browser', 'visit-webpage', 'get-content'],
       authRequired: false,
-      category: '网络工具',
+      category: 'Network Tools',
       imageUrl: 'https://cdn-icons-png.flaticon.com/512/2985/2985975.png',
       githubUrl: 'https://github.com/puppeteer/puppeteer'
     },
     {
       name: 'FileSystemTool',
-      description: '文件系统工具，提供文件读写、查询等功能',
+      description: 'File system tool, provides file reading, writing, querying and other functions',
       capabilities: ['read-file', 'write-file', 'list-directory'],
       authRequired: false,
-      category: '系统工具',
+      category: 'System Tools',
       imageUrl: 'https://cdn-icons-png.flaticon.com/512/3767/3767084.png',
       githubUrl: 'https://github.com/nodejs/node'
     },
     {
       name: 'GoogleSearchTool',
-      description: 'Google搜索工具，提供网络搜索功能',
+      description: 'Google search tool, provides web search functionality',
       capabilities: ['search', 'web-results'],
       authRequired: true,
       authFields: ['api_key'],
-      category: '网络工具',
+      category: 'Network Tools',
       imageUrl: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png',
       githubUrl: 'https://github.com/googleapis/google-api-nodejs-client'
     }
   ];
 
   constructor() {
-    logger.info(`MCPInfoService 已初始化，加载了 ${this.mcpList.length} 个MCP信息`);
+    logger.info(`MCPInfoService initialized, loaded ${this.mcpList.length} MCP information records`);
   }
 
   /**
-   * 获取所有MCP信息
-   * @returns 所有MCP信息列表
+   * Get all MCP information
+   * @returns List of all MCP information
    */
   getAllMCPs(): MCPInfo[] {
     return this.mcpList;
   }
 
   /**
-   * 根据类别获取MCP信息
-   * @param category 类别名称
-   * @returns 指定类别的MCP信息列表
+   * Get MCP information by category
+   * @param category Category name
+   * @returns List of MCP information for the specified category
    */
   getMCPsByCategory(category: string): MCPInfo[] {
     const mcps = this.mcpList.filter(mcp => mcp.category === category);
-    logger.info(`获取类别"${category}"的MCP，找到 ${mcps.length} 个`);
+    logger.info(`Getting MCPs for category "${category}", found ${mcps.length}`);
     return mcps;
   }
 
   /**
-   * 获取所有可用的MCP类别
-   * @returns 类别名称数组
+   * Get all available MCP categories
+   * @returns Array of objects containing category name and corresponding MCP count
    */
-  getAllCategories(): string[] {
-    // 获取所有不重复的类别
-    const categories = [...new Set(this.mcpList
-      .filter(mcp => mcp.category)
-      .map(mcp => mcp.category as string))];
+  getAllCategories(): Array<{name: string; count: number}> {
+    // Get all categories and their corresponding MCP counts
+    const categoryMap = new Map<string, number>();
     
-    logger.info(`获取所有MCP类别，找到 ${categories.length} 个类别`);
+    // Count MCPs for each category
+    this.mcpList.forEach(mcp => {
+      if (mcp.category) {
+        const category = mcp.category;
+        categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+      }
+    });
+    
+    // Convert to array of objects
+    const categories = Array.from(categoryMap.entries()).map(([name, count]) => ({
+      name,
+      count
+    }));
+    
+    logger.info(`Getting all MCP categories, found ${categories.length} categories`);
     return categories;
   }
 
   /**
-   * 根据MCP ID获取信息
-   * @param mcpId MCP的ID（即名称）
-   * @returns MCP信息，如果不存在则返回undefined
+   * Get MCP information by ID
+   * @param mcpId MCP ID (i.e., name)
+   * @returns MCP information, or undefined if not found
    */
   getMCPById(mcpId: string): MCPInfo | undefined {
     const mcp = this.mcpList.find(mcp => mcp.name === mcpId);
     if (mcp) {
-      logger.info(`获取MCP信息 [ID: ${mcpId}] 成功`);
+      logger.info(`Successfully retrieved MCP information [ID: ${mcpId}]`);
     } else {
-      logger.warn(`获取MCP信息 [ID: ${mcpId}] 失败，未找到相应信息`);
+      logger.warn(`Failed to get MCP information [ID: ${mcpId}], not found`);
     }
     return mcp;
   }
 
   /**
-   * 添加新的MCP信息
-   * @param mcp MCP信息
-   * @returns 是否添加成功
+   * Add new MCP information
+   * @param mcp MCP information
+   * @returns Whether the addition was successful
    */
   addMCP(mcp: MCPInfo): boolean {
-    // 检查是否已存在同名MCP
+    // Check if MCP with the same name already exists
     if (this.mcpList.some(existingMcp => existingMcp.name === mcp.name)) {
-      logger.warn(`添加MCP失败，已存在同名MCP [名称: ${mcp.name}]`);
+      logger.warn(`Failed to add MCP, MCP with the same name already exists [Name: ${mcp.name}]`);
       return false;
     }
     
     this.mcpList.push(mcp);
-    logger.info(`成功添加新MCP [名称: ${mcp.name}]`);
+    logger.info(`Successfully added new MCP [Name: ${mcp.name}]`);
     return true;
   }
 }
 
-// 导出服务实例
+// Export service instance
 export const mcpInfoService = new MCPInfoService(); 

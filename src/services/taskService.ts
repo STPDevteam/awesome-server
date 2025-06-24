@@ -6,17 +6,17 @@ import { messageDao } from '../dao/messageDao.js';
 import { conversationDao } from '../dao/conversationDao.js';
 import { MessageIntent, MessageType } from '../models/conversation.js';
 
-// 任务服务 - 负责业务逻辑
+// Task Service - Responsible for business logic
 export class TaskService {
-  // 创建新任务
+  // Create new task
   async createTask(data: {
     userId: string;
     title: string;
     content: string;
-    conversationId?: string; // 关联的对话ID
+    conversationId?: string; // Associated conversation ID
   }): Promise<Task> {
     try {
-      // 调用DAO层创建任务，直接传入conversationId
+      // Call DAO layer to create task, directly pass conversationId
       const taskRecord = await taskDao.createTask({
         userId: data.userId,
         title: data.title,
@@ -24,44 +24,44 @@ export class TaskService {
         conversationId: data.conversationId
       });
       
-      // 将数据库记录映射为应用层实体
+      // Map database record to application entity
       const task = this.mapTaskFromDb(taskRecord);
-      logger.info(`任务创建成功: ${task.id}`);
+      logger.info(`Task created successfully: ${task.id}`);
       
-      // 如果提供了conversationId，创建系统消息通知
+      // If conversationId is provided, create system notification message
       if (data.conversationId) {
         await this.addTaskNotificationToConversation(task.id, data.conversationId, task.title);
-        // 增加对话任务计数
+        // Increment conversation task count
         await conversationDao.incrementTaskCount(data.conversationId);
       }
       
       return task;
     } catch (error) {
-      logger.error('创建任务失败:', error);
+      logger.error('Failed to create task:', error);
       throw error;
     }
   }
 
-  // 添加任务通知到对话（内部方法）
+  // Add task notification to conversation (internal method)
   private async addTaskNotificationToConversation(
     taskId: string, 
     conversationId: string, 
     taskTitle: string
   ): Promise<void> {
     try {
-      // 创建系统消息，通知任务已创建
+      // Create system message to notify task creation
       await messageDao.createMessage({
         conversationId,
-        content: `已创建任务: ${taskTitle}`,
+        content: `Task created: ${taskTitle}`,
         type: MessageType.SYSTEM,
         intent: MessageIntent.TASK,
         taskId
       });
       
-      logger.info(`已添加任务通知到对话 [任务ID: ${taskId}, 对话ID: ${conversationId}]`);
+      logger.info(`Task notification added to conversation [Task ID: ${taskId}, Conversation ID: ${conversationId}]`);
     } catch (error) {
-      logger.error(`添加任务通知到对话失败 [任务ID: ${taskId}, 对话ID: ${conversationId}]:`, error);
-      // 非关键错误，不抛出异常
+      logger.error(`Failed to add task notification to conversation [Task ID: ${taskId}, Conversation ID: ${conversationId}]:`, error);
+      // Non-critical error, don't throw exception
     }
   }
 

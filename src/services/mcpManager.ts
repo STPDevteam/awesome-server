@@ -30,8 +30,8 @@ export interface MCPService {
 }
 
 /**
- * MCP管理器
- * 负责连接、断开和管理MCP工具
+ * MCP Manager
+ * Responsible for connecting, disconnecting and managing MCP tools
  */
 export class MCPManager {
   private clients: Map<string, MCPClient> = new Map();
@@ -42,55 +42,55 @@ export class MCPManager {
   }
 
   /**
-   * 连接到MCP服务
-   * @param name MCP名称
-   * @param command MCP命令
-   * @param args 命令参数
-   * @param env 环境变量
+   * Connect to MCP service
+   * @param name MCP name
+   * @param command MCP command
+   * @param args Command arguments
+   * @param env Environment variables
    */
   async connect(name: string, command: string, args: string[] = [], env?: Record<string, string>): Promise<void> {
-    logger.info(`【MCP调试】MCPManager.connect() 开始连接MCP [MCP: ${name}, 命令: ${command}]`);
-    logger.info(`【MCP调试】连接参数: ${JSON.stringify(args)}`);
-    logger.info(`【MCP调试】环境变量: ${env ? Object.keys(env).join(', ') : '无'}`);
+    logger.info(`【MCP Debug】MCPManager.connect() Starting connection to MCP [MCP: ${name}, Command: ${command}]`);
+    logger.info(`【MCP Debug】Connection parameters: ${JSON.stringify(args)}`);
+    logger.info(`【MCP Debug】Environment variables: ${env ? Object.keys(env).join(', ') : 'None'}`);
     
-    // 检查命令是否存在
+    // Check if command exists
     try {
       if (args[0] && args[0].startsWith('/')) {
-        // 检查文件是否存在
+        // Check if file exists
         if (fs.existsSync(args[0])) {
-          logger.info(`【MCP调试】文件存在: ${args[0]}`);
-          // 检查文件权限
+          logger.info(`【MCP Debug】File exists: ${args[0]}`);
+          // Check file permissions
           try {
             fs.accessSync(args[0], fs.constants.X_OK);
-            logger.info(`【MCP调试】文件可执行: ${args[0]}`);
+            logger.info(`【MCP Debug】File is executable: ${args[0]}`);
           } catch (error) {
-            logger.warn(`【MCP调试】文件不可执行: ${args[0]}, 错误: ${error}`);
+            logger.warn(`【MCP Debug】File is not executable: ${args[0]}, Error: ${error}`);
           }
         } else {
-          logger.warn(`【MCP调试】文件不存在: ${args[0]}`);
+          logger.warn(`【MCP Debug】File does not exist: ${args[0]}`);
         }
       }
     } catch (error) {
-      logger.warn(`【MCP调试】检查文件时出错: ${error}`);
+      logger.warn(`【MCP Debug】Error checking file: ${error}`);
     }
     
-    // 检查是否已连接
+    // Check if already connected
     if (this.clients.has(name)) {
-      logger.info(`【MCP调试】MCP已经连接，先断开现有连接 [MCP: ${name}]`);
+      logger.info(`【MCP Debug】MCP already connected, disconnecting existing connection first [MCP: ${name}]`);
       await this.disconnect(name);
     }
     
     try {
-      // 创建传输层
+      // Create transport layer
       const transport = new StdioClientTransport({
         command,
         args,
         env: env ? { ...process.env, ...env } as Record<string, string> : process.env as Record<string, string>,
       });
 
-      logger.info(`【MCP调试】已创建StdioClientTransport，准备连接`);
+      logger.info(`【MCP Debug】StdioClientTransport created, preparing to connect`);
 
-      // 创建客户端
+      // Create client
       const client = new Client(
         {
           name: `mcp-client-${name}`,
@@ -105,12 +105,12 @@ export class MCPManager {
         }
       );
 
-      // 连接
-      logger.info(`【MCP调试】开始连接客户端...`);
+      // Connect
+      logger.info(`【MCP Debug】Starting client connection...`);
       await client.connect(transport);
-      logger.info(`【MCP调试】客户端连接成功`);
+      logger.info(`【MCP Debug】Client connection successful`);
 
-      // 保存客户端
+      // Save client
       this.clients.set(name, {
         client,
         name,
@@ -119,16 +119,16 @@ export class MCPManager {
         env,
       });
 
-      logger.info(`【MCP调试】MCP连接成功 [MCP: ${name}]`);
+      logger.info(`【MCP Debug】MCP connection successful [MCP: ${name}]`);
     } catch (error) {
-      logger.error(`【MCP调试】MCP连接失败 [MCP: ${name}]:`, error);
+      logger.error(`【MCP Debug】MCP connection failed [MCP: ${name}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 连接预定义的MCP服务
-   * @param mcpService 预定义的MCP服务配置
+   * Connect to predefined MCP service
+   * @param mcpService Predefined MCP service configuration
    */
   async connectPredefined(mcpService: MCPService): Promise<boolean> {
     try {
@@ -140,61 +140,61 @@ export class MCPManager {
       );
       return true;
     } catch (error) {
-      logger.error(`连接预定义MCP失败 [${mcpService.name}]:`, error);
+      logger.error(`Failed to connect to predefined MCP [${mcpService.name}]:`, error);
       return false;
     }
   }
 
   /**
-   * 断开MCP连接
-   * @param name MCP名称
+   * Disconnect MCP
+   * @param name MCP name
    */
   async disconnect(name: string): Promise<void> {
-    logger.info(`【MCP调试】MCPManager.disconnect() 开始断开MCP连接 [MCP: ${name}]`);
+    logger.info(`【MCP Debug】MCPManager.disconnect() Starting to disconnect MCP [MCP: ${name}]`);
     
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {
-      logger.warn(`【MCP调试】尝试断开未连接的MCP [MCP: ${name}]`);
+      logger.warn(`【MCP Debug】Attempting to disconnect an MCP that is not connected [MCP: ${name}]`);
       return;
     }
     
     try {
       await mcpClient.client.close();
       this.clients.delete(name);
-      logger.info(`【MCP调试】MCP断开连接成功 [MCP: ${name}]`);
+      logger.info(`【MCP Debug】MCP disconnection successful [MCP: ${name}]`);
     } catch (error) {
-      logger.error(`【MCP调试】MCP断开连接失败 [MCP: ${name}]:`, error);
+      logger.error(`【MCP Debug】MCP disconnection failed [MCP: ${name}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 断开所有MCP连接
+   * Disconnect all MCPs
    */
   async disconnectAll(): Promise<void> {
-    logger.info(`【MCP调试】MCPManager.disconnectAll() 开始断开所有MCP连接`);
+    logger.info(`【MCP Debug】MCPManager.disconnectAll() Starting to disconnect all MCPs`);
     
     const names = Array.from(this.clients.keys());
     for (const name of names) {
       await this.disconnect(name);
     }
     
-    logger.info(`【MCP调试】所有MCP断开连接成功`);
+    logger.info(`【MCP Debug】All MCPs disconnected successfully`);
   }
 
   /**
-   * 获取已连接的MCP列表
+   * Get list of connected MCPs
    */
   getConnectedMCPs(): Array<MCPService> {
-    logger.info(`【MCP调试】MCPManager.getConnectedMCPs() 获取已连接的MCP列表`);
+    logger.info(`【MCP Debug】MCPManager.getConnectedMCPs() Getting list of connected MCPs`);
     
     const result = Array.from(this.clients.values()).map(({ name, command, args, env }) => {
-      // 根据MCP名称获取额外信息
+      // Get extra information based on MCP name
       const extraInfo = this.getMCPExtraInfo(name);
       
       return {
         name,
-        description: extraInfo.description || `MCP服务: ${name}`,
+        description: extraInfo.description || `MCP Service: ${name}`,
         command,
         args,
         env,
@@ -207,14 +207,14 @@ export class MCPManager {
       };
     });
     
-    logger.info(`【MCP调试】已连接的MCP列表: ${JSON.stringify(result)}`);
+    logger.info(`【MCP Debug】Connected MCP list: ${JSON.stringify(result)}`);
     return result;
   }
 
   /**
-   * 获取MCP的额外信息
-   * 根据MCP名称返回预设的额外信息
-   * @param name MCP名称
+   * Get extra information for an MCP
+   * Returns preset extra information based on MCP name
+   * @param name MCP name
    */
   private getMCPExtraInfo(name: string): {
     description?: string;
@@ -223,61 +223,61 @@ export class MCPManager {
     githubUrl?: string;
     authParams?: Record<string, any>;
   } {
-    // 处理特定的MCP
+    // Handle specific MCPs
     if (name === 'playwright' || name === 'playwright-mcp-service') {
       return {
-        description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
-        category: '自动化工具',
+        description: 'Playwright browser automation tool, can control browsers to access web pages',
+        category: 'Automation Tools',
         imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
         githubUrl: 'https://github.com/microsoft/playwright'
       };
     }
     
-    // 处理更多特定MCP...
-    // 如果需要可以添加更多映射
+    // Handle more specific MCPs...
+    // Add more mappings if needed
     
-    // 默认返回空对象
+    // Default return empty object
     return {};
   }
 
   /**
-   * 获取MCP工具列表
-   * @param name MCP名称
+   * Get MCP tool list
+   * @param name MCP name
    */
   async getTools(name: string): Promise<any[]> {
-    logger.info(`【MCP调试】MCPManager.getTools() 开始获取MCP工具列表 [MCP: ${name}]`);
+    logger.info(`【MCP Debug】MCPManager.getTools() Starting to get MCP tool list [MCP: ${name}]`);
     
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {
-      logger.error(`【MCP调试】MCP未连接 [MCP: ${name}]`);
-      throw new Error(`MCP ${name} 未连接`);
+      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}]`);
+      throw new Error(`MCP ${name} not connected`);
     }
     
     try {
       const toolsResponse = await mcpClient.client.listTools();
       const tools = toolsResponse.tools || [];
-      logger.info(`【MCP调试】获取到MCP工具列表 [MCP: ${name}, 工具数量: ${tools.length}]`);
+      logger.info(`【MCP Debug】Retrieved MCP tool list [MCP: ${name}, Tool count: ${tools.length}]`);
       return tools;
     } catch (error) {
-      logger.error(`【MCP调试】获取MCP工具列表失败 [MCP: ${name}]:`, error);
+      logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 调用MCP工具
-   * @param name MCP名称
-   * @param tool 工具名称
-   * @param args 工具参数
+   * Call MCP tool
+   * @param name MCP name
+   * @param tool Tool name
+   * @param args Tool arguments
    */
   async callTool(name: string, tool: string, args: any): Promise<any> {
-    logger.info(`【MCP调试】MCPManager.callTool() 开始调用MCP工具 [MCP: ${name}, 工具: ${tool}]`);
-    logger.info(`【MCP调试】调用参数: ${JSON.stringify(args)}`);
+    logger.info(`【MCP Debug】MCPManager.callTool() Starting to call MCP tool [MCP: ${name}, Tool: ${tool}]`);
+    logger.info(`【MCP Debug】Call arguments: ${JSON.stringify(args)}`);
     
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {
-      logger.error(`【MCP调试】MCP未连接 [MCP: ${name}]`);
-      throw new Error(`MCP ${name} 未连接`);
+      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}]`);
+      throw new Error(`MCP ${name} not connected`);
     }
     
     try {
@@ -285,11 +285,11 @@ export class MCPManager {
         name: tool,
         arguments: args,
       });
-      logger.info(`【MCP调试】MCP工具调用成功 [MCP: ${name}, 工具: ${tool}]`);
-      logger.info(`【MCP调试】调用结果: ${JSON.stringify(result)}`);
+      logger.info(`【MCP Debug】MCP tool call successful [MCP: ${name}, Tool: ${tool}]`);
+      logger.info(`【MCP Debug】Call result: ${JSON.stringify(result)}`);
       return result;
     } catch (error) {
-      logger.error(`【MCP调试】MCP工具调用失败 [MCP: ${name}, 工具: ${tool}]:`, error);
+      logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${tool}]:`, error);
       throw error;
     }
   }

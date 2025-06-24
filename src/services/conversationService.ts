@@ -15,8 +15,8 @@ import { db } from '../config/database.js';
 // const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 // const agent = new HttpsProxyAgent(proxy);
 /**
- * 对话服务
- * 处理对话和消息，以及用户意图识别
+ * Conversation Service
+ * Handles conversations and messages, as well as user intent recognition
  */
 export class ConversationService {
   private llm: ChatOpenAI;
@@ -28,11 +28,11 @@ export class ConversationService {
     this.mcpToolAdapter = mcpToolAdapter;
     this.taskExecutorService = taskExecutorService;
     
-    // 初始化LLM
+    // Initialize LLM
     this.llm = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
-      modelName: process.env.CONVERSATION_MODEL || 'gpt-4o', // 默认使用GPT-4o
-      temperature: 0.7, // 聊天模式使用较高的温度
+      modelName: process.env.CONVERSATION_MODEL || 'gpt-4o', // Default to GPT-4o
+      temperature: 0.7, // Higher temperature for chat mode
     //   configuration: {
     //     httpAgent: agent
     //   }
@@ -40,63 +40,63 @@ export class ConversationService {
   }
   
   /**
-   * 创建新对话
+   * Create new conversation
    */
   async createConversation(userId: string, title?: string): Promise<Conversation> {
     try {
-      // 如果没有提供标题，使用默认标题
-      const conversationTitle = title || `对话 ${new Date().toLocaleString('zh-CN')}`;
+      // If no title provided, use default title
+      const conversationTitle = title || `Conversation ${new Date().toLocaleString('en-US')}`;
       
       return await conversationDao.createConversation({
         userId,
         title: conversationTitle
       });
     } catch (error) {
-      logger.error('创建对话失败:', error);
+      logger.error('Error creating conversation:', error);
       throw error;
     }
   }
   
   /**
-   * 获取对话详情
+   * Get conversation details
    */
   async getConversation(conversationId: string): Promise<Conversation | null> {
     try {
       return await conversationDao.getConversationById(conversationId);
     } catch (error) {
-      logger.error(`获取对话失败 [ID: ${conversationId}]:`, error);
+      logger.error(`Error getting conversation [ID: ${conversationId}]:`, error);
       throw error;
     }
   }
   
   /**
-   * 获取用户的所有对话
+   * Get all conversations for a user
    */
   async getUserConversations(userId: string, options?: ConversationSearchOptions): Promise<{ conversations: Conversation[]; total: number }> {
     try {
       return await conversationDao.getUserConversations(userId, options);
     } catch (error) {
-      logger.error(`获取用户对话列表失败 [UserID: ${userId}]:`, error);
+      logger.error(`Error getting user conversation list [UserID: ${userId}]:`, error);
       throw error;
     }
   }
   
   /**
-   * 获取对话的所有消息
+   * Get all messages for a conversation
    */
   async getConversationMessages(conversationId: string): Promise<Message[]> {
     try {
       return await messageDao.getConversationMessages(conversationId);
     } catch (error) {
-      logger.error(`获取对话消息失败 [Conversation ID: ${conversationId}]:`, error);
+      logger.error(`Error getting conversation messages [Conversation ID: ${conversationId}]:`, error);
       throw error;
     }
   }
   
   /**
-   * 处理用户消息 - 核心功能
-   * 1. 识别用户意图（聊天 vs 任务）
-   * 2. 根据意图处理消息
+   * Process user message - Core functionality
+   * 1. Identify user intent (chat vs task)
+   * 2. Process message based on intent
    */
   async processUserMessage(conversationId: string, userId: string, content: string): Promise<{
     message: Message;
@@ -105,47 +105,49 @@ export class ConversationService {
     taskId?: string;
   }> {
     try {
-      logger.info(`处理用户消息 [对话ID: ${conversationId}]`);
+      logger.info(`Processing user message [Conversation ID: ${conversationId}]`);
       
-      // 1. 创建用户消息记录
+      // 1. Create user message record
       const userMessage = await messageDao.createMessage({
         conversationId,
         content,
         type: MessageType.USER,
-        intent: MessageIntent.UNKNOWN // 初始状态为未知意图
+        intent: MessageIntent.UNKNOWN // Initial state is unknown intent
       });
       
-      // 增加对话消息计数
+      // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 2. 识别用户意图
+      // 2. Identify user intent
       const intentResult = await this.identifyUserIntent(conversationId, content);
       const userIntent = intentResult.intent;
       
-      // 更新消息意图
+      // Update message intent
       await messageDao.updateMessageIntent(userMessage.id, userIntent);
       
-      // 3. 根据意图处理消息
+      // 3. Process message based on intent
       let response: Message;
       let taskId: string | undefined;
       
       if (userIntent === MessageIntent.TASK) {
-        // 处理任务意图
+        // Handle task intent
         const taskResult = await this.handleTaskIntent(conversationId, userId, content);
         response = taskResult.response;
         taskId = taskResult.taskId;
         
-        // 关联用户消息到任务
+        // Link user message to task
         await messageDao.linkMessageToTask(userMessage.id, taskId);
         
-        // 增加对话任务计数
+        // Increment conversation task count
         await conversationDao.incrementTaskCount(conversationId);
       } else {
-        // 处理聊天意图
-        response = await this.handleChatIntent(conversationId, userId, content);
+        // Handle chat intent
+        const chatResult = await this.handleChatIntent(conversationId, userId, content);
+        response = chatResult.response;
+        taskId = chatResult.taskId;
       }
       
-      // 4. 返回处理结果
+      // 4. Return processing result
       return {
         message: userMessage,
         response,
@@ -153,13 +155,13 @@ export class ConversationService {
         taskId
       };
     } catch (error) {
-      logger.error(`处理用户消息失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Error processing user message [Conversation ID: ${conversationId}]:`, error);
       throw error;
     }
   }
   
   /**
-   * 识别用户意图 - 判断是聊天还是任务
+   * Identify user intent - determine if chat or task
    */
   private async identifyUserIntent(conversationId: string, content: string): Promise<{
     intent: MessageIntent;
@@ -167,66 +169,66 @@ export class ConversationService {
     explanation: string;
   }> {
     try {
-      logger.info(`正在识别用户意图 [对话ID: ${conversationId}]`);
+      logger.info(`Identifying user intent [Conversation ID: ${conversationId}]`);
       
-      // 获取对话上下文（最近的几条消息）
+      // Get conversation context (recent messages)
       const recentMessages = await messageDao.getRecentMessages(conversationId, 5);
       
-      // 构建上下文提示
+      // Build context prompt
       let contextPrompt = '';
       if (recentMessages.length > 0) {
-        contextPrompt = '最近的对话上下文:\n' + recentMessages.map(msg => {
-          const role = msg.type === MessageType.USER ? '用户' : 'AI';
+        contextPrompt = 'Recent conversation context:\n' + recentMessages.map(msg => {
+          const role = msg.type === MessageType.USER ? 'User' : 'AI';
           return `${role}: ${msg.content}`;
         }).join('\n') + '\n\n';
       }
       
-      // 获取可用的工具列表
+      // Get available tools list
       const availableTools = await this.mcpToolAdapter.getAllTools();
       const toolDescriptions = availableTools.map(tool => 
-        `工具名称: ${tool.name}\n描述: ${tool.description}`
+        `Tool name: ${tool.name}\nDescription: ${tool.description}`
       ).join('\n\n');
       
-      // 构建意图识别提示
+      // Build intent recognition prompt
       const intentPrompt = `
-作为一个意图识别系统，你需要判断用户消息是"普通聊天"还是"执行任务"。
-请基于以下条件做出判断：
+As an intent recognition system, you need to determine if the user message is "regular chat" or "task execution".
+Please make your judgment based on the following criteria:
 
-- 如果用户明确要求执行特定操作、获取信息、或需要使用工具完成某事，则判断为"执行任务"
-- 如果用户只是在社交对话、闲聊、询问AI观点、探讨话题等，则判断为"普通聊天"
+- If the user explicitly requests to perform specific actions, retrieve information, or use tools to accomplish something, classify as "task execution"
+- If the user is just engaging in social conversation, casual chat, asking for AI opinions, discussing topics, etc., classify as "regular chat"
 
 ${contextPrompt}
 
-以下是系统可用的工具:
+Available system tools:
 ${toolDescriptions}
 
-用户消息: "${content}"
+User message: "${content}"
 
-请分析用户意图，并以 JSON 格式返回结果:
+Please analyze the user intent and return the result in JSON format:
 {
-  "intent": "chat" 或 "task",
-  "confidence": 0-1 之间的数值,
-  "explanation": "简短解释你的判断原因"
+  "intent": "chat" or "task",
+  "confidence": value between 0-1,
+  "explanation": "brief explanation of your judgment"
 }`;
 
-      // 使用LLM识别意图
+      // Use LLM to identify intent
       const response = await this.llm.invoke([new SystemMessage(intentPrompt)]);
       
-      // 解析结果
+      // Parse result
       const responseText = response.content.toString();
       try {
-        // 提取JSON部分
+        // Extract JSON part
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-          throw new Error("无法解析响应中的JSON");
+          throw new Error("Unable to parse JSON in response");
         }
         
         const parsedResult = JSON.parse(jsonMatch[0]);
         const intent = parsedResult.intent === 'task' ? MessageIntent.TASK : MessageIntent.CHAT;
         const confidence = parsedResult.confidence || 0.5;
-        const explanation = parsedResult.explanation || '无解释';
+        const explanation = parsedResult.explanation || 'No explanation';
         
-        logger.info(`用户意图识别结果: ${intent}, 置信度: ${confidence} [对话ID: ${conversationId}]`);
+        logger.info(`User intent recognition result: ${intent}, confidence: ${confidence} [Conversation ID: ${conversationId}]`);
         
         return {
           intent,
@@ -234,36 +236,37 @@ ${toolDescriptions}
           explanation
         };
       } catch (parseError) {
-        // 解析失败时的默认处理
-        logger.error(`意图识别结果解析失败: ${parseError}, 响应内容: ${responseText}`);
+        // Default handling when parsing fails
+        logger.error(`Intent recognition result parsing failed: ${parseError}, response content: ${responseText}`);
         return {
           intent: responseText.toLowerCase().includes('task') ? MessageIntent.TASK : MessageIntent.CHAT,
           confidence: 0.5,
-          explanation: '意图识别结果解析失败，使用默认判断'
+          explanation: 'Intent recognition result parsing failed, using default judgment'
         };
       }
     } catch (error) {
-      logger.error(`识别用户意图失败:`, error);
-      // 出错时默认为聊天意图
+      logger.error(`Error identifying user intent:`, error);
+      // Default to chat intent when error occurs
       return {
         intent: MessageIntent.CHAT,
         confidence: 0.5,
-        explanation: '意图识别过程出错，默认视为聊天意图'
+        explanation: 'Error in intent recognition process, defaulting to chat intent'
       };
     }
   }
   
   /**
-   * 处理聊天意图
+   * Handle chat intent
    */
-  private async handleChatIntent(conversationId: string, userId: string, content: string): Promise<Message> {
+  private async handleChatIntent(conversationId: string, userId: string, content: string): Promise<{
+    response: Message;
+    taskId: undefined;  // Using undefined type to match with processUserMessage method
+  }> {
     try {
-      logger.info(`处理聊天意图 [对话ID: ${conversationId}]`);
+      logger.info(`Processing chat intent [Conversation ID: ${conversationId}]`);
       
-      // 获取对话历史用作上下文
+      // Get conversation history for context
       const conversationHistory = await messageDao.getRecentMessages(conversationId, 10);
-      
-      // 构建消息历史
       const messages = conversationHistory.map(msg => {
         if (msg.type === MessageType.USER) {
           return new HumanMessage(msg.content);
@@ -274,83 +277,78 @@ ${toolDescriptions}
         }
       });
       
-      // 添加当前用户消息
+      // Add current user message
       messages.push(new HumanMessage(content));
       
-      // 使用LLM生成回复
+      // Call LLM to generate response
       const response = await this.llm.invoke(messages);
-      const responseContent = response.content.toString();
       
-      // 创建助手回复消息
+      // Save assistant response
       const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: responseContent,
+        content: response.content.toString(),
         type: MessageType.ASSISTANT,
         intent: MessageIntent.CHAT
       });
       
-      // 增加对话消息计数
+      // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      return assistantMessage;
+      return {
+        response: assistantMessage,
+        taskId: undefined
+      };
     } catch (error) {
-      logger.error(`处理聊天意图失败 [对话ID: ${conversationId}]:`, error);
-      
-      // 创建错误响应消息
-      return await messageDao.createMessage({
-        conversationId,
-        content: `抱歉，处理您的消息时出现了问题。${error instanceof Error ? error.message : ''}`,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
-      });
+      logger.error(`Error processing chat intent [Conversation ID: ${conversationId}]:`, error);
+      throw new Error('Error processing message');
     }
   }
   
   /**
-   * 处理任务意图
+   * Handle task intent
    */
   private async handleTaskIntent(conversationId: string, userId: string, content: string): Promise<{
     response: Message;
     taskId: string;
   }> {
     try {
-      logger.info(`处理任务意图 [对话ID: ${conversationId}]`);
+      logger.info(`Handling task intent [Conversation ID: ${conversationId}]`);
       
-      // 1. 创建任务
+      // 1. Create task
       const task = await this.taskService.createTask({
         userId,
         title: content.length > 30 ? content.substring(0, 30) + '...' : content,
         content,
-        conversationId // 直接在创建任务时关联到对话
+        conversationId // Directly link to conversation
       });
       
-      // 2. 创建助手消息回复
+      // 2. Create assistant message reply
       const response = await messageDao.createMessage({
         conversationId,
-        content: `已为您创建任务：${task.title}\n任务ID：${task.id}\n我将开始执行此任务。`,
+        content: `Task created: ${task.title}\nTask ID: ${task.id}\nI will start executing this task.`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
       });
       
-      // 3. 增加对话消息计数
+      // 3. Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      logger.info(`任务意图处理完成 [对话ID: ${conversationId}, 任务ID: ${task.id}]`);
+      logger.info(`Task intent handling complete [Conversation ID: ${conversationId}, Task ID: ${task.id}]`);
       
       return {
         response,
         taskId: task.id
       };
     } catch (error) {
-      logger.error(`处理任务意图失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Error handling task intent [Conversation ID: ${conversationId}]:`, error);
       
-      // 创建错误响应
+      // Create error response
       const errorMessage = await messageDao.createMessage({
         conversationId,
-        content: `抱歉，创建任务时出现了问题。${error instanceof Error ? error.message : ''}`,
+        content: `Sorry, there was a problem creating the task. ${error instanceof Error ? error.message : ''}`,
         type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT // 降级为普通聊天
+        intent: MessageIntent.CHAT // Downgrade to regular chat
       });
       
       throw error;
@@ -358,7 +356,7 @@ ${toolDescriptions}
   }
   
   /**
-   * 处理流式用户消息（用于实时响应）
+   * Handle streaming user message (for real-time response)
    */
   async processUserMessageStream(conversationId: string, userId: string, content: string, streamCallback: (chunk: any) => void): Promise<{
     messageId: string;
@@ -367,7 +365,7 @@ ${toolDescriptions}
     taskId?: string;
   }> {
     try {
-      // 1. 创建用户消息记录
+      // 1. Create user message record
       const userMessage = await messageDao.createMessage({
         conversationId,
         content,
@@ -375,16 +373,16 @@ ${toolDescriptions}
         intent: MessageIntent.UNKNOWN
       });
       
-      // 增加对话消息计数
+      // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 发送正在处理的消息
+      // Send processing start message
       streamCallback({
         event: 'processing_start',
         data: { messageId: userMessage.id }
       });
       
-      // 2. 识别用户意图
+      // 2. Identify user intent
       streamCallback({
         event: 'intent_detection',
         data: { status: 'processing' }
@@ -393,10 +391,10 @@ ${toolDescriptions}
       const intentResult = await this.identifyUserIntent(conversationId, content);
       const userIntent = intentResult.intent;
       
-      // 更新消息意图
+      // Update message intent
       await messageDao.updateMessageIntent(userMessage.id, userIntent);
       
-      // 发送意图识别结果
+      // Send intent detection result
       streamCallback({
         event: 'intent_detection',
         data: { 
@@ -407,12 +405,12 @@ ${toolDescriptions}
         }
       });
       
-      // 3. 根据意图处理消息
+      // 3. Process message based on intent
       let responseId: string;
       let taskId: string | undefined;
       
       if (userIntent === MessageIntent.TASK) {
-        // 处理任务意图（流式）
+        // Handle task intent (streaming)
         const taskResult = await this.handleTaskIntentStream(
           conversationId,
           userId,
@@ -423,13 +421,13 @@ ${toolDescriptions}
         responseId = taskResult.responseId;
         taskId = taskResult.taskId;
         
-        // 关联用户消息到任务
+        // Link user message to task
         await messageDao.linkMessageToTask(userMessage.id, taskId);
         
-        // 增加对话任务计数
+        // Increment conversation task count
         await conversationDao.incrementTaskCount(conversationId);
       } else {
-        // 处理聊天意图（流式）
+        // Handle chat intent (streaming)
         const chatResult = await this.handleChatIntentStream(
           conversationId,
           userId,
@@ -438,9 +436,10 @@ ${toolDescriptions}
         );
         
         responseId = chatResult.responseId;
+        taskId = chatResult.taskId;
       }
       
-      // 发送处理完成消息
+      // Send processing complete message
       streamCallback({
         event: 'processing_complete',
         data: { 
@@ -451,7 +450,7 @@ ${toolDescriptions}
         }
       });
       
-      // 4. 返回处理结果
+      // 4. Return processing result
       return {
         messageId: userMessage.id,
         responseId,
@@ -459,13 +458,13 @@ ${toolDescriptions}
         taskId
       };
     } catch (error) {
-      logger.error(`流式处理用户消息失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Error processing user message stream [Conversation ID: ${conversationId}]:`, error);
       
-      // 发送错误消息
+      // Send error message
       streamCallback({
         event: 'error',
         data: { 
-          message: '处理消息时出错',
+          message: 'Error processing message',
           details: error instanceof Error ? error.message : String(error)
         }
       });
@@ -475,27 +474,27 @@ ${toolDescriptions}
   }
   
   /**
-   * 流式处理聊天意图
+   * Stream chat intent handling
    */
   private async handleChatIntentStream(
     conversationId: string, 
     userId: string, 
     content: string,
     streamCallback: (chunk: string) => void
-  ): Promise<{ responseId: string }> {
+  ): Promise<{ responseId: string; taskId: undefined }> {
     try {
-      // 创建一个空的回复消息
+      // Create an empty reply message
       const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: '',  // 空内容，会在流式处理完成后更新
+        content: '',  // Empty content, will be updated after stream processing
         type: MessageType.ASSISTANT,
         intent: MessageIntent.CHAT
       });
       
-      // 增加对话消息计数
+      // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 获取对话历史用作上下文
+      // Get conversation history for context
       const conversationHistory = await messageDao.getRecentMessages(conversationId, 10);
       const messages = conversationHistory.map(msg => {
         if (msg.type === MessageType.USER) {
@@ -507,51 +506,38 @@ ${toolDescriptions}
         }
       });
       
-      // 添加当前用户消息
+      // Add current user message
       messages.push(new HumanMessage(content));
       
-      // 使用流式LLM生成回复
+      // Prepare streaming response handling
       let fullResponse = '';
+      
+      // Call LLM with streaming
       const stream = await this.llm.stream(messages);
       
+      // Process streaming response
       for await (const chunk of stream) {
-        const chunkContent = typeof chunk.content === 'string' 
-          ? chunk.content 
-          : JSON.stringify(chunk.content);
-        fullResponse += chunkContent;
-        
-        // 发送内容块
-        streamCallback(chunkContent);
+        if (chunk.content) {
+          fullResponse += chunk.content;
+          streamCallback(chunk.content as string);
+        }
       }
       
-      // 更新消息内容
-      await db.query(
-        `
-        UPDATE messages
-        SET content = $1
-        WHERE id = $2
-        `,
-        [fullResponse, assistantMessage.id]
-      );
+      // Update assistant message with complete content
+      await messageDao.updateMessageContent(assistantMessage.id, fullResponse);
       
-      return { responseId: assistantMessage.id };
+      return {
+        responseId: assistantMessage.id,
+        taskId: undefined
+      };
     } catch (error) {
-      logger.error(`流式处理聊天意图失败 [对话ID: ${conversationId}]:`, error);
-      
-      // 创建错误响应
-      const errorMessage = await messageDao.createMessage({
-        conversationId,
-        content: `抱歉，处理您的消息时出现了问题。${error instanceof Error ? error.message : ''}`,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
-      });
-      
-      return { responseId: errorMessage.id };
+      logger.error(`Error processing chat intent stream [Conversation ID: ${conversationId}]:`, error);
+      throw new Error('Error processing message');
     }
   }
   
   /**
-   * 流式处理任务意图
+   * Stream task intent handling
    */
   private async handleTaskIntentStream(
     conversationId: string, 
@@ -560,13 +546,13 @@ ${toolDescriptions}
     streamCallback: (chunk: any) => void
   ): Promise<{ responseId: string; taskId: string }> {
     try {
-      // 创建任务
+      // Create task
       streamCallback({ status: 'creating_task' });
       const task = await this.taskService.createTask({
         userId,
         title: content.length > 30 ? content.substring(0, 30) + '...' : content,
         content,
-        conversationId // 直接关联对话
+        conversationId // Direct conversation link
       });
       
       streamCallback({ 
@@ -575,22 +561,22 @@ ${toolDescriptions}
         title: task.title
       });
       
-      // 创建一个空的回复消息
+      // Create an empty reply message
       const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: `已为您创建任务：${task.title}\n任务ID：${task.id}\n我将开始执行此任务。`,
+        content: `Task created: ${task.title}\nTask ID: ${task.id}\nI will start executing this task.`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
       });
       
-      // 增加对话消息计数
+      // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 流式执行任务
+      // Stream task execution
       streamCallback({ status: 'executing_task' });
       
-      // 使用自定义流回调
+      // Use custom stream callback
       await this.taskExecutorService.executeTaskStream(
         task.id,
         (data) => {
@@ -603,14 +589,14 @@ ${toolDescriptions}
         taskId: task.id
       };
     } catch (error) {
-      logger.error(`流式处理任务意图失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Error handling task intent stream [Conversation ID: ${conversationId}]:`, error);
       
-      // 创建错误响应
+      // Create error response
       const errorMessage = await messageDao.createMessage({
         conversationId,
-        content: `抱歉，创建任务时出现了问题。${error instanceof Error ? error.message : ''}`,
+        content: `Sorry, there was a problem creating the task. ${error instanceof Error ? error.message : ''}`,
         type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT // 降级为普通聊天
+        intent: MessageIntent.CHAT // Downgrade to regular chat
       });
       
       throw error;
@@ -618,7 +604,7 @@ ${toolDescriptions}
   }
 }
 
-// 导出服务实例获取函数
+// Export service instance getter function
 let conversationServiceInstance: ConversationService | null = null;
 
 export function getConversationService(
@@ -630,7 +616,7 @@ export function getConversationService(
   }
   
   if (!conversationServiceInstance) {
-    throw new Error('ConversationService未正确初始化，需要提供mcpToolAdapter和taskExecutorService');
+    throw new Error('ConversationService not properly initialized, mcpToolAdapter and taskExecutorService required');
   }
   
   return conversationServiceInstance;

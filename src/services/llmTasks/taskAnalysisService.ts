@@ -172,8 +172,8 @@ export class TaskAnalysisService {
       // 获取任务内容
       const task = await taskService.getTaskById(taskId);
       if (!task) {
-        logger.error(`任务不存在 [ID: ${taskId}]`);
-        stream({ event: 'error', data: { message: '任务不存在' } });
+        logger.error(`Task not found [ID: ${taskId}]`);
+        stream({ event: 'error', data: { message: 'Task not found' } });
         return false;
       }
       
@@ -186,7 +186,7 @@ export class TaskAnalysisService {
         event: 'step_start', 
         data: { 
           stepType: 'analysis',
-          stepName: '分析任务需求',
+          stepName: 'Analyze Task Requirements',
           stepNumber: 1,
           totalSteps: 4
         } 
@@ -210,10 +210,10 @@ export class TaskAnalysisService {
       const step1 = await taskService.createTaskStep({
         taskId,
         stepType: 'analysis',
-        title: '分析任务需求',
+        title: 'Analyze Task Requirements',
         content: requirementsResult.content,
         reasoning: requirementsResult.reasoning,
-        reasoningTime: 0, // 简化处理
+        reasoningTime: 0, // Simplified handling
         orderIndex: 1
       });
       
@@ -222,7 +222,7 @@ export class TaskAnalysisService {
         event: 'step_start', 
         data: { 
           stepType: 'mcp_selection',
-          stepName: '识别最相关的MCP工具',
+          stepName: 'Identify Relevant MCP Tools',
           stepNumber: 2,
           totalSteps: 4
         } 
@@ -252,10 +252,10 @@ export class TaskAnalysisService {
       const step2 = await taskService.createTaskStep({
         taskId,
         stepType: 'mcp_selection',
-        title: '识别最相关的MCP工具',
+        title: 'Identify Relevant MCP Tools',
         content: mcpResult.content,
         reasoning: mcpResult.reasoning,
-        reasoningTime: 0, // 简化处理
+        reasoningTime: 0, // Simplified handling
         orderIndex: 2
       });
       
@@ -264,7 +264,7 @@ export class TaskAnalysisService {
         event: 'step_start', 
         data: { 
           stepType: 'deliverables',
-          stepName: '确认可交付内容',
+          stepName: 'Confirm Deliverables',
           stepNumber: 3,
           totalSteps: 4
         } 
@@ -293,10 +293,10 @@ export class TaskAnalysisService {
       const step3 = await taskService.createTaskStep({
         taskId,
         stepType: 'deliverables',
-        title: '确认可交付内容',
+        title: 'Confirm Deliverables',
         content: deliverablesResult.content,
         reasoning: deliverablesResult.reasoning,
-        reasoningTime: 0, // 简化处理
+        reasoningTime: 0, // Simplified handling
         orderIndex: 3
       });
       
@@ -305,7 +305,7 @@ export class TaskAnalysisService {
         event: 'step_start', 
         data: { 
           stepType: 'workflow',
-          stepName: '构建MCP工作流',
+          stepName: 'Build MCP Workflow',
           stepNumber: 4,
           totalSteps: 4
         } 
@@ -335,10 +335,10 @@ export class TaskAnalysisService {
       const step4 = await taskService.createTaskStep({
         taskId,
         stepType: 'workflow',
-        title: '构建MCP工作流',
+        title: 'Build MCP Workflow',
         content: workflowResult.content,
         reasoning: workflowResult.reasoning,
-        reasoningTime: 0, // 简化处理
+        reasoningTime: 0, // Simplified handling
         orderIndex: 4
       });
       
@@ -364,19 +364,19 @@ export class TaskAnalysisService {
         } 
       });
       
-      logger.info(`任务流式分析完成 [任务ID: ${taskId}]`);
+      logger.info(`Task streaming analysis completed [Task ID: ${taskId}]`);
       return true;
     } catch (error) {
-      logger.error(`任务流式分析失败 [ID: ${taskId}]:`, error);
+      logger.error(`Task streaming analysis failed [ID: ${taskId}]:`, error);
       
-      // 更新任务状态为失败
+      // Update task status to failed
       await taskService.updateTask(taskId, { status: 'failed' });
       
-      // 发送错误信息
+      // Send error info
       stream({ 
         event: 'error', 
         data: { 
-          message: '任务分析失败', 
+          message: 'Task analysis failed', 
           details: error instanceof Error ? error.message : String(error)
         } 
       });
