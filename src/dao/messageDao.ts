@@ -3,7 +3,7 @@ import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { Message, MessageType, MessageIntent } from '../models/conversation.js';
 
-// 数据库行记录接口
+// Database row record interface
 export interface MessageDbRow {
   id: string;
   conversation_id: string;
@@ -16,11 +16,11 @@ export interface MessageDbRow {
 }
 
 /**
- * 消息DAO - 负责消息相关的数据库操作
+ * Message DAO - Responsible for database operations related to messages
  */
 export class MessageDao {
   /**
-   * 创建新消息
+   * Create new message
    */
   async createMessage(data: {
     conversationId: string;
@@ -52,9 +52,9 @@ export class MessageDao {
         ]
       );
 
-      logger.info(`消息记录创建成功: ${messageId}`);
+      logger.info(`Message record created successfully: ${messageId}`);
       
-      // 更新对话的最新消息内容和时间
+      // Update conversation's latest message content and time
       await db.query(
         `
         UPDATE conversations
@@ -66,13 +66,13 @@ export class MessageDao {
       
       return this.mapMessageFromDb(result.rows[0]);
     } catch (error) {
-      logger.error('创建消息记录失败:', error);
+      logger.error('Failed to create message record:', error);
       throw error;
     }
   }
 
   /**
-   * 获取对话的所有消息
+   * Get all messages for a conversation
    */
   async getConversationMessages(conversationId: string): Promise<Message[]> {
     try {
@@ -87,13 +87,13 @@ export class MessageDao {
 
       return result.rows.map(row => this.mapMessageFromDb(row));
     } catch (error) {
-      logger.error(`获取对话消息失败 [Conversation ID: ${conversationId}]:`, error);
+      logger.error(`Failed to get conversation messages [Conversation ID: ${conversationId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 获取某个任务相关的所有消息
+   * Get all messages related to a task
    */
   async getTaskMessages(taskId: string): Promise<Message[]> {
     try {
@@ -108,13 +108,13 @@ export class MessageDao {
 
       return result.rows.map(row => this.mapMessageFromDb(row));
     } catch (error) {
-      logger.error(`获取任务消息失败 [Task ID: ${taskId}]:`, error);
+      logger.error(`Failed to get task messages [Task ID: ${taskId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 获取特定消息
+   * Get specific message
    */
   async getMessageById(messageId: string): Promise<Message | null> {
     try {
@@ -132,13 +132,13 @@ export class MessageDao {
 
       return this.mapMessageFromDb(result.rows[0]);
     } catch (error) {
-      logger.error(`获取消息失败 [ID: ${messageId}]:`, error);
+      logger.error(`Failed to get message [ID: ${messageId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 更新消息意图
+   * Update message intent
    */
   async updateMessageIntent(messageId: string, intent: MessageIntent): Promise<Message | null> {
     try {
@@ -156,16 +156,16 @@ export class MessageDao {
         return null;
       }
 
-      logger.info(`消息意图更新成功 [ID: ${messageId}, Intent: ${intent}]`);
+      logger.info(`Message intent updated successfully [ID: ${messageId}, Intent: ${intent}]`);
       return this.mapMessageFromDb(result.rows[0]);
     } catch (error) {
-      logger.error(`更新消息意图失败 [ID: ${messageId}]:`, error);
+      logger.error(`Failed to update message intent [ID: ${messageId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 关联消息到任务
+   * Link message to task
    */
   async linkMessageToTask(messageId: string, taskId: string): Promise<Message | null> {
     try {
@@ -183,16 +183,16 @@ export class MessageDao {
         return null;
       }
 
-      logger.info(`消息关联到任务成功 [消息ID: ${messageId}, 任务ID: ${taskId}]`);
+      logger.info(`Message linked to task successfully [Message ID: ${messageId}, Task ID: ${taskId}]`);
       return this.mapMessageFromDb(result.rows[0]);
     } catch (error) {
-      logger.error(`关联消息到任务失败 [ID: ${messageId}]:`, error);
+      logger.error(`Failed to link message to task [ID: ${messageId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 获取对话中最近的N条消息用于上下文
+   * Get recent N messages from conversation for context
    */
   async getRecentMessages(conversationId: string, limit: number = 10): Promise<Message[]> {
     try {
@@ -206,16 +206,16 @@ export class MessageDao {
         [conversationId, limit]
       );
 
-      // 反转顺序，使最早的消息在前
+      // Reverse order to have earliest messages first
       return result.rows.map(row => this.mapMessageFromDb(row)).reverse();
     } catch (error) {
-      logger.error(`获取最近消息失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Failed to get recent messages [Conversation ID: ${conversationId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 更新消息内容
+   * Update message content
    */
   async updateMessageContent(messageId: string, content: string): Promise<Message | null> {
     try {
@@ -242,7 +242,7 @@ export class MessageDao {
   }
 
   /**
-   * 将数据库行映射为消息对象
+   * Map database row to message object
    */
   private mapMessageFromDb(row: MessageDbRow): Message {
     return {
@@ -258,5 +258,5 @@ export class MessageDao {
   }
 }
 
-// 导出DAO单例
+// Export DAO singleton
 export const messageDao = new MessageDao(); 

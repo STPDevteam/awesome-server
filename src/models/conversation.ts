@@ -1,35 +1,35 @@
 /**
- * 对话模型
- * 用于存储用户与AI之间的对话
+ * Conversation Model
+ * Used to store conversations between users and AI
  */
 
-// 消息类型
+// Message types
 export enum MessageType {
   USER = 'user',
   ASSISTANT = 'assistant',
   SYSTEM = 'system'
 }
 
-// 消息意图类型
+// Message intent types
 export enum MessageIntent {
-  CHAT = 'chat',      // 普通聊天
-  TASK = 'task',      // 执行任务
-  UNKNOWN = 'unknown' // 未确定意图
+  CHAT = 'chat',      // Regular chat
+  TASK = 'task',      // Task execution
+  UNKNOWN = 'unknown' // Undetermined intent
 }
 
-// 消息
+// Message
 export interface Message {
   id: string;
   conversationId: string;
   content: string;
   type: MessageType;
   intent?: MessageIntent;
-  taskId?: string;    // 如果是任务相关消息，关联到任务ID
-  metadata?: any;     // 额外元数据
+  taskId?: string;    // If message is task-related, link to task ID
+  metadata?: any;     // Additional metadata
   createdAt: Date;
 }
 
-// 对话
+// Conversation
 export interface Conversation {
   id: string;
   userId: string;
@@ -42,7 +42,7 @@ export interface Conversation {
   updatedAt: Date;
 }
 
-// 对话搜索选项
+// Conversation search options
 export interface ConversationSearchOptions {
   limit?: number;
   offset?: number;
