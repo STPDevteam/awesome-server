@@ -11,9 +11,9 @@ import { getTaskService } from './taskService.js';
 import { TaskExecutorService } from './taskExecutorService.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { db } from '../config/database.js';
-import { HttpsProxyAgent } from 'https-proxy-agent';
-const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
-const agent = new HttpsProxyAgent(proxy);
+// import { HttpsProxyAgent } from 'https-proxy-agent';
+// const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
+// const agent = new HttpsProxyAgent(proxy);
 /**
  * 对话服务
  * 处理对话和消息，以及用户意图识别
@@ -33,9 +33,9 @@ export class ConversationService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.CONVERSATION_MODEL || 'gpt-4o', // 默认使用GPT-4o
       temperature: 0.7, // 聊天模式使用较高的温度
-      configuration: {
-        httpAgent: agent
-      }
+    //   configuration: {
+    //     httpAgent: agent
+    //   }
     });
   }
   
