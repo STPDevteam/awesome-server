@@ -6,13 +6,13 @@ export interface User {
   balance?: string;
   email?: string;
   
-  // 会员信息
+  // Membership information
   membershipType?: 'plus' | 'pro' | null;
   subscriptionType?: 'monthly' | 'yearly' | null;
   membershipExpiresAt?: Date;
   isActive: boolean;
   
-  // 登录方式标识
+  // Login method identifiers
   loginMethods: {
     wallet?: {
       address: string;
@@ -31,7 +31,7 @@ export interface User {
     };
   };
   
-  // 元数据
+  // Metadata
   createdAt: Date;
   updatedAt: Date;
   lastLoginAt?: Date;
@@ -52,7 +52,7 @@ export interface UserSession {
   expiresAt: Date;
 }
 
-// 新增支付相关接口
+// Payment-related interfaces
 export interface Payment {
   id: string;
   userId: string;
@@ -76,7 +76,7 @@ export interface CreatePaymentParams {
   currency: 'USDT' | 'USDC';
 }
 
-// 会员定价配置
+// Membership pricing configuration
 export const MEMBERSHIP_PRICING = {
   plus: {
     monthly: { amount: '0.01', currency: 'USDT' },
@@ -89,7 +89,7 @@ export const MEMBERSHIP_PRICING = {
 } as const;
 
 /**
- * 登录方式
- * 支持钱包、Google、GitHub等多种方式
+ * Login Methods
+ * Supports wallet, Google, GitHub and other methods
  */
 export type LoginMethod = 'wallet' | 'google' | 'github' | 'test'; 

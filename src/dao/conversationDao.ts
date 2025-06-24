@@ -3,7 +3,7 @@ import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { Conversation, ConversationSearchOptions } from '../models/conversation.js';
 
-// 数据库行记录接口
+// Database row record interface
 export interface ConversationDbRow {
   id: string;
   user_id: string;
@@ -17,11 +17,11 @@ export interface ConversationDbRow {
 }
 
 /**
- * 对话DAO - 负责对话相关的数据库操作
+ * Conversation DAO - Responsible for database operations related to conversations
  */
 export class ConversationDao {
   /**
-   * 创建新对话
+   * Create new conversation
    */
   async createConversation(data: {
     userId: string;
@@ -40,16 +40,16 @@ export class ConversationDao {
         [conversationId, data.userId, data.title, 0, 0, now, now]
       );
 
-      logger.info(`对话记录创建成功: ${conversationId}`);
+      logger.info(`Conversation record created successfully: ${conversationId}`);
       return this.mapConversationFromDb(result.rows[0]);
     } catch (error) {
-      logger.error('创建对话记录失败:', error);
+      logger.error('Failed to create conversation record:', error);
       throw error;
     }
   }
 
   /**
-   * 获取对话详情
+   * Get conversation details
    */
   async getConversationById(conversationId: string): Promise<Conversation | null> {
     try {
@@ -67,23 +67,23 @@ export class ConversationDao {
 
       return this.mapConversationFromDb(result.rows[0]);
     } catch (error) {
-      logger.error(`获取对话记录失败 [ID: ${conversationId}]:`, error);
+      logger.error(`Failed to get conversation record [ID: ${conversationId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 获取用户的所有对话
+   * Get all conversations for a user
    */
   async getUserConversations(userId: string, options?: ConversationSearchOptions): Promise<{ conversations: Conversation[]; total: number }> {
     try {
-      // 设置默认排序和分页
+      // Set default sorting and pagination
       const sortField = options?.sortBy || 'last_message_at';
       const sortDirection = options?.sortDir || 'desc';
       const limit = options?.limit || 10;
       const offset = options?.offset || 0;
 
-      // 查询总数
+      // Query total count
       const countResult = await db.query(
         `
         SELECT COUNT(*) as total
@@ -95,7 +95,7 @@ export class ConversationDao {
       
       const total = parseInt(countResult.rows[0].total, 10);
 
-      // 查询对话列表
+      // Query conversation list
       const result = await db.query<ConversationDbRow>(
         `
         SELECT *
@@ -111,13 +111,13 @@ export class ConversationDao {
 
       return { conversations, total };
     } catch (error) {
-      logger.error(`获取用户对话列表失败 [UserID: ${userId}]:`, error);
+      logger.error(`Failed to get user conversation list [UserID: ${userId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 更新对话
+   * Update conversation
    */
   async updateConversation(conversationId: string, updates: {
     title?: string;
@@ -127,7 +127,7 @@ export class ConversationDao {
     messageCount?: number;
   }): Promise<Conversation | null> {
     try {
-      // 构建更新字段
+      // Build update fields
       const updateFields: string[] = [];
       const values: any[] = [];
       let valueIndex = 1;
@@ -162,17 +162,17 @@ export class ConversationDao {
         valueIndex++;
       }
 
-      // 如果没有字段需要更新，则直接返回对话
+      // If no fields to update, return conversation directly
       if (updateFields.length === 0) {
         return this.getConversationById(conversationId);
       }
 
-      // 添加更新时间
+      // Add update time
       updateFields.push(`updated_at = $${valueIndex}`);
       values.push(new Date());
       valueIndex++;
 
-      // 添加ID条件
+      // Add ID condition
       values.push(conversationId);
 
       const query = `
@@ -188,81 +188,96 @@ export class ConversationDao {
         return null;
       }
 
-      logger.info(`对话记录更新成功: ${conversationId}`);
+      logger.info(`Conversation record updated successfully: ${conversationId}`);
       return this.mapConversationFromDb(result.rows[0]);
     } catch (error) {
-      logger.error(`更新对话记录失败 [ID: ${conversationId}]:`, error);
+      logger.error(`Failed to update conversation record [ID: ${conversationId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 增加对话中的任务计数
+   * Increment task count in conversation
    */
   async incrementTaskCount(conversationId: string): Promise<void> {
     try {
       await db.query(
         `
         UPDATE conversations
-        SET task_count = task_count + 1, updated_at = NOW()
-        WHERE id = $1
+        SET task_count = task_count + 1, updated_at = $1
+        WHERE id = $2
         `,
-        [conversationId]
+        [new Date(), conversationId]
       );
-      logger.info(`增加对话任务计数成功: ${conversationId}`);
+      
+      logger.info(`Task count incremented for conversation [ID: ${conversationId}]`);
     } catch (error) {
-      logger.error(`增加对话任务计数失败 [ID: ${conversationId}]:`, error);
+      logger.error(`Failed to increment task count [Conversation ID: ${conversationId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 增加对话中的消息计数
+   * Increment message count in conversation
    */
   async incrementMessageCount(conversationId: string): Promise<void> {
     try {
       await db.query(
         `
         UPDATE conversations
-        SET message_count = message_count + 1, updated_at = NOW()
-        WHERE id = $1
+        SET message_count = message_count + 1, updated_at = $1
+        WHERE id = $2
         `,
-        [conversationId]
+        [new Date(), conversationId]
       );
-      logger.info(`增加对话消息计数成功: ${conversationId}`);
+      
+      logger.info(`Message count incremented for conversation [ID: ${conversationId}]`);
     } catch (error) {
-      logger.error(`增加对话消息计数失败 [ID: ${conversationId}]:`, error);
+      logger.error(`Failed to increment message count [Conversation ID: ${conversationId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 删除对话
+   * Delete conversation
    */
   async deleteConversation(conversationId: string): Promise<boolean> {
     try {
-      // 开启事务，删除对话以及关联的消息
-      await db.transaction([
-        {
-          text: 'DELETE FROM messages WHERE conversation_id = $1',
-          params: [conversationId]
-        },
-        {
-          text: 'DELETE FROM conversations WHERE id = $1',
-          params: [conversationId]
-        }
-      ]);
-
-      logger.info(`对话及其消息删除成功: ${conversationId}`);
-      return true;
+      // Delete related messages first
+      await db.query(
+        `
+        DELETE FROM messages
+        WHERE conversation_id = $1
+        `,
+        [conversationId]
+      );
+      
+      // Then delete the conversation
+      const result = await db.query(
+        `
+        DELETE FROM conversations
+        WHERE id = $1
+        RETURNING id
+        `,
+        [conversationId]
+      );
+      
+      const success = result.rowCount !== null && result.rowCount > 0;
+      if (success) {
+        logger.info(`Conversation deleted successfully [ID: ${conversationId}]`);
+      } else {
+        logger.warn(`Conversation not found for deletion [ID: ${conversationId}]`);
+      }
+      
+      return success;
     } catch (error) {
-      logger.error(`删除对话失败 [ID: ${conversationId}]:`, error);
-      return false;
+      logger.error(`Failed to delete conversation [ID: ${conversationId}]:`, error);
+      throw error;
     }
   }
 
   /**
-   * 将数据库行映射为对话对象
+   * Map database row to conversation object
    */
   private mapConversationFromDb(row: ConversationDbRow): Conversation {
     return {
@@ -279,5 +294,5 @@ export class ConversationDao {
   }
 }
 
-// 导出DAO单例
+// Export DAO singleton
 export const conversationDao = new ConversationDao(); 

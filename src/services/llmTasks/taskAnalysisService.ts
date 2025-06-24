@@ -386,36 +386,36 @@ export class TaskAnalysisService {
   }
   
   /**
-   * 执行任务的完整分析流程
-   * @param taskId 任务ID
-   * @returns 分析结果，包括推荐的MCP工作流
+   * Execute the complete task analysis process
+   * @param taskId Task ID
+   * @returns Analysis result, including recommended MCP workflow
    */
   async analyzeTask(taskId: string): Promise<boolean> {
     try {
       const task = await taskService.getTaskById(taskId);
       if (!task) {
-        logger.error(`任务分析失败：未找到任务 [ID: ${taskId}]`);
+        logger.error(`Task analysis failed: Task not found [ID: ${taskId}]`);
         return false;
       }
       
-      // 先将状态更新为in_progress
+      // First update status to in_progress
       await taskService.updateTask(taskId, { status: 'in_progress' });
 
-      logger.info(`开始分析任务 [任务ID: ${taskId}, 内容: ${task.content}]`);
+      logger.info(`Starting task analysis [Task ID: ${taskId}, Content: ${task.content}]`);
       
-      // 始终选择Playwright MCP作为推荐工具
+      // Always choose Playwright MCP as the recommended tool
       const playwrightToolInfo = AVAILABLE_MCPS.find(mcp => mcp.name === 'playwright-mcp-service') || {
         name: 'playwright-mcp-service',
-        description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
-        capabilities: ['打开浏览器', '访问网页', '填写表单', '点击元素', '获取页面内容'],
+        description: 'Playwright browser automation tool for controlling browser interactions',
+        capabilities: ['Open browser', 'Visit webpages', 'Fill forms', 'Click elements', 'Get page content'],
         authRequired: false
       };
       
-      // 根据任务内容生成不同的工作流
+      // Generate different workflows based on task content
       let workflow;
       
-      if (task.content.toLowerCase().includes('百度') || task.content.toLowerCase().includes('搜索')) {
-        // 如果任务内容包含"百度"或"搜索"关键词，生成百度搜索工作流
+      if (task.content.toLowerCase().includes('baidu') || task.content.toLowerCase().includes('search')) {
+        // If task content includes "baidu" or "search" keywords, generate Baidu search workflow
         const searchTerm = this.extractSearchTerm(task.content) || 'Playwright';
         
         workflow = [{
@@ -428,24 +428,24 @@ export class TaskAnalysisService {
           step: 2,
           mcp: 'playwright-mcp-service',
           action: 'browser_type',
-          input: `{"text": "${searchTerm}", "element": "搜索框", "ref": "#kw"}`
+          input: `{"text": "${searchTerm}", "element": "Search box", "ref": "#kw"}`
         },
         {
           step: 3,
           mcp: 'playwright-mcp-service',
           action: 'browser_click',
-          input: '{"element": "搜索按钮", "ref": "#su"}'
+          input: '{"element": "Search button", "ref": "#su"}'
         }];
-      } else if (task.content.toLowerCase().includes('playwright') || task.content.toLowerCase().includes('测试')) {
-        // 如果任务内容包含"playwright"或"测试"关键词，生成Playwright测试工作流
+      } else if (task.content.toLowerCase().includes('playwright') || task.content.toLowerCase().includes('test')) {
+        // If task content includes "playwright" or "test" keywords, generate Playwright test workflow
         workflow = [{
           step: 1,
           mcp: 'playwright-mcp-service',
           action: 'browser_generate_playwright_test',
-          input: `{"name": "自动化测试", "description": "基于任务内容的自动化测试", "steps": ["访问目标网站", "执行交互操作", "验证结果"]}`
+          input: `{"name": "Automated Test", "description": "Automated test based on task content", "steps": ["Visit target website", "Perform interaction", "Verify results"]}`
         }];
       } else {
-        // 默认工作流
+        // Default workflow
         workflow = [{
           step: 1,
           mcp: 'playwright-mcp-service',
@@ -460,13 +460,13 @@ export class TaskAnalysisService {
         }];
       }
       
-      // 构建MCP工作流对象
+      // Build MCP workflow object
       const mcpWorkflow = {
         mcps: [{
           name: playwrightToolInfo.name,
           description: playwrightToolInfo.description,
           authRequired: playwrightToolInfo.authRequired,
-          authVerified: true, // 默认设置为已验证，跳过验证步骤
+          authVerified: true, // Default set to verified, skip verification step
           category: playwrightToolInfo.category,
           imageUrl: playwrightToolInfo.imageUrl,
           githubUrl: playwrightToolInfo.githubUrl,
@@ -475,115 +475,115 @@ export class TaskAnalysisService {
         workflow: workflow
       };
 
-      // 创建任务步骤记录
+      // Create task step records
       await taskService.createTaskStep({
         taskId,
         stepType: 'analysis',
-        title: '分析任务需求',
-        content: `已分析任务"${task.content}"，确定使用Playwright MCP工具完成任务。`,
-        reasoning: '自动选择Playwright MCP作为最佳工具，无需LLM分析。',
+        title: 'Analyze Task Requirements',
+        content: `Analyzed task "${task.content}", determined to use Playwright MCP tool to complete the task.`,
+        reasoning: 'Automatically selected Playwright MCP as the best tool, no LLM analysis needed.',
         orderIndex: 1
       });
       
       await taskService.createTaskStep({
         taskId,
         stepType: 'mcp_selection',
-        title: '识别最相关的MCP工具',
-        content: `已选择Playwright MCP作为最佳工具。`,
-        reasoning: 'Playwright MCP提供了强大的浏览器自动化能力，适合执行网页交互任务。',
+        title: 'Identify Most Relevant MCP Tools',
+        content: `Selected Playwright MCP as the best tool.`,
+        reasoning: 'Playwright MCP provides powerful browser automation capabilities, suitable for web interaction tasks.',
         orderIndex: 2
       });
       
       await taskService.createTaskStep({
         taskId,
         stepType: 'deliverables',
-        title: '确认可交付内容',
-        content: '使用Playwright MCP可以完成浏览器自动化操作，包括网页访问、表单填写和点击操作。',
-        reasoning: 'Playwright MCP工具集合完全满足当前任务需求。',
+        title: 'Confirm Deliverables',
+        content: 'Using Playwright MCP can complete browser automation operations, including webpage visits, form filling, and click operations.',
+        reasoning: 'Playwright MCP toolset fully meets current task requirements.',
         orderIndex: 3
       });
       
       await taskService.createTaskStep({
         taskId,
         stepType: 'workflow',
-        title: '构建MCP工作流',
-        content: `已构建${workflow.length}步工作流，包括${workflow.map(w => w.action).join('、')}等操作。`,
-        reasoning: '根据任务内容自动构建最合适的工作流步骤。',
+        title: 'Build MCP Workflow',
+        content: `Built ${workflow.length}-step workflow, including operations such as ${workflow.map(w => w.action).join(', ')}.`,
+        reasoning: 'Automatically built the most appropriate workflow steps based on task content.',
         orderIndex: 4
       });
 
-      // 更新任务的MCP工作流
+      // Update task's MCP workflow
       await taskService.updateTask(taskId, {
         mcpWorkflow: mcpWorkflow
       });
       
-      // 完成后将状态更新为completed，单独一个更新操作
+      // After completion, update status to completed in a separate update operation
       await taskService.updateTask(taskId, {
         status: 'completed'
       });
       
-      logger.info(`✅ 任务分析完成，已保存工作流 [任务ID: ${taskId}]`);
+      logger.info(`✅ Task analysis completed, workflow saved [Task ID: ${taskId}]`);
       return true;
 
     } catch (error) {
-      logger.error(`任务分析失败 [ID: ${taskId}]:`, error);
-      // 更新任务状态为failed
+      logger.error(`Task analysis failed [ID: ${taskId}]:`, error);
+      // Update task status to failed
       await taskService.updateTask(taskId, { status: 'failed' });
       return false;
     }
   }
   
   /**
-   * 步骤1: 分析任务需求
-   * @param taskContent 任务内容
-   * @returns 需求分析结果
+   * Step 1: Analyze task requirements
+   * @param taskContent Task content
+   * @returns Requirements analysis result
    */
   public async analyzeRequirements(taskContent: string): Promise<{
     content: string;
     reasoning: string;
   }> {
     try {
-      logger.info('开始分析任务需求');
+      logger.info('Starting task requirements analysis');
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位专业的任务分析师，负责分析用户输入的任务需求。
-请对以下任务内容进行详细的分析，解构并识别：
-1. 核心目标和子目标
-2. 关键约束条件
-3. 必要的输入和期望的输出
-4. 潜在的挑战和风险点
+        new SystemMessage(`You are a professional task analyst responsible for analyzing user task requirements.
+Please analyze the following task content in detail, deconstructing and identifying:
+1. Core goals and sub-goals
+2. Key constraints
+3. Necessary inputs and expected outputs
+4. Potential challenges and risk points
 
-输出格式：
+Output format:
 {
-  "analysis": "这里是公开给用户的任务分析摘要，简洁清晰地说明任务的核心需求和目标",
-  "detailed_reasoning": "这里是你的详细推理过程，包括你如何理解任务、识别关键需求的思路，以及可能的解决方向"
+  "analysis": "This is the task analysis summary visible to the user, clearly and concisely explaining the core requirements and goals of the task",
+  "detailed_reasoning": "This is your detailed reasoning process, including how you understand the task, your approach to identifying key requirements, and possible solution directions"
 }
 
-请确保分析准确、全面，但保持简洁。`),
+Please ensure the analysis is accurate and comprehensive while remaining concise.`),
         new HumanMessage(taskContent)
       ]);
       
-      // 解析返回的JSON
+      // Parse the returned JSON
       const responseText = response.content.toString();
       try {
         const parsedResponse = JSON.parse(responseText);
         return {
-          content: parsedResponse.analysis || "无法生成任务分析",
-          reasoning: parsedResponse.detailed_reasoning || "无详细推理"
+          content: parsedResponse.analysis || "Unable to generate task analysis",
+          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning"
         };
       } catch (parseError) {
-        logger.error('分析任务需求结果解析失败:', parseError);
-        // 如果解析失败，尝试提取有用的部分
+        logger.error('Failed to parse task requirements analysis result:', parseError);
+        // If parsing fails, try to extract useful parts
         const contentMatch = responseText.match(/["']analysis["']\s*:\s*["'](.+?)["']/s);
         const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
         
         return {
-          content: contentMatch ? contentMatch[1].trim() : "无法解析任务分析",
+          content: contentMatch ? contentMatch[1].trim() : "Unable to parse task analysis",
           reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText
         };
       }
     } catch (error) {
-      logger.error('分析任务需求失败:', error);
+      logger.error('Task requirements analysis failed:', error);
       throw error;
     }
   }
@@ -603,72 +603,72 @@ export class TaskAnalysisService {
     recommendedMCPs: MCPInfo[];
   }> {
     try {
-      logger.info('开始识别相关MCP工具');
+      logger.info('Starting identification of relevant MCP tools');
       
-      // 动态获取可用的MCP列表，而不是使用静态列表
+      // Dynamically get available MCP list instead of using static list
       const availableMCPs = await this.getAvailableMCPs();
-      logger.info(`【MCP调试】可用的MCP工具列表: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
+      logger.info(`[MCP Debug] Available MCP tools list: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位MCP（Model Context Protocol）专家，负责为用户任务选择最合适的工具。
-请根据用户的任务描述和任务分析，从以下可用的MCP工具中选择最适合的工具（最多4个）：
+        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for selecting the most appropriate tools for user tasks.
+Please select the most suitable tools (maximum 4) from the following available MCP tools based on the user's task description and task analysis:
 
 ${JSON.stringify(availableMCPs, null, 2)}
 
-请仔细考虑每个工具的能力和限制，选择能够最佳完成用户任务的组合。
+Please carefully consider each tool's capabilities and limitations, selecting the combination that can best complete the user's task.
 
-输出格式：
+Output format:
 {
   "selected_mcps": [
     "Tool1Name",
     "Tool2Name",
     ...
   ],
-  "selection_explanation": "向用户解释为什么选择这些工具",
-  "detailed_reasoning": "详细说明你的选择过程、考虑的因素，以及为什么这些工具组合最适合任务需求"
+  "selection_explanation": "Explain to the user why these tools were selected",
+  "detailed_reasoning": "Detailed explanation of your selection process, factors considered, and why this tool combination is most suitable for the task requirements"
 }
 
-请确保你的推荐是合理的，并且能够有效地满足用户的任务需求。`),
-        new SystemMessage(`任务分析结果：${requirementsAnalysis}`),
+Please ensure your recommendations are reasonable and can effectively meet the user's task requirements.`),
+        new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
         new HumanMessage(taskContent)
       ]);
       
-      logger.info(`【MCP调试】LLM响应成功，开始解析MCP选择结果`);
+      logger.info(`[MCP Debug] LLM response successful, starting to parse MCP selection results`);
       
-      // 解析返回的JSON
+      // Parse the returned JSON
       const responseText = response.content.toString();
-      logger.info(`【MCP调试】LLM原始响应: ${responseText}`);
+      logger.info(`[MCP Debug] LLM original response: ${responseText}`);
       
       try {
-        // 清理可能的Markdown格式
+        // Clean possible Markdown formatting
         const cleanedText = responseText
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .trim();
         
-        logger.info(`【MCP调试】清理后的响应: ${cleanedText}`);
+        logger.info(`[MCP Debug] Cleaned response: ${cleanedText}`);
         
         const parsedResponse = JSON.parse(cleanedText);
         const selectedMCPNames: string[] = parsedResponse.selected_mcps || [];
         
-        logger.info(`【MCP调试】LLM选择的MCP: ${JSON.stringify(selectedMCPNames)}`);
+        logger.info(`[MCP Debug] LLM selected MCPs: ${JSON.stringify(selectedMCPNames)}`);
         
-        // 获取推荐的MCP详细信息
+        // Get recommended MCP detailed information
         const recommendedMCPs = availableMCPs.filter(mcp => 
           selectedMCPNames.includes(mcp.name)
         );
         
-        logger.info(`【MCP调试】成功匹配${recommendedMCPs.length}个推荐MCP: ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
+        logger.info(`[MCP Debug] Successfully matched ${recommendedMCPs.length} recommended MCPs: ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
         
         return {
-          content: parsedResponse.selection_explanation || "未能提供工具选择说明",
-          reasoning: parsedResponse.detailed_reasoning || "无详细推理",
+          content: parsedResponse.selection_explanation || "Failed to provide tool selection explanation",
+          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning",
           recommendedMCPs: recommendedMCPs.length > 0 ? recommendedMCPs : []
         };
       } catch (parseError) {
-        logger.info(`【MCP调试】尝试从非结构化文本中提取MCP名称`);
+        logger.info(`[MCP Debug] Attempting to extract MCP names from unstructured text`);
         
-        // 尝试从文本中提取MCP名称
+        // Try to extract MCP names from text
         const mcpNamesMatch = responseText.match(/["']selected_mcps["']\s*:\s*\[(.*?)\]/s);
         let selectedNames: string[] = [];
         
@@ -679,27 +679,27 @@ ${JSON.stringify(availableMCPs, null, 2)}
             .map(name => name.trim().replace(/["']/g, ''))
             .filter(name => name.length > 0);
           
-          logger.info(`【MCP调试】从文本中提取的MCP名称: ${JSON.stringify(selectedNames)}`);
+          logger.info(`[MCP Debug] MCP names extracted from text: ${JSON.stringify(selectedNames)}`);
         }
         
         const recommendedMCPs = availableMCPs.filter(mcp => 
           selectedNames.includes(mcp.name)
         );
         
-        logger.info(`【MCP调试】成功匹配${recommendedMCPs.length}个推荐MCP (从文本提取): ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
+        logger.info(`[MCP Debug] Successfully matched ${recommendedMCPs.length} recommended MCPs (from text extraction): ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
         
-        // 提取解释部分
+        // Extract explanation parts
         const explanationMatch = responseText.match(/["']selection_explanation["']\s*:\s*["'](.+?)["']/s);
         const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
         
         return {
-          content: explanationMatch ? explanationMatch[1].trim() : "无法解析工具选择说明",
+          content: explanationMatch ? explanationMatch[1].trim() : "Unable to parse tool selection explanation",
           reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText,
           recommendedMCPs: recommendedMCPs.length > 0 ? recommendedMCPs : []
         };
       }
     } catch (error) {
-      logger.error('识别相关MCP失败:', error);
+      logger.error('Failed to identify relevant MCPs:', error);
       throw error;
     }
   }
@@ -722,59 +722,59 @@ ${JSON.stringify(availableMCPs, null, 2)}
     deliverables: string[];
   }> {
     try {
-      logger.info('开始确认可交付内容');
+      logger.info('Starting confirmation of deliverables');
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位专业的项目规划师，需要确认基于可用的MCP工具能够交付的具体成果。
-请根据用户的任务需求和已选择的MCP工具，判断：
-1. 是否能完全满足用户的需求
-2. 如果不能完全满足，可以实现哪些部分
-3. 具体可以交付的成果列表
+        new SystemMessage(`You are a professional project planner who needs to confirm the specific deliverables based on available MCP tools.
+Please assess based on the user's task requirements and selected MCP tools:
+1. Whether the user's requirements can be fully met
+2. If they cannot be fully met, which parts can be implemented
+3. A specific list of deliverables
 
-请考虑以下可用的MCP工具：
+Please consider the following available MCP tools:
 ${JSON.stringify(recommendedMCPs, null, 2)}
 
-输出格式：
+Output format:
 {
   "can_be_fulfilled": true/false,
   "deliverables": [
-    "具体可交付成果1",
-    "具体可交付成果2",
+    "Specific deliverable 1",
+    "Specific deliverable 2",
     ...
   ],
-  "limitations": "如果有无法满足的需求，请说明",
-  "conclusion": "针对用户的总结说明，解释可以完成什么，以及可能的限制",
-  "detailed_reasoning": "详细的推理过程，分析为什么能/不能满足需求，以及如何规划交付"
+  "limitations": "If there are requirements that cannot be met, please explain",
+  "conclusion": "Summary explanation for the user, explaining what can be accomplished and possible limitations",
+  "detailed_reasoning": "Detailed reasoning process, analyzing why requirements can/cannot be met, and how to plan delivery"
 }
 
-请保持专业客观，不要过度承诺无法实现的功能。`),
-        new SystemMessage(`任务分析结果：${requirementsAnalysis}`),
+Please remain professional and objective, and do not over-promise features that cannot be implemented.`),
+        new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
         new HumanMessage(taskContent)
       ]);
       
-      // 解析返回的JSON
+      // Parse the returned JSON
       const responseText = response.content.toString();
       try {
-        // 清理可能的Markdown格式
+        // Clean possible Markdown formatting
         const cleanedText = responseText
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .trim();
         
-        logger.info(`【MCP调试】清理后的可交付内容响应: ${cleanedText}`);
+        logger.info(`[MCP Debug] Cleaned deliverables response: ${cleanedText}`);
         
         const parsedResponse = JSON.parse(cleanedText);
         
         return {
-          content: parsedResponse.conclusion || "无法确定可交付内容",
-          reasoning: parsedResponse.detailed_reasoning || "无详细推理",
+          content: parsedResponse.conclusion || "Unable to determine deliverables",
+          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning",
           canBeFulfilled: parsedResponse.can_be_fulfilled === true,
           deliverables: parsedResponse.deliverables || []
         };
       } catch (parseError) {
-        logger.error('确认可交付内容结果解析失败:', parseError);
+        logger.error('Failed to parse deliverables confirmation result:', parseError);
         
-        // 尝试提取关键信息
+        // Try to extract key information
         const canBeFulfilledMatch = responseText.match(/["']can_be_fulfilled["']\s*:\s*(true|false)/i);
         const deliverablesMatch = responseText.match(/["']deliverables["']\s*:\s*\[(.*?)\]/s);
         const conclusionMatch = responseText.match(/["']conclusion["']\s*:\s*["'](.+?)["']/s);
@@ -789,14 +789,14 @@ ${JSON.stringify(recommendedMCPs, null, 2)}
         }
         
         return {
-          content: conclusionMatch ? conclusionMatch[1].trim() : "无法解析可交付内容摘要",
+          content: conclusionMatch ? conclusionMatch[1].trim() : "Unable to parse deliverables summary",
           reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText,
           canBeFulfilled: canBeFulfilledMatch ? canBeFulfilledMatch[1].toLowerCase() === 'true' : false,
           deliverables
         };
       }
     } catch (error) {
-      logger.error('确认可交付内容失败:', error);
+      logger.error('Failed to confirm deliverables:', error);
       throw error;
     }
   }
@@ -828,14 +828,14 @@ ${JSON.stringify(recommendedMCPs, null, 2)}
     }>;
   }> {
     try {
-      logger.info('开始构建MCP工作流');
+      logger.info('Starting MCP workflow construction');
       
-      // 调试模式: 如果是测试内容，返回一个硬编码的工作流
+      // Debug mode: If test content, return a hardcoded workflow
       if (taskContent.includes('list all repositories')) {
-        logger.info('【调试模式】检测到测试任务内容，返回硬编码的GitHub工作流');
+        logger.info('[Debug Mode] Test task content detected, returning hardcoded GitHub workflow');
         return {
-          content: '为测试任务构建的硬编码工作流',
-          reasoning: '此为调试模式，跳过LLM分析，直接使用预设工作流。',
+          content: 'Hardcoded workflow built for test task',
+          reasoning: 'This is debug mode, skipping LLM analysis and using predefined workflow.',
           workflow: [
             {
               step: 1,
@@ -847,81 +847,81 @@ ${JSON.stringify(recommendedMCPs, null, 2)}
         };
       }
       
-      // 如果无法满足需求，返回空工作流
+      // If requirements cannot be met, return empty workflow
       if (!canBeFulfilled || recommendedMCPs.length === 0) {
         return {
-          content: "由于无法满足需求或未选择合适的工具，无法构建有效的工作流。",
-          reasoning: "基于前面的分析，当前需求无法通过所选工具完全满足，或者没有选择合适的工具。",
+          content: "Unable to build an effective workflow due to inability to meet requirements or lack of appropriate tool selection.",
+          reasoning: "Based on previous analysis, current requirements cannot be fully met through selected tools, or no appropriate tools were selected.",
           workflow: []
         };
       }
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位专业的工作流程设计师，需要设计一个基于MCP工具的执行流程。
-请根据用户的任务需求、已选择的MCP工具和确定的可交付成果，设计一个详细的工作流程。
+        new SystemMessage(`You are a professional workflow designer who needs to design an execution process based on MCP tools.
+Please design a detailed workflow based on the user's task requirements, selected MCP tools, and determined deliverables.
 
-可用的MCP工具：
+Available MCP tools:
 ${JSON.stringify(recommendedMCPs, null, 2)}
 
-可交付成果：
+Deliverables:
 ${deliverables.join('\n')}
 
-请设计一个有序的步骤流程，指明每一步：
-1. 使用哪个MCP工具
-2. 执行什么具体操作
-3. 输入是什么
-4. 预期输出是什么
+Please design an ordered step process, specifying for each step:
+1. Which MCP tool to use
+2. What specific action to perform
+3. What the input is
+4. What the expected output is
 
-输出格式：
+Output format:
 {
   "workflow": [
     {
       "step": 1,
-      "mcp": "工具名称",
-      "action": "具体操作",
-      "input": "输入内容",
-      "output": "预期输出"
+      "mcp": "Tool name",
+      "action": "Specific action",
+      "input": "Input content",
+      "output": "Expected output"
     },
     ...
   ],
-  "workflow_summary": "工作流程摘要，向用户解释工作流如何运行",
-  "detailed_reasoning": "详细设计思路，解释为什么这样设计工作流，以及每一步的目的"
+  "workflow_summary": "Workflow summary explaining to the user how the workflow runs",
+  "detailed_reasoning": "Detailed design thinking, explaining why the workflow is designed this way and the purpose of each step"
 }
 
-请确保工作流逻辑合理，步骤之间有清晰的数据流转，能够有效地完成用户需求。`),
-        new SystemMessage(`任务分析结果：${requirementsAnalysis}`),
+Please ensure the workflow logic is reasonable, with clear data flow between steps, and can effectively complete the user's requirements.`),
+        new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
         new HumanMessage(taskContent)
       ]);
       
-      // 解析返回的JSON
+      // Parse the returned JSON
       const responseText = response.content.toString();
       try {
-        // 清理可能的Markdown格式
+        // Clean possible Markdown formatting
         const cleanedText = responseText
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .trim();
         
-        logger.info(`【MCP调试】清理后的工作流响应: ${cleanedText}`);
+        logger.info(`[MCP Debug] Cleaned workflow response: ${cleanedText}`);
         
         const parsedResponse = JSON.parse(cleanedText);
         
         const workflow = parsedResponse.workflow || [];
         
-        logger.info(`📋 工作流步骤数量: ${workflow.length}`);
+        logger.info(`📋 Workflow step count: ${workflow.length}`);
         workflow.forEach((step: any, index: number) => {
-          logger.info(`📝 工作流步骤${index + 1}: MCP=${step.mcp}, 操作=${step.action}`);
+          logger.info(`📝 Workflow step ${index + 1}: MCP=${step.mcp}, Action=${step.action}`);
         });
         
         return {
-          content: parsedResponse.workflow_summary || "未提供工作流摘要",
-          reasoning: parsedResponse.detailed_reasoning || "无详细推理",
+          content: parsedResponse.workflow_summary || "No workflow summary provided",
+          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning",
           workflow: workflow
         };
       } catch (parseError) {
-        logger.error('构建MCP工作流结果解析失败:', parseError);
+        logger.error('Failed to parse MCP workflow construction result:', parseError);
         
-        // 尝试从文本中提取工作流信息
+        // Try to extract workflow information from text
         const workflowMatch = responseText.match(/["']workflow["']\s*:\s*\[(.*?)\]/s);
         let workflow: Array<{
           step: number;
@@ -931,44 +931,44 @@ ${deliverables.join('\n')}
           output?: string;
         }> = [];
         
-        // 如果无法提取格式化的工作流，创建一个简单的默认工作流
+        // If unable to extract formatted workflow, create a simple default workflow
         if (!workflowMatch) {
           workflow = recommendedMCPs.map((mcp, index) => ({
             step: index + 1,
             mcp: mcp.name,
-            action: `使用${mcp.name}执行相关操作`,
-            input: "任务内容",
-            output: "处理结果"
+            action: `Use ${mcp.name} to perform related operations`,
+            input: "Task content",
+            output: "Processing result"
           }));
         }
         
-        // 提取摘要和推理
+        // Extract summary and reasoning
         const summaryMatch = responseText.match(/["']workflow_summary["']\s*:\s*["'](.+?)["']/s);
         const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
         
         return {
-          content: summaryMatch ? summaryMatch[1].trim() : "无法解析工作流摘要",
+          content: summaryMatch ? summaryMatch[1].trim() : "Unable to parse workflow summary",
           reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText,
           workflow
         };
       }
     } catch (error) {
-      logger.error('构建MCP工作流失败:', error);
+      logger.error('Failed to build MCP workflow:', error);
       throw error;
     }
   }
   
-  // 新增方法：动态获取可用MCP列表
+  // New method: Dynamically get available MCP list
   private async getAvailableMCPs(): Promise<MCPInfo[]> {
     try {
-      logger.info(`【MCP调试】开始通过HTTP Adapter获取可用MCP列表`);
+      logger.info(`[MCP Debug] Starting to get available MCP list via HTTP Adapter`);
       const allTools = await this.httpAdapter.getAllTools();
       
-      // 从工具信息中聚合出MCP信息
+      // Aggregate MCP information from tool information
       const mcpInfoMap: Map<string, { description: Set<string>, authRequired: boolean }> = new Map();
 
       for (const tool of allTools) {
-          // 工具名称格式为: serviceName_toolName
+          // Tool name format: serviceName_toolName
           const parts = tool.name.split('_');
           if (parts.length < 2) continue;
           
@@ -977,7 +977,7 @@ ${deliverables.join('\n')}
           if (!mcpInfoMap.has(serviceName)) {
               mcpInfoMap.set(serviceName, {
                   description: new Set(),
-                  // 基于服务名称的简单授权判断
+                  // Simple authorization judgment based on service name
                   authRequired: serviceName.includes('github') 
               });
           }
@@ -994,34 +994,34 @@ ${deliverables.join('\n')}
       }));
 
       if (result.length === 0) {
-        logger.warn(`【MCP调试】HTTP适配器未找到任何MCP工具，使用默认列表`);
+        logger.warn(`[MCP Debug] HTTP adapter did not find any MCP tools, using default list`);
         return AVAILABLE_MCPS;
       }
       
-      logger.info(`【MCP调试】成功获取可用MCP列表，共${result.length}个MCP: ${JSON.stringify(result.map(r => r.name))}`);
+      logger.info(`[MCP Debug] Successfully retrieved available MCP list, total ${result.length} MCPs: ${JSON.stringify(result.map(r => r.name))}`);
       return result;
 
     } catch (error) {
-      logger.error(`【MCP调试】通过HTTP Adapter获取可用MCP列表失败:`, error);
-      logger.warn(`【MCP调试】使用默认MCP列表作为备选方案`);
-      return AVAILABLE_MCPS; // 失败时返回默认列表
+      logger.error(`[MCP Debug] Failed to get available MCP list via HTTP Adapter:`, error);
+      logger.warn(`[MCP Debug] Using default MCP list as fallback`);
+      return AVAILABLE_MCPS; // Return default list on failure
     }
   }
   
   /**
-   * 从任务内容中提取搜索关键词
-   * @param content 任务内容
-   * @returns 搜索关键词
+   * Extract search keywords from task content
+   * @param content Task content
+   * @returns Search keyword
    */
   private extractSearchTerm(content: string): string | null {
-    // 尝试从内容中提取搜索词
+    // Try to extract search terms from content
     const searchPatterns = [
-      /搜索[：:]\s*([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
-      /搜索([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
-      /查询[：:]\s*([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
-      /查询([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
       /search[：:]\s*([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
-      /search\s+for\s+([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i
+      /search\s+for\s+([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
+      /find[：:]\s*([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
+      /look\s+for\s+([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
+      /query[：:]\s*([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i,
+      /search\s+([^\s.,。，]+(?:\s+[^\s.,。，]+)*)/i
     ];
     
     for (const pattern of searchPatterns) {

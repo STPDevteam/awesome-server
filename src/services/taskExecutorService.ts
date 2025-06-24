@@ -316,28 +316,28 @@ export class TaskExecutorService {
       }).join('\n');
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位专业的任务总结工作者，你的职责是将复杂的工作流执行结果总结为详细但易于理解的报告。
-请根据原始任务需求和执行结果，生成一个全面的报告，包括以下内容：
+        new SystemMessage(`You are a professional task summary specialist responsible for summarizing complex workflow execution results into detailed yet easy-to-understand reports.
+Please generate a comprehensive report based on the original task requirements and execution results, including the following:
 
-1. 任务执行概述 - 总步骤数、成功步骤数、失败步骤数
-2. 成功完成的操作和获得的结果
-3. 如果有任何步骤失败，详细说明失败原因和影响
-4. 总体任务成果和价值
-5. 对用户的建议（如适用）
+1. Task execution overview - total steps, successful steps, failed steps
+2. Successfully completed operations and results achieved
+3. If any steps failed, detailed explanation of the failure reasons and impacts
+4. Overall task outcomes and value
+5. Recommendations for the user (if applicable)
 
-请注意，这个总结将直接呈现给用户，应当使用友好的语言和格式，确保用户能够理解任务执行的完整过程和结果。
-避免技术术语，但要保持专业性和准确性。请特别强调任务为用户带来的价值和成果。`),
-        new HumanMessage(`任务内容: ${taskContent}
+Please note that this summary will be presented directly to the user and should use friendly language and formatting to ensure the user understands the complete process and results of the task execution.
+Avoid technical jargon while maintaining professionalism and accuracy. Please especially emphasize the value and outcomes the task has delivered to the user.`),
+        new HumanMessage(`Task content: ${taskContent}
 
-执行统计:
-- 总步骤数: ${stepResults.length}
-- 成功步骤数: ${successSteps}
-- 失败步骤数: ${failedSteps}
+Execution statistics:
+- Total steps: ${stepResults.length}
+- Successful steps: ${successSteps}
+- Failed steps: ${failedSteps}
 
-步骤详情:
+Step details:
 ${stepDetails}
 
-请针对以上任务执行情况，生成一份完整的执行报告，重点说明这个任务为用户做了什么，达成了哪些具体成果。`)
+Based on the above task execution information, please generate a complete execution report, focusing on what this task has done for the user and what specific outcomes have been achieved.`)
       ]);
       
       return response.content.toString();
@@ -586,28 +586,28 @@ ${stepDetails}
       
       // 创建消息
       const messages = [
-        new SystemMessage(`你是一位专业的任务总结工作者，你的职责是将复杂的工作流执行结果总结为详细但易于理解的报告。
-请根据原始任务需求和执行结果，生成一个全面的报告，包括以下内容：
+        new SystemMessage(`You are a professional task summary specialist responsible for summarizing complex workflow execution results into detailed yet easy-to-understand reports.
+Please generate a comprehensive report based on the original task requirements and execution results, including the following:
 
-1. 任务执行概述 - 总步骤数、成功步骤数、失败步骤数
-2. 成功完成的操作和获得的结果
-3. 如果有任何步骤失败，详细说明失败原因和影响
-4. 总体任务成果和价值
-5. 对用户的建议（如适用）
+1. Task execution overview - total steps, successful steps, failed steps
+2. Successfully completed operations and results achieved
+3. If any steps failed, detailed explanation of the failure reasons and impacts
+4. Overall task outcomes and value
+5. Recommendations for the user (if applicable)
 
-请注意，这个总结将直接呈现给用户，应当使用友好的语言和格式，确保用户能够理解任务执行的完整过程和结果。
-避免技术术语，但要保持专业性和准确性。请特别强调任务为用户带来的价值和成果。`),
-        new HumanMessage(`任务内容: ${taskContent}
+Please note that this summary will be presented directly to the user and should use friendly language and formatting to ensure the user understands the complete process and results of the task execution.
+Avoid technical jargon while maintaining professionalism and accuracy. Please especially emphasize the value and outcomes the task has delivered to the user.`),
+        new HumanMessage(`Task content: ${taskContent}
 
-执行统计:
-- 总步骤数: ${stepResults.length}
-- 成功步骤数: ${successSteps}
-- 失败步骤数: ${failedSteps}
+Execution statistics:
+- Total steps: ${stepResults.length}
+- Successful steps: ${successSteps}
+- Failed steps: ${failedSteps}
 
-步骤详情:
+Step details:
 ${stepDetails}
 
-请针对以上任务执行情况，生成一份完整的执行报告，重点说明这个任务为用户做了什么，达成了哪些具体成果。`)
+Based on the above task execution information, please generate a complete execution report, focusing on what this task has done for the user and what specific outcomes have been achieved.`)
       ];
       
       // 获取流
