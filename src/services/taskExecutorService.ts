@@ -33,9 +33,9 @@ export class TaskExecutorService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.TASK_EXECUTION_MODEL || 'gpt-4o',
       temperature: 0.3,
-      configuration: {
-        httpAgent: agent, // ✅ 使用代理关键设置
-      },
+      // configuration: {
+      //   httpAgent: agent, // ✅ 使用代理关键设置
+      // },
     });
   }
   

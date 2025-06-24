@@ -149,9 +149,9 @@ export class TaskAnalysisService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
       temperature: 0.2, // 较低温度，保证推理的准确性
-      configuration: {
-        httpAgent: agent, // ✅ 使用代理关键设置
-      },
+      // configuration: {
+      //   httpAgent: agent, // ✅ 使用代理关键设置
+      // },
     });
   }
   
