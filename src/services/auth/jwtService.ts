@@ -20,7 +20,7 @@ export interface TokenPair {
 class JWTService {
   private readonly accessTokenSecret: string;
   private readonly refreshTokenSecret: string;
-  private readonly accessTokenExpiry: string = '1h';  // 1小时
+  private readonly accessTokenExpiry: string = '10h';  // 1小时
   private readonly refreshTokenExpiry: string = '7d'; // 7天
 
   constructor() {
