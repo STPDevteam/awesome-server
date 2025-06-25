@@ -6,6 +6,10 @@ async function testEvmMcp() {
   try {
     console.log('开始测试evm-mcp服务...');
     
+    // 设置必要的环境变量
+    process.env.WALLET_PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY || '0x0000000000000000000000000000000000000000000000000000000000000001'; // 测试私钥
+    process.env.RPC_PROVIDER_URL = process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'; // 测试RPC URL
+    
     // 创建MCPManager实例
     const mcpManager = new MCPManager();
     
@@ -28,7 +32,12 @@ async function testEvmMcp() {
     console.log('连接evm-mcp服务...');
     
     try {
-      await mcpManager.connect('evm-mcp', 'npx', ['-y', '@mcpdotdirect/evm-mcp-server']);
+      // 使用环境变量连接
+      const connected = await mcpManager.connect('evm-mcp', 'npx', ['-y', '@mcpdotdirect/evm-mcp-server'], {
+        WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY,
+        RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL
+      });
+      
       console.log('evm-mcp服务连接成功！');
       
       // 获取工具列表

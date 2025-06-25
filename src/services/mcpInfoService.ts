@@ -96,8 +96,8 @@ export class MCPInfoService {
         'gas-estimation', 'event-logs', 'block-data', 'transaction-receipts',
         'ethereum', 'optimism', 'arbitrum', 'base', 'polygon', 'avalanche', 'bsc'
       ],
-      authRequired: false, // 基础查询不需要认证，但交易操作需要私钥
-      authFields: ['private_key'], // 仅在需要发送交易时需要
+      authRequired: true, // 需要RPC URL和钱包私钥
+      authFields: ['RPC_PROVIDER_URL', 'WALLET_PRIVATE_KEY'], // 连接需要的环境变量
       category: 'Chain PRC',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
       githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'

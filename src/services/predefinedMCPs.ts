@@ -48,7 +48,10 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Comprehensive EVM blockchain server supporting 30+ networks including Ethereum, Optimism, Arbitrum, Base, Polygon with unified interface',
         command: 'npx',
         args: ['-y', '@mcpdotdirect/evm-mcp-server'],
-        env: {},
+        env: {
+            WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || '',
+            RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
+        },
         connected: false,
         category: 'Chain PRC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
@@ -500,6 +503,27 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
             category: '交通工具',
             imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
             githubUrl: 'https://github.com/12306-mcp'
+        };
+    }
+    
+    // 特殊处理 evm-mcp
+    if (normalizedName === 'evm-mcp' || name === 'evm-mcp-service' || name === 'evm-mcp-server') {
+        // 记录更多调试信息
+        logger.info(`【MCP调试】获取EVM MCP配置，请求名称: ${name}`);
+        
+        return {
+            name: 'evm-mcp',
+            description: 'Comprehensive EVM blockchain server supporting 30+ networks',
+            command: 'npx',
+            args: ['-y', '@mcpdotdirect/evm-mcp-server'],
+            env: {
+                WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || '',
+                RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
+            },
+            connected: false,
+            category: 'Chain PRC',
+            imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
+            githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
         };
     }
     

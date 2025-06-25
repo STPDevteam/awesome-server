@@ -129,19 +129,41 @@ export class MCPManager {
 
   /**
    * Connect to predefined MCP service
-   * @param mcpService Predefined MCP service configuration
+   * @param mcpConfig MCP service configuration
+   * @returns 是否连接成功
    */
-  async connectPredefined(mcpService: MCPService): Promise<boolean> {
+  async connectPredefined(mcpConfig: MCPService): Promise<boolean> {
     try {
-      await this.connect(
-        mcpService.name,
-        mcpService.command,
-        mcpService.args || [],
-        mcpService.env
-      );
-      return true;
+      // Special handling for evm-mcp
+      if (mcpConfig.name === 'evm-mcp') {
+        // Ensure using correct npm package name
+        const args = ['-y', '@mcpdotdirect/evm-mcp-server'];
+        
+        // Ensure including necessary environment variables
+        const env = {
+          ...mcpConfig.env,
+          WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || mcpConfig.env?.WALLET_PRIVATE_KEY || '',
+          RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || mcpConfig.env?.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
+        };
+        
+        // connect方法返回void，使用try-catch判断是否成功
+        try {
+          await this.connect(mcpConfig.name, 'npx', args, env);
+          return true; // 如果没有抛出异常，则连接成功
+        } catch {
+          return false; // 连接失败
+        }
+      }
+      
+      // Normal MCP handling
+      try {
+        await this.connect(mcpConfig.name, mcpConfig.command, mcpConfig.args, mcpConfig.env);
+        return true; // 如果没有抛出异常，则连接成功
+      } catch {
+        return false; // 连接失败
+      }
     } catch (error) {
-      logger.error(`Failed to connect to predefined MCP [${mcpService.name}]:`, error);
+      logger.error(`Failed to connect to predefined MCP [${mcpConfig.name}]:`, error);
       return false;
     }
   }
@@ -329,13 +351,16 @@ export class MCPManager {
     // 处理工具名称 - 处理中文工具名称的情况
     let actualTool = tool;
     if (name === '12306-mcp') {
-      // 12306-mcp工具名称映射表
+      // 12306-mcp工具名称映射表 - 使用连字符格式
       const toolNameMap: Record<string, string> = {
-        '获取当前日期': 'get_current_date',
-        '查询车站信息': 'query_station_info',
-        '查询列车时刻表': 'query_train_schedule',
-        '查询余票信息': 'query_ticket_info',
-        '查询中转余票': 'query_transfer_ticket'
+        '获取当前日期': 'get-current-date',
+        '查询车站信息': 'get-stations-code-in-city',
+        '查询列车时刻表': 'get-train-route-stations',
+        '查询余票信息': 'get-tickets',
+        '查询中转余票': 'get-interline-tickets',
+        '获取城市车站代码': 'get-station-code-of-citys',
+        '获取车站代码': 'get-station-code-by-names',
+        '获取电报码车站信息': 'get-station-by-telecode'
       };
       
       if (toolNameMap[tool]) {
