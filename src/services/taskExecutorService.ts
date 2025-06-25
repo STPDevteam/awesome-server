@@ -230,11 +230,10 @@ export class TaskExecutorService {
       console.log(`工具名称: ${toolName}`);
       console.log(`输入参数: ${JSON.stringify(input, null, 2)}`);
       
-      // 处理MCP名称映射，将'playwright-mcp-service'映射到'playwright'
-      let actualMcpName = mcpName;
-      if (mcpName === 'playwright-mcp-service') {
-        actualMcpName = 'playwright';
-        logger.info(`MCP名称映射: 将'playwright-mcp-service'映射为'playwright'`);
+      // 标准化MCP名称
+      let actualMcpName = this.normalizeMCPName(mcpName);
+      if (actualMcpName !== mcpName) {
+        logger.info(`MCP名称映射: 将'${mcpName}'映射为'${actualMcpName}'`);
       }
 
       // 检查MCP是否已连接
@@ -476,11 +475,10 @@ Based on the above task execution information, please generate a complete execut
         try {
           logger.info(`执行工作流步骤${stepNumber}: ${mcpName} - ${actionName}`);
           
-          // 处理MCP名称映射，将'playwright-mcp-service'映射到'playwright'
-          let actualMcpName = mcpName;
-          if (mcpName === 'playwright-mcp-service') {
-            actualMcpName = 'playwright';
-            logger.info(`流式执行中的MCP名称映射: 将'playwright-mcp-service'映射为'playwright'`);
+          // 标准化MCP名称
+          let actualMcpName = this.normalizeMCPName(mcpName);
+          if (actualMcpName !== mcpName) {
+            logger.info(`流式执行中的MCP名称映射: 将'${mcpName}'映射为'${actualMcpName}'`);
           }
           
           // 检查MCP是否已连接
@@ -710,5 +708,33 @@ Based on the above task execution information, please generate a complete execut
       logger.error('流式生成结果摘要失败:', error);
       streamCallback(`任务执行完成，共执行了${stepResults.length}个步骤，成功${stepResults.filter(s => s.success).length}个，失败${stepResults.filter(s => !s.success).length}个。请查看详细的步骤结果了解更多信息。`);
     }
+  }
+
+  /**
+   * 映射MCP名称，确保名称一致性
+   * @param mcpName 原始MCP名称
+   * @returns 标准化的MCP名称
+   */
+  private normalizeMCPName(mcpName: string): string {
+    // MCP名称映射表
+    const mcpNameMap: Record<string, string> = {
+      'playwright-mcp-service': 'playwright',
+      'coingecko-server': 'coingecko-mcp',
+      'x-mcp-server': 'x-mcp',
+      'github-mcp-server': 'github-mcp',
+      'evm-mcp-server': 'evm-mcp',
+      'dune-mcp-server': 'dune-mcp',
+      'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
+      'defillama-mcp-service': 'defillama-mcp',
+      'rug-check-mcp-service': 'rugcheck-mcp',
+      'chainlink-feeds-mcp-service': 'chainlink-mcp',
+      'crypto-feargreed-mcp-service': 'feargreed-mcp',
+      'whale-tracker-mcp-service': 'whaletracker-mcp',
+      'discord-mcp-service': 'discord-mcp',
+      'telegram-mcp-service': 'telegram-mcp',
+      'notion-mcp-service': 'notion-mcp'
+    };
+    
+    return mcpNameMap[mcpName] || mcpName;
   }
 } 

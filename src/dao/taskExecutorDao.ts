@@ -57,13 +57,13 @@ export class TaskExecutorDao {
   ): Promise<boolean> {
     try {
       // 确保结果是 JSON 字符串格式，避免类型不匹配问题
-      const jsonResult = typeof result === 'string' ? result : JSON.stringify(result);
+      const jsonResult = typeof result === 'string' ? JSON.parse(result) : result;
       
       await db.query(
         `
         UPDATE tasks
-        SET status = $1, result = $2::jsonb, updated_at = NOW(),
-            completed_at = CASE WHEN $1::text = 'completed' THEN NOW() ELSE completed_at END
+        SET status = $1, result = $2, updated_at = NOW(),
+            completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
         WHERE id = $3
         `,
         [status, jsonResult, taskId]
@@ -137,17 +137,14 @@ export class TaskExecutorDao {
       // 更新任务结果
       taskResult.steps = steps;
       
-      // 确保结果是 JSON 字符串格式
-      const jsonResult = JSON.stringify(taskResult);
-      
-      // 保存到数据库
+      // 保存到数据库 - 直接使用对象，不需要转换为字符串
       await db.query(
         `
         UPDATE tasks
-        SET result = $1::jsonb, updated_at = NOW()
+        SET result = $1, updated_at = NOW()
         WHERE id = $2
         `,
-        [jsonResult, taskId]
+        [taskResult, taskId]
       );
       
       return true;
