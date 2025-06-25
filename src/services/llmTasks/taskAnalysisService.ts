@@ -24,7 +24,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['GITHUB_TOKEN'],
     category: '开发工具',
-    imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
     githubUrl: 'https://github.com/features/actions',
     authParams: {
       tokenName: 'GITHUB_TOKEN',
@@ -275,7 +275,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['GITHUB_TOKEN'],
     category: 'Development Tools',
-    imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
     githubUrl: 'https://github.com/github/github-mcp-server',
     authParams: {
       tokenName: 'GITHUB_TOKEN',
