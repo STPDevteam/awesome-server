@@ -1270,3 +1270,77 @@ POST /api/task/:id/replace-mcp
   }
 }
 ```
+
+### 测试X MCP连接
+
+测试X (Twitter) MCP服务器连接。
+
+**请求:**
+```bash
+POST /api/task/test-x-mcp
+Content-Type: application/json
+```
+
+**成功响应:**
+```json
+{
+  "success": true,
+  "message": "X MCP test successful",
+  "tools": [
+    {
+      "name": "get_list_tweets",
+      "description": "Get tweets from a specific list"
+    }
+  ],
+  "toolCount": 1
+}
+```
+
+**错误响应:**
+```json
+{
+  "error": "Failed to connect to X MCP"
+}
+```
+
+**说明:**
+- 测试X MCP服务器的基本连接
+- 返回可用工具列表
+- 需要配置Twitter API凭证才能使用完整功能
+- 支持免费层级的Twitter API（500推文/月，100读取/月）
+
+### 测试CoinGecko MCP连接
+
+测试CoinGecko官方MCP服务器连接。
+
+**请求:**
+```bash
+POST /api/task/test-coingecko-mcp
+Content-Type: application/json
+```
+
+**成功响应:**
+```json
+{
+  "success": true,
+  "message": "CoinGecko MCP test successful",
+  "tools": [
+    {
+      "name": "get_simple_price",
+      "description": "Get simple price data for cryptocurrencies"
+    },
+    {
+      "name": "get_coins_list",
+      "description": "Get list of all supported coins"
+    }
+  ],
+  "toolCount": 46
+}
+```
+
+**错误响应:**
+```json
+{
+  "error": "Failed to connect to CoinGecko MCP"
+}
+```
