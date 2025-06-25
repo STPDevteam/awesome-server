@@ -1125,6 +1125,12 @@ Please ensure the analysis is accurate and comprehensive while remaining concise
       const availableMCPs = await this.getAvailableMCPs();
       logger.info(`[MCP Debug] Available MCP tools list: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
       
+      // 添加基于关键词的预筛选逻辑
+      const keywordBasedMCPs = this.preselectMCPsByKeywords(taskContent, availableMCPs);
+      if (keywordBasedMCPs.length > 0) {
+        logger.info(`[MCP Debug] Pre-selected MCPs based on keywords: ${JSON.stringify(keywordBasedMCPs.map(mcp => mcp.name))}`);
+      }
+      
       // Group MCPs by category for better LLM understanding and selection
       const mcpsByCategory = availableMCPs.reduce((acc, mcp) => {
         const category = mcp.category || 'Other';
@@ -1134,27 +1140,41 @@ Please ensure the analysis is accurate and comprehensive while remaining concise
         acc[category].push({
           name: mcp.name,
           description: mcp.description,
-          capabilities: mcp.capabilities
+          capabilities: mcp.capabilities,
+          // 标记预选的MCP
+          preselected: keywordBasedMCPs.some(pre => pre.name === mcp.name)
         });
         return acc;
       }, {} as Record<string, any[]>);
 
-      const response = await this.llm.invoke([
-        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for selecting the most appropriate tools based on user task requirements.
+      // 使用重试机制
+      let attemptCount = 0;
+      const maxAttempts = 2;
+      
+      while (attemptCount < maxAttempts) {
+        attemptCount++;
+        
+        try {
+          const response = await this.llm.invoke([
+            new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for selecting the most appropriate tools based on user task requirements.
 
-Please carefully analyze the user's task content and select the most suitable tools (maximum 4) from the following available MCP tools:
+**IMPORTANT RULES**:
+1. **ALWAYS prioritize keyword matching**: If the task contains specific keywords, you MUST select the corresponding tools:
+   - "Twitter", "tweet", "X平台", "推特" → MUST select "x-mcp"
+   - "GitHub", "仓库", "代码库", "repository" → MUST select "github-mcp-server"
+   - "cryptocurrency", "crypto", "coin", "币价", "加密货币" → MUST select "coingecko-mcp"
+   - "12306", "火车", "高铁", "train" → MUST select "12306-mcp-service"
+   - "playwright", "浏览器自动化", "browser automation" → MUST select "playwright-mcp-service"
+   - "notion", "笔记" → MUST select "notion-mcp"
+   - And so on...
+
+2. **Pre-selected tools**: The following tools have been pre-selected based on keywords and SHOULD be included unless there's a very strong reason not to:
+${keywordBasedMCPs.map(mcp => `   - ${mcp.name}: ${mcp.description}`).join('\n')}
+
+3. Select up to 4 most relevant tools total.
 
 Available MCP tools (grouped by category):
 ${JSON.stringify(mcpsByCategory, null, 2)}
-
-Selection criteria:
-1. **Keyword matching**: Prioritize tools whose names or descriptions contain task keywords
-   - If the user mentions "Twitter", "tweet", or "X", select x-mcp
-   - If the user mentions "GitHub", select github-mcp-server
-   - If the user mentions "cryptocurrency" or "coin price", select coingecko-mcp, etc.
-2. **Functionality match**: Whether the tool's capabilities can meet the task requirements
-3. **Category relevance**: Tools from the same or related categories should be prioritized
-4. **Usability**: Whether the tool is easy to use and stable
 
 Output format (must be valid JSON):
 {
@@ -1163,81 +1183,101 @@ Output format (must be valid JSON):
     "Tool2Name"
   ],
   "selection_explanation": "Explain to the user why these tools were selected",
-  "detailed_reasoning": "Detailed explanation of your selection process, factors considered, and why this tool combination is most suitable for the task requirements"
+  "detailed_reasoning": "Detailed explanation of your selection process, especially explain if you didn't select pre-selected tools"
 }
 
-Important: Make sure the returned tool names exactly match the name field in the available tools list.`),
-        new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
-        new HumanMessage(`User task: ${taskContent}`)
-      ]);
-      
-      logger.info(`[MCP Debug] LLM response successful, starting to parse MCP selection results`);
-      
-      // Parse the returned JSON
-      const responseText = response.content.toString();
-      logger.info(`[MCP Debug] LLM original response: ${responseText}`);
-      
-      try {
-        // Clean possible Markdown formatting
-        const cleanedText = responseText
-          .replace(/```json\s*/g, '')
-          .replace(/```\s*$/g, '')
-          .trim();
-        
-        logger.info(`[MCP Debug] Cleaned response: ${cleanedText}`);
-        
-        const parsedResponse = JSON.parse(cleanedText);
-        const selectedMCPNames: string[] = parsedResponse.selected_mcps || [];
-        
-        logger.info(`[MCP Debug] LLM selected MCPs: ${JSON.stringify(selectedMCPNames)}`);
-        
-        // Get recommended MCP detailed information
-        const recommendedMCPs = availableMCPs.filter(mcp => 
-          selectedMCPNames.includes(mcp.name)
-        );
-        
-        logger.info(`[MCP Debug] Successfully matched ${recommendedMCPs.length} recommended MCPs: ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
-        
-        return {
-          content: parsedResponse.selection_explanation || "Failed to provide tool selection explanation",
-          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning",
-          recommendedMCPs: recommendedMCPs.length > 0 ? recommendedMCPs : []
-        };
-      } catch (parseError) {
-        logger.info(`[MCP Debug] Attempting to extract MCP names from unstructured text`);
-        
-        // Try to extract MCP names from text
-        const mcpNamesMatch = responseText.match(/["']selected_mcps["']\s*:\s*\[(.*?)\]/s);
-        let selectedNames: string[] = [];
-        
-        if (mcpNamesMatch) {
-          const namesText = mcpNamesMatch[1];
-          selectedNames = namesText
-            .split(',')
-            .map(name => name.trim().replace(/["']/g, ''))
-            .filter(name => name.length > 0);
+ Important: The tool names MUST exactly match the name field in the available tools list.`),
+             new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
+             new HumanMessage(`User task: ${taskContent}`)
+          ]);
           
-          logger.info(`[MCP Debug] MCP names extracted from text: ${JSON.stringify(selectedNames)}`);
+          logger.info(`[MCP Debug] LLM response successful (attempt ${attemptCount}), starting to parse MCP selection results`);
+          
+          // Parse the returned JSON
+          const responseText = response.content.toString();
+          logger.info(`[MCP Debug] LLM original response: ${responseText}`);
+          
+          // Clean possible Markdown formatting
+          const cleanedText = responseText
+            .replace(/```json\s*/g, '')
+            .replace(/```\s*$/g, '')
+            .trim();
+          
+          logger.info(`[MCP Debug] Cleaned response: ${cleanedText}`);
+          
+          const parsedResponse = JSON.parse(cleanedText);
+          let selectedMCPNames: string[] = parsedResponse.selected_mcps || [];
+          
+          // 确保预选的MCP被包含（除非LLM有很强的理由不包含它们）
+          const missingPreselected = keywordBasedMCPs.filter(
+            pre => !selectedMCPNames.includes(pre.name)
+          );
+          
+          if (missingPreselected.length > 0 && selectedMCPNames.length < 4) {
+            logger.info(`[MCP Debug] Adding missing pre-selected MCPs: ${missingPreselected.map(m => m.name).join(', ')}`);
+            // 将缺失的预选MCP添加到列表开头
+            selectedMCPNames = [
+              ...missingPreselected.map(m => m.name),
+              ...selectedMCPNames
+            ].slice(0, 4); // 确保不超过4个
+          }
+          
+          logger.info(`[MCP Debug] Final selected MCPs: ${JSON.stringify(selectedMCPNames)}`);
+          
+          // Get recommended MCP detailed information
+          const recommendedMCPs = availableMCPs.filter(mcp => 
+            selectedMCPNames.includes(mcp.name)
+          );
+          
+          logger.info(`[MCP Debug] Successfully matched ${recommendedMCPs.length} recommended MCPs: ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
+          
+          return {
+            content: parsedResponse.selection_explanation || "Failed to provide tool selection explanation",
+            reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning",
+            recommendedMCPs: recommendedMCPs.length > 0 ? recommendedMCPs : []
+          };
+          
+        } catch (parseError) {
+          logger.warn(`[MCP Debug] Attempt ${attemptCount} failed: ${parseError}`);
+          
+          if (attemptCount >= maxAttempts) {
+            // 如果所有尝试都失败，使用基于关键词的备选方案
+            logger.info(`[MCP Debug] All LLM attempts failed, using keyword-based fallback`);
+            
+            if (keywordBasedMCPs.length > 0) {
+              return {
+                content: `Based on the keywords in your task, I've selected the following tools: ${keywordBasedMCPs.map(m => m.name).join(', ')}`,
+                reasoning: `Keyword-based selection was used due to LLM parsing issues. Selected tools based on direct keyword matching.`,
+                recommendedMCPs: keywordBasedMCPs.slice(0, 4) // 最多4个
+              };
+            }
+            
+            throw parseError;
+          }
+          
+          // 等待一小段时间后重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
-        
-        const recommendedMCPs = availableMCPs.filter(mcp => 
-          selectedNames.includes(mcp.name)
-        );
-        
-        logger.info(`[MCP Debug] Successfully matched ${recommendedMCPs.length} recommended MCPs (from text extraction): ${JSON.stringify(recommendedMCPs.map(mcp => mcp.name))}`);
-        
-        // Extract explanation parts
-        const explanationMatch = responseText.match(/["']selection_explanation["']\s*:\s*["'](.+?)["']/s);
-        const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
-        
-        return {
-          content: explanationMatch ? explanationMatch[1].trim() : "Unable to parse tool selection explanation",
-          reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText,
-          recommendedMCPs: recommendedMCPs.length > 0 ? recommendedMCPs : []
-        };
       }
+      
+      // 不应该到达这里
+      throw new Error('Unexpected error in MCP selection');
+      
     } catch (error) {
       logger.error('Failed to identify relevant MCPs:', error);
+      
+      // 最后的备选方案：如果有关键词匹配的MCP，返回它们
+      const availableMCPs = await this.getAvailableMCPs();
+      const keywordBasedMCPs = this.preselectMCPsByKeywords(taskContent, availableMCPs);
+      
+      if (keywordBasedMCPs.length > 0) {
+        return {
+          content: `Based on the keywords in your task, I've selected the following tools: ${keywordBasedMCPs.map(m => m.name).join(', ')}`,
+          reasoning: `Fallback selection based on keyword matching due to processing error.`,
+          recommendedMCPs: keywordBasedMCPs.slice(0, 4)
+        };
+      }
+      
       throw error;
     }
   }
@@ -1551,5 +1591,140 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
     }
     
     return null;
+  }
+
+  /**
+   * 基于关键词预选MCP
+   * @param taskContent 任务内容
+   * @param availableMCPs 可用的MCP列表
+   * @returns 预选的MCP列表
+   */
+  private preselectMCPsByKeywords(taskContent: string, availableMCPs: MCPInfo[]): MCPInfo[] {
+    const taskLower = taskContent.toLowerCase();
+    const preselected: MCPInfo[] = [];
+    
+    // 定义关键词映射规则
+    const keywordMappings: Array<{
+      keywords: string[];
+      mcpNames: string[];
+    }> = [
+      {
+        keywords: ['twitter', 'tweet', 'x平台', '推特', 'x.com', 'timeline'],
+        mcpNames: ['x-mcp']
+      },
+      {
+        keywords: ['github', '仓库', '代码库', 'repository', 'repo', 'pull request', 'issue'],
+        mcpNames: ['github-mcp-server', 'github-mcp-service']
+      },
+      {
+        keywords: ['cryptocurrency', 'crypto', 'coin', '币价', '加密货币', 'bitcoin', 'btc', 'eth', 'ethereum', '代币价格'],
+        mcpNames: ['coingecko-mcp', 'coinmarketcap-mcp-service', 'dexscreener-mcp-server']
+      },
+      {
+        keywords: ['12306', '火车', '高铁', 'train', '动车', '铁路', '车票'],
+        mcpNames: ['12306-mcp-service']
+      },
+      {
+        keywords: ['playwright', '浏览器自动化', 'browser automation', '网页自动化', '自动化浏览', '打开网页', '访问网站', '点击', '填写表单'],
+        mcpNames: ['playwright-mcp-service', 'playwright']
+      },
+      {
+        keywords: ['notion', '笔记', 'workspace', '文档管理'],
+        mcpNames: ['notion-mcp', 'notion-mcp-server']
+      },
+      {
+        keywords: ['weather', '天气', '气温', '降雨', '天气预报'],
+        mcpNames: ['WeatherTool']
+      },
+      {
+        keywords: ['google', '搜索', 'search', '查找', '谷歌'],
+        mcpNames: ['GoogleSearchTool']
+      },
+      {
+        keywords: ['file', '文件', 'directory', '目录', '读取文件', '写入文件'],
+        mcpNames: ['FileSystemTool', 'filesystem-mcp']
+      },
+      {
+        keywords: ['database', '数据库', 'sql', 'query', '查询'],
+        mcpNames: ['DatabaseQueryTool', 'sqlite-mcp', 'postgres-mcp']
+      },
+      {
+        keywords: ['ethereum', 'eth', 'evm', 'smart contract', '智能合约', 'blockchain', '区块链', 'web3'],
+        mcpNames: ['evm-mcp-service', 'evm-mcp']
+      },
+      {
+        keywords: ['base', 'base chain', 'base network'],
+        mcpNames: ['base-mcp-service']
+      },
+      {
+        keywords: ['dex', 'uniswap', 'swap', '交易所', 'defi'],
+        mcpNames: ['dexscreener-mcp-server', 'uniswap-trader-mcp-service', 'uniswap-trader-mcp']
+      },
+      {
+        keywords: ['discord', 'chat', '聊天'],
+        mcpNames: ['discord-mcp-service', 'discord-mcp']
+      },
+      {
+        keywords: ['telegram', 'tg', '电报'],
+        mcpNames: ['telegram-mcp-service', 'telegram-mcp']
+      },
+      {
+        keywords: ['aws', 'amazon', 'ec2', 's3', 'lambda'],
+        mcpNames: ['aws-mcp-service', 'aws-mcp']
+      },
+      {
+        keywords: ['cloudflare', 'cdn', 'dns'],
+        mcpNames: ['cloudflare-mcp-service', 'cloudflare-mcp']
+      },
+      {
+        keywords: ['supabase', 'baas', 'backend'],
+        mcpNames: ['supabase-mcp-service', 'supabase-mcp']
+      },
+      {
+        keywords: ['binance', '币安', 'trading', '交易'],
+        mcpNames: ['binance-mcp-service', 'binance-mcp']
+      },
+      {
+        keywords: ['cook', '烹饪', '做饭', '食谱', '菜谱'],
+        mcpNames: ['cook-mcp-service']
+      }
+    ];
+    
+    // 检查每个映射规则
+    for (const mapping of keywordMappings) {
+      // 如果任务内容包含任何关键词
+      if (mapping.keywords.some(keyword => taskLower.includes(keyword))) {
+        // 查找对应的MCP
+        for (const mcpName of mapping.mcpNames) {
+          const mcp = availableMCPs.find(m => 
+            m.name === mcpName || 
+            m.name.toLowerCase() === mcpName.toLowerCase()
+          );
+          
+          if (mcp && !preselected.some(p => p.name === mcp.name)) {
+            preselected.push(mcp);
+            logger.info(`[MCP Debug] Keyword match found: "${mapping.keywords.find(k => taskLower.includes(k))}" → ${mcp.name}`);
+          }
+        }
+      }
+    }
+    
+    // 额外的模糊匹配：如果任务内容直接包含MCP名称
+    for (const mcp of availableMCPs) {
+      const mcpNameLower = mcp.name.toLowerCase().replace(/-/g, ' ').replace(/_/g, ' ');
+      const mcpNameParts = mcpNameLower.split(' ').filter(part => 
+        part.length > 3 && !['service', 'server', 'tool', 'mcp'].includes(part)
+      );
+      
+      // 如果任务内容包含MCP名称的关键部分
+      if (mcpNameParts.some(part => taskLower.includes(part))) {
+        if (!preselected.some(p => p.name === mcp.name)) {
+          preselected.push(mcp);
+          logger.info(`[MCP Debug] Direct name match found: ${mcp.name}`);
+        }
+      }
+    }
+    
+    return preselected;
   }
 } 
