@@ -138,7 +138,20 @@ export class TaskExecutorDao {
       }
       
       // 初始化或获取现有结果
-      const taskResult = task.result || {};
+      let taskResult;
+      
+      // 处理task.result，确保它是对象而不是字符串
+      if (typeof task.result === 'string') {
+        try {
+          taskResult = JSON.parse(task.result);
+        } catch (parseError) {
+          logger.warn(`任务结果是无效的JSON字符串，创建新对象 [任务ID: ${taskId}]`);
+          taskResult = {};
+        }
+      } else {
+        taskResult = task.result || {};
+      }
+      
       const steps = taskResult.steps || [];
       
       // 处理result，确保它是可序列化的

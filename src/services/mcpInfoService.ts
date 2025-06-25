@@ -87,7 +87,7 @@ export class MCPInfoService {
       githubUrl: 'https://github.com/base/base-mcp'
     },
     {
-      name: 'evm-mcp-server',
+      name: 'evm-mcp',
       description: 'Comprehensive EVM blockchain server supporting 30+ networks including Ethereum, Optimism, Arbitrum, Base, Polygon with unified interface',
       capabilities: [
         'multi-chain-support', 'blockchain-data-access', 'token-services', 
