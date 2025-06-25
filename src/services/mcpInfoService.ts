@@ -22,7 +22,7 @@ export class MCPInfoService {
       description: '12306 Train ticket inquiry and booking tools',
       capabilities: ['train-ticket-query', 'station-search', 'schedule-check'],
       authRequired: false,
-      category: 'others',
+      category: 'Others',
       imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
       githubUrl: 'https://github.com/12306-mcp'
     },
