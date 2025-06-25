@@ -245,13 +245,16 @@ export class TaskExecutorService {
       // 处理工具名称 - 处理中文工具名称的情况
       let actualToolName = toolName;
       if (actualMcpName === '12306-mcp') {
-        // 12306-mcp工具名称映射表
+        // 12306-mcp工具名称映射表 - 使用连字符格式
         const toolNameMap: Record<string, string> = {
-          '获取当前日期': 'get_current_date',
-          '查询车站信息': 'query_station_info',
-          '查询列车时刻表': 'query_train_schedule',
-          '查询余票信息': 'query_ticket_info',
-          '查询中转余票': 'query_transfer_ticket'
+          '获取当前日期': 'get-current-date',
+          '查询车站信息': 'get-stations-code-in-city',
+          '查询列车时刻表': 'get-train-route-stations',
+          '查询余票信息': 'get-tickets',
+          '查询中转余票': 'get-interline-tickets',
+          '获取城市车站代码': 'get-station-code-of-citys',
+          '获取车站代码': 'get-station-code-by-names',
+          '获取电报码车站信息': 'get-station-by-telecode'
         };
         
         if (toolNameMap[toolName]) {
@@ -511,13 +514,16 @@ Based on the above task execution information, please generate a complete execut
           // 处理工具名称 - 处理中文工具名称的情况
           let actualActionName = actionName;
           if (actualMcpName === '12306-mcp') {
-            // 12306-mcp工具名称映射表
+            // 12306-mcp工具名称映射表 - 使用连字符格式
             const toolNameMap: Record<string, string> = {
-              '获取当前日期': 'get_current_date',
-              '查询车站信息': 'query_station_info',
-              '查询列车时刻表': 'query_train_schedule',
-              '查询余票信息': 'query_ticket_info',
-              '查询中转余票': 'query_transfer_ticket'
+              '获取当前日期': 'get-current-date',
+              '查询车站信息': 'get-stations-code-in-city',
+              '查询列车时刻表': 'get-train-route-stations',
+              '查询余票信息': 'get-tickets',
+              '查询中转余票': 'get-interline-tickets',
+              '获取城市车站代码': 'get-station-code-of-citys',
+              '获取车站代码': 'get-station-code-by-names',
+              '获取电报码车站信息': 'get-station-by-telecode'
             };
             
             if (toolNameMap[actionName]) {

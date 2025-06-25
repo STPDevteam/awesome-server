@@ -1,10 +1,6 @@
 // 测试获取12306-mcp的工具列表
-// import { MCPManager } from '../src/services/mcpManager.js';
-// import { logger } from '../src/utils/logger.js';
-
-// 使用CommonJS导入
-const { MCPManager } = require('../src/services/mcpManager.js');
-const { logger } = require('../src/utils/logger.js');
+const { MCPManager } = require('../dist/services/mcpManager.js');
+const { logger } = require('../dist/utils/logger.js');
 
 async function test12306Tools() {
   try {
