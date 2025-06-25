@@ -111,7 +111,7 @@ router.post('/wallet/login', loginRateLimit, async (req: express.Request, res: e
       
       // 创建新用户
       user = await userService.createUser({
-        username: username || `用户${walletAddress.slice(0, 6)}`,
+        username: username || `User${walletAddress.slice(0, 6)}`,
         avatar: userAvatar,
         walletAddress: walletAddress,
         loginMethod: 'wallet',
