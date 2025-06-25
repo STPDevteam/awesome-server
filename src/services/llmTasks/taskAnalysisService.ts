@@ -903,6 +903,7 @@ export class TaskAnalysisService {
         workflow: workflowResult.workflow
       };
       
+      // 直接使用对象，不需要转换为字符串
       await taskService.updateTask(taskId, { mcpWorkflow });
       
       // 发送分析完成信息

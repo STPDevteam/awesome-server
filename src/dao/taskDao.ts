@@ -127,9 +127,23 @@ export class TaskDao {
       }
 
       if (updates.mcpWorkflow !== undefined) {
-        updateFields.push(`mcp_workflow = $${valueIndex}`);
-        values.push(JSON.stringify(updates.mcpWorkflow));
-        valueIndex++;
+        // 确保mcpWorkflow是JSON字符串
+        if (typeof updates.mcpWorkflow === 'object') {
+          updateFields.push(`mcp_workflow = $${valueIndex}`);
+          values.push(JSON.stringify(updates.mcpWorkflow));
+          valueIndex++;
+        } else if (typeof updates.mcpWorkflow === 'string') {
+          // 如果已经是字符串，尝试解析确保是有效的JSON
+          try {
+            const parsed = JSON.parse(updates.mcpWorkflow);
+            updateFields.push(`mcp_workflow = $${valueIndex}`);
+            values.push(updates.mcpWorkflow); // 使用原始字符串
+            valueIndex++;
+          } catch (e) {
+            logger.error(`Invalid mcpWorkflow JSON string: ${updates.mcpWorkflow}`);
+            // 跳过无效的JSON
+          }
+        }
       }
 
       if (updates.result !== undefined) {

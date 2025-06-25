@@ -149,9 +149,14 @@ export class MCPAuthDao {
         return false;
       }
       
+      // 确保mcpWorkflow是对象而不是字符串
+      const workflowObj = typeof mcpWorkflow === 'string' 
+        ? JSON.parse(mcpWorkflow) 
+        : mcpWorkflow;
+      
       // 更新指定MCP的验证状态
-      if (mcpWorkflow.mcps && Array.isArray(mcpWorkflow.mcps)) {
-        mcpWorkflow.mcps = mcpWorkflow.mcps.map((mcp: { name: string; authVerified?: boolean }) => {
+      if (workflowObj.mcps && Array.isArray(workflowObj.mcps)) {
+        workflowObj.mcps = workflowObj.mcps.map((mcp: { name: string; authVerified?: boolean }) => {
           if (mcp.name === mcpName) {
             return {
               ...mcp,
@@ -169,7 +174,7 @@ export class MCPAuthDao {
         SET mcp_workflow = $1, updated_at = NOW()
         WHERE id = $2 AND user_id = $3
         `,
-        [JSON.stringify(mcpWorkflow), taskId, userId]
+        [JSON.stringify(workflowObj), taskId, userId]
       );
       
       logger.info(`更新任务MCP授权状态记录 [任务: ${taskId}, MCP: ${mcpName}, 状态: ${isVerified}]`);
