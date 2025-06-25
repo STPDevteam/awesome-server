@@ -1,6 +1,5 @@
 import { MCPInfo } from '../models/mcp.js';
 import { logger } from '../utils/logger.js';
-import { getMCPLogoService } from './mcpLogoService.js';
 
 /**
  * MCP Information Service
@@ -392,50 +391,10 @@ export class MCPInfoService {
   ];
 
   constructor() {
-    // Update logo URLs to use our S3/CloudFront URLs
-    this.updateLogoUrls();
-    
     logger.info(`MCPInfoService initialized, loaded ${this.mcpList.length} MCP information records`);
   }
 
-  /**
-   * Update logo URLs to use S3/CloudFront URLs
-   * This ensures all MCP logos are served from the same domain
-   */
-  private updateLogoUrls(): void {
-    const logoService = getMCPLogoService();
-    
-    // Skip if S3 is not configured
-    if (!logoService.isConfigured()) {
-      logger.warn('S3 not configured for MCP logos, using original URLs');
-      return;
-    }
-    
-    // Update each MCP's logo URL
-    for (const mcp of this.mcpList) {
-      try {
-        // Extract file extension from original URL if possible
-        let extension = '.png'; // Default extension
-        if (mcp.imageUrl) {
-          const urlPath = new URL(mcp.imageUrl).pathname;
-          const filename = urlPath.split('/').pop() || '';
-          const extMatch = filename.match(/\.[a-zA-Z0-9]+$/);
-          if (extMatch) {
-            extension = extMatch[0];
-          }
-        }
-        
-        // Get logo URL from our service
-        const logoUrl = logoService.getLogoUrl(mcp.name, extension);
-        logger.info(`Updated logo URL for ${mcp.name}: ${mcp.imageUrl} -> ${logoUrl}`);
-        
-        // Update the MCP info
-        mcp.imageUrl = logoUrl;
-      } catch (error) {
-        logger.error(`Failed to update logo URL for ${mcp.name}:`, error);
-      }
-    }
-  }
+
 
   /**
    * Get all MCP information
@@ -509,52 +468,12 @@ export class MCPInfoService {
       return false;
     }
     
-    // Update logo URL to use our S3/CloudFront URL if possible
-    const logoService = getMCPLogoService();
-    if (logoService.isConfigured()) {
-      try {
-        // Extract extension from original URL or use default
-        let extension = '.png';
-        if (mcp.imageUrl) {
-          const urlPath = new URL(mcp.imageUrl).pathname;
-          const filename = urlPath.split('/').pop() || '';
-          const extMatch = filename.match(/\.[a-zA-Z0-9]+$/);
-          if (extMatch) {
-            extension = extMatch[0];
-          }
-        }
-        
-        // Update the logo URL
-        mcp.imageUrl = logoService.getLogoUrl(mcp.name, extension);
-        logger.info(`Set logo URL for new MCP ${mcp.name}: ${mcp.imageUrl}`);
-      } catch (error) {
-        logger.error(`Failed to update logo URL for new MCP ${mcp.name}:`, error);
-      }
-    } else if (!mcp.imageUrl) {
-      // If no imageUrl is provided and S3 is not configured, use a fallback
-      mcp.imageUrl = logoService.getFallbackLogoUrl(mcp.name);
-    }
-    
     this.mcpList.push(mcp);
     logger.info(`Successfully added new MCP [Name: ${mcp.name}]`);
     return true;
   }
   
-  /**
-   * Get logo URL for an MCP
-   * @param mcpName Name of the MCP
-   * @param extension File extension (optional)
-   * @returns Logo URL
-   */
-  getLogoUrl(mcpName: string, extension?: string): string {
-    const logoService = getMCPLogoService();
-    
-    if (logoService.isConfigured()) {
-      return logoService.getLogoUrl(mcpName, extension);
-    } else {
-      return logoService.getFallbackLogoUrl(mcpName);
-    }
-  }
+
 }
 
 // Export service instance
