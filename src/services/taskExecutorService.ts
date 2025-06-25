@@ -732,7 +732,8 @@ Based on the above task execution information, please generate a complete execut
       'whale-tracker-mcp-service': 'whaletracker-mcp',
       'discord-mcp-service': 'discord-mcp',
       'telegram-mcp-service': 'telegram-mcp',
-      'notion-mcp-service': 'notion-mcp'
+      'notion-mcp-service': 'notion-mcp',
+      '12306-mcp-service': '12306-mcp'
     };
     
     return mcpNameMap[mcpName] || mcpName;

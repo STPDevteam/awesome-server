@@ -19,7 +19,7 @@ const taskService = getTaskService();
 export const AVAILABLE_MCPS: MCPInfo[] = [
   {
     name: 'github-mcp-service',
-    description: 'GitHub 代码仓库操作工具，可以访问和管理GitHub仓库',
+    description: 'GitHub code repository operation tool, which can access and manage GitHub repositories',
     capabilities: ['查看仓库信息', '获取文件内容', '创建Issue', '提交PR', '查看提交历史'],
     authRequired: true,
     authFields: ['GITHUB_TOKEN'],
