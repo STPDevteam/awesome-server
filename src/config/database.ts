@@ -1,7 +1,20 @@
 import { Pool, PoolConfig, QueryResult } from 'pg';
 import dotenv from 'dotenv';
+import { types } from 'pg';
 
 dotenv.config();
+
+// 配置PostgreSQL类型解析
+// JSONB类型ID为3802
+types.setTypeParser(3802, function(val) {
+  return val; // 返回原始字符串，让pg自动处理
+});
+
+// 配置JSON类型解析
+// JSON类型ID为114
+types.setTypeParser(114, function(val) {
+  return val; // 返回原始字符串，让pg自动处理
+});
 
 export interface DatabaseConfig extends PoolConfig {
   host: string;

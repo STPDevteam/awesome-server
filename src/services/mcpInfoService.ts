@@ -211,7 +211,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['mindsdb_api_key'],
       category: 'Development Tools',
-      imageUrl: 'https://mindsdb.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-money-minded-68.png',
       githubUrl: 'https://github.com/mindsdb/minds-mcp'
     },
     {
@@ -229,7 +229,7 @@ export class MCPInfoService {
       capabilities: ['3d-modeling', 'animation', 'rendering'],
       authRequired: false,
       category: 'Development Tools',
-      imageUrl: 'https://www.blender.org/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
       githubUrl: 'https://github.com/ahujasid/blender-mcp'
     },
     {
@@ -238,7 +238,7 @@ export class MCPInfoService {
       capabilities: ['game-development', 'unity-scripting', 'asset-management'],
       authRequired: false,
       category: 'Development Tools',
-      imageUrl: 'https://unity.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unity-100.png',
       githubUrl: 'https://github.com/justinpbarnett/unity-mcp'
     },
     {
@@ -247,7 +247,7 @@ export class MCPInfoService {
       capabilities: ['game-development', 'blueprints', 'level-design'],
       authRequired: false,
       category: 'Development Tools',
-      imageUrl: 'https://www.unrealengine.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unreal-engine-100.png',
       githubUrl: 'https://github.com/chongdashu/unreal-mcp'
     },
     {
@@ -319,7 +319,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['private_key', 'rpc_url'],
       category: 'Trading',
-      imageUrl: 'https://uniswap.org/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-uniswap-100.png',
       githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp'
     },
     {

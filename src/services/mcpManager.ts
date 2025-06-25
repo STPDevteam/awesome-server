@@ -277,26 +277,38 @@ export class MCPManager {
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // MCP名称映射表
+    // 从mcpInfoService导入，确保使用统一的MCP名称
+    const { mcpInfoService } = require('./mcpInfoService.js');
+    
+    // MCP名称映射表 - 与mcpInfoService中的名称保持一致
     const mcpNameMap: Record<string, string> = {
       'playwright-mcp-service': 'playwright',
       'coingecko-server': 'coingecko-mcp',
+      'coingecko-mcp-service': 'coingecko-mcp',
       'x-mcp-server': 'x-mcp',
-      'github-mcp-server': 'github-mcp',
-      'evm-mcp-server': 'evm-mcp',
-      'dune-mcp-server': 'dune-mcp',
+      'github-mcp-server': 'github',
+      'evm-mcp-server': 'evm-mcp-server',
+      'dune-mcp-server': 'dune-mcp-server',
       'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
-      'defillama-mcp-service': 'defillama-mcp',
-      'rug-check-mcp-service': 'rugcheck-mcp',
-      'chainlink-feeds-mcp-service': 'chainlink-mcp',
-      'crypto-feargreed-mcp-service': 'feargreed-mcp',
-      'whale-tracker-mcp-service': 'whaletracker-mcp',
-      'discord-mcp-service': 'discord-mcp',
-      'telegram-mcp-service': 'telegram-mcp',
-      'notion-mcp-service': 'notion-mcp',
+      'defillama-mcp-service': 'mcp-server-defillama',
+      'rug-check-mcp-service': 'rug-check-mcp',
+      'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
+      'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
+      'whale-tracker-mcp-service': 'whale-tracker-mcp',
+      'discord-mcp-service': 'mcp-discord',
+      'telegram-mcp-service': 'mcp-telegram',
+      'notion-mcp-service': 'notion-mcp-server',
       '12306-mcp-service': '12306-mcp'
     };
     
+    // 尝试在mcpInfoService中查找MCP
+    const allMcps = mcpInfoService.getAllMCPs();
+    const exactMatch = allMcps.find((mcp: any) => mcp.name === mcpName);
+    if (exactMatch) {
+      return mcpName; // 如果在mcpInfoService中找到完全匹配，直接返回
+    }
+    
+    // 否则使用映射表
     return mcpNameMap[mcpName] || mcpName;
   }
 
@@ -317,6 +329,24 @@ export class MCPManager {
       name = normalizedName;
     }
     
+    // 处理工具名称 - 处理中文工具名称的情况
+    let actualTool = tool;
+    if (name === '12306-mcp') {
+      // 12306-mcp工具名称映射表
+      const toolNameMap: Record<string, string> = {
+        '获取当前日期': 'getCurrentDate',
+        '查询车站信息': 'queryStationInfo',
+        '查询列车时刻表': 'queryTrainSchedule',
+        '查询余票信息': 'queryTicketInfo',
+        '查询中转余票': 'queryTransferTicket'
+      };
+      
+      if (toolNameMap[tool]) {
+        actualTool = toolNameMap[tool];
+        logger.info(`【MCP Debug】Tool name mapped from '${tool}' to '${actualTool}'`);
+      }
+    }
+    
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {
       logger.error(`【MCP Debug】MCP not connected [MCP: ${name}]`);
@@ -325,14 +355,14 @@ export class MCPManager {
     
     try {
       const result = await mcpClient.client.callTool({
-        name: tool,
+        name: actualTool,
         arguments: args,
       });
-      logger.info(`【MCP Debug】MCP tool call successful [MCP: ${name}, Tool: ${tool}]`);
+      logger.info(`【MCP Debug】MCP tool call successful [MCP: ${name}, Tool: ${actualTool}]`);
       logger.info(`【MCP Debug】Call result: ${JSON.stringify(result)}`);
       return result;
     } catch (error) {
-      logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${tool}]:`, error);
+      logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${actualTool}]:`, error);
       throw error;
     }
   }
