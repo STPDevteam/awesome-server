@@ -319,6 +319,389 @@ router.post('/test-playwright-direct', async (req, res) => {
   }
 });
 
+// 添加12306 MCP测试路由
+router.post('/test-12306-mcp', async (req, res) => {
+  try {
+    // 获取服务实例
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    // 检查12306 MCP是否已连接
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const trainConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === '12306-mcp');
+    
+    // 如果未连接，尝试连接
+    if (!trainConnected) {
+      logger.info('12306 MCP未连接，尝试连接...');
+      const trainMCP = getPredefinedMCP('12306-mcp');
+      if (!trainMCP) {
+        return res.status(500).json({ error: '12306 MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(trainMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to 12306 MCP' });
+      }
+      logger.info('12306 MCP连接成功');
+    }
+    
+    // 获取12306 MCP的工具列表
+    logger.info('获取12306 MCP工具列表...');
+    const tools = await mcpManager.getTools('12306-mcp');
+    
+    // 返回结果
+    res.json({
+      success: true,
+      message: '12306 MCP test successful',
+      tools: tools
+    });
+  } catch (error) {
+    logger.error('12306 MCP test failed:', error);
+    res.status(500).json({ 
+      error: '12306 MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加GitHub MCP测试路由
+router.post('/test-github-mcp', async (req, res) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const githubConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'github-mcp-server');
+    
+    if (!githubConnected) {
+      logger.info('GitHub MCP未连接，尝试连接...');
+      const githubMCP = getPredefinedMCP('github-mcp-server');
+      if (!githubMCP) {
+        return res.status(500).json({ error: 'GitHub MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(githubMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to GitHub MCP' });
+      }
+      logger.info('GitHub MCP连接成功');
+    }
+    
+    const tools = await mcpManager.getTools('github-mcp-server');
+    
+    res.json({
+      success: true,
+      message: 'GitHub MCP test successful',
+      tools: tools
+    });
+  } catch (error) {
+    logger.error('GitHub MCP test failed:', error);
+    res.status(500).json({ 
+      error: 'GitHub MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加EVM MCP测试路由
+router.post('/test-evm-mcp', async (req, res) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const evmConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'evm-mcp');
+    
+    if (!evmConnected) {
+      logger.info('EVM MCP未连接，尝试连接...');
+      const evmMCP = getPredefinedMCP('evm-mcp');
+      if (!evmMCP) {
+        return res.status(500).json({ error: 'EVM MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(evmMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to EVM MCP' });
+      }
+      logger.info('EVM MCP连接成功');
+    }
+    
+    const tools = await mcpManager.getTools('evm-mcp');
+    
+    res.json({
+      success: true,
+      message: 'EVM MCP test successful',
+      tools: tools,
+      supportedNetworks: [
+        'ethereum', 'optimism', 'arbitrum', 'base', 'polygon', 'avalanche', 'bsc',
+        'zksync-era', 'linea', 'celo', 'gnosis', 'fantom', 'filecoin'
+      ]
+    });
+  } catch (error) {
+    logger.error('EVM MCP test failed:', error);
+    res.status(500).json({ 
+      error: 'EVM MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加DexScreener MCP测试路由
+router.post('/test-dexscreener-mcp', async (req, res) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const dexscreenerConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'dexscreener-mcp-server');
+    
+    if (!dexscreenerConnected) {
+      logger.info('DexScreener MCP未连接，尝试连接...');
+      const dexscreenerMCP = getPredefinedMCP('dexscreener-mcp-server');
+      if (!dexscreenerMCP) {
+        return res.status(500).json({ error: 'DexScreener MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(dexscreenerMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to DexScreener MCP' });
+      }
+      logger.info('DexScreener MCP连接成功');
+    }
+    
+    const tools = await mcpManager.getTools('dexscreener-mcp-server');
+    
+    res.json({
+      success: true,
+      message: 'DexScreener MCP test successful',
+      tools: tools,
+      features: [
+        'Real-time DEX pair data',
+        'Token profiles and boosted tokens',
+        'Multi-chain support',
+        'Rate-limited API access',
+        'Market statistics and analytics'
+      ],
+      availableTools: [
+        'get_latest_token_profiles',
+        'get_latest_boosted_tokens', 
+        'get_top_boosted_tokens',
+        'get_token_orders',
+        'get_pairs_by_chain_and_address',
+        'get_pairs_by_token_addresses',
+        'search_pairs'
+      ]
+    });
+  } catch (error) {
+    logger.error('DexScreener MCP test failed:', error);
+    res.status(500).json({ 
+      error: 'DexScreener MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加X MCP测试路由
+router.post('/test-x-mcp', async (req, res) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const xConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'x-mcp');
+    
+    if (!xConnected) {
+      logger.info('X MCP未连接，尝试连接...');
+      const xMCP = getPredefinedMCP('x-mcp');
+      if (!xMCP) {
+        return res.status(500).json({ error: 'X MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(xMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to X MCP' });
+      }
+      logger.info('X MCP连接成功');
+    }
+    
+    const tools = await mcpManager.getTools('x-mcp');
+    
+    res.json({
+      success: true,
+      message: 'X MCP test successful',
+      tools: tools.map((tool: any) => ({
+        name: tool.name,
+        description: tool.description
+      })),
+      toolCount: tools.length
+    });
+  } catch (error) {
+    logger.error('X MCP测试失败:', error);
+    res.status(500).json({ error: 'Failed to connect to X MCP' });
+  }
+});
+
+// 添加CoinGecko MCP测试路由
+router.post('/test-coingecko-mcp', async (req, res) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const coingeckoConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'coingecko-mcp');
+    
+    if (!coingeckoConnected) {
+      logger.info('CoinGecko MCP未连接，尝试连接...');
+      const coingeckoMCP = getPredefinedMCP('coingecko-mcp');
+      if (!coingeckoMCP) {
+        return res.status(500).json({ error: 'CoinGecko MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(coingeckoMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to CoinGecko MCP' });
+      }
+      logger.info('CoinGecko MCP连接成功');
+    }
+    
+    const tools = await mcpManager.getTools('coingecko-mcp');
+    
+    res.json({
+      success: true,
+      message: 'CoinGecko MCP test successful',
+      tools: tools
+    });
+  } catch (error) {
+    logger.error('CoinGecko MCP test failed:', error);
+    res.status(500).json({ 
+      error: 'CoinGecko MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加Notion MCP测试路由
+router.post('/test-notion-mcp', async (req, res) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const notionConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'notion-mcp-server');
+    
+    if (!notionConnected) {
+      logger.info('Notion MCP未连接，尝试连接...');
+      const notionMCP = getPredefinedMCP('notion-mcp-server');
+      if (!notionMCP) {
+        return res.status(500).json({ error: 'Notion MCP configuration not found' });
+      }
+      
+      const connected = await mcpManager.connectPredefined(notionMCP);
+      if (!connected) {
+        return res.status(500).json({ error: 'Failed to connect to Notion MCP' });
+      }
+      logger.info('Notion MCP连接成功');
+    }
+    
+    const tools = await mcpManager.getTools('notion-mcp-server');
+    
+    res.json({
+      success: true,
+      message: 'Notion MCP test successful',
+      tools: tools
+    });
+  } catch (error) {
+    logger.error('Notion MCP test failed:', error);
+    res.status(500).json({ 
+      error: 'Notion MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加获取所有MCP类别的路由
+router.get('/mcp-categories', async (req, res) => {
+  try {
+    const { getAllMCPCategories } = await import('../services/predefinedMCPs.js');
+    const categories = getAllMCPCategories();
+    
+    res.json({
+      success: true,
+      data: {
+        categories,
+        count: categories.length
+      }
+    });
+  } catch (error) {
+    logger.error('获取MCP类别失败:', error);
+    res.status(500).json({ 
+      error: '获取MCP类别失败', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加根据类别获取MCP的路由
+router.get('/mcp-by-category/:category', async (req, res) => {
+  try {
+    const category = req.params.category;
+    const { getMCPsByCategory } = await import('../services/predefinedMCPs.js');
+    const mcps = getMCPsByCategory(category);
+    
+    res.json({
+      success: true,
+      data: {
+        category,
+        mcps,
+        count: mcps.length
+      }
+    });
+  } catch (error) {
+    logger.error(`获取类别 ${req.params.category} 的MCP失败:`, error);
+    res.status(500).json({ 
+      error: '获取MCP失败', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加获取所有预定义MCP的路由
+router.get('/all-predefined-mcps', async (req, res) => {
+  try {
+    const { getAllPredefinedMCPs } = await import('../services/predefinedMCPs.js');
+    const mcps = getAllPredefinedMCPs();
+    
+    res.json({
+      success: true,
+      data: {
+        mcps,
+        count: mcps.length,
+        categories: [...new Set(mcps.map(mcp => mcp.category))]
+      }
+    });
+  } catch (error) {
+    logger.error('获取所有预定义MCP失败:', error);
+    res.status(500).json({ 
+      error: '获取所有预定义MCP失败', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 /**
  * 创建或更新任务
  * POST /api/task[/:id]

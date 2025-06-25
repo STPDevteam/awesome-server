@@ -19,6 +19,15 @@ export class MCPInfoService {
       githubUrl: 'https://github.com/microsoft/playwright'
     },
     {
+      name: '12306-mcp',
+      description: '12306 火车票查询和预订工具',
+      capabilities: ['train-ticket-query', 'station-search', 'schedule-check'],
+      authRequired: false,
+      category: '交通工具',
+      imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
+      githubUrl: 'https://github.com/12306-mcp'
+    },
+    {
       name: 'langchain',
       description: 'LangChain tool integration, provides document processing, vector search and other capabilities',
       capabilities: ['document-processing', 'vector-search', 'agents'],
@@ -65,6 +74,320 @@ export class MCPInfoService {
       category: 'Network Tools',
       imageUrl: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png',
       githubUrl: 'https://github.com/googleapis/google-api-nodejs-client'
+    },
+    
+    // Chain PRC 类别
+    {
+      name: 'base-mcp',
+      description: 'Base Chain Protocol integration for blockchain operations',
+      capabilities: ['blockchain-query', 'transaction-tracking', 'smart-contract'],
+      authRequired: false,
+      category: 'Chain PRC',
+      imageUrl: 'https://base.org/favicon.ico',
+      githubUrl: 'https://github.com/base/base-mcp'
+    },
+    {
+      name: 'evm-mcp-server',
+      description: 'Comprehensive EVM blockchain server supporting 30+ networks including Ethereum, Optimism, Arbitrum, Base, Polygon with unified interface',
+      capabilities: [
+        'multi-chain-support', 'blockchain-data-access', 'token-services', 
+        'nft-operations', 'smart-contract-interactions', 'transaction-support',
+        'ens-resolution', 'balance-queries', 'token-transfers', 'contract-verification',
+        'gas-estimation', 'event-logs', 'block-data', 'transaction-receipts',
+        'ethereum', 'optimism', 'arbitrum', 'base', 'polygon', 'avalanche', 'bsc'
+      ],
+      authRequired: false, // 基础查询不需要认证，但交易操作需要私钥
+      authFields: ['private_key'], // 仅在需要发送交易时需要
+      category: 'Chain PRC',
+      imageUrl: 'https://ethereum.org/favicon.ico',
+      githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
+    },
+    
+
+    {
+      name: 'coingecko-server',
+      description: 'CoinGecko official MCP server for comprehensive cryptocurrency market data, historical prices, and OHLC candlestick data',
+      capabilities: [
+        'get-coins', 'find-coin-ids', 'get-historical-data', 'get-ohlc-data', 
+        'refresh-cache', 'crypto-prices', 'market-data', 'coin-info',
+        'price-history', 'market-cap-data', 'volume-data', 'candlestick-data'
+      ],
+      authRequired: true,
+      authFields: ['COINGECKO_API_KEY'],
+      category: 'Market Data',
+      imageUrl: 'https://www.coingecko.com/favicon.ico',
+      githubUrl: 'https://docs.coingecko.com/reference/mcp-server'
+    },
+    {
+      name: 'coinmarketcap-mcp',
+      description: 'CoinMarketCap market data integration',
+      capabilities: ['crypto-prices', 'market-cap', 'trading-volume'],
+      authRequired: true,
+      authFields: ['api_key'],
+      category: 'Market Data',
+      imageUrl: 'https://coinmarketcap.com/favicon.ico',
+      githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp'
+    },
+    {
+      name: 'mcp-server-defillama',
+      description: 'DeFiLlama protocol data and analytics',
+      capabilities: ['defi-protocols', 'tvl-data', 'yield-farming'],
+      authRequired: false,
+      category: 'Market Data',
+      imageUrl: 'https://defillama.com/favicon.ico',
+      githubUrl: 'https://github.com/dcSpark/mcp-server-defillama'
+    },
+    {
+      name: 'dune-mcp-server',
+      description: 'Dune Analytics blockchain data queries',
+      capabilities: ['sql-queries', 'blockchain-analytics', 'data-visualization'],
+      authRequired: true,
+      authFields: ['api_key'],
+      category: 'Market Data',
+      imageUrl: 'https://dune.com/favicon.ico',
+      githubUrl: 'https://github.com/ekailabs/dune-mcp-server'
+    },
+    {
+      name: 'rug-check-mcp',
+      description: 'Rug Check security analysis for tokens',
+      capabilities: ['token-security', 'rug-detection', 'contract-analysis'],
+      authRequired: false,
+      category: 'Market Data',
+      imageUrl: 'https://rugcheck.xyz/favicon.ico',
+      githubUrl: 'https://github.com/kukapay/rug-check-mcp'
+    },
+    {
+      name: 'chainlink-feeds-mcp',
+      description: 'ChainLink price feeds and oracle data',
+      capabilities: ['price-feeds', 'oracle-data', 'real-time-prices'],
+      authRequired: false,
+      category: 'Market Data',
+      imageUrl: 'https://chain.link/favicon.ico',
+      githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp'
+    },
+    {
+      name: 'crypto-feargreed-mcp',
+      description: 'Fear & Greed Index for cryptocurrency market sentiment',
+      capabilities: ['sentiment-analysis', 'market-psychology', 'fear-greed-index'],
+      authRequired: false,
+      category: 'Market Data',
+      imageUrl: 'https://alternative.me/favicon.ico',
+      githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp'
+    },
+    {
+      name: 'whale-tracker-mcp',
+      description: 'Whale Tracker for large cryptocurrency transactions',
+      capabilities: ['whale-tracking', 'large-transactions', 'wallet-monitoring'],
+      authRequired: false,
+      category: 'Market Data',
+      imageUrl: 'https://whale-alert.io/favicon.ico',
+      githubUrl: 'https://github.com/kukapay/whale-tracker-mcp'
+    },
+    
+    // Dev Tool 类别
+    {
+      name: 'github-mcp-server',
+      description: 'GitHub repository management and operations',
+      capabilities: ['repository-management', 'pull-requests', 'issues', 'code-review'],
+      authRequired: true,
+      authFields: ['github_token'],
+      category: 'Development Tools',
+      imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+      githubUrl: 'https://github.com/github/github-mcp-server'
+    },
+    {
+      name: 'langchain-mcp',
+      description: 'LangChain integration for AI workflows',
+      capabilities: ['ai-workflows', 'document-processing', 'embeddings'],
+      authRequired: true,
+      authFields: ['openai_api_key'],
+      category: 'Development Tools',
+      imageUrl: 'https://langchain.com/images/logo.svg',
+      githubUrl: 'https://github.com/langchain-ai/langchain'
+    },
+    {
+      name: 'minds-mcp',
+      description: 'MindsDB machine learning database integration',
+      capabilities: ['ml-models', 'predictive-analytics', 'data-processing'],
+      authRequired: true,
+      authFields: ['mindsdb_api_key'],
+      category: 'Development Tools',
+      imageUrl: 'https://mindsdb.com/favicon.ico',
+      githubUrl: 'https://github.com/mindsdb/minds-mcp'
+    },
+    {
+      name: 'playwright-mcp',
+      description: 'Playwright browser automation for testing',
+      capabilities: ['browser-automation', 'testing', 'scraping'],
+      authRequired: false,
+      category: 'Development Tools',
+      imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+      githubUrl: 'https://github.com/microsoft/playwright-mcp'
+    },
+    {
+      name: 'blender-mcp',
+      description: 'Blender 3D modeling and animation integration',
+      capabilities: ['3d-modeling', 'animation', 'rendering'],
+      authRequired: false,
+      category: 'Development Tools',
+      imageUrl: 'https://www.blender.org/favicon.ico',
+      githubUrl: 'https://github.com/ahujasid/blender-mcp'
+    },
+    {
+      name: 'unity-mcp',
+      description: 'Unity game engine integration',
+      capabilities: ['game-development', 'unity-scripting', 'asset-management'],
+      authRequired: false,
+      category: 'Development Tools',
+      imageUrl: 'https://unity.com/favicon.ico',
+      githubUrl: 'https://github.com/justinpbarnett/unity-mcp'
+    },
+    {
+      name: 'unreal-mcp',
+      description: 'Unreal Engine integration',
+      capabilities: ['game-development', 'blueprints', 'level-design'],
+      authRequired: false,
+      category: 'Development Tools',
+      imageUrl: 'https://www.unrealengine.com/favicon.ico',
+      githubUrl: 'https://github.com/chongdashu/unreal-mcp'
+    },
+    {
+      name: 'figma-context-mcp',
+      description: 'Figma design tool integration',
+      capabilities: ['design-tools', 'prototyping', 'collaboration'],
+      authRequired: true,
+      authFields: ['figma_token'],
+      category: 'Development Tools',
+      imageUrl: 'https://www.figma.com/favicon.ico',
+      githubUrl: 'https://github.com/GLips/Figma-Context-MCP'
+    },
+    {
+      name: 'aws-mcp',
+      description: 'AWS cloud services integration',
+      capabilities: ['cloud-services', 'ec2', 's3', 'lambda'],
+      authRequired: true,
+      authFields: ['aws_access_key', 'aws_secret_key'],
+      category: 'Development Tools',
+      imageUrl: 'https://aws.amazon.com/favicon.ico',
+      githubUrl: 'https://awslabs.github.io/mcp/'
+    },
+    {
+      name: 'convex-mcp',
+      description: 'Convex backend platform integration',
+      capabilities: ['backend-services', 'database', 'real-time'],
+      authRequired: true,
+      authFields: ['convex_deploy_key'],
+      category: 'Development Tools',
+      imageUrl: 'https://convex.dev/favicon.ico',
+      githubUrl: 'https://github.com/get-convex/convex-backend'
+    },
+    {
+      name: 'cloudflare-mcp',
+      description: 'Cloudflare services integration',
+      capabilities: ['cdn', 'dns', 'workers', 'pages'],
+      authRequired: true,
+      authFields: ['cloudflare_api_token'],
+      category: 'Development Tools',
+      imageUrl: 'https://www.cloudflare.com/favicon.ico',
+      githubUrl: 'https://github.com/cloudflare/mcp-server-cloudflare'
+    },
+    {
+      name: 'supabase-mcp',
+      description: 'Supabase backend-as-a-service integration',
+      capabilities: ['database', 'auth', 'storage', 'edge-functions'],
+      authRequired: true,
+      authFields: ['supabase_url', 'supabase_key'],
+      category: 'Development Tools',
+      imageUrl: 'https://supabase.com/favicon.ico',
+      githubUrl: 'https://github.com/supabase-community/supabase-mcp'
+    },
+    
+    // Trading 类别
+    {
+      name: 'binance-mcp',
+      description: 'Binance cryptocurrency exchange integration',
+      capabilities: ['spot-trading', 'futures-trading', 'market-data'],
+      authRequired: true,
+      authFields: ['api_key', 'secret_key'],
+      category: 'Trading',
+      imageUrl: 'https://www.binance.com/favicon.ico',
+      githubUrl: 'https://github.com/TermiX-official/binance-mcp'
+    },
+    {
+      name: 'uniswap-trader-mcp',
+      description: 'Uniswap decentralized exchange trading',
+      capabilities: ['dex-trading', 'liquidity-pools', 'token-swaps'],
+      authRequired: true,
+      authFields: ['private_key', 'rpc_url'],
+      category: 'Trading',
+      imageUrl: 'https://uniswap.org/favicon.ico',
+      githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp'
+    },
+    {
+      name: 'server-hyperliquid',
+      description: 'Hyperliquid perpetual trading platform',
+      capabilities: ['perpetual-trading', 'derivatives', 'leverage'],
+      authRequired: true,
+      authFields: ['api_key', 'secret'],
+      category: 'Trading',
+      imageUrl: 'https://hyperliquid.xyz/favicon.ico',
+      githubUrl: 'https://github.com/mektigboy/server-hyperliquid'
+    },
+    {
+      name: 'pumpfun-mcp-server',
+      description: 'Pump.fun meme token trading platform',
+      capabilities: ['meme-tokens', 'token-creation', 'trading'],
+      authRequired: true,
+      authFields: ['wallet_private_key'],
+      category: 'Trading',
+      imageUrl: 'https://pump.fun/favicon.ico',
+      githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server'
+    },
+    
+    // Social 类别
+    {
+      name: 'mcp-discord',
+      description: 'Discord social platform integration',
+      capabilities: ['messaging', 'server-management', 'bot-integration'],
+      authRequired: true,
+      authFields: ['bot_token'],
+      category: 'Social',
+      imageUrl: 'https://discord.com/favicon.ico',
+      githubUrl: 'https://github.com/hanweg/mcp-discord'
+    },
+    {
+      name: 'mcp-telegram',
+      description: 'Telegram messaging platform integration',
+      capabilities: ['messaging', 'bot-creation', 'channel-management'],
+      authRequired: true,
+      authFields: ['bot_token'],
+      category: 'Social',
+      imageUrl: 'https://telegram.org/favicon.ico',
+      githubUrl: 'https://github.com/sparfenyuk/mcp-telegram'
+    },
+    {
+      name: 'x-mcp-server',
+      description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Built-in rate limit handling for free API tier',
+      capabilities: [
+        'get-home-timeline', 'create-tweet', 'reply-to-tweet', 
+        'rate-limit-handling', 'timeline-reading', 'tweet-engagement',
+        'free-tier-support', 'monthly-usage-tracking', 'exponential-backoff'
+      ],
+      authRequired: true,
+      authFields: ['TWITTER_API_KEY', 'TWITTER_API_SECRET', 'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_SECRET'],
+      category: 'Social',
+      imageUrl: 'https://x.com/favicon.ico',
+      githubUrl: 'https://github.com/datawhisker/x-mcp-server'
+    },
+    {
+      name: 'notion-mcp-server',
+      description: 'Notion workspace and documentation integration',
+      capabilities: ['page-creation', 'database-management', 'content-editing'],
+      authRequired: true,
+      authFields: ['notion_token'],
+      category: 'Social',
+      imageUrl: 'https://www.notion.so/favicon.ico',
+      githubUrl: 'https://github.com/makenotion/notion-mcp-server'
     }
   ];
 
@@ -74,7 +397,7 @@ export class MCPInfoService {
     
     logger.info(`MCPInfoService initialized, loaded ${this.mcpList.length} MCP information records`);
   }
-  
+
   /**
    * Update logo URLs to use S3/CloudFront URLs
    * This ensures all MCP logos are served from the same domain

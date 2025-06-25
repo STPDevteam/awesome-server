@@ -486,6 +486,22 @@ async function startServer() {
       }
     }
 
+    // 尝试连接12306 MCP
+    const trainMCP = getPredefinedMCP('12306-mcp');
+    if (trainMCP) {
+      try {
+        console.log('🚄 Connecting to 12306 MCP...');
+        const connected = await mcpManager.connectPredefined(trainMCP);
+        if (connected) {
+          console.log('✅ 12306 MCP connected successfully');
+        } else {
+          console.log('⚠️ Failed to connect to 12306 MCP');
+        }
+      } catch (error) {
+        console.error('❌ Error connecting to 12306 MCP:', error);
+      }
+    }
+
     // AWE 支付服务状态
     if (process.env.BASE_RPC_URL) {
       console.log('💎 AWE payment service configured');
