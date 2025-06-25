@@ -352,7 +352,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['bot_token'],
       category: 'Social',
-      imageUrl: 'https://discord.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-discord-96.png',
       githubUrl: 'https://github.com/hanweg/mcp-discord'
     },
     {
@@ -362,7 +362,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['bot_token'],
       category: 'Social',
-      imageUrl: 'https://telegram.org/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
       githubUrl: 'https://github.com/sparfenyuk/mcp-telegram'
     },
     {
@@ -376,7 +376,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['TWITTER_API_KEY', 'TWITTER_API_SECRET', 'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_SECRET'],
       category: 'Social',
-      imageUrl: 'https://x.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/x-mcp.ico',
       githubUrl: 'https://github.com/datawhisker/x-mcp-server'
     },
     {
