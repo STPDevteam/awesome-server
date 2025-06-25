@@ -16,11 +16,11 @@ router.get('/pricing', async (req, res) => {
     // 获取当前AWE价格信息
     const priceInfo = await awePaymentService.getFullPriceInfo();
     
-    // 计算各档位的Wei值
-    const aweAmountForPlusMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForPlusMonthly.toFixed(6), 18).toString();
-    const aweAmountForPlusYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForPlusYearly.toFixed(6), 18).toString();
-    const aweAmountForProMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProMonthly.toFixed(6), 18).toString();
-    const aweAmountForProYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProYearly.toFixed(6), 18).toString();
+    // 计算各档位的Wei值（基于2位小数的AWE数量）
+    const aweAmountForPlusMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForPlusMonthly.toFixed(2), 18).toString();
+    const aweAmountForPlusYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForPlusYearly.toFixed(2), 18).toString();
+    const aweAmountForProMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProMonthly.toFixed(2), 18).toString();
+    const aweAmountForProYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProYearly.toFixed(2), 18).toString();
     
     res.json({
       success: true,

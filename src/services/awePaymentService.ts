@@ -243,17 +243,17 @@ export class AwePaymentService {
     try {
       const aweUsdPrice = await this.getAweUsdPrice();
       
-      // 计算各种会员类型的AWE金额
-      const aweAmountForPlusMonthly = parseFloat(MEMBERSHIP_PRICING.plus.monthly.amount) / aweUsdPrice;
-      const aweAmountForPlusYearly = parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) / aweUsdPrice;
-      const aweAmountForProMonthly = parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) / aweUsdPrice;
-      const aweAmountForProYearly = parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) / aweUsdPrice;
+      // 计算各种会员类型的AWE金额（保留2位小数）
+      const aweAmountForPlusMonthly = Math.round((parseFloat(MEMBERSHIP_PRICING.plus.monthly.amount) / aweUsdPrice) * 100) / 100;
+      const aweAmountForPlusYearly = Math.round((parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) / aweUsdPrice) * 100) / 100;
+      const aweAmountForProMonthly = Math.round((parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) / aweUsdPrice) * 100) / 100;
+      const aweAmountForProYearly = Math.round((parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) / aweUsdPrice) * 100) / 100;
 
-      // 计算Wei单位的金额
-      const aweAmountForPlusMonthlyInWei = ethers.parseUnits(aweAmountForPlusMonthly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
-      const aweAmountForPlusYearlyInWei = ethers.parseUnits(aweAmountForPlusYearly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
-      const aweAmountForProMonthlyInWei = ethers.parseUnits(aweAmountForProMonthly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
-      const aweAmountForProYearlyInWei = ethers.parseUnits(aweAmountForProYearly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
+      // 计算Wei单位的金额（基于2位小数的AWE数量）
+      const aweAmountForPlusMonthlyInWei = ethers.parseUnits(aweAmountForPlusMonthly.toFixed(2), AWE_TOKEN_CONFIG.decimals).toString();
+      const aweAmountForPlusYearlyInWei = ethers.parseUnits(aweAmountForPlusYearly.toFixed(2), AWE_TOKEN_CONFIG.decimals).toString();
+      const aweAmountForProMonthlyInWei = ethers.parseUnits(aweAmountForProMonthly.toFixed(2), AWE_TOKEN_CONFIG.decimals).toString();
+      const aweAmountForProYearlyInWei = ethers.parseUnits(aweAmountForProYearly.toFixed(2), AWE_TOKEN_CONFIG.decimals).toString();
 
       // 如果提供了userId，创建价格锁定
       let priceLockId: string | undefined;
@@ -263,7 +263,7 @@ export class AwePaymentService {
           userId,
           'plus', // 默认值，实际使用时会根据用户选择覆盖
           'monthly', // 默认值，实际使用时会根据用户选择覆盖
-          aweAmountForPlusMonthly.toFixed(6),
+          aweAmountForPlusMonthly.toFixed(2),
           aweAmountForPlusMonthlyInWei,
           MEMBERSHIP_PRICING.plus.monthly.amount,
           aweUsdPrice
@@ -318,14 +318,14 @@ export class AwePaymentService {
   ): Promise<string> {
     const pricing = MEMBERSHIP_PRICING[membershipType][subscriptionType];
     const aweUsdPrice = await this.getAweUsdPrice();
-    const aweAmount = parseFloat(pricing.amount) / aweUsdPrice;
-    const aweAmountInWei = ethers.parseUnits(aweAmount.toFixed(6), AWE_TOKEN_CONFIG.decimals);
+    const aweAmount = Math.round((parseFloat(pricing.amount) / aweUsdPrice) * 100) / 100;
+    const aweAmountInWei = ethers.parseUnits(aweAmount.toFixed(2), AWE_TOKEN_CONFIG.decimals);
 
     return this.createPriceLock(
       userId,
       membershipType,
       subscriptionType,
-      aweAmount.toFixed(6),
+      aweAmount.toFixed(2),
       aweAmountInWei.toString(),
       pricing.amount,
       aweUsdPrice
@@ -347,14 +347,14 @@ export class AwePaymentService {
 
     const pricing = MEMBERSHIP_PRICING[membershipType][subscriptionType];
     const aweUsdPrice = await this.getAweUsdPrice();
-    const aweAmount = parseFloat(pricing.amount) / aweUsdPrice;
-    const aweAmountInWei = ethers.parseUnits(aweAmount.toFixed(6), AWE_TOKEN_CONFIG.decimals);
+    const aweAmount = Math.round((parseFloat(pricing.amount) / aweUsdPrice) * 100) / 100;
+    const aweAmountInWei = ethers.parseUnits(aweAmount.toFixed(2), AWE_TOKEN_CONFIG.decimals);
 
     const priceInfo: AwePriceInfo = {
       membershipType,
       subscriptionType,
       usdPrice: pricing.amount,
-      aweAmount: aweAmount.toFixed(6),
+      aweAmount: aweAmount.toFixed(2),
       aweAmountInWei: aweAmountInWei.toString(),
       aweUsdPrice,
       tokenAddress: AWE_TOKEN_CONFIG.address,
@@ -445,9 +445,12 @@ export class AwePaymentService {
     const actualAmount = BigInt(transferEvent.value);
     
     if (actualAmount < expectedAmount) {
+      const expectedAwe = parseFloat(ethers.formatUnits(expectedAmount, AWE_TOKEN_CONFIG.decimals)).toFixed(2);
+      const receivedAwe = parseFloat(ethers.formatUnits(actualAmount, AWE_TOKEN_CONFIG.decimals)).toFixed(2);
+      
       throw new Error(
-        `Insufficient payment amount. Expected: ${ethers.formatUnits(expectedAmount, AWE_TOKEN_CONFIG.decimals)} AWE, ` +
-        `Received: ${ethers.formatUnits(actualAmount, AWE_TOKEN_CONFIG.decimals)} AWE`
+        `Insufficient payment amount. Expected: ${expectedAwe} AWE, ` +
+        `Received: ${receivedAwe} AWE`
       );
     }
 
