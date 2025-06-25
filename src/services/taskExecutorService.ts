@@ -237,6 +237,33 @@ export class TaskExecutorService {
         logger.info(`MCP名称映射: 将'playwright-mcp-service'映射为'playwright'`);
       }
 
+      // 检查MCP是否已连接
+      const connectedMCPs = this.mcpManager.getConnectedMCPs();
+      const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
+      
+      // 如果未连接，尝试连接
+      if (!isConnected) {
+        logger.info(`MCP ${actualMcpName} 未连接，尝试连接...`);
+        
+        // 从predefinedMCPs获取MCP配置
+        const { getPredefinedMCP } = await import('../services/predefinedMCPs.js');
+        const mcpConfig = getPredefinedMCP(actualMcpName);
+        
+        if (!mcpConfig) {
+          logger.error(`未找到MCP ${actualMcpName} 的配置信息`);
+          throw new Error(`MCP ${actualMcpName} configuration not found`);
+        }
+        
+        // 连接MCP
+        const connected = await this.mcpManager.connectPredefined(mcpConfig);
+        if (!connected) {
+          logger.error(`连接MCP ${actualMcpName} 失败`);
+          throw new Error(`Failed to connect to MCP ${actualMcpName}`);
+        }
+        
+        logger.info(`MCP ${actualMcpName} 连接成功`);
+      }
+
       // 使用mcpManager而不是httpAdapter调用工具
       const result = await this.mcpManager.callTool(actualMcpName, toolName, input);
 
@@ -454,6 +481,42 @@ Based on the above task execution information, please generate a complete execut
           if (mcpName === 'playwright-mcp-service') {
             actualMcpName = 'playwright';
             logger.info(`流式执行中的MCP名称映射: 将'playwright-mcp-service'映射为'playwright'`);
+          }
+          
+          // 检查MCP是否已连接
+          const connectedMCPs = this.mcpManager.getConnectedMCPs();
+          const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
+          
+          // 如果未连接，尝试连接
+          if (!isConnected) {
+            logger.info(`流式执行: MCP ${actualMcpName} 未连接，尝试连接...`);
+            
+            // 从predefinedMCPs获取MCP配置
+            const { getPredefinedMCP } = await import('../services/predefinedMCPs.js');
+            const mcpConfig = getPredefinedMCP(actualMcpName);
+            
+            if (!mcpConfig) {
+              logger.error(`未找到MCP ${actualMcpName} 的配置信息`);
+              throw new Error(`MCP ${actualMcpName} configuration not found`);
+            }
+            
+            // 连接MCP
+            const connected = await this.mcpManager.connectPredefined(mcpConfig);
+            if (!connected) {
+              logger.error(`连接MCP ${actualMcpName} 失败`);
+              throw new Error(`Failed to connect to MCP ${actualMcpName}`);
+            }
+            
+            logger.info(`MCP ${actualMcpName} 连接成功`);
+            
+            // 发送MCP连接成功消息
+            stream({ 
+              event: 'mcp_connected', 
+              data: { 
+                mcpName: actualMcpName,
+                message: `成功连接到 ${actualMcpName} 服务`
+              } 
+            });
           }
           
           // 确保输入是对象类型
