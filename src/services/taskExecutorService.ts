@@ -9,6 +9,9 @@ import { taskExecutorDao } from '../dao/taskExecutorDao.js';
 import { TaskStepResult, TaskExecutionResult, WorkflowExecutionStatus } from '../models/taskExecution.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { MCPManager } from './mcpManager.js';
+import { mcpInfoService } from './mcpInfoService.js';
+import { MCPInfo } from '../models/mcp.js';
+
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
 // 获取taskService实例
@@ -752,9 +755,6 @@ Based on the above task execution information, please generate a complete execut
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // 从mcpInfoService导入，确保使用统一的MCP名称
-    const { mcpInfoService } = require('./mcpInfoService.js');
-    
     // MCP名称映射表 - 与mcpInfoService中的名称保持一致
     const mcpNameMap: Record<string, string> = {
       'playwright-mcp-service': 'playwright',

@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.js';
 import { MCPConnection, MCPTool, MCPCallResult } from '../models/mcp.js';
 import fs from 'fs';
 import path from 'path';
+import { mcpInfoService } from './mcpInfoService.js';
 
 interface MCPClient {
   client: Client;
@@ -277,9 +278,6 @@ export class MCPManager {
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // 从mcpInfoService导入，确保使用统一的MCP名称
-    const { mcpInfoService } = require('./mcpInfoService.js');
-    
     // MCP名称映射表 - 与mcpInfoService中的名称保持一致
     const mcpNameMap: Record<string, string> = {
       'playwright-mcp-service': 'playwright',
