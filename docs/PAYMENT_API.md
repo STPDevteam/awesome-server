@@ -33,16 +33,44 @@ GET /api/payment/pricing
   "success": true,
   "data": {
     "plus": {
-      "monthly": { "amount": "20", "currency": "USDT" },
-      "yearly": { "amount": "200", "currency": "USDT" }
+      "monthly": {
+        "amount": "4.99",
+        "currency": "USD",
+        "features": ["基础功能", "100个请求/月", "邮件支持"]
+      },
+      "yearly": {
+        "amount": "47.99",
+        "currency": "USD",
+        "features": ["基础功能", "100个请求/月", "邮件支持", "节省20%"]
+      }
     },
     "pro": {
-      "monthly": { "amount": "200", "currency": "USDT" },
-      "yearly": { "amount": "2000", "currency": "USDT" }
-    }
+      "monthly": {
+        "amount": "14.99",
+        "currency": "USD",
+        "features": ["高级功能", "无限请求", "优先支持", "API访问"]
+      },
+      "yearly": {
+        "amount": "143.99",
+        "currency": "USD",
+        "features": ["高级功能", "无限请求", "优先支持", "API访问", "节省20%"]
+      }
+    },
+    "aweAmountForPlusMonthlyInWei": "40453200000000000000",
+    "aweAmountForPlusYearlyInWei": "388950700000000000000",
+    "aweAmountForProMonthlyInWei": "121459700000000000000",
+    "aweAmountForProYearlyInWei": "1167852200000000000000"
   }
 }
 ```
+
+**新增字段说明**
+- `aweAmountForPlusMonthlyInWei`: Plus月付所需的AWE数量（以Wei为单位）
+- `aweAmountForPlusYearlyInWei`: Plus年付所需的AWE数量（以Wei为单位）
+- `aweAmountForProMonthlyInWei`: Pro月付所需的AWE数量（以Wei为单位）
+- `aweAmountForProYearlyInWei`: Pro年付所需的AWE数量（以Wei为单位）
+
+注意：这些Wei值是基于当前AWE/USD汇率计算的，会随着币价波动而变化。1 AWE = 10^18 Wei。
 
 ### 2. 创建支付订单
 ```

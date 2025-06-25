@@ -368,9 +368,73 @@ data: [DONE]
 
 ---
 
+### 支付相关 API
+
+#### 1. 获取会员定价信息
+
+**端点**: `GET /api/payment/pricing`
+
+**描述**: 获取会员订阅的定价信息，包括USD价格和对应的AWE代币数量（以Wei为单位）
+
+**认证**: 无需认证
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "plus": {
+      "monthly": {
+        "amount": "4.99",
+        "currency": "USD",
+        "features": ["基础功能", "100个请求/月", "邮件支持"]
+      },
+      "yearly": {
+        "amount": "47.99",
+        "currency": "USD",
+        "features": ["基础功能", "100个请求/月", "邮件支持", "节省20%"]
+      }
+    },
+    "pro": {
+      "monthly": {
+        "amount": "14.99",
+        "currency": "USD",
+        "features": ["高级功能", "无限请求", "优先支持", "API访问"]
+      },
+      "yearly": {
+        "amount": "143.99",
+        "currency": "USD",
+        "features": ["高级功能", "无限请求", "优先支持", "API访问", "节省20%"]
+      }
+    },
+    "aweAmountForPlusMonthlyInWei": "40453200000000000000",
+    "aweAmountForPlusYearlyInWei": "388950700000000000000",
+    "aweAmountForProMonthlyInWei": "121459700000000000000",
+    "aweAmountForProYearlyInWei": "1167852200000000000000"
+  }
+}
+```
+
+**字段说明**:
+- `plus/pro.monthly/yearly`: 各会员档位的USD定价和功能介绍
+- `aweAmountForPlusMonthlyInWei`: Plus月付所需的AWE数量（以Wei为单位）
+- `aweAmountForPlusYearlyInWei`: Plus年付所需的AWE数量（以Wei为单位）
+- `aweAmountForProMonthlyInWei`: Pro月付所需的AWE数量（以Wei为单位）
+- `aweAmountForProYearlyInWei`: Pro年付所需的AWE数量（以Wei为单位）
+
+**注意**:
+- AWE价格是基于当前市场汇率实时计算的，会随币价波动而变化
+- 1 AWE = 10^18 Wei
+- 这些Wei值可直接用于前端支付计算，无需再次调用calculate-awe-price接口
+
+**错误响应**:
+- `500 Internal Server Error`: 获取价格信息失败
+
+---
+
 ### AWE代币支付 API
 
-#### 1. 计算AWE支付价格
+#### 2. 计算AWE支付价格
 
 **端点**: `GET /api/payment/calculate-awe-price`
 
@@ -408,7 +472,7 @@ data: [DONE]
 
 ---
 
-#### 2. 确认AWE支付
+#### 3. 确认AWE支付
 
 **端点**: `POST /api/payment/confirm-awe-payment`
 
@@ -454,7 +518,7 @@ data: [DONE]
 
 ---
 
-#### 3. 获取AWE支付状态
+#### 4. 获取AWE支付状态
 
 **端点**: `GET /api/payment/awe-payment/:paymentId`
 
@@ -496,7 +560,7 @@ data: [DONE]
 
 ---
 
-#### 4. 获取AWE支付历史
+#### 5. 获取AWE支付历史
 
 **端点**: `GET /api/payment/awe-payments`
 
@@ -526,7 +590,7 @@ data: [DONE]
 - `401 Unauthorized`: 无效的访问令牌
 - `500 Internal Server Error`: 服务器内部错误
 
-#### 5. 获取会员状态
+#### 6. 获取会员状态
 
 **端点**: `GET /api/payment/membership-status`
 
@@ -553,7 +617,7 @@ data: [DONE]
 
 ---
 
-#### 6. 清除会员状态
+#### 7. 清除会员状态
 
 **端点**: `DELETE /api/payment/membership`
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import { ethers } from 'ethers';
 import { coinbaseCommerceService } from '../services/coinbaseCommerceService.js';
 import { awePaymentService } from '../services/awePaymentService.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -10,11 +11,34 @@ const router = express.Router();
 /**
  * 获取会员定价信息
  */
-router.get('/pricing', (req, res) => {
-  res.json({
-    success: true,
-    data: MEMBERSHIP_PRICING
-  });
+router.get('/pricing', async (req, res) => {
+  try {
+    // 获取当前AWE价格信息
+    const priceInfo = await awePaymentService.getFullPriceInfo();
+    
+    // 计算各档位的Wei值
+    const aweAmountForPlusMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForPlusMonthly.toFixed(6), 18).toString();
+    const aweAmountForPlusYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForPlusYearly.toFixed(6), 18).toString();
+    const aweAmountForProMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProMonthly.toFixed(6), 18).toString();
+    const aweAmountForProYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProYearly.toFixed(6), 18).toString();
+    
+    res.json({
+      success: true,
+      data: {
+        ...MEMBERSHIP_PRICING,
+        aweAmountForPlusMonthlyInWei,
+        aweAmountForPlusYearlyInWei,
+        aweAmountForProMonthlyInWei,
+        aweAmountForProYearlyInWei
+      }
+    });
+  } catch (error) {
+    console.error('Get pricing error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get pricing information'
+    });
+  }
 });
 
 /**
@@ -254,12 +278,26 @@ router.post('/webhooks/coinbase', async (req, res) => {
  */
 router.get('/calculate-awe-price', requireAuth, async (req, res) => {
   try {
+    const userId = req.userId!;
+    const { membershipType, subscriptionType } = req.query;
+    
     // 获取完整价格信息
-    const priceInfo = await awePaymentService.getFullPriceInfo();
+    const priceInfo = await awePaymentService.getFullPriceInfo(userId);
+    
+    // 如果提供了具体的会员类型和订阅类型，创建特定的价格锁定
+    if (membershipType && subscriptionType) {
+      const priceLockId = await awePaymentService.createSpecificPriceLock(
+        userId,
+        membershipType as 'plus' | 'pro',
+        subscriptionType as 'monthly' | 'yearly'
+      );
+      
+      priceInfo.data.priceLockId = priceLockId;
+    }
 
     res.json({
       success: true,
-      data: priceInfo
+      data: priceInfo.data
     });
   } catch (error) {
     console.error('Calculate AWE price error:', error);
@@ -275,7 +313,7 @@ router.get('/calculate-awe-price', requireAuth, async (req, res) => {
  */
 router.post('/confirm-awe-payment', requireAuth, async (req, res) => {
   try {
-    const { membershipType, subscriptionType, transactionHash } = req.body;
+    const { membershipType, subscriptionType, transactionHash, priceLockId } = req.body;
     const userId = req.userId!;
 
     // 验证输入
@@ -315,7 +353,8 @@ router.post('/confirm-awe-payment', requireAuth, async (req, res) => {
       userId,
       membershipType,
       subscriptionType,
-      transactionHash
+      transactionHash,
+      priceLockId
     });
 
     res.json({

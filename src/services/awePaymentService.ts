@@ -68,6 +68,7 @@ export interface FullPriceInfo {
     receiverAddress: string;
     chainId: number;
     chainName: string;
+    priceLockId?: string; // 价格锁定ID
   };
 }
 
@@ -77,6 +78,7 @@ export interface VerifyPaymentParams {
   membershipType: 'plus' | 'pro';
   subscriptionType: 'monthly' | 'yearly';
   transactionHash: string;
+  priceLockId?: string;
 }
 
 // AWE支付记录
@@ -111,6 +113,25 @@ export class AwePaymentService {
     
     // 启动定时检查任务（每30秒检查一次）
     this.startPendingPaymentChecker();
+    
+    // 启动清理过期价格锁定的任务（每5分钟执行一次）
+    this.startPriceLockCleaner();
+  }
+
+  /**
+   * 启动清理过期价格锁定的定时任务
+   */
+  private startPriceLockCleaner(): void {
+    setInterval(async () => {
+      try {
+        await db.query(`
+          DELETE FROM awe_price_locks 
+          WHERE expires_at < NOW() OR used = true
+        `);
+      } catch (error) {
+        logger.error('Error cleaning expired price locks:', error);
+      }
+    }, 5 * 60 * 1000); // 每5分钟清理一次
   }
 
   /**
@@ -161,15 +182,64 @@ export class AwePaymentService {
   }
 
   /**
+   * 创建价格锁定
+   */
+  private async createPriceLock(
+    userId: string,
+    membershipType: 'plus' | 'pro',
+    subscriptionType: 'monthly' | 'yearly',
+    aweAmount: string,
+    aweAmountInWei: string,
+    usdPrice: string,
+    aweUsdPrice: number
+  ): Promise<string> {
+    const id = uuidv4();
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15分钟后过期
+
+    await db.query(`
+      INSERT INTO awe_price_locks (
+        id, user_id, membership_type, subscription_type,
+        awe_amount, awe_amount_in_wei, usd_price, awe_usd_price,
+        expires_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `, [
+      id, userId, membershipType, subscriptionType,
+      aweAmount, aweAmountInWei, usdPrice, aweUsdPrice,
+      expiresAt, new Date(), new Date()
+    ]);
+
+    return id;
+  }
+
+  /**
+   * 获取价格锁定
+   */
+  private async getPriceLock(priceLockId: string): Promise<any | null> {
+    const result = await db.query(`
+      SELECT * FROM awe_price_locks 
+      WHERE id = $1 
+      AND expires_at > NOW() 
+      AND used = false
+    `, [priceLockId]);
+
+    return result.rows.length > 0 ? result.rows[0] : null;
+  }
+
+  /**
+   * 标记价格锁定为已使用
+   */
+  private async markPriceLockAsUsed(priceLockId: string): Promise<void> {
+    await db.query(`
+      UPDATE awe_price_locks 
+      SET used = true, updated_at = NOW() 
+      WHERE id = $1
+    `, [priceLockId]);
+  }
+
+  /**
    * 获取完整的价格信息
    */
-  async getFullPriceInfo(): Promise<FullPriceInfo> {
-    const cacheKey = 'full_price_info';
-    const cached = this.priceCache.get<FullPriceInfo>(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
+  async getFullPriceInfo(userId?: string): Promise<FullPriceInfo> {
     try {
       const aweUsdPrice = await this.getAweUsdPrice();
       
@@ -178,6 +248,27 @@ export class AwePaymentService {
       const aweAmountForPlusYearly = parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) / aweUsdPrice;
       const aweAmountForProMonthly = parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) / aweUsdPrice;
       const aweAmountForProYearly = parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) / aweUsdPrice;
+
+      // 计算Wei单位的金额
+      const aweAmountForPlusMonthlyInWei = ethers.parseUnits(aweAmountForPlusMonthly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
+      const aweAmountForPlusYearlyInWei = ethers.parseUnits(aweAmountForPlusYearly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
+      const aweAmountForProMonthlyInWei = ethers.parseUnits(aweAmountForProMonthly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
+      const aweAmountForProYearlyInWei = ethers.parseUnits(aweAmountForProYearly.toFixed(6), AWE_TOKEN_CONFIG.decimals).toString();
+
+      // 如果提供了userId，创建价格锁定
+      let priceLockId: string | undefined;
+      if (userId) {
+        // 为简化起见，创建一个通用的价格锁定，包含所有价格信息
+        priceLockId = await this.createPriceLock(
+          userId,
+          'plus', // 默认值，实际使用时会根据用户选择覆盖
+          'monthly', // 默认值，实际使用时会根据用户选择覆盖
+          aweAmountForPlusMonthly.toFixed(6),
+          aweAmountForPlusMonthlyInWei,
+          MEMBERSHIP_PRICING.plus.monthly.amount,
+          aweUsdPrice
+        );
+      }
 
       const priceInfo: FullPriceInfo = {
         success: true,
@@ -191,11 +282,11 @@ export class AwePaymentService {
           tokenAddress: AWE_TOKEN_CONFIG.address,
           receiverAddress: AWE_TOKEN_CONFIG.receiverAddress,
           chainId: AWE_TOKEN_CONFIG.chainId,
-          chainName: 'Base'
+          chainName: 'Base',
+          priceLockId
         }
       };
 
-      this.priceCache.set(cacheKey, priceInfo);
       return priceInfo;
     } catch (error) {
       logger.error('Error getting full price info:', error);
@@ -215,6 +306,30 @@ export class AwePaymentService {
         }
       };
     }
+  }
+
+  /**
+   * 创建特定的价格锁定
+   */
+  async createSpecificPriceLock(
+    userId: string,
+    membershipType: 'plus' | 'pro',
+    subscriptionType: 'monthly' | 'yearly'
+  ): Promise<string> {
+    const pricing = MEMBERSHIP_PRICING[membershipType][subscriptionType];
+    const aweUsdPrice = await this.getAweUsdPrice();
+    const aweAmount = parseFloat(pricing.amount) / aweUsdPrice;
+    const aweAmountInWei = ethers.parseUnits(aweAmount.toFixed(6), AWE_TOKEN_CONFIG.decimals);
+
+    return this.createPriceLock(
+      userId,
+      membershipType,
+      subscriptionType,
+      aweAmount.toFixed(6),
+      aweAmountInWei.toString(),
+      pricing.amount,
+      aweUsdPrice
+    );
   }
 
   /**
@@ -256,7 +371,7 @@ export class AwePaymentService {
    * 验证交易并创建支付记录
    */
   async verifyAndCreatePayment(params: VerifyPaymentParams): Promise<AwePayment> {
-    const { userId, membershipType, subscriptionType, transactionHash } = params;
+    const { userId, membershipType, subscriptionType, transactionHash, priceLockId } = params;
 
     // 检查交易是否已被使用
     const existingPayment = await this.getPaymentByTransactionHash(transactionHash);
@@ -296,14 +411,42 @@ export class AwePaymentService {
       throw new Error('Invalid receiver address');
     }
 
-    // 验证金额
-    const priceInfo = await this.calculatePrice(membershipType, subscriptionType);
-    const expectedAmount = BigInt(priceInfo.aweAmountInWei);
+    // 获取期望的金额
+    let expectedAmount: bigint;
+    let usdPrice: string;
+    let aweUsdPrice: number;
+
+    if (priceLockId) {
+      // 使用价格锁定
+      const priceLock = await this.getPriceLock(priceLockId);
+      if (!priceLock) {
+        throw new Error('Price lock not found or expired');
+      }
+      
+      if (priceLock.user_id !== userId) {
+        throw new Error('Price lock belongs to another user');
+      }
+
+      if (priceLock.membership_type !== membershipType || priceLock.subscription_type !== subscriptionType) {
+        throw new Error('Price lock does not match the requested membership');
+      }
+
+      expectedAmount = BigInt(priceLock.awe_amount_in_wei);
+      usdPrice = priceLock.usd_price;
+      aweUsdPrice = parseFloat(priceLock.awe_usd_price);
+    } else {
+      // 重新计算价格（保留旧逻辑以向后兼容）
+      const priceInfo = await this.calculatePrice(membershipType, subscriptionType);
+      expectedAmount = BigInt(priceInfo.aweAmountInWei);
+      usdPrice = priceInfo.usdPrice;
+      aweUsdPrice = priceInfo.aweUsdPrice;
+    }
+
     const actualAmount = BigInt(transferEvent.value);
     
     if (actualAmount < expectedAmount) {
       throw new Error(
-        `Insufficient payment amount. Expected: ${priceInfo.aweAmount} AWE, ` +
+        `Insufficient payment amount. Expected: ${ethers.formatUnits(expectedAmount, AWE_TOKEN_CONFIG.decimals)} AWE, ` +
         `Received: ${ethers.formatUnits(actualAmount, AWE_TOKEN_CONFIG.decimals)} AWE`
       );
     }
@@ -324,7 +467,7 @@ export class AwePaymentService {
       subscriptionType,
       amount: ethers.formatUnits(actualAmount, AWE_TOKEN_CONFIG.decimals),
       amountInWei: actualAmount.toString(),
-      usdValue: priceInfo.usdPrice,
+      usdValue: usdPrice,
       status: isConfirmed ? 'confirmed' : 'pending',
       transactionHash,
       blockNumber: receipt.blockNumber,
@@ -336,6 +479,11 @@ export class AwePaymentService {
     };
 
     await this.savePayment(payment);
+    
+    // 如果使用了价格锁定，标记为已使用
+    if (priceLockId) {
+      await this.markPriceLockAsUsed(priceLockId);
+    }
     
     // 只有在确认后才更新用户会员信息
     if (isConfirmed) {

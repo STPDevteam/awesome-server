@@ -529,6 +529,50 @@ class MigrationService {
         `);
         console.log('✅ Dropped conversation_id column from tasks table');
       }
+    },
+    {
+      version: 13,
+      name: 'create_awe_price_locks_table',
+      up: async () => {
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS awe_price_locks (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            membership_type VARCHAR(10) NOT NULL CHECK (membership_type IN ('plus', 'pro')),
+            subscription_type VARCHAR(10) NOT NULL CHECK (subscription_type IN ('monthly', 'yearly')),
+            awe_amount VARCHAR(50) NOT NULL,
+            awe_amount_in_wei VARCHAR(100) NOT NULL,
+            usd_price VARCHAR(50) NOT NULL,
+            awe_usd_price DECIMAL(20, 10) NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            used BOOLEAN NOT NULL DEFAULT false,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_price_locks_user_id 
+          ON awe_price_locks(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_price_locks_expires_at 
+          ON awe_price_locks(expires_at)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_awe_price_locks_used 
+          ON awe_price_locks(used)
+        `);
+
+        console.log('✅ Created awe_price_locks table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS awe_price_locks CASCADE');
+        console.log('✅ Dropped awe_price_locks table');
+      }
     }
   ];
 

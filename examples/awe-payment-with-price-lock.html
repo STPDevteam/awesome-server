@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWE支付示例（带价格锁定）</title>
+    <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.0/dist/ethers.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .membership-options {
+            display: flex;
+            gap: 20px;
+            margin: 30px 0;
+        }
+        .membership-card {
+            flex: 1;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .membership-card:hover {
+            border-color: #4CAF50;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .membership-card.selected {
+            border-color: #4CAF50;
+            background-color: #f0f8f0;
+        }
+        .price-info {
+            background-color: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .price-lock-info {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .timer {
+            font-weight: bold;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AWE 支付示例（带价格锁定）</h1>
+        
+        <div id="walletInfo" style="margin-bottom: 20px;">
+            <p>钱包地址: <span id="walletAddress">未连接</span></p>
+            <button id="connectWallet">连接钱包</button>
+        </div>
+
+        <div id="authInfo" style="display: none; margin-bottom: 20px;">
+            <p>登录状态: <span id="loginStatus">未登录</span></p>
+            <button id="loginBtn">登录</button>
+        </div>
+
+        <div id="membershipSelection" style="display: none;">
+            <h2>选择会员类型</h2>
+            <div class="membership-options">
+                <div class="membership-card" data-type="plus">
+                    <h3>Plus会员</h3>
+                    <p>基础功能</p>
+                </div>
+                <div class="membership-card" data-type="pro">
+                    <h3>Pro会员</h3>
+                    <p>高级功能</p>
+                </div>
+            </div>
+
+            <h3>选择订阅周期</h3>
+            <div class="membership-options">
+                <div class="membership-card subscription-card" data-subscription="monthly">
+                    <h3>月付</h3>
+                </div>
+                <div class="membership-card subscription-card" data-subscription="yearly">
+                    <h3>年付</h3>
+                    <p style="color: #4CAF50;">省20%</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="priceInfo" class="price-info" style="display: none;">
+            <h3>价格信息</h3>
+            <p>USD价格: $<span id="usdPrice">-</span></p>
+            <p>AWE价格: $<span id="aweUsdPrice">-</span></p>
+            <p>需要支付: <span id="aweAmount">-</span> AWE</p>
+            <p>接收地址: <span id="receiverAddress" style="font-size: 12px;">-</span></p>
+        </div>
+
+        <div id="priceLockInfo" class="price-lock-info" style="display: none;">
+            <h4>价格锁定信息</h4>
+            <p>价格已锁定，有效期: <span class="timer" id="lockTimer">15:00</span></p>
+            <p style="font-size: 14px;">在此期间，您的支付价格不会因币价波动而变化</p>
+        </div>
+
+        <div id="paymentSection" style="display: none; text-align: center;">
+            <button id="getPrice">获取价格（锁定15分钟）</button>
+            <button id="payBtn" disabled>支付 AWE</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:3001/api';
+        const AWE_TOKEN_ADDRESS = '0x1B4617734C43F6159F3a70b7E06d883647512778';
+        const BASE_CHAIN_ID = 8453;
+        
+        let provider = null;
+        let signer = null;
+        let authToken = null;
+        let selectedMembership = null;
+        let selectedSubscription = null;
+        let currentPriceLockId = null;
+        let lockExpiresAt = null;
+        let timerInterval = null;
+
+        // 连接钱包
+        document.getElementById('connectWallet').addEventListener('click', async () => {
+            try {
+                if (typeof window.ethereum === 'undefined') {
+                    showStatus('请安装 MetaMask!', 'error');
+                    return;
+                }
+
+                provider = new ethers.BrowserProvider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+                signer = await provider.getSigner();
+                const address = await signer.getAddress();
+                
+                document.getElementById('walletAddress').textContent = address;
+                document.getElementById('connectWallet').style.display = 'none';
+                document.getElementById('authInfo').style.display = 'block';
+                
+                // 切换到Base链
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: `0x${BASE_CHAIN_ID.toString(16)}` }],
+                    });
+                } catch (switchError) {
+                    if (switchError.code === 4902) {
+                        showStatus('请添加Base网络到MetaMask', 'error');
+                    }
+                }
+            } catch (error) {
+                console.error('连接钱包失败:', error);
+                showStatus('连接钱包失败: ' + error.message, 'error');
+            }
+        });
+
+        // 登录
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            try {
+                const address = await signer.getAddress();
+                const message = `Login to MCP Server at ${new Date().toISOString()}`;
+                const signature = await signer.signMessage(message);
+
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        walletAddress: address,
+                        signature: signature,
+                        message: message,
+                        username: 'AWEUser_' + address.substring(2, 8)
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    authToken = data.data.token;
+                    document.getElementById('loginStatus').textContent = '已登录';
+                    document.getElementById('loginBtn').style.display = 'none';
+                    document.getElementById('membershipSelection').style.display = 'block';
+                    document.getElementById('paymentSection').style.display = 'block';
+                    showStatus('登录成功!', 'success');
+                } else {
+                    throw new Error(data.error || '登录失败');
+                }
+            } catch (error) {
+                console.error('登录失败:', error);
+                showStatus('登录失败: ' + error.message, 'error');
+            }
+        });
+
+        // 选择会员类型
+        document.querySelectorAll('.membership-card[data-type]').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.membership-card[data-type]').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedMembership = card.dataset.type;
+                checkSelection();
+            });
+        });
+
+        // 选择订阅周期
+        document.querySelectorAll('.subscription-card').forEach(card => {
+            card.addEventListener('click', () => {
+                document.querySelectorAll('.subscription-card').forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedSubscription = card.dataset.subscription;
+                checkSelection();
+            });
+        });
+
+        function checkSelection() {
+            if (selectedMembership && selectedSubscription) {
+                document.getElementById('getPrice').disabled = false;
+            }
+        }
+
+        // 获取价格并锁定
+        document.getElementById('getPrice').addEventListener('click', async () => {
+            try {
+                showStatus('获取价格中...', 'info');
+                
+                const response = await fetch(
+                    `${API_BASE_URL}/payment/calculate-awe-price?membershipType=${selectedMembership}&subscriptionType=${selectedSubscription}`,
+                    {
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    }
+                );
+
+                const data = await response.json();
+                if (data.success) {
+                    const priceData = data.data;
+                    currentPriceLockId = priceData.priceLockId;
+                    
+                    // 显示价格信息
+                    document.getElementById('priceInfo').style.display = 'block';
+                    document.getElementById('usdPrice').textContent = 
+                        selectedMembership === 'plus' 
+                            ? (selectedSubscription === 'monthly' ? '4.99' : '47.99')
+                            : (selectedSubscription === 'monthly' ? '14.99' : '143.99');
+                    document.getElementById('aweUsdPrice').textContent = priceData.aweUsdPrice;
+                    
+                    const aweAmount = selectedMembership === 'plus'
+                        ? (selectedSubscription === 'monthly' ? priceData.aweAmountForPlusMonthly : priceData.aweAmountForPlusYearly)
+                        : (selectedSubscription === 'monthly' ? priceData.aweAmountForProMonthly : priceData.aweAmountForProYearly);
+                    
+                    document.getElementById('aweAmount').textContent = aweAmount.toFixed(6);
+                    document.getElementById('receiverAddress').textContent = priceData.receiverAddress;
+                    
+                    // 显示价格锁定信息
+                    if (currentPriceLockId) {
+                        document.getElementById('priceLockInfo').style.display = 'block';
+                        startLockTimer();
+                    }
+                    
+                    document.getElementById('payBtn').disabled = false;
+                    showStatus('价格获取成功！价格已锁定15分钟', 'success');
+                } else {
+                    throw new Error(data.error || '获取价格失败');
+                }
+            } catch (error) {
+                console.error('获取价格失败:', error);
+                showStatus('获取价格失败: ' + error.message, 'error');
+            }
+        });
+
+        // 开始倒计时
+        function startLockTimer() {
+            lockExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                const now = new Date();
+                const remaining = lockExpiresAt - now;
+                
+                if (remaining <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('lockTimer').textContent = '已过期';
+                    document.getElementById('payBtn').disabled = true;
+                    currentPriceLockId = null;
+                    showStatus('价格锁定已过期，请重新获取价格', 'error');
+                } else {
+                    const minutes = Math.floor(remaining / 60000);
+                    const seconds = Math.floor((remaining % 60000) / 1000);
+                    document.getElementById('lockTimer').textContent = 
+                        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+
+        // 支付
+        document.getElementById('payBtn').addEventListener('click', async () => {
+            try {
+                const aweAmount = document.getElementById('aweAmount').textContent;
+                const receiverAddress = document.getElementById('receiverAddress').textContent;
+                
+                showStatus('准备支付...', 'info');
+                
+                // 创建AWE代币合约实例
+                const aweToken = new ethers.Contract(
+                    AWE_TOKEN_ADDRESS,
+                    ['function transfer(address to, uint256 value) returns (bool)'],
+                    signer
+                );
+                
+                // 转换为Wei单位
+                const amountInWei = ethers.parseUnits(aweAmount, 18);
+                
+                // 发送交易
+                showStatus('请在钱包中确认交易...', 'info');
+                const tx = await aweToken.transfer(receiverAddress, amountInWei);
+                
+                showStatus(`交易已发送，等待确认... TxHash: ${tx.hash}`, 'info');
+                
+                // 等待交易确认
+                await tx.wait();
+                
+                // 确认支付
+                showStatus('交易已确认，正在验证支付...', 'info');
+                
+                const confirmResponse = await fetch(`${API_BASE_URL}/payment/confirm-awe-payment`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        membershipType: selectedMembership,
+                        subscriptionType: selectedSubscription,
+                        transactionHash: tx.hash,
+                        priceLockId: currentPriceLockId
+                    })
+                });
+
+                const confirmData = await confirmResponse.json();
+                if (confirmData.success) {
+                    showStatus('支付成功！会员已激活', 'success');
+                    if (timerInterval) clearInterval(timerInterval);
+                } else {
+                    throw new Error(confirmData.error || '支付确认失败');
+                }
+            } catch (error) {
+                console.error('支付失败:', error);
+                showStatus('支付失败: ' + error.message, 'error');
+            }
+        });
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 
