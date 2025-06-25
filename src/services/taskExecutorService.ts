@@ -257,9 +257,159 @@ export class TaskExecutorService {
           '获取电报码车站信息': 'get-station-by-telecode'
         };
         
+        // 映射工具名称
         if (toolNameMap[toolName]) {
           actualToolName = toolNameMap[toolName];
           logger.info(`工具名称映射: 将'${toolName}'映射为'${actualToolName}'`);
+        }
+      }
+
+      // 处理参数映射和转换
+      if (actualMcpName === '12306-mcp') {
+        // 对于get-tickets工具，确保参数名称正确
+        if (actualToolName === 'get-tickets') {
+          // 检查是否存在中文参数名称，并转换为英文参数名称
+          const paramMap: Record<string, string> = {
+            '日期': 'date',
+            '出发地': 'fromStation',
+            '目的地': 'toStation',
+            '出发站': 'fromStation',
+            '到达站': 'toStation',
+            '车次类型': 'trainFilterFlags',
+            '排序方式': 'sortFlag',
+            '逆序': 'sortReverse',
+            '限制数量': 'limitedNum'
+          };
+          
+          // 创建新的参数对象
+          const newParams: Record<string, any> = { ...input };
+          
+          // 转换参数名称
+          for (const key in input) {
+            if (paramMap[key]) {
+              newParams[paramMap[key]] = input[key];
+              delete newParams[key];
+            }
+          }
+          
+          // 如果出发地和目的地是城市名而不是车站代码，需要先查询车站代码
+          if (newParams.fromStation && !newParams.fromStation.match(/^[A-Z]{3}$/)) {
+            try {
+              // 查询出发地车站代码
+              const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
+                citys: newParams.fromStation
+              });
+              if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
+                newParams.fromStation = fromStationResult.content[0].data[0].station_code;
+              }
+            } catch (error: any) {
+              logger.error(`查询出发地车站代码失败: ${error.message}`);
+            }
+          }
+          
+          if (newParams.toStation && !newParams.toStation.match(/^[A-Z]{3}$/)) {
+            try {
+              // 查询目的地车站代码
+              const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
+                citys: newParams.toStation
+              });
+              if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
+                newParams.toStation = toStationResult.content[0].data[0].station_code;
+              }
+            } catch (error: any) {
+              logger.error(`查询目的地车站代码失败: ${error.message}`);
+            }
+          }
+          
+          // 如果没有日期参数，添加当前日期
+          if (!newParams.date) {
+            try {
+              const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
+              if (dateResult.content && dateResult.content[0].text) {
+                newParams.date = dateResult.content[0].text;
+              }
+            } catch (error: any) {
+              logger.error(`获取当前日期失败: ${error.message}`);
+            }
+          }
+          
+          // 使用新的参数对象
+          input = newParams;
+        }
+        
+        // 对于get-train-route-stations工具，确保参数名称正确
+        if (actualToolName === 'get-train-route-stations') {
+          // 检查是否存在中文参数名称，并转换为英文参数名称
+          const paramMap: Record<string, string> = {
+            '车次': 'trainNo',
+            '出发站电报码': 'fromStationTelecode',
+            '到达站电报码': 'toStationTelecode',
+            '出发日期': 'departDate',
+            '出发地': 'fromStation',
+            '目的地': 'toStation'
+          };
+          
+          // 创建新的参数对象
+          const newParams: Record<string, any> = { ...input };
+          
+          // 转换参数名称
+          for (const key in input) {
+            if (paramMap[key]) {
+              newParams[paramMap[key]] = input[key];
+              delete newParams[key];
+            }
+          }
+          
+          // 如果有出发地和目的地但没有电报码，需要先查询
+          const fromStation = newParams.fromStation || (input as Record<string, any>)['出发地'];
+          if (fromStation && !newParams.fromStationTelecode) {
+            try {
+              // 查询出发地电报码
+              const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
+                stationNames: fromStation
+              });
+              if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
+                newParams.fromStationTelecode = fromStationResult.content[0].data[0].telecode;
+              }
+            } catch (error: any) {
+              logger.error(`查询出发地电报码失败: ${error.message}`);
+            }
+          }
+          
+          const toStation = newParams.toStation || (input as Record<string, any>)['目的地'];
+          if (toStation && !newParams.toStationTelecode) {
+            try {
+              // 查询目的地电报码
+              const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
+                stationNames: toStation
+              });
+              if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
+                newParams.toStationTelecode = toStationResult.content[0].data[0].telecode;
+              }
+            } catch (error: any) {
+              logger.error(`查询目的地电报码失败: ${error.message}`);
+            }
+          }
+          
+          // 如果没有出发日期参数，添加当前日期
+          if (!newParams.departDate) {
+            try {
+              const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
+              if (dateResult.content && dateResult.content[0].text) {
+                newParams.departDate = dateResult.content[0].text;
+              }
+            } catch (error: any) {
+              logger.error(`获取当前日期失败: ${error.message}`);
+            }
+          }
+          
+          // 如果没有trainNo，无法继续
+          if (!newParams.trainNo) {
+            throw new Error('缺少必要参数：trainNo（车次编号）');
+          }
+          
+          // 使用新的参数对象
+          input = newParams;
         }
       }
 
@@ -526,9 +676,159 @@ Based on the above task execution information, please generate a complete execut
               '获取电报码车站信息': 'get-station-by-telecode'
             };
             
+            // 映射工具名称
             if (toolNameMap[actionName]) {
               actualActionName = toolNameMap[actionName];
               logger.info(`流式执行中的工具名称映射: 将'${actionName}'映射为'${actualActionName}'`);
+            }
+          }
+          
+          // 处理参数映射和转换
+          if (actualMcpName === '12306-mcp') {
+            // 对于get-tickets工具，确保参数名称正确
+            if (actualActionName === 'get-tickets') {
+              // 检查是否存在中文参数名称，并转换为英文参数名称
+              const paramMap: Record<string, string> = {
+                '日期': 'date',
+                '出发地': 'fromStation',
+                '目的地': 'toStation',
+                '出发站': 'fromStation',
+                '到达站': 'toStation',
+                '车次类型': 'trainFilterFlags',
+                '排序方式': 'sortFlag',
+                '逆序': 'sortReverse',
+                '限制数量': 'limitedNum'
+              };
+              
+              // 创建新的参数对象
+              const newParams: Record<string, any> = { ...input };
+              
+              // 转换参数名称
+              for (const key in input) {
+                if (paramMap[key]) {
+                  newParams[paramMap[key]] = input[key];
+                  delete newParams[key];
+                }
+              }
+              
+              // 如果出发地和目的地是城市名而不是车站代码，需要先查询车站代码
+              if (newParams.fromStation && !newParams.fromStation.match(/^[A-Z]{3}$/)) {
+                try {
+                  // 查询出发地车站代码
+                  const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
+                    citys: newParams.fromStation
+                  });
+                  if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
+                    newParams.fromStation = fromStationResult.content[0].data[0].station_code;
+                  }
+                } catch (error: any) {
+                  logger.error(`查询出发地车站代码失败: ${error.message}`);
+                }
+              }
+              
+              if (newParams.toStation && !newParams.toStation.match(/^[A-Z]{3}$/)) {
+                try {
+                  // 查询目的地车站代码
+                  const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
+                    citys: newParams.toStation
+                  });
+                  if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
+                    newParams.toStation = toStationResult.content[0].data[0].station_code;
+                  }
+                } catch (error: any) {
+                  logger.error(`查询目的地车站代码失败: ${error.message}`);
+                }
+              }
+              
+              // 如果没有日期参数，添加当前日期
+              if (!newParams.date) {
+                try {
+                  const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
+                  if (dateResult.content && dateResult.content[0].text) {
+                    newParams.date = dateResult.content[0].text;
+                  }
+                } catch (error: any) {
+                  logger.error(`获取当前日期失败: ${error.message}`);
+                }
+              }
+              
+              // 使用新的参数对象
+              input = newParams;
+            }
+            
+            // 对于get-train-route-stations工具，确保参数名称正确
+            if (actualActionName === 'get-train-route-stations') {
+              // 检查是否存在中文参数名称，并转换为英文参数名称
+              const paramMap: Record<string, string> = {
+                '车次': 'trainNo',
+                '出发站电报码': 'fromStationTelecode',
+                '到达站电报码': 'toStationTelecode',
+                '出发日期': 'departDate',
+                '出发地': 'fromStation',
+                '目的地': 'toStation'
+              };
+              
+              // 创建新的参数对象
+              const newParams: Record<string, any> = { ...input };
+              
+              // 转换参数名称
+              for (const key in input) {
+                if (paramMap[key]) {
+                  newParams[paramMap[key]] = input[key];
+                  delete newParams[key];
+                }
+              }
+              
+              // 如果有出发地和目的地但没有电报码，需要先查询
+              const fromStation = newParams.fromStation || (input as Record<string, any>)['出发地'];
+              if (fromStation && !newParams.fromStationTelecode) {
+                try {
+                  // 查询出发地电报码
+                  const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
+                    stationNames: fromStation
+                  });
+                  if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
+                    newParams.fromStationTelecode = fromStationResult.content[0].data[0].telecode;
+                  }
+                } catch (error: any) {
+                  logger.error(`查询出发地电报码失败: ${error.message}`);
+                }
+              }
+              
+              const toStation = newParams.toStation || (input as Record<string, any>)['目的地'];
+              if (toStation && !newParams.toStationTelecode) {
+                try {
+                  // 查询目的地电报码
+                  const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
+                    stationNames: toStation
+                  });
+                  if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
+                    newParams.toStationTelecode = toStationResult.content[0].data[0].telecode;
+                  }
+                } catch (error: any) {
+                  logger.error(`查询目的地电报码失败: ${error.message}`);
+                }
+              }
+              
+              // 如果没有出发日期参数，添加当前日期
+              if (!newParams.departDate) {
+                try {
+                  const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
+                  if (dateResult.content && dateResult.content[0].text) {
+                    newParams.departDate = dateResult.content[0].text;
+                  }
+                } catch (error: any) {
+                  logger.error(`获取当前日期失败: ${error.message}`);
+                }
+              }
+              
+              // 如果没有trainNo，无法继续
+              if (!newParams.trainNo) {
+                throw new Error('缺少必要参数：trainNo（车次编号）');
+              }
+              
+              // 使用新的参数对象
+              input = newParams;
             }
           }
           
