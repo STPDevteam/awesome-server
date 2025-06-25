@@ -440,7 +440,35 @@ export const predefinedMCPs: MCPService[] = [
  * @returns MCP服务配置
  */
 export function getPredefinedMCP(name: string): MCPService | undefined {
-    if (name === 'playwright' || name === 'playwright-mcp-service') {
+    // 从mcpInfoService导入，确保使用统一的MCP名称
+    const { mcpInfoService } = require('./mcpInfoService.js');
+    
+    // 标准化MCP名称
+    const mcpNameMap: Record<string, string> = {
+        'playwright-mcp-service': 'playwright',
+        'coingecko-server': 'coingecko-mcp',
+        'coingecko-mcp-service': 'coingecko-mcp',
+        'x-mcp-server': 'x-mcp',
+        'github-mcp-server': 'github',
+        'evm-mcp-server': 'evm-mcp-server',
+        'dune-mcp-server': 'dune-mcp-server',
+        'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
+        'defillama-mcp-service': 'mcp-server-defillama',
+        'rug-check-mcp-service': 'rug-check-mcp',
+        'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
+        'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
+        'whale-tracker-mcp-service': 'whale-tracker-mcp',
+        'discord-mcp-service': 'mcp-discord',
+        'telegram-mcp-service': 'mcp-telegram',
+        'notion-mcp-service': 'notion-mcp-server',
+        '12306-mcp-service': '12306-mcp'
+    };
+    
+    // 标准化名称
+    const normalizedName = mcpNameMap[name] || name;
+    
+    // 特殊处理 playwright
+    if (normalizedName === 'playwright' || name === 'playwright-mcp-service') {
         // 记录更多调试信息
         logger.info(`【MCP调试】获取Playwright MCP配置，请求名称: ${name}`);
         
@@ -458,7 +486,8 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
         };
     }
     
-    if (name === '12306-mcp' || name === '12306-mcp-service') {
+    // 特殊处理 12306-mcp
+    if (normalizedName === '12306-mcp' || name === '12306-mcp-service') {
         // 记录更多调试信息
         logger.info(`【MCP调试】获取12306 MCP配置，请求名称: ${name}`);
         
@@ -475,7 +504,30 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
         };
     }
     
-    return predefinedMCPs.find(mcp => mcp.name === name);
+    // 尝试从mcpInfoService中获取MCP信息
+    const mcpInfo = mcpInfoService.getMCPById(normalizedName);
+    if (mcpInfo) {
+        logger.info(`【MCP调试】从mcpInfoService获取到MCP配置 [${normalizedName}]`);
+        
+        // 根据MCP信息构建MCP服务配置
+        const mcpService: MCPService = {
+            name: mcpInfo.name,
+            description: mcpInfo.description || `MCP Service: ${mcpInfo.name}`,
+            command: 'npx',
+            args: ['-y', mcpInfo.name],
+            env: {},
+            connected: false,
+            category: mcpInfo.category,
+            imageUrl: mcpInfo.imageUrl,
+            githubUrl: mcpInfo.githubUrl,
+            authParams: mcpInfo.authParams
+        };
+        
+        return mcpService;
+    }
+    
+    // 如果没有找到，则从预定义列表中查找
+    return predefinedMCPs.find(mcp => mcp.name === normalizedName);
 }
 
 /**
