@@ -83,7 +83,7 @@ export class MCPInfoService {
       capabilities: ['blockchain-query', 'transaction-tracking', 'smart-contract'],
       authRequired: false,
       category: 'Chain PRC',
-      imageUrl: 'https://base.org/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/base.ico',
       githubUrl: 'https://github.com/base/base-mcp'
     },
     {
@@ -115,7 +115,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['COINGECKO_API_KEY'],
       category: 'Market Data',
-      imageUrl: 'https://www.coingecko.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
       githubUrl: 'https://docs.coingecko.com/reference/mcp-server'
     },
     {
@@ -125,7 +125,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['api_key'],
       category: 'Market Data',
-      imageUrl: 'https://coinmarketcap.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
       githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp'
     },
     {
@@ -278,7 +278,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['convex_deploy_key'],
       category: 'Development Tools',
-      imageUrl: 'https://convex.dev/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-convex-66.png',
       githubUrl: 'https://github.com/get-convex/convex-backend'
     },
     {
@@ -288,7 +288,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['cloudflare_api_token'],
       category: 'Development Tools',
-      imageUrl: 'https://www.cloudflare.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-cloudflare-100.png',
       githubUrl: 'https://github.com/cloudflare/mcp-server-cloudflare'
     },
     {
@@ -298,7 +298,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['supabase_url', 'supabase_key'],
       category: 'Development Tools',
-      imageUrl: 'https://supabase.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-supabase-100.png',
       githubUrl: 'https://github.com/supabase-community/supabase-mcp'
     },
     
@@ -310,7 +310,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['api_key', 'secret_key'],
       category: 'Trading',
-      imageUrl: 'https://www.binance.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-binance-128.png',
       githubUrl: 'https://github.com/TermiX-official/binance-mcp'
     },
     {
@@ -330,7 +330,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['api_key', 'secret'],
       category: 'Trading',
-      imageUrl: 'https://hyperliquid.xyz/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.jpego',
       githubUrl: 'https://github.com/mektigboy/server-hyperliquid'
     },
     {
@@ -340,7 +340,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['wallet_private_key'],
       category: 'Trading',
-      imageUrl: 'https://pump.fun/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-pumpkin-96.png',
       githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server'
     },
     
