@@ -953,114 +953,80 @@ export class TaskAnalysisService {
 
       logger.info(`Starting task analysis [Task ID: ${taskId}, Content: ${task.content}]`);
       
-      // Always choose Playwright MCP as the recommended tool
-      const playwrightToolInfo = AVAILABLE_MCPS.find(mcp => mcp.name === 'playwright-mcp-service') || {
-        name: 'playwright-mcp-service',
-        description: 'Playwright browser automation tool for controlling browser interactions',
-        capabilities: ['Open browser', 'Visit webpages', 'Fill forms', 'Click elements', 'Get page content'],
-        authRequired: false
-      };
+      // Use intelligent LLM analysis to select the most appropriate MCP tools
       
-      // Generate different workflows based on task content
-      let workflow;
+      // Step 1: Analyze task requirements
+      const requirementsAnalysis = await this.analyzeRequirements(task.content);
       
-      if (task.content.toLowerCase().includes('baidu') || task.content.toLowerCase().includes('search')) {
-        // If task content includes "baidu" or "search" keywords, generate Baidu search workflow
-        const searchTerm = this.extractSearchTerm(task.content) || 'Playwright';
-        
-        workflow = [{
-          step: 1,
-          mcp: 'playwright-mcp-service',
-          action: 'browser_navigate',
-          input: '{"url": "https://www.baidu.com"}'
-        },
-        {
-          step: 2,
-          mcp: 'playwright-mcp-service',
-          action: 'browser_type',
-          input: `{"text": "${searchTerm}", "element": "Search box", "ref": "#kw"}`
-        },
-        {
-          step: 3,
-          mcp: 'playwright-mcp-service',
-          action: 'browser_click',
-          input: '{"element": "Search button", "ref": "#su"}'
-        }];
-      } else if (task.content.toLowerCase().includes('playwright') || task.content.toLowerCase().includes('test')) {
-        // If task content includes "playwright" or "test" keywords, generate Playwright test workflow
-        workflow = [{
-          step: 1,
-          mcp: 'playwright-mcp-service',
-          action: 'browser_generate_playwright_test',
-          input: `{"name": "Automated Test", "description": "Automated test based on task content", "steps": ["Visit target website", "Perform interaction", "Verify results"]}`
-        }];
-      } else {
-        // Default workflow
-        workflow = [{
-          step: 1,
-          mcp: 'playwright-mcp-service',
-          action: 'browser_navigate',
-          input: '{"url": "https://www.baidu.com"}'
-        },
-        {
-          step: 2,
-          mcp: 'playwright-mcp-service',
-          action: 'browser_snapshot',
-          input: '{}'
-        }];
-      }
-      
-      // Build MCP workflow object
-      const mcpWorkflow = {
-        mcps: [{
-          name: playwrightToolInfo.name,
-          description: playwrightToolInfo.description,
-          authRequired: playwrightToolInfo.authRequired,
-          authVerified: true, // Default set to verified, skip verification step
-          category: playwrightToolInfo.category,
-          imageUrl: playwrightToolInfo.imageUrl,
-          githubUrl: playwrightToolInfo.githubUrl,
-          authParams: playwrightToolInfo.authParams
-        }],
-        workflow: workflow
-      };
-
-      // Create task step records
       await taskService.createTaskStep({
         taskId,
         stepType: 'analysis',
         title: 'Analyze Task Requirements',
-        content: `Analyzed task "${task.content}", determined to use Playwright MCP tool to complete the task.`,
-        reasoning: 'Automatically selected Playwright MCP as the best tool, no LLM analysis needed.',
+        content: requirementsAnalysis.content,
+        reasoning: requirementsAnalysis.reasoning,
         orderIndex: 1
       });
+      
+      // Step 2: Identify relevant MCPs
+      const mcpSelection = await this.identifyRelevantMCPs(task.content, requirementsAnalysis.content);
       
       await taskService.createTaskStep({
         taskId,
         stepType: 'mcp_selection',
         title: 'Identify Most Relevant MCP Tools',
-        content: `Selected Playwright MCP as the best tool.`,
-        reasoning: 'Playwright MCP provides powerful browser automation capabilities, suitable for web interaction tasks.',
+        content: mcpSelection.content,
+        reasoning: mcpSelection.reasoning,
         orderIndex: 2
       });
+      
+      // Step 3: Confirm deliverables
+      const deliverables = await this.confirmDeliverables(
+        task.content,
+        requirementsAnalysis.content,
+        mcpSelection.recommendedMCPs
+      );
       
       await taskService.createTaskStep({
         taskId,
         stepType: 'deliverables',
         title: 'Confirm Deliverables',
-        content: 'Using Playwright MCP can complete browser automation operations, including webpage visits, form filling, and click operations.',
-        reasoning: 'Playwright MCP toolset fully meets current task requirements.',
+        content: deliverables.content,
+        reasoning: deliverables.reasoning,
         orderIndex: 3
       });
+      
+      // Step 4: Build MCP workflow
+      const workflowResult = await this.buildMCPWorkflow(
+        task.content,
+        requirementsAnalysis.content,
+        mcpSelection.recommendedMCPs,
+        deliverables.canBeFulfilled,
+        deliverables.deliverables
+      );
       
       await taskService.createTaskStep({
         taskId,
         stepType: 'workflow',
         title: 'Build MCP Workflow',
-        content: `Built ${workflow.length}-step workflow, including operations such as ${workflow.map(w => w.action).join(', ')}.`,
-        reasoning: 'Automatically built the most appropriate workflow steps based on task content.',
+        content: workflowResult.content,
+        reasoning: workflowResult.reasoning,
         orderIndex: 4
       });
+
+      // Build MCP workflow object
+      const mcpWorkflow = {
+        mcps: mcpSelection.recommendedMCPs.map(mcp => ({
+          name: mcp.name,
+          description: mcp.description,
+          authRequired: mcp.authRequired,
+          authVerified: !mcp.authRequired, // 如果不需要认证则标记为已验证
+          category: mcp.category,
+          imageUrl: mcp.imageUrl,
+          githubUrl: mcp.githubUrl,
+          authParams: mcp.authParams
+        })),
+        workflow: workflowResult.workflow
+      };
 
       // Update task's MCP workflow
       await taskService.updateTask(taskId, {
@@ -1159,28 +1125,50 @@ Please ensure the analysis is accurate and comprehensive while remaining concise
       const availableMCPs = await this.getAvailableMCPs();
       logger.info(`[MCP Debug] Available MCP tools list: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
       
+      // Group MCPs by category for better LLM understanding and selection
+      const mcpsByCategory = availableMCPs.reduce((acc, mcp) => {
+        const category = mcp.category || 'Other';
+        if (!acc[category]) {
+          acc[category] = [];
+        }
+        acc[category].push({
+          name: mcp.name,
+          description: mcp.description,
+          capabilities: mcp.capabilities
+        });
+        return acc;
+      }, {} as Record<string, any[]>);
+
       const response = await this.llm.invoke([
-        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for selecting the most appropriate tools for user tasks.
-Please select the most suitable tools (maximum 4) from the following available MCP tools based on the user's task description and task analysis:
+        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for selecting the most appropriate tools based on user task requirements.
 
-${JSON.stringify(availableMCPs, null, 2)}
+Please carefully analyze the user's task content and select the most suitable tools (maximum 4) from the following available MCP tools:
 
-Please carefully consider each tool's capabilities and limitations, selecting the combination that can best complete the user's task.
+Available MCP tools (grouped by category):
+${JSON.stringify(mcpsByCategory, null, 2)}
 
-Output format:
+Selection criteria:
+1. **Keyword matching**: Prioritize tools whose names or descriptions contain task keywords
+   - If the user mentions "Twitter", "tweet", or "X", select x-mcp
+   - If the user mentions "GitHub", select github-mcp-server
+   - If the user mentions "cryptocurrency" or "coin price", select coingecko-mcp, etc.
+2. **Functionality match**: Whether the tool's capabilities can meet the task requirements
+3. **Category relevance**: Tools from the same or related categories should be prioritized
+4. **Usability**: Whether the tool is easy to use and stable
+
+Output format (must be valid JSON):
 {
   "selected_mcps": [
     "Tool1Name",
-    "Tool2Name",
-    ...
+    "Tool2Name"
   ],
   "selection_explanation": "Explain to the user why these tools were selected",
   "detailed_reasoning": "Detailed explanation of your selection process, factors considered, and why this tool combination is most suitable for the task requirements"
 }
 
-Please ensure your recommendations are reasonable and can effectively meet the user's task requirements.`),
+Important: Make sure the returned tool names exactly match the name field in the available tools list.`),
         new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
-        new HumanMessage(taskContent)
+        new HumanMessage(`User task: ${taskContent}`)
       ]);
       
       logger.info(`[MCP Debug] LLM response successful, starting to parse MCP selection results`);
