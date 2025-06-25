@@ -44,7 +44,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['token'],
       category: 'Development Tools',
-      imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
       githubUrl: 'https://github.com/octokit/octokit.js'
     },
     {
@@ -192,7 +192,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['github_token'],
       category: 'Development Tools',
-      imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
       githubUrl: 'https://github.com/github/github-mcp-server'
     },
     {
@@ -386,7 +386,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['notion_token'],
       category: 'Social',
-      imageUrl: 'https://www.notion.so/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
       githubUrl: 'https://github.com/makenotion/notion-mcp-server'
     }
   ];

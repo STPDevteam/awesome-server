@@ -942,7 +942,6 @@ router.post('/:id/analyze', async (req, res) => {
     const taskId = req.params.id;
     // const { userId } = req.body; // userId 暂时不用
 
-    const taskAnalysisService = req.app.get('taskAnalysisService');
     const workflow = await taskAnalysisService.analyzeTask(taskId);
 
     if (workflow) {
