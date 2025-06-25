@@ -95,7 +95,10 @@ export class TaskExecutorService {
       logger.info(`📝 Task status updated to 'in_progress' [Task ID: ${taskId}]`);
       
       // Get task workflow
-      const mcpWorkflow = task.mcpWorkflow;
+      const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
+        ? JSON.parse(task.mcpWorkflow) 
+        : task.mcpWorkflow;
+
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
         // Ensure using object instead of string
@@ -423,7 +426,10 @@ Based on the above task execution information, please generate a complete execut
       stream({ event: 'status_update', data: { status: 'in_progress' } });
       
       // 获取任务的工作流
-      const mcpWorkflow = task.mcpWorkflow;
+      const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
+        ? JSON.parse(task.mcpWorkflow) 
+        : task.mcpWorkflow;
+
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ 任务执行失败: 没有有效的工作流 [任务ID: ${taskId}]`);
         
