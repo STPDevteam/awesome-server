@@ -83,9 +83,9 @@ export class MCPAlternativeService {
       const predefinedAlternatives = this.alternativeMap[mcpName] || [];
       
       if (predefinedAlternatives.length > 0) {
-        const alternativeMCPs = availableMCPs.filter(mcp => 
-          predefinedAlternatives.includes(mcp.name)
-        );
+      const alternativeMCPs = availableMCPs.filter(mcp => 
+        predefinedAlternatives.includes(mcp.name)
+      );
         if (alternativeMCPs.length > 0) {
           logger.info(`找到预定义替代选项: ${alternativeMCPs.map(m => m.name).join(', ')}`);
           return alternativeMCPs;
@@ -135,7 +135,7 @@ export class MCPAlternativeService {
           });
           return acc;
         }, {} as Record<string, any[]>);
-
+      
       const response = await this.llm.invoke([
         new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for recommending the most suitable alternative tools based on user task requirements.
 
