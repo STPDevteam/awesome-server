@@ -268,7 +268,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['aws_access_key', 'aws_secret_key'],
       category: 'Development Tools',
-      imageUrl: 'https://aws.amazon.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-aws-96.png',
       githubUrl: 'https://awslabs.github.io/mcp/'
     },
     {
