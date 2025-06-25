@@ -38,9 +38,9 @@ export class MCPAlternativeService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.MCP_ALTERNATIVE_MODEL || 'gpt-4o',
       temperature: 0.3,
-      configuration: {
-        httpAgent: agent, // ✅ 使用代理关键设置
-      },
+      // configuration: {
+      //   httpAgent: agent, // ✅ 使用代理关键设置
+      // },
     });
     
     logger.info(`MCPAlternativeService 已初始化，加载了 ${this.availableMCPs.length} 个可用MCP`);
