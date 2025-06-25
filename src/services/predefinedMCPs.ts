@@ -1,5 +1,6 @@
 import { MCPService } from './mcpManager.js';
 import { logger } from '../utils/logger.js';
+import { mcpInfoService } from './mcpInfoService.js';
 
 /**
  * 预定义的MCP服务列表
@@ -440,9 +441,6 @@ export const predefinedMCPs: MCPService[] = [
  * @returns MCP服务配置
  */
 export function getPredefinedMCP(name: string): MCPService | undefined {
-    // 从mcpInfoService导入，确保使用统一的MCP名称
-    const { mcpInfoService } = require('./mcpInfoService.js');
-    
     // 标准化MCP名称
     const mcpNameMap: Record<string, string> = {
         'playwright-mcp-service': 'playwright',
