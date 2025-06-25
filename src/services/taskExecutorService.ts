@@ -33,9 +33,9 @@ export class TaskExecutorService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.TASK_EXECUTION_MODEL || 'gpt-4o',
       temperature: 0.3,
-      // configuration: {
-      //   httpAgent: agent, // ✅ 使用代理关键设置
-      // },
+      configuration: {
+        httpAgent: agent, // ✅ 使用代理关键设置
+      },
     });
   }
   
@@ -398,6 +398,25 @@ Based on the above task execution information, please generate a complete execut
       
       // 初始化工作流结果
       const workflowResults: any[] = [];
+      
+      // 检查 mcpManager 是否已初始化
+      if (!this.mcpManager) {
+        logger.error(`❌ mcpManager 未初始化，无法执行任务 [任务ID: ${taskId}]`);
+        stream({ 
+          event: 'error', 
+          data: { 
+            message: '任务执行失败: MCP管理器未初始化',
+            details: '服务器配置错误，请联系管理员'
+          } 
+        });
+        
+        // 更新任务状态为失败
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          error: '任务执行失败: MCP管理器未初始化'
+        });
+        
+        return false;
+      }
       
       // 分步执行工作流
       let finalResult = null;

@@ -35,7 +35,22 @@ router.use((req, res, next) => {
 });
 
 // 初始化taskExecutorService，使用mcpManager
-const taskExecutorService = new TaskExecutorService(httpMcpAdapter, mcpAuthService, mcpManager);
+let taskExecutorService: TaskExecutorService;
+
+// 使用中间件确保 taskExecutorService 已初始化
+router.use((req, res, next) => {
+  if (!taskExecutorService) {
+    // 从 app 获取 taskExecutorService 实例，如果存在
+    const appTaskExecutorService = req.app.get('taskExecutorService');
+    if (appTaskExecutorService) {
+      taskExecutorService = appTaskExecutorService;
+    } else {
+      // 如果 app 中没有，则创建新实例
+      taskExecutorService = new TaskExecutorService(httpMcpAdapter, mcpAuthService, mcpManager);
+    }
+  }
+  next();
+});
 
 // 验证请求内容的Schema
 const generateTitleSchema = z.object({
