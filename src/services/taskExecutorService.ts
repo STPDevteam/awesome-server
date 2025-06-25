@@ -321,12 +321,43 @@ export class TaskExecutorService {
             }
           }
           
-          // 如果没有日期参数，添加当前日期
-          if (!newParams.date) {
+          // 如果没有日期参数，或者日期参数不是标准格式，添加当前日期
+          if (!newParams.date || !newParams.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
             try {
               const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
               if (dateResult.content && dateResult.content[0].text) {
-                newParams.date = dateResult.content[0].text;
+                const currentDate = dateResult.content[0].text;
+                
+                // 处理相对日期
+                if (newParams.date) {
+                  const relativeDateText = newParams.date.toLowerCase();
+                  if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
+                    // 计算明天的日期
+                    const tomorrow = new Date(currentDate);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    newParams.date = tomorrow.toISOString().split('T')[0];
+                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
+                  } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
+                    // 计算后天的日期
+                    const dayAfterTomorrow = new Date(currentDate);
+                    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+                    newParams.date = dayAfterTomorrow.toISOString().split('T')[0];
+                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
+                  } else if (relativeDateText.includes('大后天')) {
+                    // 计算大后天的日期
+                    const threeDaysLater = new Date(currentDate);
+                    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+                    newParams.date = threeDaysLater.toISOString().split('T')[0];
+                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
+                  } else {
+                    // 默认使用当前日期
+                    newParams.date = currentDate;
+                    logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.date}"`);
+                  }
+                } else {
+                  // 如果没有日期参数，使用当前日期
+                  newParams.date = currentDate;
+                }
               }
             } catch (error: any) {
               logger.error(`获取当前日期失败: ${error.message}`);
@@ -391,12 +422,43 @@ export class TaskExecutorService {
             }
           }
           
-          // 如果没有出发日期参数，添加当前日期
-          if (!newParams.departDate) {
+          // 如果没有出发日期参数，或者日期参数不是标准格式，添加当前日期
+          if (!newParams.departDate || !newParams.departDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
             try {
               const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
               if (dateResult.content && dateResult.content[0].text) {
-                newParams.departDate = dateResult.content[0].text;
+                const currentDate = dateResult.content[0].text;
+                
+                // 处理相对日期
+                if (newParams.departDate) {
+                  const relativeDateText = newParams.departDate.toLowerCase();
+                  if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
+                    // 计算明天的日期
+                    const tomorrow = new Date(currentDate);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    newParams.departDate = tomorrow.toISOString().split('T')[0];
+                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
+                  } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
+                    // 计算后天的日期
+                    const dayAfterTomorrow = new Date(currentDate);
+                    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+                    newParams.departDate = dayAfterTomorrow.toISOString().split('T')[0];
+                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
+                  } else if (relativeDateText.includes('大后天')) {
+                    // 计算大后天的日期
+                    const threeDaysLater = new Date(currentDate);
+                    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+                    newParams.departDate = threeDaysLater.toISOString().split('T')[0];
+                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
+                  } else {
+                    // 默认使用当前日期
+                    newParams.departDate = currentDate;
+                    logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.departDate}"`);
+                  }
+                } else {
+                  // 如果没有日期参数，使用当前日期
+                  newParams.departDate = currentDate;
+                }
               }
             } catch (error: any) {
               logger.error(`获取当前日期失败: ${error.message}`);
@@ -740,12 +802,43 @@ Based on the above task execution information, please generate a complete execut
                 }
               }
               
-              // 如果没有日期参数，添加当前日期
-              if (!newParams.date) {
+              // 如果没有日期参数，或者日期参数不是标准格式，添加当前日期
+              if (!newParams.date || !newParams.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
                 try {
                   const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
                   if (dateResult.content && dateResult.content[0].text) {
-                    newParams.date = dateResult.content[0].text;
+                    const currentDate = dateResult.content[0].text;
+                    
+                    // 处理相对日期
+                    if (newParams.date) {
+                      const relativeDateText = newParams.date.toLowerCase();
+                      if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
+                        // 计算明天的日期
+                        const tomorrow = new Date(currentDate);
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        newParams.date = tomorrow.toISOString().split('T')[0];
+                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
+                      } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
+                        // 计算后天的日期
+                        const dayAfterTomorrow = new Date(currentDate);
+                        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+                        newParams.date = dayAfterTomorrow.toISOString().split('T')[0];
+                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
+                      } else if (relativeDateText.includes('大后天')) {
+                        // 计算大后天的日期
+                        const threeDaysLater = new Date(currentDate);
+                        threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+                        newParams.date = threeDaysLater.toISOString().split('T')[0];
+                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
+                      } else {
+                        // 默认使用当前日期
+                        newParams.date = currentDate;
+                        logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.date}"`);
+                      }
+                    } else {
+                      // 如果没有日期参数，使用当前日期
+                      newParams.date = currentDate;
+                    }
                   }
                 } catch (error: any) {
                   logger.error(`获取当前日期失败: ${error.message}`);
@@ -810,12 +903,43 @@ Based on the above task execution information, please generate a complete execut
                 }
               }
               
-              // 如果没有出发日期参数，添加当前日期
-              if (!newParams.departDate) {
+              // 如果没有出发日期参数，或者日期参数不是标准格式，添加当前日期
+              if (!newParams.departDate || !newParams.departDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
                 try {
                   const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
                   if (dateResult.content && dateResult.content[0].text) {
-                    newParams.departDate = dateResult.content[0].text;
+                    const currentDate = dateResult.content[0].text;
+                    
+                    // 处理相对日期
+                    if (newParams.departDate) {
+                      const relativeDateText = newParams.departDate.toLowerCase();
+                      if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
+                        // 计算明天的日期
+                        const tomorrow = new Date(currentDate);
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        newParams.departDate = tomorrow.toISOString().split('T')[0];
+                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
+                      } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
+                        // 计算后天的日期
+                        const dayAfterTomorrow = new Date(currentDate);
+                        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+                        newParams.departDate = dayAfterTomorrow.toISOString().split('T')[0];
+                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
+                      } else if (relativeDateText.includes('大后天')) {
+                        // 计算大后天的日期
+                        const threeDaysLater = new Date(currentDate);
+                        threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+                        newParams.departDate = threeDaysLater.toISOString().split('T')[0];
+                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
+                      } else {
+                        // 默认使用当前日期
+                        newParams.departDate = currentDate;
+                        logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.departDate}"`);
+                      }
+                    } else {
+                      // 如果没有日期参数，使用当前日期
+                      newParams.departDate = currentDate;
+                    }
                   }
                 } catch (error: any) {
                   logger.error(`获取当前日期失败: ${error.message}`);
