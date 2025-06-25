@@ -247,6 +247,13 @@ export class MCPManager {
   async getTools(name: string): Promise<any[]> {
     logger.info(`【MCP Debug】MCPManager.getTools() Starting to get MCP tool list [MCP: ${name}]`);
     
+    // 标准化MCP名称
+    const normalizedName = this.normalizeMCPName(name);
+    if (normalizedName !== name) {
+      logger.info(`【MCP Debug】MCP name normalized from '${name}' to '${normalizedName}'`);
+      name = normalizedName;
+    }
+    
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {
       logger.error(`【MCP Debug】MCP not connected [MCP: ${name}]`);
@@ -265,6 +272,35 @@ export class MCPManager {
   }
 
   /**
+   * 映射MCP名称，确保名称一致性
+   * @param mcpName 原始MCP名称
+   * @returns 标准化的MCP名称
+   */
+  private normalizeMCPName(mcpName: string): string {
+    // MCP名称映射表
+    const mcpNameMap: Record<string, string> = {
+      'playwright-mcp-service': 'playwright',
+      'coingecko-server': 'coingecko-mcp',
+      'x-mcp-server': 'x-mcp',
+      'github-mcp-server': 'github-mcp',
+      'evm-mcp-server': 'evm-mcp',
+      'dune-mcp-server': 'dune-mcp',
+      'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
+      'defillama-mcp-service': 'defillama-mcp',
+      'rug-check-mcp-service': 'rugcheck-mcp',
+      'chainlink-feeds-mcp-service': 'chainlink-mcp',
+      'crypto-feargreed-mcp-service': 'feargreed-mcp',
+      'whale-tracker-mcp-service': 'whaletracker-mcp',
+      'discord-mcp-service': 'discord-mcp',
+      'telegram-mcp-service': 'telegram-mcp',
+      'notion-mcp-service': 'notion-mcp',
+      '12306-mcp-service': '12306-mcp'
+    };
+    
+    return mcpNameMap[mcpName] || mcpName;
+  }
+
+  /**
    * Call MCP tool
    * @param name MCP name
    * @param tool Tool name
@@ -273,6 +309,13 @@ export class MCPManager {
   async callTool(name: string, tool: string, args: any): Promise<any> {
     logger.info(`【MCP Debug】MCPManager.callTool() Starting to call MCP tool [MCP: ${name}, Tool: ${tool}]`);
     logger.info(`【MCP Debug】Call arguments: ${JSON.stringify(args)}`);
+    
+    // 标准化MCP名称
+    const normalizedName = this.normalizeMCPName(name);
+    if (normalizedName !== name) {
+      logger.info(`【MCP Debug】MCP name normalized from '${name}' to '${normalizedName}'`);
+      name = normalizedName;
+    }
     
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {

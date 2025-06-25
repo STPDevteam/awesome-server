@@ -257,7 +257,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['figma_token'],
       category: 'Development Tools',
-      imageUrl: 'https://www.figma.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-figma-96.png',
       githubUrl: 'https://github.com/GLips/Figma-Context-MCP'
     },
     {
