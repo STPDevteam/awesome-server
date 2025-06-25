@@ -165,7 +165,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: false, // 基础查询不需要认证，但交易操作需要私钥
     authFields: ['PRIVATE_KEY'], // 仅在需要发送交易时需要
     category: 'Chain PRC',
-    imageUrl: 'https://ethereum.org/favicon.ico',
+    imageUrl: 'https://mcp-server-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
     githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
     authParams: {
       privateKeyName: 'PRIVATE_KEY',
