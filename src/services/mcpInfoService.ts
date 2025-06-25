@@ -23,7 +23,7 @@ export class MCPInfoService {
       capabilities: ['train-ticket-query', 'station-search', 'schedule-check'],
       authRequired: false,
       category: 'Others',
-      imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
       githubUrl: 'https://github.com/12306-mcp'
     },
     {
@@ -33,7 +33,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['api_key'],
       category: 'Development Tools',
-      imageUrl: 'https://langchain.com/images/logo.svg',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/langchain.png',
       githubUrl: 'https://github.com/langchain-ai/langchainjs'
     },
     {
@@ -133,7 +133,7 @@ export class MCPInfoService {
       capabilities: ['defi-protocols', 'tvl-data', 'yield-farming'],
       authRequired: false,
       category: 'Market Data',
-      imageUrl: 'https://defillama.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png',
       githubUrl: 'https://github.com/dcSpark/mcp-server-defillama'
     },
     {
@@ -143,7 +143,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['api_key'],
       category: 'Market Data',
-      imageUrl: 'https://dune.com/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
       githubUrl: 'https://github.com/ekailabs/dune-mcp-server'
     },
     {
@@ -201,7 +201,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['openai_api_key'],
       category: 'Development Tools',
-      imageUrl: 'https://langchain.com/images/logo.svg',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/langchain.png',
       githubUrl: 'https://github.com/langchain-ai/langchain'
     },
     {
