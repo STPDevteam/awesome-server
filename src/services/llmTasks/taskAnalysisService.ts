@@ -175,12 +175,13 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
   
 
   {
-    name: 'coingecko-server-service',
-    description: 'CoinGecko official MCP server for comprehensive cryptocurrency market data, historical prices, and OHLC candlestick data',
+    name: 'coingecko-mcp',
+    description: 'CoinGecko official MCP server for comprehensive cryptocurrency market data with 46 tools including prices, NFTs, DEX data, and market analysis',
     capabilities: [
-      'get-coins', 'find-coin-ids', 'get-historical-data', 'get-ohlc-data', 
-      'refresh-cache', 'crypto-prices', 'market-data', 'coin-info',
-      'price-history', 'market-cap-data', 'volume-data', 'candlestick-data'
+      'get-simple-price', 'get-coins-list', 'get-coins-markets', 'get-coins-top-gainers-losers',
+      'get-range-coins-market-chart', 'get-range-coins-ohlc', 'get-global', 'get-list-nfts',
+      'get-onchain-networks', 'get-networks-onchain-trending-pools', 'get-search', 'get-search-trending',
+      'crypto-prices', 'market-data', 'nft-data', 'dex-data', 'historical-data', 'trending-analysis'
     ],
     authRequired: true,
     authFields: ['COINGECKO_API_KEY'],
@@ -189,7 +190,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://docs.coingecko.com/reference/mcp-server',
     authParams: {
       apiKeyName: 'COINGECKO_API_KEY',
-      apiKeyDescription: 'CoinGecko Pro API密钥'
+      apiKeyDescription: 'CoinGecko Pro API密钥，用于获取更高速率限制'
     }
   },
   {
@@ -505,7 +506,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     }
   },
   {
-    name: 'x-mcp-service',
+    name: 'x-mcp',
     description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Built-in rate limit handling for free API tier',
     capabilities: [
       'get-home-timeline', 'create-tweet', 'reply-to-tweet', 
@@ -529,18 +530,157 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     }
   },
   {
-    name: 'notion-mcp-service',
+    name: 'notion-mcp',
     description: 'Notion workspace and documentation integration',
     capabilities: ['page-creation', 'database-management', 'content-editing'],
     authRequired: true,
     authFields: ['NOTION_TOKEN'],
-    category: 'Social',
+    category: 'Productivity',
     imageUrl: 'https://www.notion.so/favicon.ico',
     githubUrl: 'https://github.com/makenotion/notion-mcp-server',
     authParams: {
       tokenName: 'NOTION_TOKEN',
       tokenDescription: 'Notion集成令牌'
     }
+  },
+
+  // Additional integrated MCPs
+  {
+    name: 'discord-mcp',
+    description: 'Discord social platform integration for server management and messaging',
+    capabilities: ['server-management', 'channel-operations', 'message-handling', 'user-management'],
+    authRequired: true,
+    authFields: ['DISCORD_TOKEN'],
+    category: 'Social',
+    imageUrl: 'https://discord.com/favicon.ico',
+    githubUrl: 'https://github.com/hanweg/mcp-discord'
+  },
+  {
+    name: 'telegram-mcp',
+    description: 'Telegram messaging platform integration for bot operations',
+    capabilities: ['send-messages', 'manage-chats', 'file-handling', 'bot-commands'],
+    authRequired: true,
+    authFields: ['TELEGRAM_BOT_TOKEN'],
+    category: 'Social',
+    imageUrl: 'https://telegram.org/favicon.ico',
+    githubUrl: 'https://github.com/sparfenyuk/mcp-telegram'
+  },
+  {
+    name: 'binance-mcp',
+    description: 'Binance cryptocurrency exchange integration',
+    capabilities: ['market-data', 'trading-operations', 'account-info', 'order-management'],
+    authRequired: true,
+    authFields: ['BINANCE_API_KEY', 'BINANCE_SECRET'],
+    category: 'Trading',
+    imageUrl: 'https://www.binance.com/favicon.ico',
+    githubUrl: 'https://github.com/binance/binance-mcp'
+  },
+  {
+    name: 'uniswap-trader-mcp',
+    description: 'Uniswap decentralized exchange trading platform',
+    capabilities: ['dex-trading', 'liquidity-management', 'token-swaps', 'pool-operations'],
+    authRequired: true,
+    authFields: ['PRIVATE_KEY', 'INFURA_API_KEY'],
+    category: 'Trading',
+    imageUrl: 'https://uniswap.org/favicon.ico',
+    githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp'
+  },
+  {
+    name: 'hyperliquid-mcp',
+    description: 'Hyperliquid decentralized perpetuals trading',
+    capabilities: ['perpetual-trading', 'margin-management', 'order-execution', 'portfolio-tracking'],
+    authRequired: true,
+    authFields: ['HYPERLIQUID_PRIVATE_KEY'],
+    category: 'Trading',
+    imageUrl: 'https://hyperliquid.xyz/favicon.ico',
+    githubUrl: 'https://github.com/mektigboy/server-hyperliquid'
+  },
+  {
+    name: 'pumpfun-mcp',
+    description: 'Pump.fun meme token trading platform',
+    capabilities: ['meme-token-trading', 'token-creation', 'market-analysis', 'community-features'],
+    authRequired: true,
+    authFields: ['PUMPFUN_API_KEY'],
+    category: 'Trading',
+    imageUrl: 'https://pump.fun/favicon.ico',
+    githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server'
+  },
+  {
+    name: 'aws-mcp',
+    description: 'Amazon Web Services cloud platform integration',
+    capabilities: ['ec2-management', 's3-operations', 'lambda-functions', 'cloudformation'],
+    authRequired: true,
+    authFields: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'],
+    category: 'Cloud Services',
+    imageUrl: 'https://aws.amazon.com/favicon.ico',
+    githubUrl: 'https://github.com/aws/aws-mcp'
+  },
+  {
+    name: 'cloudflare-mcp',
+    description: 'Cloudflare CDN and security services integration',
+    capabilities: ['dns-management', 'cdn-operations', 'security-settings', 'analytics'],
+    authRequired: true,
+    authFields: ['CLOUDFLARE_API_TOKEN'],
+    category: 'Cloud Services',
+    imageUrl: 'https://www.cloudflare.com/favicon.ico',
+    githubUrl: 'https://github.com/cloudflare/cloudflare-mcp'
+  },
+  {
+    name: 'supabase-mcp',
+    description: 'Supabase backend-as-a-service platform integration',
+    capabilities: ['database-operations', 'auth-management', 'storage-handling', 'realtime-features'],
+    authRequired: true,
+    authFields: ['SUPABASE_URL', 'SUPABASE_ANON_KEY'],
+    category: 'Database Tools',
+    imageUrl: 'https://supabase.com/favicon.ico',
+    githubUrl: 'https://github.com/supabase/supabase-mcp'
+  },
+  {
+    name: 'filesystem-mcp',
+    description: 'File system operations and management',
+    capabilities: ['file-read', 'file-write', 'directory-operations', 'file-search'],
+    authRequired: false,
+    category: 'System Tools',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/3767/3767084.png',
+    githubUrl: 'https://github.com/modelcontextprotocol/servers'
+  },
+  {
+    name: 'sqlite-mcp',
+    description: 'SQLite database operations',
+    capabilities: ['sql-queries', 'database-management', 'data-analysis', 'schema-operations'],
+    authRequired: false,
+    category: 'Database Tools',
+    imageUrl: 'https://www.sqlite.org/images/sqlite370_banner.gif',
+    githubUrl: 'https://github.com/modelcontextprotocol/servers'
+  },
+  {
+    name: 'brave-search-mcp',
+    description: 'Brave Search API integration',
+    capabilities: ['web-search', 'search-results', 'content-discovery', 'privacy-focused-search'],
+    authRequired: true,
+    authFields: ['BRAVE_SEARCH_API_KEY'],
+    category: 'Search Tools',
+    imageUrl: 'https://brave.com/favicon.ico',
+    githubUrl: 'https://github.com/modelcontextprotocol/servers'
+  },
+  {
+    name: 'memory-mcp',
+    description: 'Memory and knowledge management',
+    capabilities: ['knowledge-storage', 'memory-retrieval', 'context-management', 'learning-assistance'],
+    authRequired: false,
+    category: 'AI Tools',
+    imageUrl: 'https://cdn-icons-png.flaticon.com/512/3659/3659899.png',
+    githubUrl: 'https://github.com/modelcontextprotocol/servers'
+  },
+  {
+    name: 'postgres-mcp',
+    description: 'PostgreSQL database operations',
+    capabilities: ['sql-queries', 'database-management', 'data-analysis', 'advanced-queries'],
+    authRequired: true,
+    authFields: ['POSTGRES_CONNECTION_STRING'],
+    category: 'Database Tools',
+    imageUrl: 'https://www.postgresql.org/favicon.ico',
+    githubUrl: 'https://github.com/modelcontextprotocol/servers'
   }
 ];
 
@@ -1371,49 +1511,30 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
   // New method: Dynamically get available MCP list
   private async getAvailableMCPs(): Promise<MCPInfo[]> {
     try {
-      logger.info(`[MCP Debug] Starting to get available MCP list via HTTP Adapter`);
-      const allTools = await this.httpAdapter.getAllTools();
+      logger.info(`[MCP Debug] Starting to get available MCP list from static configuration`);
       
-      // Aggregate MCP information from tool information
-      const mcpInfoMap: Map<string, { description: Set<string>, authRequired: boolean }> = new Map();
-
-      for (const tool of allTools) {
-          // Tool name format: serviceName_toolName
-          const parts = tool.name.split('_');
-          if (parts.length < 2) continue;
-          
-          const serviceName = parts.shift()!; // serviceName is the first part
-          
-          if (!mcpInfoMap.has(serviceName)) {
-              mcpInfoMap.set(serviceName, {
-                  description: new Set(),
-                  // Simple authorization judgment based on service name
-                  authRequired: serviceName.includes('github') 
-              });
-          }
-          
-          const info = mcpInfoMap.get(serviceName)!;
-          info.description.add(tool.description);
-      }
+      // 直接使用静态配置的完整MCP列表，因为它包含了所有已集成的37个MCP服务
+      // 这比通过HTTP适配器获取更准确，因为HTTP适配器只管理少数几个MCP
+      const availableMCPs = [...AVAILABLE_MCPS];
       
-      const result: MCPInfo[] = Array.from(mcpInfoMap.entries()).map(([name, info]) => ({
-          name,
-          description: `${name} service with tools.`,
-          capabilities: Array.from(info.description),
-          authRequired: info.authRequired,
-      }));
-
-      if (result.length === 0) {
-        logger.warn(`[MCP Debug] HTTP adapter did not find any MCP tools, using default list`);
-        return AVAILABLE_MCPS;
-      }
+      logger.info(`[MCP Debug] Successfully retrieved available MCP list from static config, total ${availableMCPs.length} MCPs`);
+      logger.info(`[MCP Debug] Available MCP categories: ${JSON.stringify([...new Set(availableMCPs.map(mcp => mcp.category))])}`);
       
-      logger.info(`[MCP Debug] Successfully retrieved available MCP list, total ${result.length} MCPs: ${JSON.stringify(result.map(r => r.name))}`);
-      return result;
+      // 按类别分组显示MCP信息
+      const mcpsByCategory = availableMCPs.reduce((acc, mcp) => {
+        const category = mcp.category || 'Other';
+        if (!acc[category]) acc[category] = [];
+        acc[category].push(mcp.name);
+        return acc;
+      }, {} as Record<string, string[]>);
+      
+      logger.info(`[MCP Debug] MCPs by category: ${JSON.stringify(mcpsByCategory, null, 2)}`);
+      
+      return availableMCPs;
 
     } catch (error) {
-      logger.error(`[MCP Debug] Failed to get available MCP list via HTTP Adapter:`, error);
-      logger.warn(`[MCP Debug] Using default MCP list as fallback`);
+      logger.error(`[MCP Debug] Failed to get available MCP list:`, error);
+      logger.warn(`[MCP Debug] Using fallback MCP list`);
       return AVAILABLE_MCPS; // Return default list on failure
     }
   }
