@@ -54,14 +54,19 @@ export class MCPAlternativeDao {
         return false;
       }
       
+      // 确保mcpWorkflow是对象而不是字符串
+      const workflowObj = typeof mcpWorkflow === 'string' 
+        ? JSON.parse(mcpWorkflow) 
+        : mcpWorkflow;
+      
       // 更新MCP列表
-      if (mcpWorkflow.mcps && Array.isArray(mcpWorkflow.mcps)) {
+      if (workflowObj.mcps && Array.isArray(workflowObj.mcps)) {
         // 查找原始MCP的索引
-        const mcpIndex = mcpWorkflow.mcps.findIndex((mcp: any) => mcp.name === originalMcpName);
+        const mcpIndex = workflowObj.mcps.findIndex((mcp: any) => mcp.name === originalMcpName);
         
         if (mcpIndex >= 0) {
           // 替换为新的MCP
-          mcpWorkflow.mcps[mcpIndex] = {
+          workflowObj.mcps[mcpIndex] = {
             name: newMcpName,
             description: newMcpDescription,
             authRequired: newMcpAuthRequired,
@@ -73,8 +78,8 @@ export class MCPAlternativeDao {
       }
       
       // 更新工作流步骤
-      if (mcpWorkflow.workflow && Array.isArray(mcpWorkflow.workflow)) {
-        mcpWorkflow.workflow = mcpWorkflow.workflow.map((step: any) => {
+      if (workflowObj.workflow && Array.isArray(workflowObj.workflow)) {
+        workflowObj.workflow = workflowObj.workflow.map((step: any) => {
           if (step.mcp === originalMcpName) {
             return {
               ...step,
@@ -92,7 +97,7 @@ export class MCPAlternativeDao {
         SET mcp_workflow = $1, updated_at = NOW()
         WHERE id = $2
         `,
-        [JSON.stringify(mcpWorkflow), taskId]
+        [JSON.stringify(workflowObj), taskId]
       );
       
       logger.info(`替换任务MCP成功 [任务: ${taskId}, 原MCP: ${originalMcpName}, 新MCP: ${newMcpName}]`);

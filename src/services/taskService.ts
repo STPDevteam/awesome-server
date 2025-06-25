@@ -166,13 +166,24 @@ export class TaskService {
       throw new Error('无效的任务数据记录');
     }
     
+    // 处理mcpWorkflow，确保它是一个对象而不是字符串
+    let mcpWorkflow = row.mcp_workflow;
+    if (mcpWorkflow && typeof mcpWorkflow === 'string') {
+      try {
+        mcpWorkflow = JSON.parse(mcpWorkflow);
+      } catch (e) {
+        logger.error(`解析mcpWorkflow失败 [ID: ${row.id}]:`, e);
+        // 保持原样，不做处理
+      }
+    }
+    
     return {
       id: row.id,
       userId: row.user_id,
       title: row.title,
       content: row.content,
       status: row.status as TaskStatus,
-      mcpWorkflow: row.mcp_workflow ? row.mcp_workflow : undefined,
+      mcpWorkflow: mcpWorkflow,
       result: row.result ? row.result : undefined,
       conversationId: row.conversation_id || undefined,
       createdAt: new Date(row.created_at),
