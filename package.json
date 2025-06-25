@@ -16,7 +16,8 @@
     "test:payment": "node test/test-payment-flow.js",
     "test:payment:complete": "node test/test-payment-flow-complete.js",
     "test:payment:quick": "sh test/quick-payment-test.sh",
-    "test:s3-avatar": "npm run build && node test/test-s3-avatar.js"
+    "test:s3-avatar": "npm run build && node test/test-s3-avatar.js",
+    "download-mcp-logos": "node scripts/download-mcp-logos.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.832.0",
