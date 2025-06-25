@@ -23,7 +23,9 @@ export class MCPAlternativeService {
     'DatabaseQueryTool': ['FileSystemTool'],
     'ImageAnalysisTool': ['WebBrowserTool', 'TextAnalysisTool'],
     'TextAnalysisTool': ['WebBrowserTool'],
-    'WeatherTool': ['WebBrowserTool']
+    'WeatherTool': ['WebBrowserTool'],
+    'playwright-mcp-service': ['brave-search-mcp', 'WebBrowserTool'],
+    'playwright': ['brave-search-mcp', 'WebBrowserTool']
   };
   
   // 可用的MCP列表
@@ -65,31 +67,38 @@ export class MCPAlternativeService {
       // 获取最新的MCP列表
       const availableMCPs = this.getAvailableMCPs();
       
-      // 硬编码playwright-mcp-service的替代选项
-      if (mcpName === 'playwright-mcp-service' || mcpName === 'playwright') {
-        logger.info(`返回playwright的硬编码替代选项`);
-        // 返回WebBrowserTool作为替代
-        const webBrowserTool = mcpInfoService.getMCPById('WebBrowserTool');
-        return webBrowserTool ? [webBrowserTool] : [];
+      // 使用LLM推荐替代选项
+      logger.info(`使用LLM推荐替代选项 [MCP: ${mcpName}], 可用MCP数量: ${availableMCPs.length}`);
+      const llmRecommendations = await this.recommendAlternatives(mcpName, taskContent);
+      
+      if (llmRecommendations.length > 0) {
+        logger.info(`LLM推荐的替代选项: ${llmRecommendations.map(m => m.name).join(', ')}`);
+        // 对LLM推荐的结果进行排序
+        const rankedAlternatives = await this.rankAlternatives(mcpName, llmRecommendations, taskContent);
+        return rankedAlternatives;
       }
       
-      // 先从预定义映射中获取可能的替代项
+      // 如果LLM推荐失败，尝试使用预定义映射作为后备
+      logger.info(`LLM推荐失败，尝试使用预定义映射作为后备`);
       const predefinedAlternatives = this.alternativeMap[mcpName] || [];
       
-      // 获取这些替代项的详细信息
-      const alternativeMCPs = availableMCPs.filter(mcp => 
-        predefinedAlternatives.includes(mcp.name)
-      );
-      
-      // 跳过LLM调用，直接返回预定义的替代项
-      if (alternativeMCPs.length === 0) {
-        // 如果没有预定义的替代项，返回一个默认的列表
-        logger.info(`没有找到预定义替代项，返回默认替代项`);
-        return availableMCPs.slice(0, 2);  // 返回最多2个可用工具作为替代
+      if (predefinedAlternatives.length > 0) {
+        const alternativeMCPs = availableMCPs.filter(mcp => 
+          predefinedAlternatives.includes(mcp.name)
+        );
+        if (alternativeMCPs.length > 0) {
+          logger.info(`找到预定义替代选项: ${alternativeMCPs.map(m => m.name).join(', ')}`);
+          return alternativeMCPs;
+        }
       }
       
-      // 直接返回找到的替代项，不调用LLM排序
-      return alternativeMCPs;
+      // 最后的后备选项：返回一些通用的替代工具
+      logger.info(`没有找到任何替代选项，返回通用替代工具`);
+      const fallbackAlternatives = availableMCPs
+        .filter(mcp => mcp.name !== mcpName)
+        .slice(0, 3);
+      
+      return fallbackAlternatives;
     } catch (error) {
       logger.error(`获取MCP替代选项失败 [MCP: ${mcpName}]:`, error);
       // 返回空替代项
@@ -111,26 +120,46 @@ export class MCPAlternativeService {
         return [];
       }
       
-      const response = await this.llm.invoke([
-        new SystemMessage(`你是一位MCP（Model Context Protocol）专家，负责推荐替代工具。
-用户当前无法使用${mcpName}工具，需要找到能够替代其功能的其他MCP工具。
+      // 按类别分组显示可用MCP，便于LLM理解
+      const mcpsByCategory = availableMCPs
+        .filter(mcp => mcp.name !== mcpName)
+        .reduce((acc, mcp) => {
+          const category = mcp.category || 'Other';
+          if (!acc[category]) {
+            acc[category] = [];
+          }
+          acc[category].push({
+            name: mcp.name,
+            description: mcp.description,
+            capabilities: mcp.capabilities
+          });
+          return acc;
+        }, {} as Record<string, any[]>);
 
-当前工具的功能：
+      const response = await this.llm.invoke([
+        new SystemMessage(`你是一位MCP（Model Context Protocol）专家，负责根据用户任务需求推荐最合适的替代工具。
+
+用户当前无法使用 "${mcpName}" 工具，需要找到能够替代其功能的其他MCP工具。
+
+当前不可用工具的功能：
 ${JSON.stringify(mcpToReplace, null, 2)}
 
-可选的其他MCP工具：
-${JSON.stringify(availableMCPs.filter(mcp => mcp.name !== mcpName), null, 2)}
+可选的替代MCP工具（按类别分组）：
+${JSON.stringify(mcpsByCategory, null, 2)}
 
-请根据用户的任务内容，推荐最多3个能够替代${mcpName}的工具。这些工具应该能够尽可能完成相同或类似的功能。
+请仔细分析用户的任务内容，根据以下标准推荐最多3个最合适的替代工具：
+1. 功能匹配度：工具的capabilities是否能满足任务需求
+2. 类别相关性：同类别或相关类别的工具优先
+3. 实用性：工具是否易于使用且稳定
 
-输出格式：
+输出格式（必须是有效的JSON）：
 {
   "alternatives": ["Tool1Name", "Tool2Name", "Tool3Name"],
-  "explanation": "推荐这些替代工具的理由"
+  "explanation": "详细说明为什么推荐这些工具，以及它们如何满足用户的任务需求"
 }
 
-请确保推荐的替代工具确实可以满足用户的需求，即使功能不完全一样。`),
-        new HumanMessage(taskContent)
+重要：请确保返回的工具名称完全匹配可选工具列表中的name字段。`),
+        new HumanMessage(`用户任务：${taskContent}`)
       ]);
       
       // 解析返回的JSON
