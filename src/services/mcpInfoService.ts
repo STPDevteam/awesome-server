@@ -19,10 +19,10 @@ export class MCPInfoService {
     },
     {
       name: '12306-mcp',
-      description: '12306 火车票查询和预订工具',
+      description: '12306 Train ticket inquiry and booking tools',
       capabilities: ['train-ticket-query', 'station-search', 'schedule-check'],
       authRequired: false,
-      category: '交通工具',
+      category: 'others',
       imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
       githubUrl: 'https://github.com/12306-mcp'
     },
