@@ -50,7 +50,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Chain PRC',
-        imageUrl: 'https://mcp-server-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
         githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
     },
 
