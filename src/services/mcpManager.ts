@@ -286,6 +286,7 @@ export class MCPManager {
       'x-mcp-server': 'x-mcp',
       'github-mcp-server': 'github',
       'evm-mcp-server': 'evm-mcp-server',
+      'evm-mcp-service': 'evm-mcp-server',
       'dune-mcp-server': 'dune-mcp-server',
       'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
       'defillama-mcp-service': 'mcp-server-defillama',
@@ -293,9 +294,7 @@ export class MCPManager {
       'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
       'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
       'whale-tracker-mcp-service': 'whale-tracker-mcp',
-      'discord-mcp-service': 'mcp-discord',
-      'telegram-mcp-service': 'mcp-telegram',
-      'notion-mcp-service': 'notion-mcp-server',
+      'dexscreener-mcp-service': 'dexscreener-mcp',
       '12306-mcp-service': '12306-mcp'
     };
     
@@ -332,11 +331,11 @@ export class MCPManager {
     if (name === '12306-mcp') {
       // 12306-mcp工具名称映射表
       const toolNameMap: Record<string, string> = {
-        '获取当前日期': 'getCurrentDate',
-        '查询车站信息': 'queryStationInfo',
-        '查询列车时刻表': 'queryTrainSchedule',
-        '查询余票信息': 'queryTicketInfo',
-        '查询中转余票': 'queryTransferTicket'
+        '获取当前日期': 'get_current_date',
+        '查询车站信息': 'query_station_info',
+        '查询列车时刻表': 'query_train_schedule',
+        '查询余票信息': 'query_ticket_info',
+        '查询中转余票': 'query_transfer_ticket'
       };
       
       if (toolNameMap[tool]) {
