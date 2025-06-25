@@ -38,9 +38,9 @@ export class MCPAlternativeService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.MCP_ALTERNATIVE_MODEL || 'gpt-4o',
       temperature: 0.3,
-      // configuration: {
-      //   httpAgent: agent, // ✅ 使用代理关键设置
-      // },
+      configuration: {
+        httpAgent: agent, // ✅ 使用代理关键设置
+      },
     });
     
     logger.info(`MCPAlternativeService 已初始化，加载了 ${this.availableMCPs.length} 个可用MCP`);
@@ -79,7 +79,7 @@ export class MCPAlternativeService {
       }
       
       // 如果LLM推荐失败，尝试使用预定义映射作为后备
-      logger.info(`LLM推荐失败，尝试使用预定义映射作为后备`);
+      logger.warn(`LLM推荐失败，返回了${llmRecommendations.length}个选项，尝试使用预定义映射作为后备`);
       const predefinedAlternatives = this.alternativeMap[mcpName] || [];
       
       if (predefinedAlternatives.length > 0) {
@@ -137,29 +137,29 @@ export class MCPAlternativeService {
         }, {} as Record<string, any[]>);
 
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位MCP（Model Context Protocol）专家，负责根据用户任务需求推荐最合适的替代工具。
+        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for recommending the most suitable alternative tools based on user task requirements.
 
-用户当前无法使用 "${mcpName}" 工具，需要找到能够替代其功能的其他MCP工具。
+The user currently cannot use the "${mcpName}" tool and needs to find other MCP tools that can replace its functionality.
 
-当前不可用工具的功能：
+Current unavailable tool functionality:
 ${JSON.stringify(mcpToReplace, null, 2)}
 
-可选的替代MCP工具（按类别分组）：
+Available alternative MCP tools (grouped by category):
 ${JSON.stringify(mcpsByCategory, null, 2)}
 
-请仔细分析用户的任务内容，根据以下标准推荐最多3个最合适的替代工具：
-1. 功能匹配度：工具的capabilities是否能满足任务需求
-2. 类别相关性：同类别或相关类别的工具优先
-3. 实用性：工具是否易于使用且稳定
+Please carefully analyze the user's task content and recommend up to 3 most suitable alternative tools based on the following criteria:
+1. Functionality match: Whether the tool's capabilities can meet the task requirements
+2. Category relevance: Tools from the same or related categories should be prioritized
+3. Usability: Whether the tool is easy to use and stable
 
-输出格式（必须是有效的JSON）：
+Output format (must be valid JSON):
 {
   "alternatives": ["Tool1Name", "Tool2Name", "Tool3Name"],
-  "explanation": "详细说明为什么推荐这些工具，以及它们如何满足用户的任务需求"
+  "explanation": "Detailed explanation of why these tools are recommended and how they meet the user's task requirements"
 }
 
-重要：请确保返回的工具名称完全匹配可选工具列表中的name字段。`),
-        new HumanMessage(`用户任务：${taskContent}`)
+Important: Make sure the returned tool names exactly match the name field in the available tools list.`),
+        new HumanMessage(`User task: ${taskContent}`)
       ]);
       
       // 解析返回的JSON
@@ -208,6 +208,13 @@ ${JSON.stringify(mcpsByCategory, null, 2)}
       }
     } catch (error) {
       logger.error(`推荐替代MCP失败 [MCP: ${mcpName}]:`, error);
+      if (error instanceof Error) {
+        logger.error(`错误详情:`, {
+          message: error.message,
+          stack: error.stack,
+          name: error.name
+        });
+      }
       return [];
     }
   }
@@ -229,20 +236,20 @@ ${JSON.stringify(mcpsByCategory, null, 2)}
     
     try {
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一位MCP（Model Context Protocol）专家，负责对替代工具进行排序。
-用户当前无法使用${mcpName}工具，需要从以下替代工具中选择最适合的：
+        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for ranking alternative tools.
+The user currently cannot use the ${mcpName} tool and needs to select the most suitable from the following alternatives:
 
 ${JSON.stringify(alternatives, null, 2)}
 
-请根据用户的任务内容，对这些替代工具进行排序，从最适合到最不适合。
+Please rank these alternative tools based on the user's task content, from most suitable to least suitable.
 
-输出格式：
+Output format:
 {
   "ranked_alternatives": ["Tool1Name", "Tool2Name", "Tool3Name"],
-  "explanation": "排序理由"
+  "explanation": "Ranking rationale"
 }
 
-请基于工具功能与任务的匹配度、功能完整度、使用便捷性等因素进行排序。`),
+Please base your ranking on factors such as tool functionality match with the task, feature completeness, and ease of use.`),
         new HumanMessage(taskContent)
       ]);
       
