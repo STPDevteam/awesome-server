@@ -325,7 +325,7 @@ Please analyze the user intent and return the result in JSON format:
       // 2. Create assistant message reply
       const response = await messageDao.createMessage({
         conversationId,
-        content: `Task created: ${task.title}\nTask ID: ${task.id}\nI will start executing this task.`,
+        content: `Task created: ${task.title}\nTask ID: ${task.id}\n请在任务页面查看并执行此任务。`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
@@ -561,10 +561,10 @@ Please analyze the user intent and return the result in JSON format:
         title: task.title
       });
       
-      // Create an empty reply message
+      // Create an assistant message reply
       const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: `Task created: ${task.title}\nTask ID: ${task.id}\nI will start executing this task.`,
+        content: `Task created: ${task.title}\nTask ID: ${task.id}\n请在任务页面查看并执行此任务。`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
@@ -572,17 +572,6 @@ Please analyze the user intent and return the result in JSON format:
       
       // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
-      
-      // Stream task execution
-      streamCallback({ status: 'executing_task' });
-      
-      // Use custom stream callback
-      await this.taskExecutorService.executeTaskStream(
-        task.id,
-        (data) => {
-          streamCallback(data);
-        }
-      );
       
       return { 
         responseId: assistantMessage.id,
