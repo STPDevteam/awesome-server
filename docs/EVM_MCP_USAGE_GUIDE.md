@@ -89,7 +89,7 @@ EVM MCP已经在系统中预配置，配置详情：
   env: {},
   connected: false,
   category: 'Chain PRC',
-  imageUrl: 'https://ethereum.org/favicon.ico',
+  imageUrl: 'https://mcp-server-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
   githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
 }
 ```

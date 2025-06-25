@@ -50,7 +50,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Chain PRC',
-        imageUrl: 'https://ethereum.org/favicon.ico',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
         githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
     },
 
@@ -154,7 +154,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Dev Tool',
-        imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
         githubUrl: 'https://github.com/github/github-mcp-server'
     },
     {
@@ -372,7 +372,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Social',
-        imageUrl: 'https://www.notion.so/favicon.ico',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
         githubUrl: 'https://github.com/makenotion/notion-mcp-server'
     },
     

@@ -24,7 +24,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['GITHUB_TOKEN'],
     category: '开发工具',
-    imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
     githubUrl: 'https://github.com/features/actions',
     authParams: {
       tokenName: 'GITHUB_TOKEN',
@@ -165,7 +165,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: false, // 基础查询不需要认证，但交易操作需要私钥
     authFields: ['PRIVATE_KEY'], // 仅在需要发送交易时需要
     category: 'Chain PRC',
-    imageUrl: 'https://ethereum.org/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
     githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
     authParams: {
       privateKeyName: 'PRIVATE_KEY',
@@ -275,7 +275,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['GITHUB_TOKEN'],
     category: 'Development Tools',
-    imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
     githubUrl: 'https://github.com/github/github-mcp-server',
     authParams: {
       tokenName: 'GITHUB_TOKEN',

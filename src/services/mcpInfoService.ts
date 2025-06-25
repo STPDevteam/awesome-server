@@ -44,7 +44,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['token'],
       category: 'Development Tools',
-      imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
       githubUrl: 'https://github.com/octokit/octokit.js'
     },
     {
@@ -99,7 +99,7 @@ export class MCPInfoService {
       authRequired: false, // 基础查询不需要认证，但交易操作需要私钥
       authFields: ['private_key'], // 仅在需要发送交易时需要
       category: 'Chain PRC',
-      imageUrl: 'https://ethereum.org/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
       githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
     },
     
@@ -192,7 +192,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['github_token'],
       category: 'Development Tools',
-      imageUrl: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
       githubUrl: 'https://github.com/github/github-mcp-server'
     },
     {
@@ -386,7 +386,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['notion_token'],
       category: 'Social',
-      imageUrl: 'https://www.notion.so/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
       githubUrl: 'https://github.com/makenotion/notion-mcp-server'
     }
   ];
