@@ -74,8 +74,11 @@ export const predefinedMCPs: MCPService[] = [
         name: 'coinmarketcap-mcp',
         description: 'CoinMarketCap cryptocurrency market data and analytics',
         command: 'npx',
-        args: ['-y', 'coinmarketcap-mcp'],
-        env: {},
+        args: ['@shinzolabs/coinmarketcap-mcp'],
+        env: {
+            COINMARKETCAP_API_KEY: process.env.CMC_API_KEY || '',
+            SUBSCRIPTION_LEVEL: "Basic"
+        },
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',

@@ -81,20 +81,164 @@ async function verifyAuth(taskId, mcpName, authData) {
   return result;
 }
 
-// 执行任务
+// 执行任务（流式）
 async function executeTask(taskId) {
-  const response = await fetch(`${BASE_URL}/api/task/${taskId}/execute`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      userId: TEST_USER_ID
-    })
+  return new Promise((resolve, reject) => {
+    fetch(`${BASE_URL}/api/task/${taskId}/execute/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: TEST_USER_ID
+      })
+    }).then(async (res) => {
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
+
+      let buffer = '';
+      let finalResult = { success: false, steps: [], errors: [] };
+      let hasWorkflowComplete = false;
+      let hasError = false;
+
+      // Node.js环境下处理流式响应
+      res.body.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留不完整的行
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            
+            // 检查是否是结束标记
+            if (dataStr.trim() === '[DONE]') {
+              hasWorkflowComplete = true;
+              continue;
+            }
+            
+            try {
+              const data = JSON.parse(dataStr);
+              console.log(`    📡 流式数据: ${JSON.stringify(data)}`);
+              
+              // 处理不同的事件类型
+              switch (data.event) {
+                case 'execution_start':
+                  console.log(`    🚀 开始执行任务: ${data.data.taskId}`);
+                  break;
+                  
+                case 'step_start':
+                  console.log(`    📝 开始执行步骤 ${data.data.step}: ${data.data.mcpName} - ${data.data.actionName}`);
+                  break;
+                  
+                case 'step_complete':
+                  console.log(`    ✅ 步骤 ${data.data.step} 执行成功`);
+                  finalResult.steps.push({
+                    step: data.data.step,
+                    success: true,
+                    result: data.data.result
+                  });
+                  break;
+                  
+                case 'step_error':
+                  console.log(`    ❌ 步骤 ${data.data.step} 执行失败: ${data.data.error}`);
+                  finalResult.steps.push({
+                    step: data.data.step,
+                    success: false,
+                    error: data.data.error
+                  });
+                  finalResult.errors.push(data.data.error);
+                  hasError = true;
+                  break;
+                  
+                case 'workflow_complete':
+                  console.log(`    🎉 工作流执行完成`);
+                  finalResult.success = data.data.success;
+                  hasWorkflowComplete = true;
+                  break;
+                  
+                case 'error':
+                  console.log(`    ❌ 执行错误: ${data.data.message}`);
+                  finalResult.error = data.data.message;
+                  finalResult.errors.push(data.data.message);
+                  hasError = true;
+                  break;
+                  
+                case 'summary_chunk':
+                  if (!finalResult.summary) finalResult.summary = '';
+                  finalResult.summary += data.data.content;
+                  break;
+                  
+                default:
+                  // 处理其他类型的数据（可能是旧格式）
+                  if (data.type === 'final' || data.type === 'complete') {
+                    finalResult = { ...finalResult, ...data.data };
+                  } else if (data.type === 'error') {
+                    finalResult.error = data.message || data.error;
+                    finalResult.errors.push(data.message || data.error);
+                    hasError = true;
+                  }
+                  break;
+              }
+            } catch (parseError) {
+              console.log(`    📡 原始数据: ${dataStr}`);
+              // 如果解析失败，可能是简单的文本消息
+              if (dataStr.includes('error') || dataStr.includes('Error')) {
+                finalResult.errors.push(dataStr);
+                hasError = true;
+              }
+            }
+          }
+        }
+      });
+
+      res.body.on('end', () => {
+        // 处理剩余的buffer数据
+        if (buffer.trim()) {
+          console.log(`    📡 剩余数据: ${buffer.trim()}`);
+        }
+
+        // 构建最终结果
+        if (!hasWorkflowComplete && !hasError && finalResult.steps.length === 0) {
+          finalResult = { success: false, error: 'No result received from stream' };
+        } else {
+          // 如果有步骤执行，判断整体成功状态
+          if (finalResult.steps.length > 0) {
+            const successfulSteps = finalResult.steps.filter(step => step.success).length;
+            const totalSteps = finalResult.steps.length;
+            
+            // 如果没有明确设置success状态，根据步骤结果推断
+            if (finalResult.success === undefined) {
+              finalResult.success = successfulSteps > 0 && finalResult.errors.length === 0;
+            }
+            
+            // 添加执行统计
+            finalResult.stepStats = {
+              successful: successfulSteps,
+              total: totalSteps,
+              hasErrors: finalResult.errors.length > 0
+            };
+          }
+          
+          // 如果有错误但没有明确的错误消息，使用第一个错误
+          if (!finalResult.error && finalResult.errors.length > 0) {
+            finalResult.error = finalResult.errors[0];
+          }
+        }
+
+        resolve(finalResult);
+      });
+
+      res.body.on('error', (error) => {
+        reject(error);
+      });
+
+    }).catch(reject);
   });
-  
-  const result = await response.json();
-  return result;
 }
 
 // 测试主函数

@@ -18,55 +18,54 @@ const agent = new HttpsProxyAgent(proxy);
 const taskService = getTaskService();
 
 /**
- * 可用MCP列表
- * 注意: 在实际应用中，这应该从数据库或配置文件中加载
- * todo 代码兜底后续调整
+ * Available MCP List
+ * Note: In actual application, this should be loaded from database or config file
+ * todo Code fallback to be adjusted later
  */
 export const AVAILABLE_MCPS: MCPInfo[] = [
   {
     name: 'github-mcp-service',
     description: 'GitHub code repository operation tool, which can access and manage GitHub repositories',
-    capabilities: ['查看仓库信息', '获取文件内容', '创建Issue', '提交PR', '查看提交历史'],
+    capabilities: ['View repository info', 'Get file content', 'Create Issue', 'Submit PR', 'View commit history'],
     authRequired: true,
     authFields: ['GITHUB_TOKEN'],
-    category: '开发工具',
+    category: 'Development Tools',
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
     githubUrl: 'https://github.com/features/actions',
     authParams: {
-      tokenName: 'GITHUB_TOKEN',
-      tokenDescription: 'GitHub个人访问令牌，需要repo权限'
+      tokenName: 'GITHUB_TOKEN'
     }
   },
   {
     name: 'FileSystemTool',
-    description: '本地文件系统操作工具',
-    capabilities: ['读取文件', '写入文件', '列出目录内容', '创建目录'],
+    description: 'Local filesystem operation tool',
+    capabilities: ['Read file', 'Write file', 'List directory contents', 'Create directory'],
     authRequired: false,
-    category: '系统工具',
+    category: 'System Tools',
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
     githubUrl: 'https://github.com/nodejs/node'
   },
 
   {
     name: 'playwright-mcp-service',
-    description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
-    capabilities: ['打开浏览器', '访问网页', '填写表单', '点击元素', '获取页面内容'],
+    description: 'Playwright browser automation tool that can control browser to access web pages',
+    capabilities: ['Open browser', 'Visit webpage', 'Fill forms', 'Click elements', 'Get page content'],
     authRequired: false,
-    category: '自动化工具',
+    category: 'Automation Tools',
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
     githubUrl: 'https://github.com/microsoft/playwright'
   },
   {
     name: '12306-mcp-service',
-    description: '12306 火车票查询和预订工具',
-    capabilities: ['查询车站信息', '查询余票信息', '查询中转余票', '查询列车时刻表', '获取当前日期'],
+    description: '12306 train ticket query and booking tool',
+    capabilities: ['Query station info', 'Query ticket availability', 'Query transfer tickets', 'Query train schedules', 'Get current date'],
     authRequired: false,
-    category: '交通工具',
+    category: 'Transportation Tools',
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
     githubUrl: 'https://github.com/12306-mcp'
   },
   
-  // Chain PRC 类别
+  // Chain PRC Category
   {
     name: 'base-mcp-service',
     description: 'Base Chain Protocol integration for blockchain operations',
@@ -86,14 +85,13 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
       'gas-estimation', 'event-logs', 'block-data', 'transaction-receipts',
       'ethereum', 'optimism', 'arbitrum', 'base', 'polygon', 'avalanche', 'bsc'
     ],
-    authRequired: false, // 基础查询不需要认证，但交易操作需要私钥
-    authFields: ['PRIVATE_KEY'], // 仅在需要发送交易时需要
+    authRequired: false,
+    authFields: ['PRIVATE_KEY'],
     category: 'Chain PRC',
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
     githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
     authParams: {
-      privateKeyName: 'PRIVATE_KEY',
-      privateKeyDescription: '用于签名交易的以太坊私钥（仅在需要发送交易时使用）'
+      privateKeyName: 'PRIVATE_KEY'
     }
   },
   
@@ -113,8 +111,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
     githubUrl: 'https://docs.coingecko.com/reference/mcp-server',
     authParams: {
-      apiKeyName: 'COINGECKO_API_KEY',
-      apiKeyDescription: 'CoinGecko Pro API密钥，用于获取更高速率限制'
+      apiKeyName: 'COINGECKO_API_KEY'
     }
   },
   {
@@ -127,8 +124,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
     githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
     authParams: {
-      apiKeyName: 'CMC_API_KEY',
-      apiKeyDescription: 'CoinMarketCap API密钥'
+      apiKeyName: 'CMC_API_KEY'
     }
   },
   {
@@ -150,8 +146,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
     githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
     authParams: {
-      apiKeyName: 'DUNE_API_KEY',
-      apiKeyDescription: 'Dune Analytics API密钥'
+      apiKeyName: 'DUNE_API_KEY'
     }
   },
   {
@@ -191,7 +186,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://github.com/kukapay/whale-tracker-mcp'
   },
   
-  // Dev Tool 类别
+  // Dev Tool Category
   {
     name: 'github-mcp-server-service',
     description: 'GitHub repository management and operations',
@@ -202,8 +197,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
     githubUrl: 'https://github.com/github/github-mcp-server',
     authParams: {
-      tokenName: 'GITHUB_TOKEN',
-      tokenDescription: 'GitHub个人访问令牌'
+      tokenName: 'GITHUB_TOKEN'
     }
   },
   {
@@ -216,8 +210,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/langchain.png',
     githubUrl: 'https://github.com/langchain-ai/langchain',
     authParams: {
-      apiKeyName: 'OPENAI_API_KEY',
-      apiKeyDescription: 'OpenAI API密钥'
+      apiKeyName: 'OPENAI_API_KEY'
     }
   },
   {
@@ -230,8 +223,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-money-minded-68.png',
     githubUrl: 'https://github.com/mindsdb/minds-mcp',
     authParams: {
-      apiKeyName: 'MINDSDB_API_KEY',
-      apiKeyDescription: 'MindsDB API密钥'
+      apiKeyName: 'MINDSDB_API_KEY'
     }
   },
   {
@@ -271,8 +263,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-figma-96.png',
     githubUrl: 'https://github.com/GLips/Figma-Context-MCP',
     authParams: {
-      tokenName: 'FIGMA_TOKEN',
-      tokenDescription: 'Figma个人访问令牌'
+      tokenName: 'FIGMA_TOKEN'
     }
   },
   {
@@ -286,9 +277,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://awslabs.github.io/mcp/',
     authParams: {
       accessKeyName: 'AWS_ACCESS_KEY',
-      secretKeyName: 'AWS_SECRET_KEY',
-      accessKeyDescription: 'AWS访问密钥ID',
-      secretKeyDescription: 'AWS秘密访问密钥'
+      secretKeyName: 'AWS_SECRET_KEY'
     }
   },
   {
@@ -301,8 +290,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-convex-66.png',
     githubUrl: 'https://github.com/get-convex/convex-backend',
     authParams: {
-      deployKeyName: 'CONVEX_DEPLOY_KEY',
-      deployKeyDescription: 'Convex部署密钥'
+      deployKeyName: 'CONVEX_DEPLOY_KEY'
     }
   },
   {
@@ -315,8 +303,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-cloudflare-100.png',
     githubUrl: 'https://github.com/cloudflare/mcp-server-cloudflare',
     authParams: {
-      apiTokenName: 'CLOUDFLARE_API_TOKEN',
-      apiTokenDescription: 'Cloudflare API令牌'
+      apiTokenName: 'CLOUDFLARE_API_TOKEN'
     }
   },
   {
@@ -330,13 +317,11 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://github.com/supabase-community/supabase-mcp',
     authParams: {
       urlName: 'SUPABASE_URL',
-      keyName: 'SUPABASE_KEY',
-      urlDescription: 'Supabase项目URL',
-      keyDescription: 'Supabase匿名密钥'
+      keyName: 'SUPABASE_KEY'
     }
   },
   
-  // Trading 类别
+  // Trading Category
   {
     name: 'binance-mcp-service',
     description: 'Binance cryptocurrency exchange integration',
@@ -348,9 +333,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://github.com/TermiX-official/binance-mcp',
     authParams: {
       apiKeyName: 'BINANCE_API_KEY',
-      secretKeyName: 'BINANCE_SECRET_KEY',
-      apiKeyDescription: 'Binance API密钥',
-      secretKeyDescription: 'Binance秘密密钥'
+      secretKeyName: 'BINANCE_SECRET_KEY'
     }
   },
   {
@@ -364,9 +347,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
     authParams: {
       privateKeyName: 'PRIVATE_KEY',
-      rpcUrlName: 'RPC_URL',
-      privateKeyDescription: '以太坊钱包私钥',
-      rpcUrlDescription: '以太坊RPC节点URL'
+      rpcUrlName: 'RPC_URL'
     }
   },
   {
@@ -380,9 +361,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     githubUrl: 'https://github.com/mektigboy/server-hyperliquid',
     authParams: {
       apiKeyName: 'HYPERLIQUID_API_KEY',
-      secretName: 'HYPERLIQUID_SECRET',
-      apiKeyDescription: 'Hyperliquid API密钥',
-      secretDescription: 'Hyperliquid秘密密钥'
+      secretName: 'HYPERLIQUID_SECRET'
     }
   },
   {
@@ -395,12 +374,11 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-pumpkin-96.png',
     githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server',
     authParams: {
-      privateKeyName: 'WALLET_PRIVATE_KEY',
-      privateKeyDescription: 'Solana钱包私钥'
+      privateKeyName: 'WALLET_PRIVATE_KEY'
     }
   },
   
-  // Social 类别
+  // Social Category
   {
     name: 'discord-mcp-service',
     description: 'Discord social platform integration',
@@ -411,8 +389,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-discord-96.png',
     githubUrl: 'https://github.com/hanweg/mcp-discord',
     authParams: {
-      botTokenName: 'DISCORD_BOT_TOKEN',
-      botTokenDescription: 'Discord机器人令牌'
+      botTokenName: 'DISCORD_BOT_TOKEN'
     }
   },
   {
@@ -425,8 +402,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
     githubUrl: 'https://github.com/sparfenyuk/mcp-telegram',
     authParams: {
-      botTokenName: 'TELEGRAM_BOT_TOKEN',
-      botTokenDescription: 'Telegram机器人令牌'
+      botTokenName: 'TELEGRAM_BOT_TOKEN'
     }
   },
   {
@@ -446,11 +422,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
       apiKeyName: 'TWITTER_API_KEY',
       apiSecretName: 'TWITTER_API_SECRET',
       accessTokenName: 'TWITTER_ACCESS_TOKEN',
-      accessTokenSecretName: 'TWITTER_ACCESS_SECRET',
-      apiKeyDescription: 'Twitter API密钥（Consumer Key）',
-      apiSecretDescription: 'Twitter API秘密密钥（Consumer Secret）',
-      accessTokenDescription: 'Twitter访问令牌',
-      accessTokenSecretDescription: 'Twitter访问令牌秘密'
+      accessTokenSecretName: 'TWITTER_ACCESS_SECRET'
     }
   },
   {
@@ -463,8 +435,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
     githubUrl: 'https://github.com/makenotion/notion-mcp-server',
     authParams: {
-      tokenName: 'NOTION_TOKEN',
-      tokenDescription: 'Notion集成令牌'
+      tokenName: 'NOTION_TOKEN'
     }
   },
 
@@ -787,7 +758,7 @@ export class TaskAnalysisService {
           ...(mcp.category ? { category: mcp.category } : {}),
           ...(mcp.imageUrl ? { imageUrl: mcp.imageUrl } : {}),
           ...(mcp.githubUrl ? { githubUrl: mcp.githubUrl } : {}),
-          ...(mcp.authParams ? { authParams: this.extractActualAuthParams(mcp.authParams) } : {})
+          ...(mcp.authParams ? { authParams:mcp.authParams } : {})
         })),
         workflow: workflowResult.workflow
       };
@@ -803,7 +774,7 @@ export class TaskAnalysisService {
           authRequired: mcp.authRequired,
           authVerified: false,
           // 只在需要认证时返回实际的认证参数（不包含描述）
-          ...(mcp.authRequired && mcp.authParams ? { authParams: this.extractActualAuthParams(mcp.authParams) } : {})
+          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
         })),
         workflow: workflowResult.workflow
       };
@@ -934,7 +905,7 @@ export class TaskAnalysisService {
           category: mcp.category,
           imageUrl: mcp.imageUrl,
           githubUrl: mcp.githubUrl,
-          authParams: mcp.authParams ? this.extractActualAuthParams(mcp.authParams) : undefined
+          authParams: mcp.authParams ? mcp.authParams : undefined
         })),
         workflow: workflowResult.workflow
       };
@@ -1706,39 +1677,7 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
     return null;
   }
 
-  /**
-   * 基于关键词预选MCP
-   * @param taskContent 任务内容
-   * @param availableMCPs 可用的MCP列表
-   * @returns 预选的MCP列表
-   */
-  /**
-   * 提取实际需要的认证参数，过滤掉描述性信息
-   * @param authParams 原始认证参数对象
-   * @returns 只包含实际参数名的对象
-   */
-  public extractActualAuthParams(authParams: any): any {
-    if (!authParams || typeof authParams !== 'object') {
-      return {};
-    }
-    
-    const actualParams: any = {};
-    
-    // 提取实际的参数名，过滤掉描述性字段
-    Object.keys(authParams).forEach(key => {
-      // 跳过包含Description的字段
-      if (!key.includes('Description') && !key.includes('description')) {
-        // 提取参数值（通常是环境变量名）
-        const paramValue = authParams[key];
-        if (typeof paramValue === 'string' && paramValue.length > 0) {
-          // 使用参数值作为键名，值设为空字符串等待用户填写
-          actualParams[paramValue] = '';
-        }
-      }
-    });
-    
-    return actualParams;
-  }
+
 
   /**
    * 修复常见的JSON格式错误
