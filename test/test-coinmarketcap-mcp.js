@@ -292,9 +292,7 @@ async function testCoinMarketCapMCP() {
     // 步骤5: 提供CoinMarketCap认证信息
     console.log('\n🔑 步骤5: 提供CoinMarketCap认证信息');
     const authResult = await verifyAuth(task.id, 'coinmarketcap-mcp', {
-      'COINMARKETCAP_API_KEY': CMC_API_KEY,
-      'SUBSCRIPTION_LEVEL': 'Basic'
-    });
+      'COINMARKETCAP_API_KEY': CMC_API_KEY    });
     console.log(`  > 验证API返回: ${authResult.success ? '成功' : '失败'}`);
     console.log(`  > 验证详情: ${JSON.stringify(authResult, null, 2)}`);
     

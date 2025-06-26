@@ -1364,17 +1364,19 @@ ${deliverables.join('\n')}
 **IMPORTANT RULES**:
 1. DO NOT include any authentication information (API keys, tokens, etc.) in the workflow input
 2. The workflow should specify which MCP to use and what goal to achieve
-3. DO NOT specify exact tool names - let the system choose the appropriate tool at runtime
-4. Focus on the task objective rather than specific tool names
+3. DO NOT specify exact tool names - use descriptive objectives instead
+4. The system will automatically select the best available tool based on the objective
+5. Focus on WHAT to achieve, not HOW to achieve it
 
 Please design an ordered step process, specifying for each step:
 1. Which MCP service to use
-2. What objective to achieve (e.g., "get cryptocurrency price", "create tweet", etc.)
+2. What objective to achieve using natural language descriptions
 3. What the input parameters are (excluding auth info)
 
 For example:
-- Correct: {"step": 1, "mcp": "coinmarketcap-mcp", "action": "get_bitcoin_price", "input": {"symbol": "BTC"}}
-- Wrong: {"step": 1, "mcp": "coinmarketcap-mcp", "action": "cryptoQuotesLatest", "input": {"symbol": "BTC"}}
+- Correct: {"step": 1, "mcp": "coinmarketcap-mcp-service", "action": "get current price and market data for Bitcoin", "input": {"symbol": "BTC"}}
+- Correct: {"step": 2, "mcp": "x-mcp", "action": "create a tweet about the price information", "input": {"content": "Bitcoin price update"}}
+- Wrong: {"step": 1, "mcp": "coinmarketcap-mcp-service", "action": "cryptoQuotesLatest", "input": {"symbol": "BTC"}}
 
 Output format:
 {
