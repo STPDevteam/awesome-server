@@ -350,24 +350,6 @@ export class MCPManager {
     
     // 处理工具名称 - 处理中文工具名称的情况
     let actualTool = tool;
-    if (name === '12306-mcp') {
-      // 12306-mcp工具名称映射表 - 使用连字符格式
-      const toolNameMap: Record<string, string> = {
-        '获取当前日期': 'get-current-date',
-        '查询车站信息': 'get-stations-code-in-city',
-        '查询列车时刻表': 'get-train-route-stations',
-        '查询余票信息': 'get-tickets',
-        '查询中转余票': 'get-interline-tickets',
-        '获取城市车站代码': 'get-station-code-of-citys',
-        '获取车站代码': 'get-station-code-by-names',
-        '获取电报码车站信息': 'get-station-by-telecode'
-      };
-      
-      if (toolNameMap[tool]) {
-        actualTool = toolNameMap[tool];
-        logger.info(`【MCP Debug】Tool name mapped from '${tool}' to '${actualTool}'`);
-      }
-    }
     
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {
