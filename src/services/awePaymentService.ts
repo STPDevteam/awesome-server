@@ -17,7 +17,7 @@ const AWE_TOKEN_CONFIG = {
 
 // CoinMarketCap配置
 const CMC_CONFIG = {
-  apiKey: process.env.CMC_API_KEY || '',
+  apiKey: process.env.CMC_SERVER_API_KEY || '',
   baseUrl: 'https://pro-api.coinmarketcap.com/v1',
   aweTokenId: '4006'
 };
