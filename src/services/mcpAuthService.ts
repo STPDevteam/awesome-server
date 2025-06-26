@@ -76,6 +76,33 @@ export class MCPAuthService {
   }
   
   /**
+   * 删除用户的MCP授权信息
+   * @param userId 用户ID
+   * @param mcpName MCP名称
+   */
+  async deleteMCPAuth(userId: string, mcpName: string): Promise<boolean> {
+    try {
+      return await mcpAuthDao.deleteMCPAuth(userId, mcpName);
+    } catch (error) {
+      logger.error(`删除MCP授权数据失败 [用户: ${userId}, MCP: ${mcpName}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 删除用户的所有MCP授权信息
+   * @param userId 用户ID
+   */
+  async deleteAllUserMCPAuths(userId: string): Promise<number> {
+    try {
+      return await mcpAuthDao.deleteAllUserMCPAuths(userId);
+    } catch (error) {
+      logger.error(`删除用户所有MCP授权数据失败 [用户: ${userId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
    * 验证MCP授权
    * @param userId 用户ID
    * @param mcpName MCP名称

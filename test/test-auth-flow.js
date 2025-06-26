@@ -4,6 +4,24 @@ import fetch from 'node-fetch';
 const BASE_URL = 'http://localhost:3001';
 const TEST_USER_ID = 'test-user-001';
 
+// 清理用户认证状态
+async function clearUserAuth() {
+  try {
+    const { MCPAuthService } = await import('../dist/services/mcpAuthService.js');
+    const mcpAuthService = new MCPAuthService();
+    
+    // 获取用户所有认证记录
+    const auths = await mcpAuthService.getUserAllMCPAuths(TEST_USER_ID);
+    
+    // 删除所有认证记录
+    const deletedCount = await mcpAuthService.deleteAllUserMCPAuths(TEST_USER_ID);
+    
+    console.log(`🧹 已清理用户 ${TEST_USER_ID} 的所有认证状态`);
+  } catch (error) {
+    console.error('清理认证状态失败:', error);
+  }
+}
+
 // 创建任务
 async function createTask(content) {
   const response = await fetch(`${BASE_URL}/api/task`, {
@@ -83,6 +101,11 @@ async function executeTask(taskId) {
 async function testAuthFlow() {
   try {
     console.log('🚀 开始测试MCP认证流程...\n');
+    
+    // 步骤0: 清理用户认证状态
+    console.log('🧹 步骤0: 清理用户认证状态');
+    await clearUserAuth();
+    console.log('');
     
     // 步骤1: 创建需要认证的任务
     console.log('📝 步骤1: 创建任务（Twitter发推文）');

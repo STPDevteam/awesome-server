@@ -109,6 +109,48 @@ export class MCPAuthDao {
   }
   
   /**
+   * 删除用户的MCP授权信息
+   */
+  async deleteMCPAuth(userId: string, mcpName: string): Promise<boolean> {
+    try {
+      const result = await db.query(
+        `
+        DELETE FROM mcp_auth
+        WHERE user_id = $1 AND mcp_name = $2
+        `,
+        [userId, mcpName]
+      );
+      
+      logger.info(`删除MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
+      return (result.rowCount || 0) > 0;
+    } catch (error) {
+      logger.error(`删除MCP授权数据记录失败 [用户: ${userId}, MCP: ${mcpName}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 删除用户的所有MCP授权信息
+   */
+  async deleteAllUserMCPAuths(userId: string): Promise<number> {
+    try {
+      const result = await db.query(
+        `
+        DELETE FROM mcp_auth
+        WHERE user_id = $1
+        `,
+        [userId]
+      );
+      
+      logger.info(`删除用户所有MCP授权数据记录 [用户: ${userId}]`);
+      return result.rowCount || 0;
+    } catch (error) {
+      logger.error(`删除用户所有MCP授权数据记录失败 [用户: ${userId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
    * 获取任务的MCP工作流
    */
   async getTaskMCPWorkflow(taskId: string): Promise<any> {
