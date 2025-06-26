@@ -148,7 +148,6 @@ export class MCPAlternativeService {
           acc[category].push({
             name: mcp.name,
             description: mcp.description,
-            capabilities: mcp.capabilities
           });
           return acc;
         }, {} as Record<string, any[]>);

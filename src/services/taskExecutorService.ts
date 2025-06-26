@@ -402,7 +402,20 @@ export class TaskExecutorService {
       logger.info(`📞 Calling LangChain tool: ${langchainTool.name}`);
       logger.info(`📥 Input parameters: ${JSON.stringify(input, null, 2)}`);
       
+      console.log(`\n==== LangChain Tool Call Details ====`);
+      console.log(`Time: ${new Date().toISOString()}`);
+      console.log(`MCP Name: ${mcpName}`);
+      console.log(`Tool Name: ${toolName}`);
+      console.log(`LangChain Tool Name: ${langchainTool.name}`);
+      console.log(`Input Parameters to LangChain: ${JSON.stringify(input, null, 2)}`);
+      console.log(`Tool Description: ${targetTool.description || 'No description'}`);
+      console.log(`Tool Input Schema: ${JSON.stringify(targetTool.inputSchema, null, 2)}`);
+      
       const result = await langchainTool.invoke(input);
+      
+      console.log(`\n==== LangChain Tool Call Raw Result ====`);
+      console.log(`Raw Result Type: ${typeof result}`);
+      console.log(`Raw Result: ${result}`);
       
       logger.info(`✅ LangChain tool call successful`);
       logger.info(`📤 Raw result: ${result}`);
@@ -451,9 +464,29 @@ export class TaskExecutorService {
       const connectedMCPs = this.mcpManager.getConnectedMCPs();
       const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
       
+      console.log(`\n==== MCP Connection Status Debug ====`);
+      console.log(`MCP Name: ${actualMcpName}`);
+      console.log(`Is Connected: ${isConnected}`);
+      console.log(`Connected MCPs:`, connectedMCPs.map(mcp => ({
+        name: mcp.name,
+        env: mcp.env,
+        connected: mcp.connected
+      })));
+      
       // 如果未连接，尝试自动连接
       if (!isConnected) {
+        console.log(`MCP not connected, calling autoConnectMCP...`);
         await this.autoConnectMCP(actualMcpName, taskId);
+      } else {
+        console.log(`MCP already connected, skipping autoConnectMCP`);
+        
+        // 检查已连接的MCP的环境变量
+        const connectedMcp = connectedMCPs.find(mcp => mcp.name === actualMcpName);
+        if (connectedMcp) {
+          console.log(`Connected MCP env:`, connectedMcp.env);
+          const apiKey = connectedMcp.env?.COINMARKETCAP_API_KEY;
+          console.log(`API Key status: ${apiKey ? 'Present' : 'Missing'} (length: ${apiKey?.length || 0})`);
+        }
       }
 
       // 获取MCP的所有工具
@@ -486,7 +519,21 @@ Select the BEST tool for this objective. Response with ONLY the exact tool name,
       }
 
       // 调用选定的工具
-      return await this.callMCPToolWithLangChain(actualMcpName, selectedToolName, input);
+      console.log(`\n==== MCP Objective-❤️Based Call Details ====`);
+      console.log(`Time: ${new Date().toISOString()}`);
+      console.log(`Original MCP Name: ${mcpName}`);
+      console.log(`Actual MCP Name: ${actualMcpName}`);
+      console.log(`Objective: ${objective}`);
+      console.log(`Selected Tool: ${selectedToolName}`);
+      console.log(`Final Input Parameters: ${JSON.stringify(input, null, 2)}`);
+      
+      const result = await this.callMCPToolWithLangChain(actualMcpName, selectedToolName, input);
+      
+      console.log(`\n==== MCP Objective-Based Call Result ====`);
+      console.log(`Status: Success`);
+      console.log(`Return Data: ${JSON.stringify(result, null, 2)}`);
+      
+      return result;
 
     } catch (error) {
       logger.error(`❌ MCP objective-based call failed [${mcpName}/${objective}]:`, error);
@@ -630,54 +677,87 @@ Select the BEST tool for this objective. Response with ONLY the exact tool name,
    * 动态注入用户认证信息
    */
   private async injectUserAuthentication(mcpConfig: any, taskId?: string): Promise<Record<string, string>> {
-        let dynamicEnv = { ...mcpConfig.env };
-        
-        // 检查是否需要认证
-        if (mcpConfig.env) {
-          const missingEnvVars: string[] = [];
-          
-          // 检查每个环境变量是否缺失
-          for (const [key, value] of Object.entries(mcpConfig.env)) {
-            if (!value || value === '') {
-              missingEnvVars.push(key);
-            }
-          }
-          
-          // 如果有缺失的环境变量，尝试从数据库获取用户认证信息
+    let dynamicEnv = { ...mcpConfig.env };
+    
+    console.log(`\n==== Authentication Injection Debug ====`);
+    console.log(`Time: ${new Date().toISOString()}`);
+    console.log(`MCP Name: ${mcpConfig.name}`);
+    console.log(`Task ID: ${taskId}`);
+    console.log(`Original Env: ${JSON.stringify(mcpConfig.env, null, 2)}`);
+    console.log(`Dynamic Env (initial): ${JSON.stringify(dynamicEnv, null, 2)}`);
+    
+    // 检查是否需要认证
+    if (mcpConfig.env) {
+      const missingEnvVars: string[] = [];
+      
+      // 检查每个环境变量是否缺失
+      for (const [key, value] of Object.entries(mcpConfig.env)) {
+        if (!value || value === '') {
+          missingEnvVars.push(key);
+        }
+      }
+      
+      console.log(`Missing env vars: ${JSON.stringify(missingEnvVars)}`);
+      
+      // 如果有缺失的环境变量，尝试从数据库获取用户认证信息
       if (missingEnvVars.length > 0 && taskId) {
         logger.info(`MCP needs authentication, attempting to get user auth data from database...`);
         
-               try {
-                 const currentTask = await taskExecutorDao.getTaskById(taskId);
-                 if (currentTask) {
+        try {
+          const currentTask = await taskExecutorDao.getTaskById(taskId);
+          if (currentTask) {
             const userId = currentTask.user_id;
             logger.info(`Got user ID from task context: ${userId}`);
+            console.log(`User ID: ${userId}`);
             
             const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpConfig.name);
-                
-                if (userAuth && userAuth.isVerified && userAuth.authData) {
+            console.log(`User Auth Result:`, {
+              hasUserAuth: !!userAuth,
+              isVerified: userAuth?.isVerified,
+              hasAuthData: !!userAuth?.authData
+            });
+            
+            if (userAuth && userAuth.isVerified && userAuth.authData) {
               logger.info(`Found user ${userId} auth info for ${mcpConfig.name}, injecting environment variables...`);
-                  
-                  // 动态注入认证信息到环境变量
-                  for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-                    if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                      dynamicEnv[envKey] = userAuth.authData[envKey];
+              console.log(`User Auth Data: ${JSON.stringify(userAuth.authData, null, 2)}`);
+              
+              // 动态注入认证信息到环境变量
+              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                console.log(`Checking env var: ${envKey} = "${envValue}"`);
+                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
                   logger.info(`Injected environment variable ${envKey}`);
+                } else {
+                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authData has key: ${!!userAuth.authData[envKey]}`);
                 }
               }
               
-                  const stillMissingVars = missingEnvVars.filter(key => !dynamicEnv[key] || dynamicEnv[key] === '');
-                  if (stillMissingVars.length === 0) {
+              const stillMissingVars = missingEnvVars.filter(key => !dynamicEnv[key] || dynamicEnv[key] === '');
+              if (stillMissingVars.length === 0) {
                 logger.info(`✅ Successfully injected all required auth info for ${mcpConfig.name}`);
-                  }
+                console.log(`✅ All required auth info injected successfully`);
+              } else {
+                console.log(`❌ Still missing vars: ${JSON.stringify(stillMissingVars)}`);
+              }
+            } else {
+              console.log(`❌ No valid user auth found:`, {
+                hasUserAuth: !!userAuth,
+                isVerified: userAuth?.isVerified,
+                hasAuthData: !!userAuth?.authData
+              });
             }
-                }
-              } catch (error) {
+          } else {
+            console.log(`❌ Task not found: ${taskId}`);
+          }
+        } catch (error) {
           logger.error(`Failed to get user auth info:`, error);
+          console.log(`❌ Error getting user auth:`, error);
         }
       }
     }
     
+    console.log(`Final Dynamic Env: ${JSON.stringify(dynamicEnv, null, 2)}`);
     return dynamicEnv;
   }
   

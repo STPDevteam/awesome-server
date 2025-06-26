@@ -11,7 +11,6 @@ export class MCPInfoService {
     {
       name: '12306-mcp',
       description: '12306 Train ticket inquiry and booking tools',
-      capabilities: ['train-ticket-query', 'station-search', 'schedule-check'],
       authRequired: false,
       category: 'Others',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
@@ -20,7 +19,6 @@ export class MCPInfoService {
     {
       name: 'langchain',
       description: 'LangChain tool integration, provides document processing, vector search and other capabilities',
-      capabilities: ['document-processing', 'vector-search', 'agents'],
       authRequired: true,
       authFields: ['api_key'],
       category: 'Development Tools',
@@ -30,7 +28,6 @@ export class MCPInfoService {
     {
       name: 'github',
       description: 'GitHub tool, provides repository management, PR creation and other features',
-      capabilities: ['repository', 'pull-request', 'issue'],
       authRequired: true,
       authFields: ['token'],
       category: 'Development Tools',
@@ -40,7 +37,6 @@ export class MCPInfoService {
     {
       name: 'WebBrowserTool',
       description: 'General web browsing tool, can be used to access websites and retrieve information',
-      capabilities: ['open-browser', 'visit-webpage', 'get-content'],
       authRequired: false,
       category: 'Network Tools',
       imageUrl: 'https://cdn-icons-png.flaticon.com/512/2985/2985975.png',
@@ -49,7 +45,6 @@ export class MCPInfoService {
     {
       name: 'FileSystemTool',
       description: 'File system tool, provides file reading, writing, querying and other functions',
-      capabilities: ['read-file', 'write-file', 'list-directory'],
       authRequired: false,
       category: 'System Tools',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
@@ -58,7 +53,6 @@ export class MCPInfoService {
     {
       name: 'GoogleSearchTool',
       description: 'Google search tool, provides web search functionality',
-      capabilities: ['search', 'web-results'],
       authRequired: true,
       authFields: ['api_key'],
       category: 'Network Tools',
@@ -70,7 +64,6 @@ export class MCPInfoService {
     {
       name: 'base-mcp',
       description: 'Base Chain Protocol integration for blockchain operations',
-      capabilities: ['blockchain-query', 'transaction-tracking', 'smart-contract'],
       authRequired: false,
       category: 'Chain PRC',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/base.ico',
@@ -79,13 +72,6 @@ export class MCPInfoService {
     {
       name: 'evm-mcp',
       description: 'Comprehensive EVM blockchain server supporting 30+ networks including Ethereum, Optimism, Arbitrum, Base, Polygon with unified interface',
-      capabilities: [
-        'multi-chain-support', 'blockchain-data-access', 'token-services', 
-        'nft-operations', 'smart-contract-interactions', 'transaction-support',
-        'ens-resolution', 'balance-queries', 'token-transfers', 'contract-verification',
-        'gas-estimation', 'event-logs', 'block-data', 'transaction-receipts',
-        'ethereum', 'optimism', 'arbitrum', 'base', 'polygon', 'avalanche', 'bsc'
-      ],
       authRequired: true, // 需要RPC URL和钱包私钥
       authFields: ['RPC_PROVIDER_URL', 'WALLET_PRIVATE_KEY'], // 连接需要的环境变量
       category: 'Chain PRC',
@@ -97,11 +83,6 @@ export class MCPInfoService {
     {
       name: 'coingecko-server',
       description: 'CoinGecko official MCP server for comprehensive cryptocurrency market data, historical prices, and OHLC candlestick data',
-      capabilities: [
-        'get-coins', 'find-coin-ids', 'get-historical-data', 'get-ohlc-data', 
-        'refresh-cache', 'crypto-prices', 'market-data', 'coin-info',
-        'price-history', 'market-cap-data', 'volume-data', 'candlestick-data'
-      ],
       authRequired: true,
       authFields: ['COINGECKO_API_KEY'],
       category: 'Market Data',
@@ -111,7 +92,6 @@ export class MCPInfoService {
     {
       name: 'coinmarketcap-mcp',
       description: 'CoinMarketCap market data integration',
-      capabilities: ['crypto-prices', 'market-cap', 'trading-volume'],
       authRequired: true,
       authFields: ['api_key'],
       category: 'Market Data',
@@ -121,7 +101,6 @@ export class MCPInfoService {
     {
       name: 'mcp-server-defillama',
       description: 'DeFiLlama protocol data and analytics',
-      capabilities: ['defi-protocols', 'tvl-data', 'yield-farming'],
       authRequired: false,
       category: 'Market Data',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png',
@@ -130,7 +109,7 @@ export class MCPInfoService {
     {
       name: 'dune-mcp-server',
       description: 'Dune Analytics blockchain data queries',
-      capabilities: ['sql-queries', 'blockchain-analytics', 'data-visualization'],
+      
       authRequired: true,
       authFields: ['api_key'],
       category: 'Market Data',
@@ -140,7 +119,7 @@ export class MCPInfoService {
     {
       name: 'rug-check-mcp',
       description: 'Rug Check security analysis for tokens',
-      capabilities: ['token-security', 'rug-detection', 'contract-analysis'],
+      
       authRequired: false,
       category: 'Market Data',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
@@ -149,7 +128,7 @@ export class MCPInfoService {
     {
       name: 'chainlink-feeds-mcp',
       description: 'ChainLink price feeds and oracle data',
-      capabilities: ['price-feeds', 'oracle-data', 'real-time-prices'],
+      
       authRequired: false,
       category: 'Market Data',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-chainlink-100.png',
@@ -158,7 +137,7 @@ export class MCPInfoService {
     {
       name: 'crypto-feargreed-mcp',
       description: 'Fear & Greed Index for cryptocurrency market sentiment',
-      capabilities: ['sentiment-analysis', 'market-psychology', 'fear-greed-index'],
+      
       authRequired: false,
       category: 'Market Data',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
@@ -167,7 +146,7 @@ export class MCPInfoService {
     {
       name: 'whale-tracker-mcp',
       description: 'Whale Tracker for large cryptocurrency transactions',
-      capabilities: ['whale-tracking', 'large-transactions', 'wallet-monitoring'],
+      
       authRequired: false,
       category: 'Market Data',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
@@ -178,7 +157,7 @@ export class MCPInfoService {
     {
       name: 'github-mcp-server',
       description: 'GitHub repository management and operations',
-      capabilities: ['repository-management', 'pull-requests', 'issues', 'code-review'],
+      
       authRequired: true,
       authFields: ['github_token'],
       category: 'Development Tools',
@@ -188,7 +167,7 @@ export class MCPInfoService {
     {
       name: 'langchain-mcp',
       description: 'LangChain integration for AI workflows',
-      capabilities: ['ai-workflows', 'document-processing', 'embeddings'],
+      
       authRequired: true,
       authFields: ['openai_api_key'],
       category: 'Development Tools',
@@ -198,7 +177,7 @@ export class MCPInfoService {
     {
       name: 'minds-mcp',
       description: 'MindsDB machine learning database integration',
-      capabilities: ['ml-models', 'predictive-analytics', 'data-processing'],
+      
       authRequired: true,
       authFields: ['mindsdb_api_key'],
       category: 'Development Tools',
@@ -208,7 +187,6 @@ export class MCPInfoService {
     {
       name: 'playwright-mcp',
       description: 'Playwright browser automation for testing',
-      capabilities: ['browser-automation', 'testing', 'scraping'],
       authRequired: false,
       category: 'Development Tools',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
@@ -217,7 +195,6 @@ export class MCPInfoService {
     {
       name: 'blender-mcp',
       description: 'Blender 3D modeling and animation integration',
-      capabilities: ['3d-modeling', 'animation', 'rendering'],
       authRequired: false,
       category: 'Development Tools',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
@@ -226,7 +203,6 @@ export class MCPInfoService {
     {
       name: 'unity-mcp',
       description: 'Unity game engine integration',
-      capabilities: ['game-development', 'unity-scripting', 'asset-management'],
       authRequired: false,
       category: 'Development Tools',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unity-100.png',
@@ -235,7 +211,6 @@ export class MCPInfoService {
     {
       name: 'unreal-mcp',
       description: 'Unreal Engine integration',
-      capabilities: ['game-development', 'blueprints', 'level-design'],
       authRequired: false,
       category: 'Development Tools',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unreal-engine-100.png',
@@ -244,7 +219,6 @@ export class MCPInfoService {
     {
       name: 'figma-context-mcp',
       description: 'Figma design tool integration',
-      capabilities: ['design-tools', 'prototyping', 'collaboration'],
       authRequired: true,
       authFields: ['figma_token'],
       category: 'Development Tools',
@@ -254,7 +228,6 @@ export class MCPInfoService {
     {
       name: 'aws-mcp',
       description: 'AWS cloud services integration',
-      capabilities: ['cloud-services', 'ec2', 's3', 'lambda'],
       authRequired: true,
       authFields: ['aws_access_key', 'aws_secret_key'],
       category: 'Development Tools',
@@ -264,7 +237,6 @@ export class MCPInfoService {
     {
       name: 'convex-mcp',
       description: 'Convex backend platform integration',
-      capabilities: ['backend-services', 'database', 'real-time'],
       authRequired: true,
       authFields: ['convex_deploy_key'],
       category: 'Development Tools',
@@ -274,7 +246,6 @@ export class MCPInfoService {
     {
       name: 'cloudflare-mcp',
       description: 'Cloudflare services integration',
-      capabilities: ['cdn', 'dns', 'workers', 'pages'],
       authRequired: true,
       authFields: ['cloudflare_api_token'],
       category: 'Development Tools',
@@ -284,7 +255,6 @@ export class MCPInfoService {
     {
       name: 'supabase-mcp',
       description: 'Supabase backend-as-a-service integration',
-      capabilities: ['database', 'auth', 'storage', 'edge-functions'],
       authRequired: true,
       authFields: ['supabase_url', 'supabase_key'],
       category: 'Development Tools',
@@ -296,7 +266,6 @@ export class MCPInfoService {
     {
       name: 'binance-mcp',
       description: 'Binance cryptocurrency exchange integration',
-      capabilities: ['spot-trading', 'futures-trading', 'market-data'],
       authRequired: true,
       authFields: ['api_key', 'secret_key'],
       category: 'Trading',
@@ -306,7 +275,6 @@ export class MCPInfoService {
     {
       name: 'uniswap-trader-mcp',
       description: 'Uniswap decentralized exchange trading',
-      capabilities: ['dex-trading', 'liquidity-pools', 'token-swaps'],
       authRequired: true,
       authFields: ['private_key', 'rpc_url'],
       category: 'Trading',
@@ -316,7 +284,6 @@ export class MCPInfoService {
     {
       name: 'server-hyperliquid',
       description: 'Hyperliquid perpetual trading platform',
-      capabilities: ['perpetual-trading', 'derivatives', 'leverage'],
       authRequired: true,
       authFields: ['api_key', 'secret'],
       category: 'Trading',
@@ -326,7 +293,6 @@ export class MCPInfoService {
     {
       name: 'pumpfun-mcp-server',
       description: 'Pump.fun meme token trading platform',
-      capabilities: ['meme-tokens', 'token-creation', 'trading'],
       authRequired: true,
       authFields: ['wallet_private_key'],
       category: 'Trading',
@@ -338,7 +304,6 @@ export class MCPInfoService {
     {
       name: 'mcp-discord',
       description: 'Discord social platform integration',
-      capabilities: ['messaging', 'server-management', 'bot-integration'],
       authRequired: true,
       authFields: ['bot_token'],
       category: 'Social',
@@ -348,7 +313,6 @@ export class MCPInfoService {
     {
       name: 'mcp-telegram',
       description: 'Telegram messaging platform integration',
-      capabilities: ['messaging', 'bot-creation', 'channel-management'],
       authRequired: true,
       authFields: ['bot_token'],
       category: 'Social',
@@ -358,11 +322,6 @@ export class MCPInfoService {
     {
       name: 'x-mcp-server',
       description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Built-in rate limit handling for free API tier',
-      capabilities: [
-        'get_home_timeline', 'create_tweet', 'reply_to_tweet', 
-        'rate-limit-handling', 'timeline-reading', 'tweet-engagement',
-        'free-tier-support', 'monthly-usage-tracking', 'exponential-backoff'
-      ],
       authRequired: true,
       authFields: ['TWITTER_API_KEY', 'TWITTER_API_SECRET', 'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_SECRET'],
       category: 'Social',
@@ -372,7 +331,6 @@ export class MCPInfoService {
     {
       name: 'notion-mcp-server',
       description: 'Notion workspace and documentation integration',
-      capabilities: ['page-creation', 'database-management', 'content-editing'],
       authRequired: true,
       authFields: ['notion_token'],
       category: 'Social',
