@@ -473,20 +473,33 @@ export class TaskExecutorService {
         connected: mcp.connected
       })));
       
-      // 如果未连接，尝试自动连接
-      if (!isConnected) {
-        console.log(`MCP not connected, calling autoConnectMCP...`);
-        await this.autoConnectMCP(actualMcpName, taskId);
-      } else {
-        console.log(`MCP already connected, skipping autoConnectMCP`);
-        
-        // 检查已连接的MCP的环境变量
+      // 检查已连接的MCP是否有正确的认证信息
+      let needsReconnection = false;
+      if (isConnected) {
         const connectedMcp = connectedMCPs.find(mcp => mcp.name === actualMcpName);
         if (connectedMcp) {
           console.log(`Connected MCP env:`, connectedMcp.env);
           const apiKey = connectedMcp.env?.COINMARKETCAP_API_KEY;
           console.log(`API Key status: ${apiKey ? 'Present' : 'Missing'} (length: ${apiKey?.length || 0})`);
+          
+          // 如果API密钥缺失，需要重新连接
+          if (!apiKey || apiKey === '') {
+            console.log(`API Key missing, need to reconnect with proper authentication`);
+            needsReconnection = true;
+          }
         }
+      }
+      
+      // 如果未连接或需要重新连接，尝试自动连接
+      if (!isConnected || needsReconnection) {
+        if (needsReconnection) {
+          console.log(`Disconnecting MCP ${actualMcpName} to reconnect with proper auth...`);
+          await this.mcpManager.disconnect(actualMcpName);
+        }
+        console.log(`Calling autoConnectMCP with task ID: ${taskId}...`);
+        await this.autoConnectMCP(actualMcpName, taskId);
+      } else {
+        console.log(`MCP already connected with valid auth, skipping autoConnectMCP`);
       }
 
       // 获取MCP的所有工具
