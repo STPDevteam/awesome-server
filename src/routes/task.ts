@@ -1019,8 +1019,7 @@ router.post('/:id/verify-auth', optionalAuth, async (req: Request, res: Response
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: 'Invalid request parameters',
-        details: validationResult.error.errors
+        message: 'Invalid request parameters'
       });
     }
     
@@ -1037,7 +1036,11 @@ router.post('/:id/verify-auth', optionalAuth, async (req: Request, res: Response
 
     const userId = req.user?.id || bodyUserId;
     if (!userId) {
-      return res.status(401).json({ success: false, error: 'Unauthorized', message: 'User ID is required' });
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'User ID is required'
+      });
     }
     
     // 确保用户只能为自己的任务验证授权
@@ -1066,15 +1069,25 @@ router.post('/:id/verify-auth', optionalAuth, async (req: Request, res: Response
       );
     }
     
-    res.json({
-      success: verificationResult.success,
-      data: {
-        verified: verificationResult.success,
+    if (verificationResult.success) {
+      // 成功时返回带data的格式
+      res.json({
+        success: true,
         message: verificationResult.message,
-        details: verificationResult.details,
-        mcpName
-      }
-    });
+        data: {
+          verified: true,
+          details: verificationResult.details,
+          mcpName
+        }
+      });
+    } else {
+      // 失败时返回统一的error格式
+      res.json({
+        success: false,
+        error: 'Verification Failed',
+        message: verificationResult.message
+      });
+    }
   } catch (error) {
     logger.error(`MCP authorization verification error [Task ID: ${req.params.id}]:`, error);
     res.status(500).json({
@@ -1150,8 +1163,7 @@ router.post('/:id/replace-mcp', async (req: Request, res: Response) => {
       return res.status(400).json({
         success: false,
         error: 'Bad Request',
-        message: '无效的请求参数',
-        details: validationResult.error.errors
+        message: '无效的请求参数'
       });
     }
     
