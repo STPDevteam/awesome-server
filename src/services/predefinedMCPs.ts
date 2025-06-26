@@ -77,7 +77,8 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@shinzolabs/coinmarketcap-mcp'],
         env: {
             COINMARKETCAP_API_KEY: process.env.CMC_API_KEY || '',
-            SUBSCRIPTION_LEVEL: "Basic"
+            SUBSCRIPTION_LEVEL: "Basic",
+            PORT: "3002"
         },
         connected: false,
         category: 'Market Data',
@@ -358,7 +359,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'x-mcp',
         description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
         command: 'node',
-        args: ['/home/ubuntu/mcp-tools/x-mcp-server/build/index.js'],
+        args: ['/Users/peteren/projects/x-mcp-server/build/index.js'],
         env: {
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
@@ -426,6 +427,7 @@ export const mcpNameMapping: Record<string, string> = {
     'binance-mcp-server': 'binance-mcp',
     'base-mcp-server': 'base-mcp',
     'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
+    'coinmarketcap_mcp_service': 'coinmarketcap-mcp',
     'defillama-mcp-service': 'mcp-server-defillama',
     'rug-check-mcp-service': 'rug-check-mcp',
     'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',

@@ -116,15 +116,23 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
   },
   {
     name: 'coinmarketcap-mcp-service',
-    description: 'CoinMarketCap market data integration',
-    capabilities: ['crypto-prices', 'market-cap', 'trading-volume'],
+    description: 'CoinMarketCap market data integration with comprehensive cryptocurrency data',
+    capabilities: [
+      'cryptoCategories', 'cryptoCategory', 'cryptoCurrencyMap', 'getCryptoMetadata',
+      'allCryptocurrencyListings', 'cryptoQuotesLatest', 'dexInfo', 'dexListingsLatest',
+      'dexNetworksList', 'dexSpotPairsLatest', 'dexPairsQuotesLatest', 'dexPairsOhlcvLatest',
+      'dexPairsOhlcvHistorical', 'dexPairsTradeLatest', 'exchangeAssets', 'exchangeInfo',
+      'exchangeMap', 'globalMetricsLatest', 'cmc100IndexHistorical', 'cmc100IndexLatest',
+      'fearAndGreedLatest', 'fearAndGreedHistorical', 'fiatMap', 'getPostmanCollection',
+      'priceConversion', 'keyInfo'
+    ],
     authRequired: true,
-    authFields: ['CMC_API_KEY'],
+    authFields: ['COINMARKETCAP_API_KEY'],
     category: 'Market Data',
     imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
     githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
     authParams: {
-      apiKeyName: 'CMC_API_KEY'
+      apiKeyName: 'COINMARKETCAP_API_KEY'
     }
   },
   {
@@ -1415,8 +1423,7 @@ Please design a detailed workflow based on the user's task requirements, selecte
 Available MCP tools:
 ${JSON.stringify(recommendedMCPs.map(mcp => ({
   name: mcp.name,
-  description: mcp.description,
-  capabilities: mcp.capabilities
+  description: mcp.description
 })), null, 2)}
 
 Deliverables:
@@ -1424,29 +1431,26 @@ ${deliverables.join('\n')}
 
 **IMPORTANT RULES**:
 1. DO NOT include any authentication information (API keys, tokens, etc.) in the workflow input
-2. The input should ONLY contain the actual parameters needed for the action
-3. Authentication will be handled separately through the verify-auth API
-4. **CRITICAL**: Use EXACT tool names with underscores, not dashes:
-   - For x-mcp: use "create_tweet" (NOT "create-tweet")
-   - For x-mcp: use "get_home_timeline" (NOT "get-home-timeline") 
-   - For x-mcp: use "reply_to_tweet" (NOT "reply-to-tweet")
+2. The workflow should specify which MCP to use and what goal to achieve
+3. DO NOT specify exact tool names - let the system choose the appropriate tool at runtime
+4. Focus on the task objective rather than specific tool names
 
 Please design an ordered step process, specifying for each step:
-1. Which MCP tool to use
-2. What specific action to perform (using correct underscore format)
+1. Which MCP service to use
+2. What objective to achieve (e.g., "get cryptocurrency price", "create tweet", etc.)
 3. What the input parameters are (excluding auth info)
 
-For example, for Twitter/X tasks:
-- Correct: {"step": 1, "mcp": "x-mcp", "action": "create_tweet", "input": {"text": "Hello world"}}
-- Wrong: {"step": 1, "mcp": "x-mcp", "action": "create-tweet", "input": {"text": "Hello world"}}
+For example:
+- Correct: {"step": 1, "mcp": "coinmarketcap-mcp", "action": "get_bitcoin_price", "input": {"symbol": "BTC"}}
+- Wrong: {"step": 1, "mcp": "coinmarketcap-mcp", "action": "cryptoQuotesLatest", "input": {"symbol": "BTC"}}
 
 Output format:
 {
   "workflow": [
     {
       "step": 1,
-      "mcp": "Tool name",
-      "action": "Specific action (with underscores)",
+      "mcp": "MCP service name",
+      "action": "Task objective description",
       "input": {actual parameters only, no auth}
     },
     ...
@@ -1465,62 +1469,22 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
       let jsonText = responseText.trim();
       
       try {
-        // Clean possible Markdown formatting
-        // 多步骤JSON提取和清理
-        
-        logger.info(`[MCP Debug] Original response length: ${responseText.length}`);
-        
-        // 步骤1: 提取markdown代码块中的JSON
+        // 优先从Markdown代码块中提取JSON
         const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-        if (jsonMatch) {
+        if (jsonMatch && jsonMatch[1]) {
           jsonText = jsonMatch[1].trim();
-          logger.info(`[MCP Debug] Extracted from markdown: ${jsonText.substring(0, 200)}...`);
+          logger.info(`[MCP Debug] Extracted JSON from markdown block.`);
         } else {
-          // 步骤2: 查找第一个完整的JSON对象
-          const startIndex = responseText.indexOf('{');
-          if (startIndex !== -1) {
-            let braceCount = 0;
-            let endIndex = startIndex;
-            
-            for (let i = startIndex; i < responseText.length; i++) {
-              const char = responseText[i];
-              if (char === '{') braceCount++;
-              if (char === '}') braceCount--;
-              
-              if (braceCount === 0) {
-                endIndex = i;
-                break;
-              }
-            }
-            
-            if (braceCount === 0) {
-              jsonText = responseText.substring(startIndex, endIndex + 1);
-              logger.info(`[MCP Debug] Extracted balanced JSON: ${jsonText.substring(0, 200)}...`);
-            }
+          // 如果没有markdown块，尝试找到第一个和最后一个大括号来提取JSON对象
+          const firstBrace = responseText.indexOf('{');
+          const lastBrace = responseText.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            jsonText = responseText.substring(firstBrace, lastBrace + 1).trim();
+            logger.info(`[MCP Debug] Extracted JSON by finding first and last braces.`);
           }
         }
-        
-        // 步骤3: 清理常见的JSON格式问题
-        jsonText = jsonText
-          .replace(/,(\s*[}\]])/g, '$1') // 移除多余的逗号
-          .replace(/([{,]\s*)(\w+):/g, '$1"$2":') // 为未引用的键添加引号
-          .replace(/:\s*'([^']*)'(?=\s*[,}\]])/g, ':"$1"') // 将单引号字符串转换为双引号
-          .replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
-            // 更安全地处理值的引号添加
-            const trimmedValue = value.trim();
-            // 如果是数字或布尔值，不加引号
-            if (/^(true|false|\d+(\.\d+)?)$/.test(trimmedValue)) {
-              return `:${trimmedValue}`;
-            }
-            // 否则加引号
-            return `:"${trimmedValue}"`;
-          })
-          .replace(/\n/g, ' ') // 移除换行符
-          .replace(/\s+/g, ' ') // 压缩空白字符
-          .trim();
-        
-        logger.info(`[MCP Debug] Cleaned workflow response: ${jsonText.substring(0, 500)}...`);
-        
+
+        logger.info(`[MCP Debug] Attempting to parse cleaned JSON: ${jsonText.substring(0, 500)}...`);
         const parsedResponse = JSON.parse(jsonText);
         
         const workflow = parsedResponse.workflow || [];
@@ -1539,80 +1503,45 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
         logger.error('Failed to parse MCP workflow construction result:', parseError);
         logger.error('Problematic JSON text:', jsonText);
         
-        // 尝试使用更强大的JSON修复方法
-        try {
-          const fixedJson = this.fixMalformedJSON(jsonText);
-          logger.info(`[MCP Debug] Attempting advanced JSON fix: ${fixedJson.substring(0, 500)}...`);
-          const fixedResponse = JSON.parse(fixedJson);
-          
-          return {
-            content: fixedResponse.workflow_summary || "Workflow created successfully",
-            reasoning: fixedResponse.detailed_reasoning || "Workflow parsing recovered from error",
-            workflow: fixedResponse.workflow || []
-          };
-        } catch (advancedError) {
-          logger.error('Advanced JSON fix also failed:', advancedError);
-          
-          // 尝试使用更宽松的解析方法
+        // 解析失败，直接进入后备方案
+        // 最后的后备方案：从文本中提取信息
+        const workflowMatch = responseText.match(/["']workflow["']\s*:\s*(\[[\s\S]*?\])/s);
+        let workflow: Array<{
+          step: number;
+          mcp: string;
+          action: string;
+          input?: any;
+        }> = [];
+
+        if (workflowMatch && workflowMatch[1]) {
           try {
-            // 尝试修复常见的JSON错误
-            let fixedJson = jsonText
-              .replace(/,\s*}/g, '}') // 移除对象末尾多余的逗号
-              .replace(/,\s*]/g, ']') // 移除数组末尾多余的逗号
-              .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3') // 确保所有键都有引号
-              .replace(/:\s*'([^']*)'(?=\s*[,}\]])/g, ':"$1"') // 将单引号字符串转换为双引号
-              .replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
-                // 更安全地处理值的引号添加
-                const trimmedValue = value.trim();
-                // 如果是数字或布尔值，不加引号
-                if (/^(true|false|\d+(\.\d+)?)$/.test(trimmedValue)) {
-                  return `:${trimmedValue}`;
-                }
-                // 否则加引号
-                return `:"${trimmedValue}"`;
-              });
-            
-            logger.info(`[MCP Debug] Attempting to fix JSON: ${fixedJson.substring(0, 500)}...`);
-            const fixedResponse = JSON.parse(fixedJson);
-            
-            return {
-              content: fixedResponse.workflow_summary || "Workflow created successfully",
-              reasoning: fixedResponse.detailed_reasoning || "Workflow parsing recovered from error",
-              workflow: fixedResponse.workflow || []
-            };
-          } catch (secondError) {
-            logger.error('Second parsing attempt also failed:', secondError);
-            
-            // 最后的后备方案：从文本中提取信息
-            const workflowMatch = responseText.match(/["']workflow["']\s*:\s*\[(.*?)\]/s);
-            let workflow: Array<{
-              step: number;
-              mcp: string;
-              action: string;
-              input?: any;
-            }> = [];
-            
-            // 如果无法提取格式化的工作流，创建一个简单的默认工作流
-            if (!workflowMatch && recommendedMCPs.length > 0) {
-              workflow = [{
-                step: 1,
-                mcp: recommendedMCPs[0].name,
-                action: "Execute task using available tools",
-                input: {}
-              }];
-            }
-            
-            // 提取摘要和推理
-            const summaryMatch = responseText.match(/["']workflow_summary["']\s*:\s*["'](.+?)["']/s);
-            const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
-            
-            return {
-              content: summaryMatch ? summaryMatch[1].trim() : "Workflow created with fallback parsing",
-              reasoning: reasoningMatch ? reasoningMatch[1].trim() : "Used fallback workflow generation due to parsing issues",
-              workflow
-            };
+            workflow = JSON.parse(workflowMatch[1]);
+            logger.info(`[MCP Debug] Successfully extracted workflow via regex.`);
+          } catch (e) {
+            logger.error(`[MCP Debug] Could not parse workflow extracted via regex: ${workflowMatch[1]}`);
+            workflow = [];
           }
         }
+        
+        // 如果无法提取格式化的工作流，创建一个简单的默认工作流
+        if (workflow.length === 0 && recommendedMCPs.length > 0) {
+          workflow = [{
+            step: 1,
+            mcp: recommendedMCPs[0].name,
+            action: "Execute task using available tools",
+            input: {}
+          }];
+        }
+        
+        // 提取摘要和推理
+        const summaryMatch = responseText.match(/["']workflow_summary["']\s*:\s*["'](.+?)["']/s);
+        const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
+        
+        return {
+          content: summaryMatch ? summaryMatch[1].trim() : "Workflow created with fallback parsing",
+          reasoning: reasoningMatch ? reasoningMatch[1].trim() : "Used fallback workflow generation due to parsing issues",
+          workflow
+        };
       }
     } catch (error) {
       logger.error('Failed to build MCP workflow:', error);
@@ -1697,7 +1626,11 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
       // 3. 处理单引号字符串
       fixed = fixed.replace(/:\s*'([^']*)'(?=\s*[,}\]\n])/g, ':"$1"');
       
-      // 4. 处理未引用的字符串值，但保留数字和布尔值
+                // 4. 特殊处理：修复引号内的冒号问题 - 但要小心不要破坏正常的JSON结构
+          // 这个规则可能导致JSON格式错误，暂时注释掉
+          // fixed = fixed.replace(/:\s*"([^"]*):([^"]*)"(?=\s*[,}\]])/g, ':"$1,$2"');
+      
+      // 5. 处理未引用的字符串值，但保留数字和布尔值
       fixed = fixed.replace(/:\s*([^",{\[\]}\s\n][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
         const trimmedValue = value.trim();
         
@@ -1711,17 +1644,24 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
           return `:${trimmedValue}`;
         }
         
+        // 处理包含特殊字符的值，只转义双引号和换行符
+        const escapedValue = trimmedValue
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        
         // 其他值加引号
-        return `:"${trimmedValue}"`;
+        return `:"${escapedValue}"`;
       });
       
-      // 5. 处理换行符和多余空白
+      // 6. 处理换行符和多余空白
       fixed = fixed.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
       
-      // 6. 修复可能的双引号问题
+      // 7. 修复可能的双引号问题
       fixed = fixed.replace(/""([^"]*)""/g, '"$1"');
       
-      // 7. 最后检查：确保所有冒号后的值都正确格式化
+      // 8. 最后检查：确保所有冒号后的值都正确格式化
       fixed = fixed.replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
         const trimmedValue = value.trim();
         
@@ -1730,8 +1670,15 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
           return `:${trimmedValue}`;
         }
         
+        // 处理包含特殊字符的值，只转义双引号和换行符
+        const escapedValue = trimmedValue
+          .replace(/"/g, '\\"')
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t');
+        
         // 否则加引号
-        return `:"${trimmedValue}"`;
+        return `:"${escapedValue}"`;
       });
       
       return fixed;
@@ -1759,8 +1706,16 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
         mcpNames: ['github-mcp-server', 'github-mcp-service']
       },
       {
+        keywords: ['coinmarketcap', 'cmc', 'market cap', '市值'],
+        mcpNames: ['coinmarketcap-mcp', 'coinmarketcap-mcp-service']
+      },
+      {
+        keywords: ['coingecko', 'gecko'],
+        mcpNames: ['coingecko-mcp']
+      },
+      {
         keywords: ['cryptocurrency', 'crypto', 'coin', '币价', '加密货币', 'bitcoin', 'btc', 'eth', 'ethereum', '代币价格'],
-        mcpNames: ['coingecko-mcp', 'coinmarketcap-mcp-service', 'dexscreener-mcp-server']
+        mcpNames: ['coinmarketcap-mcp', 'coingecko-mcp', 'dexscreener-mcp-server']
       },
       {
         keywords: ['12306', '火车', '高铁', 'train', '动车', '铁路', '车票'],

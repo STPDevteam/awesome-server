@@ -434,19 +434,13 @@ export class TaskExecutorService {
   }
 
   /**
-   * 通用MCP工具调用方法
+   * 根据任务目标动态调用MCP工具
    */
-  private async callMCPTool(mcpName: string, toolName: string, input: any, taskId?: string): Promise<any> {
+  private async callMCPWithObjective(mcpName: string, objective: string, input: any, taskId?: string): Promise<any> {
     try {
-      logger.info(`🔍 Calling MCP tool [MCP: ${mcpName}, Tool: ${toolName}]`);
-      logger.info(`📥 MCP tool input parameters: ${JSON.stringify(input, null, 2)}`);
+      logger.info(`🎯 Calling MCP with objective [MCP: ${mcpName}, Objective: ${objective}]`);
+      logger.info(`📥 Input parameters: ${JSON.stringify(input, null, 2)}`);
 
-      console.log(`\n==== MCP Call Details ====`);
-      console.log(`Time: ${new Date().toISOString()}`);
-      console.log(`MCP Service: ${mcpName}`);
-      console.log(`Tool Name: ${toolName}`);
-      console.log(`Input Parameters: ${JSON.stringify(input, null, 2)}`);
-      
       // 标准化MCP名称
       const actualMcpName = this.normalizeMCPName(mcpName);
       if (actualMcpName !== mcpName) {
@@ -462,25 +456,105 @@ export class TaskExecutorService {
         await this.autoConnectMCP(actualMcpName, taskId);
       }
 
-      // 使用LangChain调用MCP工具
-      logger.info(`🔗 Using LangChain to call MCP tool...`);
-      const result = await this.callMCPToolWithLangChain(actualMcpName, toolName, input);
+      // 获取MCP的所有工具
+      const mcpTools = await this.mcpManager.getTools(actualMcpName);
+      logger.info(`📋 Available tools in ${actualMcpName}: ${mcpTools.map(t => t.name).join(', ')}`);
 
-      console.log(`\n==== MCP Call Result (via LangChain) ====`);
-      console.log(`Status: Success`);
-      console.log(`Return Data: ${JSON.stringify(result, null, 2)}`);
+      // 使用LLM根据目标选择合适的工具
+      const toolSelectionPrompt = `You are an AI assistant that selects the most appropriate tool based on the task objective.
 
-      logger.info(`📤 MCP tool return result (LangChain): ${JSON.stringify(result, null, 2)}`);
-      logger.info(`✅ MCP tool call successful (via LangChain) [MCP: ${mcpName}, Tool: ${toolName}]`);
-      
-      return result;
+Task objective: ${objective}
+Input parameters: ${JSON.stringify(input)}
+
+Available tools:
+${mcpTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}`).join('\n')}
+
+Select the BEST tool for this objective. Response with ONLY the exact tool name, nothing else.`;
+
+      const toolSelectionResponse = await this.llm.invoke([
+        new SystemMessage(toolSelectionPrompt)
+      ]);
+
+      const selectedToolName = toolSelectionResponse.content.toString().trim();
+      logger.info(`🔧 LLM selected tool: ${selectedToolName}`);
+
+      // 验证选择的工具是否存在
+      const selectedTool = mcpTools.find(t => t.name === selectedToolName);
+      if (!selectedTool) {
+        logger.error(`Selected tool ${selectedToolName} not found in available tools`);
+        throw new Error(`Tool selection failed: ${selectedToolName} not found`);
+      }
+
+      // 调用选定的工具
+      return await this.callMCPToolWithLangChain(actualMcpName, selectedToolName, input);
+
+    } catch (error) {
+      logger.error(`❌ MCP objective-based call failed [${mcpName}/${objective}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 通用MCP工具调用方法
+   */
+  private async callMCPTool(mcpName: string, toolNameOrObjective: string, input: any, taskId?: string): Promise<any> {
+    try {
+      // 判断是工具名还是任务目标
+      // 如果包含空格或中文，很可能是任务目标描述
+      const isObjective = /[\s\u4e00-\u9fa5]/.test(toolNameOrObjective) || 
+                         toolNameOrObjective.includes('_') === false && 
+                         toolNameOrObjective.length > 30;
+
+      if (isObjective) {
+        logger.info(`🎯 Detected objective-based call: ${toolNameOrObjective}`);
+        return await this.callMCPWithObjective(mcpName, toolNameOrObjective, input, taskId);
+      } else {
+        logger.info(`🔧 Detected tool-based call: ${toolNameOrObjective}`);
+        // 原有的直接调用工具的逻辑
+        logger.info(`🔍 Calling MCP tool [MCP: ${mcpName}, Tool: ${toolNameOrObjective}]`);
+        logger.info(`📥 MCP tool input parameters: ${JSON.stringify(input, null, 2)}`);
+
+        console.log(`\n==== MCP Call Details ====`);
+        console.log(`Time: ${new Date().toISOString()}`);
+        console.log(`MCP Service: ${mcpName}`);
+        console.log(`Tool Name: ${toolNameOrObjective}`);
+        console.log(`Input Parameters: ${JSON.stringify(input, null, 2)}`);
+        
+        // 标准化MCP名称
+        const actualMcpName = this.normalizeMCPName(mcpName);
+        if (actualMcpName !== mcpName) {
+          logger.info(`MCP name mapping: '${mcpName}' mapped to '${actualMcpName}'`);
+        }
+
+        // 检查MCP是否已连接
+        const connectedMCPs = this.mcpManager.getConnectedMCPs();
+        const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
+        
+        // 如果未连接，尝试自动连接
+        if (!isConnected) {
+          await this.autoConnectMCP(actualMcpName, taskId);
+        }
+
+        // 使用LangChain调用MCP工具
+        logger.info(`🔗 Using LangChain to call MCP tool...`);
+        const result = await this.callMCPToolWithLangChain(actualMcpName, toolNameOrObjective, input);
+
+        console.log(`\n==== MCP Call Result (via LangChain) ====`);
+        console.log(`Status: Success`);
+        console.log(`Return Data: ${JSON.stringify(result, null, 2)}`);
+
+        logger.info(`📤 MCP tool return result (LangChain): ${JSON.stringify(result, null, 2)}`);
+        logger.info(`✅ MCP tool call successful (via LangChain) [MCP: ${mcpName}, Tool: ${toolNameOrObjective}]`);
+        
+        return result;
+      }
     } catch (error) {
       console.log(`\n==== MCP Call Error ====`);
       console.log(`Status: Failed`);
       console.log(`Error Message: ${error instanceof Error ? error.message : String(error)}`);
       console.log(`Error Details: ${JSON.stringify(error, null, 2)}`);
 
-      logger.error(`❌ MCP tool call failed [${mcpName}/${toolName}]:`, error);
+      logger.error(`❌ MCP tool call failed [${mcpName}/${toolNameOrObjective}]:`, error);
       throw error;
     }
   }

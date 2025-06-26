@@ -118,31 +118,7 @@ export class MCPAuthService {
       logger.info(`[verifyAuth] Verifying auth for user ${userId}, mcp ${mcpName}`);
       
       let verificationResult: AuthVerificationResult;
-      
-      switch (mcpName) {
-        case 'x-mcp':
-        case 'x-mcp-server':
-          verificationResult = await this.verifyTwitterAuth(authData);
-          break;
-        case 'github-mcp':
-        case 'github-mcp-server':
-        case 'GitHubTool':
-          verificationResult = await this.verifyGitHubAuth(authData);
-          break;
-        case 'GoogleSearchTool':
-          verificationResult = await this.verifyGoogleSearchAuth(authData);
-          break;
-        case 'DatabaseQueryTool':
-          verificationResult = await this.verifyDatabaseAuth(authData);
-          break;
-        case 'ImageAnalysisTool':
-          verificationResult = await this.verifyImageAnalysisAuth(authData);
-          break;
-        case 'WeatherTool':
-          verificationResult = await this.verifyWeatherAuth(authData);
-          break;
-        default:
-          // 对于未明确定义验证逻辑的MCP，如果需要授权则返回简单验证
+           // 对于未明确定义验证逻辑的MCP，如果需要授权则返回简单验证
           if (authData && Object.keys(authData).length > 0) {
             // 检查是否所有必需字段都已提供
             const hasEmptyFields = Object.values(authData).some(value => !value || value === '');
@@ -163,7 +139,6 @@ export class MCPAuthService {
               message: '该MCP无需授权验证' 
             };
           }
-      }
       
       // 在这里，我们将乐观地设置 is_verified
       // 如果验证逻辑（比如检查字段是否为空）通过，则is_verified为true
