@@ -889,12 +889,12 @@ Based on the above task execution information, please generate a complete execut
       // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
       stream({ event: 'status_update', data: { status: 'in_progress' } });
-      
+      logger.info(`json parse 之前的 该task的工作流: ${task.mcpWorkflow}`)
       // 获取任务的工作流
       const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
         ? JSON.parse(task.mcpWorkflow) 
         : task.mcpWorkflow;
-
+      logger.info(`json parse 之后的 该task的工作流: ${mcpWorkflow}`)
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
         
