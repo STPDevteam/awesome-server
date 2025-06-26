@@ -1,6 +1,0 @@
-# Dockerfile.howtocook
-FROM node:20-alpine
-RUN npm i -g howtocook-mcp@latest
-ENV PORT=3010
-EXPOSE 3010
-CMD ["howtocook-mcp"] 

@@ -454,6 +454,10 @@ async function startServer() {
     // 连接预定义的MCP服务
     console.log('🔌 Connecting to predefined MCP services...');
     
+    // 注释掉所有自动连接的MCP服务，用户需要手动连接
+    console.log('ℹ️  All MCP auto-connection disabled - MCPs need to be connected manually');
+    
+    /*
     // 尝试连接AWE Core MCP
     const aweMCP = getPredefinedMCP('AWE Core MCP Server');
     if (aweMCP) {
@@ -501,6 +505,7 @@ async function startServer() {
         console.error('❌ Error connecting to 12306 MCP:', error);
       }
     }
+    */
 
     // AWE 支付服务状态
     if (process.env.BASE_RPC_URL) {
