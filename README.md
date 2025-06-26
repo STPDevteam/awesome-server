@@ -123,6 +123,7 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 - 🔌 [MCP连接管理](./docs/mcp-connection-management.md) - MCP连接管理指南
 - 🛠️ [数据库设置](./docs/DATABASE_SETUP.md) - 数据库配置指南
 - 🔐 [认证设置](./docs/AUTH_SETUP.md) - 认证系统设置指南
+- 🔑 [MCP认证流程](./docs/MCP_AUTH_FLOW_GUIDE.md) - MCP工具认证流程完整指南
 
 ### 支付和会员 (需要登录)
 

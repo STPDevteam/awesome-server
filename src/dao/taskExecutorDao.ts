@@ -56,39 +56,26 @@ export class TaskExecutorDao {
     result: any
   ): Promise<boolean> {
     try {
-      // 确保结果是 JSON 字符串格式，避免类型不匹配问题
-      let jsonResult;
+      const resultString = JSON.stringify(result || null);
+      logger.info(`[updateTaskResult] 准备更新任务 ${taskId}：status=${status}, result长度=${resultString.length}`);
       
-      if (typeof result === 'string') {
-        try {
-          // 尝试解析JSON字符串
-          jsonResult = JSON.parse(result);
-        } catch (parseError) {
-          // 如果解析失败，则创建一个包含原始字符串的对象
-          jsonResult = { message: result };
-        }
-      } else {
-        // 如果已经是对象，直接使用
-        jsonResult = result;
-      }
-      
-      // 确保jsonResult是一个有效的对象
-      if (jsonResult === null || jsonResult === undefined) {
-        jsonResult = {};
-      }
-      
-      // 使用JSON.stringify确保转换为字符串
-      const jsonString = JSON.stringify(jsonResult);
-      
-      await db.query(
+      const updateResult = await db.query(
         `
         UPDATE tasks
         SET status = $1, result = $2::jsonb, updated_at = NOW(),
-            completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END
+            completed_at = CASE WHEN $1 IN ('completed', 'failed') THEN NOW() ELSE completed_at END
         WHERE id = $3
         `,
-        [status, jsonString, taskId]
+        [status, resultString, taskId]
       );
+      
+      logger.info(`[updateTaskResult] 更新结果：影响行数=${updateResult.rowCount}`);
+      
+      // 验证更新是否成功
+      if (updateResult.rowCount === 0) {
+        logger.error(`[updateTaskResult] 更新失败：未找到任务 ${taskId}`);
+        return false;
+      }
       
       return true;
     } catch (error) {

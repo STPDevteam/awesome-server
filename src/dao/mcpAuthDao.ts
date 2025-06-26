@@ -142,45 +142,47 @@ export class MCPAuthDao {
     isVerified: boolean
   ): Promise<boolean> {
     try {
-      // 获取当前任务的工作流
+      logger.info(`[DAO_UPDATE] Task ${taskId}: Updating MCP ${mcpName} to verified=${isVerified}.`);
       const mcpWorkflow = await this.getTaskMCPWorkflow(taskId);
       
       if (!mcpWorkflow) {
+        logger.error(`[DAO_UPDATE] Task ${taskId}: Workflow not found.`);
         return false;
       }
       
-      // 确保mcpWorkflow是对象而不是字符串
       const workflowObj = typeof mcpWorkflow === 'string' 
         ? JSON.parse(mcpWorkflow) 
         : mcpWorkflow;
       
-      // 更新指定MCP的验证状态
+      logger.info(`[DAO_UPDATE] Task ${taskId}: Original workflow is ${JSON.stringify(workflowObj)}`);
+
+      let wasUpdated = false;
       if (workflowObj.mcps && Array.isArray(workflowObj.mcps)) {
-        workflowObj.mcps = workflowObj.mcps.map((mcp: { name: string; authVerified?: boolean }) => {
+        workflowObj.mcps = workflowObj.mcps.map((mcp: any) => {
           if (mcp.name === mcpName) {
-            return {
-              ...mcp,
-              authVerified: isVerified
-            };
+            wasUpdated = true;
+            return { ...mcp, authVerified: isVerified };
           }
           return mcp;
         });
       }
+
+      if(!wasUpdated) {
+        logger.warn(`[DAO_UPDATE] Task ${taskId}: MCP ${mcpName} not found in workflow. No update performed.`);
+      }
       
-      // 更新任务
-      await db.query(
-        `
-        UPDATE tasks
-        SET mcp_workflow = $1, updated_at = NOW()
-        WHERE id = $2 AND user_id = $3
-        `,
-        [JSON.stringify(workflowObj), taskId, userId]
+      const newWorkflowString = JSON.stringify(workflowObj);
+      logger.info(`[DAO_UPDATE] Task ${taskId}: New workflow is ${newWorkflowString}`);
+      
+      const result = await db.query(
+        `UPDATE tasks SET mcp_workflow = $1, updated_at = NOW() WHERE id = $2 AND user_id = $3`,
+        [newWorkflowString, taskId, userId]
       );
       
-      logger.info(`更新任务MCP授权状态记录 [任务: ${taskId}, MCP: ${mcpName}, 状态: ${isVerified}]`);
+      logger.info(`[DAO_UPDATE] Task ${taskId}: DB query result: ${result.rowCount} row(s) affected.`);
       return true;
     } catch (error) {
-      logger.error(`更新任务MCP授权状态记录失败 [任务: ${taskId}, MCP: ${mcpName}]:`, error);
+      logger.error(`[DAO_UPDATE] Task ${taskId}: Error during update:`, error);
       return false;
     }
   }

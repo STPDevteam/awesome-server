@@ -19,7 +19,7 @@ async function createTestUser() {
     console.log('✅ Connected to database');
 
     // 测试用户数据
-    const userId = 'test-user-' + Date.now();
+    const userId = 'test-user-001';
     const walletAddress = '0x1234567890123456789012345678901234567890';
     const username = 'test_user_' + Date.now();
     

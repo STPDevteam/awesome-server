@@ -18,8 +18,7 @@ export interface MCPWorkflow {
     step: number;
     mcp: string;
     action: string;
-    input?: string;
-    output?: string;
+    input?: string | any;
   }>;
 }
 

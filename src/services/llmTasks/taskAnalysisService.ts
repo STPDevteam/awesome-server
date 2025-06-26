@@ -898,7 +898,12 @@ export class TaskAnalysisService {
           name: mcp.name,
           description: mcp.description,
           authRequired: mcp.authRequired,
-          authVerified: false // 初始状态未验证
+          authVerified: false, // 初始状态未验证
+          // 可选字段 - 只在需要时添加
+          ...(mcp.category ? { category: mcp.category } : {}),
+          ...(mcp.imageUrl ? { imageUrl: mcp.imageUrl } : {}),
+          ...(mcp.githubUrl ? { githubUrl: mcp.githubUrl } : {}),
+          ...(mcp.authParams ? { authParams: mcp.authParams } : {})
         })),
         workflow: workflowResult.workflow
       };
@@ -906,12 +911,33 @@ export class TaskAnalysisService {
       // 直接使用对象，不需要转换为字符串
       await taskService.updateTask(taskId, { mcpWorkflow });
       
+      // 为前端准备精简的mcpWorkflow数据
+      const optimizedWorkflow = {
+        mcps: mcpResult.recommendedMCPs.map(mcp => ({
+          name: mcp.name,
+          description: mcp.description,
+          authRequired: mcp.authRequired,
+          authVerified: false,
+          // 只在需要认证时返回authParams
+          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
+        })),
+        workflow: workflowResult.workflow
+      };
+      
       // 发送分析完成信息
       stream({ 
         event: 'analysis_complete', 
         data: { 
           taskId,
-          mcpWorkflow
+          mcpWorkflow: optimizedWorkflow,
+          // 添加元信息
+          metadata: {
+            totalSteps: workflowResult.workflow.length,
+            requiresAuth: mcpResult.recommendedMCPs.some(mcp => mcp.authRequired),
+            mcpsRequiringAuth: mcpResult.recommendedMCPs
+              .filter(mcp => mcp.authRequired)
+              .map(mcp => mcp.name)
+          }
         } 
       });
       
@@ -1029,10 +1055,46 @@ export class TaskAnalysisService {
         workflow: workflowResult.workflow
       };
 
-      // Update task's MCP workflow
+      // Update task's MCP workflow with retry mechanism
+      let saveSuccess = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (!saveSuccess && retryCount < maxRetries) {
+        try {
       await taskService.updateTask(taskId, {
         mcpWorkflow: mcpWorkflow
       });
+          
+          // Verify the save was successful
+          const updatedTask = await taskService.getTaskById(taskId);
+          if (updatedTask && updatedTask.mcpWorkflow) {
+            // 验证保存的数据是否正确
+            const savedWorkflow = updatedTask.mcpWorkflow;
+            if (savedWorkflow.mcps && savedWorkflow.workflow && 
+                savedWorkflow.mcps.length === mcpWorkflow.mcps.length &&
+                savedWorkflow.workflow.length === mcpWorkflow.workflow.length) {
+              saveSuccess = true;
+              logger.info(`✅ Workflow successfully saved and verified [Task ID: ${taskId}]`);
+            } else {
+              throw new Error('Workflow verification failed - data mismatch');
+            }
+          } else {
+            throw new Error('Workflow not found after save');
+          }
+        } catch (saveError) {
+          retryCount++;
+          logger.error(`Failed to save workflow (attempt ${retryCount}/${maxRetries}) [Task ID: ${taskId}]:`, saveError);
+          if (retryCount < maxRetries) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      }
+      
+      if (!saveSuccess) {
+        throw new Error('Failed to save workflow after multiple attempts');
+      }
       
       // After completion, update status to completed in a separate update operation
       await taskService.updateTask(taskId, {
@@ -1402,8 +1464,7 @@ Please remain professional and objective, and do not over-promise features that 
       step: number;
       mcp: string;
       action: string;
-      input?: string;
-      output?: string;
+      input?: any;
     }>;
   }> {
     try {
@@ -1420,7 +1481,7 @@ Please remain professional and objective, and do not over-promise features that 
               step: 1,
               mcp: 'github-mcp-service',
               action: 'list_repositories',
-              input: '{"affiliation": "owner"}'
+              input: {"affiliation": "owner"}
             }
           ]
         };
@@ -1440,16 +1501,28 @@ Please remain professional and objective, and do not over-promise features that 
 Please design a detailed workflow based on the user's task requirements, selected MCP tools, and determined deliverables.
 
 Available MCP tools:
-${JSON.stringify(recommendedMCPs, null, 2)}
+${JSON.stringify(recommendedMCPs.map(mcp => ({
+  name: mcp.name,
+  description: mcp.description,
+  capabilities: mcp.capabilities
+})), null, 2)}
 
 Deliverables:
 ${deliverables.join('\n')}
 
+**IMPORTANT RULES**:
+1. DO NOT include any authentication information (API keys, tokens, etc.) in the workflow input
+2. The input should ONLY contain the actual parameters needed for the action
+3. Authentication will be handled separately through the verify-auth API
+
 Please design an ordered step process, specifying for each step:
 1. Which MCP tool to use
 2. What specific action to perform
-3. What the input is
-4. What the expected output is
+3. What the input parameters are (excluding auth info)
+
+For example, for Twitter/X tasks:
+- Good input: {"text": "Hello world"}
+- Bad input: {"auth": {...}, "text": "Hello world"}
 
 Output format:
 {
@@ -1458,12 +1531,11 @@ Output format:
       "step": 1,
       "mcp": "Tool name",
       "action": "Specific action",
-      "input": "Input content",
-      "output": "Expected output"
+      "input": {actual parameters only, no auth}
     },
     ...
   ],
-  "workflow_summary": "Workflow summary explaining to the user how the workflow runs",
+  "workflow_summary": "Workflow summary explaining to the user how the workflow will run",
   "detailed_reasoning": "Detailed design thinking, explaining why the workflow is designed this way and the purpose of each step"
 }
 
@@ -1506,8 +1578,7 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
           step: number;
           mcp: string;
           action: string;
-          input?: string;
-          output?: string;
+          input?: any;
         }> = [];
         
         // If unable to extract formatted workflow, create a simple default workflow
@@ -1516,8 +1587,7 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
             step: index + 1,
             mcp: mcp.name,
             action: `Use ${mcp.name} to perform related operations`,
-            input: "Task content",
-            output: "Processing result"
+            input: "Task content"
           }));
         }
         

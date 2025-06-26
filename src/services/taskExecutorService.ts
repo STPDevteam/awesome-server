@@ -55,11 +55,9 @@ export class TaskExecutorService {
     steps?: any[];
     error?: string;
   }> {
+    logger.error("!!! RUNNING FINAL WORKAROUND CODE v3 !!!");
     try {
-      logger.info(`🚀 Starting task execution [Task ID: ${taskId}]`);
-      
-      // Get task details
-      const task = await taskService.getTaskById(taskId);
+      const task = await taskExecutorDao.getTaskById(taskId);
       if (!task) {
         logger.error(`❌ Task not found [ID: ${taskId}]`);
         return {
@@ -69,36 +67,96 @@ export class TaskExecutorService {
         };
       }
       
-      logger.info(`📋 Task details: [Title: ${task.title}, User ID: ${task.userId}]`);
+      logger.info(`📋 Task details: [Title: ${task.title}, User ID: ${task.user_id}]`);
       
-      // Check if all required MCPs are verified
+      // 处理 mcpWorkflow，确保它是一个对象
+      let mcpWorkflow = task.mcp_workflow;
+      
+      // 如果 mcpWorkflow 是字符串，尝试解析
+      if (typeof mcpWorkflow === 'string') {
+        try {
+          mcpWorkflow = JSON.parse(mcpWorkflow);
+        } catch (e) {
+          logger.error(`Failed to parse mcpWorkflow for task ${taskId}:`, e);
+          mcpWorkflow = null;
+        }
+      }
+      
+      // 如果没有 workflow，尝试从数据库重新获取
+      if (!mcpWorkflow || !mcpWorkflow.mcps) {
+        logger.info(`Attempting to re-fetch workflow for task ${taskId}`);
+        const workflow = await taskExecutorDao.getTaskWorkflow(taskId);
+        if (workflow) {
+          mcpWorkflow = typeof workflow === 'string' ? JSON.parse(workflow) : workflow;
+        }
+      }
+      
+      // 最后的尝试：直接查询数据库获取最新数据
+      if (!mcpWorkflow || !mcpWorkflow.mcps || !mcpWorkflow.workflow) {
+        logger.info(`Final attempt: directly querying database for task ${taskId}`);
+        const { db } = await import('../config/database.js');
+        const directResult = await db.query(
+          `SELECT mcp_workflow FROM tasks WHERE id = $1`,
+          [taskId]
+        );
+        
+        if (directResult.rows.length > 0 && directResult.rows[0].mcp_workflow) {
+          const directWorkflow = directResult.rows[0].mcp_workflow;
+          mcpWorkflow = typeof directWorkflow === 'string' ? JSON.parse(directWorkflow) : directWorkflow;
+          logger.info(`Successfully retrieved workflow from direct database query`);
+        }
+      }
+      
+      if (!mcpWorkflow || !mcpWorkflow.mcps || !mcpWorkflow.workflow) {
+        logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
+        logger.error(`Debug info - mcpWorkflow: ${JSON.stringify(mcpWorkflow)}`);
+        logger.error(`Debug info - task data: ${JSON.stringify(task)}`);
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          error: 'Task execution failed: No valid workflow found. Please ensure the task analysis completed successfully.'
+        });
+        return {
+          success: false,
+          status: 'failed',
+          error: 'Task execution failed: No valid workflow found. Please ensure the task analysis completed successfully.'
+        };
+      }
+
       if (!options.skipAuthCheck) {
-        const allVerified = await this.mcpAuthService.checkAllMCPsVerified(taskId);
-        if (!allVerified) {
-          logger.error(`❌ Task execution failed: Some MCPs are not verified [Task ID: ${taskId}]`);
-          await taskExecutorDao.updateTaskResult(taskId, 'failed', {
-            error: 'Task execution failed: Please verify all required MCP authorizations first'
+        logger.info(`[WORKAROUND_AUTH_CHECK] Task ${taskId}: Applying dynamic auth state injection.`);
+        
+        const userVerifiedAuths = await this.mcpAuthService.getUserAllMCPAuths(task.user_id);
+        const verifiedMcpNames = userVerifiedAuths
+          .filter(auth => auth.isVerified)
+          .map(auth => this.normalizeMCPName(auth.mcpName));
+          
+        if (mcpWorkflow && mcpWorkflow.mcps) {
+          mcpWorkflow.mcps = mcpWorkflow.mcps.map((mcp: any) => {
+            if (verifiedMcpNames.includes(this.normalizeMCPName(mcp.name))) {
+              logger.info(`[WORKAROUND_AUTH_CHECK] Task ${taskId}: Injecting authVerified=true for MCP ${mcp.name}`);
+              return { ...mcp, authVerified: true };
+            }
+            return mcp;
           });
+        }
+
+        const required = mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired);
+        const allVerified = required.every((mcp: any) => mcp.authVerified === true);
+
+        if (!allVerified) {
+          const errorMsg = 'Task execution failed: Please verify all required MCP authorizations first';
+          await taskExecutorDao.updateTaskResult(taskId, 'failed', { error: errorMsg });
           return {
             success: false,
             status: 'failed',
-            error: 'Task execution failed: Please verify all required MCP authorizations first'
+            error: errorMsg
           };
         }
-        logger.info(`✅ All MCP authorizations verified [Task ID: ${taskId}]`);
-      } else {
-        logger.info(`- Authorization check skipped [Task ID: ${taskId}]`);
       }
       
       // Update task status
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
       logger.info(`📝 Task status updated to 'in_progress' [Task ID: ${taskId}]`);
       
-      // Get task workflow
-      const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
-        ? JSON.parse(task.mcpWorkflow) 
-        : task.mcpWorkflow;
-
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
         // Ensure using object instead of string
@@ -481,7 +539,7 @@ export class TaskExecutorService {
       
       // 如果未连接，尝试连接
       if (!isConnected) {
-        logger.info(`MCP ${actualMcpName} 未连接，尝试连接...`);
+        logger.info(`MCP ${actualMcpName} 未连接，尝试自动连接...`);
         
         // 从predefinedMCPs获取MCP配置
         const { getPredefinedMCP } = await import('../services/predefinedMCPs.js');
@@ -492,14 +550,76 @@ export class TaskExecutorService {
           throw new Error(`MCP ${actualMcpName} configuration not found`);
         }
         
-        // 连接MCP
-        const connected = await this.mcpManager.connectPredefined(mcpConfig);
-        if (!connected) {
-          logger.error(`连接MCP ${actualMcpName} 失败`);
-          throw new Error(`Failed to connect to MCP ${actualMcpName}`);
+        // 检查是否需要认证
+        if (mcpConfig.env) {
+          const missingEnvVars: string[] = [];
+          for (const [key, value] of Object.entries(mcpConfig.env)) {
+            if (!value || value === '') {
+              missingEnvVars.push(key);
+            }
+          }
+          
+          if (missingEnvVars.length > 0) {
+            logger.warn(`MCP ${actualMcpName} 需要配置以下环境变量: ${missingEnvVars.join(', ')}`);
+            // 对于 x-mcp，提供更详细的说明
+            if (actualMcpName === 'x-mcp') {
+              const errorMsg = `MCP ${actualMcpName} 需要 Twitter API 凭证才能运行。请配置以下环境变量：
+- TWITTER_API_KEY: Twitter API密钥（Consumer Key）
+- TWITTER_API_SECRET: Twitter API秘密密钥（Consumer Secret）
+- TWITTER_ACCESS_TOKEN: Twitter访问令牌
+- TWITTER_ACCESS_SECRET: Twitter访问令牌秘密
+
+您可以从 https://developer.twitter.com 获取这些凭证。`;
+              throw new Error(errorMsg);
+            }
+          }
         }
         
-        logger.info(`MCP ${actualMcpName} 连接成功`);
+        // 尝试连接MCP
+        try {
+          const connected = await this.mcpManager.connectPredefined(mcpConfig);
+          if (!connected) {
+            logger.error(`连接MCP ${actualMcpName} 失败`);
+            
+            // 提供更友好的错误信息
+            if (actualMcpName === 'x-mcp') {
+              throw new Error(`无法连接到 x-mcp-server。请确保：
+1. x-mcp-server 已安装：npm install -g x-mcp-server
+2. 已配置 Twitter API 凭证
+3. 网络连接正常`);
+            } else {
+              throw new Error(`Failed to connect to MCP ${actualMcpName}. Please ensure the MCP server is installed and configured correctly.`);
+            }
+          }
+          
+                      logger.info(`✅ MCP ${actualMcpName} 自动连接成功`);
+            
+            // 验证工具是否存在
+            try {
+              const tools = await this.mcpManager.getTools(actualMcpName);
+              const toolExists = tools.some(t => 
+                t.name === actualToolName || 
+                t.name === toolName ||
+                t.name.replace(/-/g, '_') === actualToolName.replace(/-/g, '_')
+              );
+              
+              if (!toolExists) {
+                logger.warn(`工具 ${actualToolName} 在 MCP ${actualMcpName} 中不存在`);
+                logger.info(`可用工具: ${tools.map(t => t.name).join(', ')}`);
+              }
+            } catch (toolError) {
+              logger.warn(`无法获取 MCP ${actualMcpName} 的工具列表:`, toolError);
+            }
+        } catch (connectionError) {
+          logger.error(`自动连接 MCP ${actualMcpName} 失败:`, connectionError);
+          
+          // 如果是网络错误，提供更具体的指导
+          if (connectionError instanceof Error && connectionError.message.includes('ECONNREFUSED')) {
+            throw new Error(`无法连接到 MCP ${actualMcpName} 服务器。服务器可能未启动或端口被占用。`);
+          }
+          
+          throw connectionError;
+        }
       }
 
       // 使用mcpManager而不是httpAdapter调用工具
@@ -980,16 +1100,16 @@ Based on the above task execution information, please generate a complete execut
               throw new Error(`Failed to connect to MCP ${actualMcpName}`);
             }
             
-            logger.info(`MCP ${actualMcpName} 连接成功`);
-            
-            // 发送MCP连接成功消息
-            stream({ 
-              event: 'mcp_connected', 
-              data: { 
-                mcpName: actualMcpName,
-                message: `成功连接到 ${actualMcpName} 服务`
-              } 
-            });
+                          logger.info(`MCP ${actualMcpName} 连接成功`);
+              
+              // 发送MCP连接成功消息
+              stream({ 
+                event: 'mcp_connected', 
+                data: { 
+                  mcpName: actualMcpName,
+                  message: `成功连接到 ${actualMcpName} 服务`
+                } 
+              });
           }
           
           // 确保输入是对象类型

@@ -438,6 +438,13 @@ export const predefinedMCPs: MCPService[] = [
     }
 ];
 
+export const mcpNameMapping: Record<string, string> = {
+    'x-mcp-server': 'x-mcp',
+    'github-mcp-server': 'github-mcp',
+    'playwright-mcp-server': 'playwright',
+    'cook-mcp-server': 'cook-mcp',
+};
+
 /**
  * 获取预定义的MCP服务
  * @param name MCP名称
@@ -450,7 +457,7 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
         'coingecko-server': 'coingecko-mcp',
         'coingecko-mcp-service': 'coingecko-mcp',
         'x-mcp-server': 'x-mcp',
-        'github-mcp-server': 'github',
+        'github-mcp-server': 'github-mcp',
         'evm-mcp-server': 'evm-mcp',
         'evm-mcp-service': 'evm-mcp',
         'dune-mcp-server': 'dune-mcp',

@@ -2,6 +2,7 @@ import { logger } from '../utils/logger.js';
 import { MCPManager } from './mcpManager.js';
 import { mcpAuthDao, MCPAuthDbRow } from '../dao/mcpAuthDao.js';
 import { MCPAuthData, AuthVerificationResult } from '../models/mcpAuth.js';
+import { getPredefinedMCP, mcpNameMapping } from './predefinedMCPs.js';
 
 /**
  * MCP授权管理服务
@@ -86,12 +87,17 @@ export class MCPAuthService {
     authData: Record<string, string>
   ): Promise<AuthVerificationResult> {
     try {
-      logger.info(`验证MCP授权 [用户: ${userId}, MCP: ${mcpName}]`);
+      logger.info(`[verifyAuth] Verifying auth for user ${userId}, mcp ${mcpName}`);
       
-      // 根据MCP类型执行不同的验证逻辑
       let verificationResult: AuthVerificationResult;
       
       switch (mcpName) {
+        case 'x-mcp':
+        case 'x-mcp-server':
+          verificationResult = await this.verifyTwitterAuth(authData);
+          break;
+        case 'github-mcp':
+        case 'github-mcp-server':
         case 'GitHubTool':
           verificationResult = await this.verifyGitHubAuth(authData);
           break;
@@ -108,15 +114,39 @@ export class MCPAuthService {
           verificationResult = await this.verifyWeatherAuth(authData);
           break;
         default:
-          // 对于不需要授权的MCP，直接返回成功
-          verificationResult = { 
-            success: true, 
-            message: '该MCP无需授权验证' 
-          };
+          // 对于未明确定义验证逻辑的MCP，如果需要授权则返回简单验证
+          if (authData && Object.keys(authData).length > 0) {
+            // 检查是否所有必需字段都已提供
+            const hasEmptyFields = Object.values(authData).some(value => !value || value === '');
+            if (hasEmptyFields) {
+              verificationResult = {
+                success: false,
+                message: '请填写所有必需的认证字段'
+              };
+            } else {
+              verificationResult = { 
+                success: true, 
+                message: '认证信息已保存' 
+              };
+            }
+          } else {
+            verificationResult = { 
+              success: true, 
+              message: '该MCP无需授权验证' 
+            };
+          }
       }
       
-      // 更新授权验证状态
-      await this.saveAuthData(userId, mcpName, authData, verificationResult.success);
+      // 在这里，我们将乐观地设置 is_verified
+      // 如果验证逻辑（比如检查字段是否为空）通过，则is_verified为true
+      const isVerified = verificationResult.success;
+      
+      // 更新或保存授权数据，并传入 is_verified 状态
+      await this.saveAuthData(userId, mcpName, authData, isVerified);
+      
+      // 更新任务工作流中的状态
+      // 注意：这里我们假设 taskId 是可用的，如果不是，则需要调整
+      // 在当前路由下，我们没有taskId，所以这一步应该在路由处理器中完成
       
       return verificationResult;
     } catch (error) {
@@ -143,8 +173,8 @@ export class MCPAuthService {
     isVerified: boolean
   ): Promise<boolean> {
     try {
-      // 调用DAO层更新任务MCP授权状态
-      return await mcpAuthDao.updateTaskMCPAuthStatus(taskId, userId, mcpName, isVerified);
+      const normalizedMcpName = this.normalizeMCPName(mcpName);
+      return await mcpAuthDao.updateTaskMCPAuthStatus(taskId, userId, normalizedMcpName, isVerified);
     } catch (error) {
       logger.error(`更新任务MCP授权状态失败 [任务: ${taskId}, MCP: ${mcpName}]:`, error);
       return false;
@@ -157,27 +187,34 @@ export class MCPAuthService {
    */
   async checkAllMCPsVerified(taskId: string): Promise<boolean> {
     try {
-      // 获取当前任务的工作流
+      logger.info(`[SERVICE_CHECK] Task ${taskId}: Checking all MCPs.`);
       const mcpWorkflow = await mcpAuthDao.getTaskMCPWorkflow(taskId);
       
-      if (!mcpWorkflow) {
+      if (!mcpWorkflow || !Array.isArray(mcpWorkflow.mcps)) {
+        logger.warn(`[SERVICE_CHECK] Task ${taskId}: No valid MCP workflow found.`);
         return false;
       }
       
-      // 检查需要授权的MCP是否都已验证
-      const requiredAuthMCPs = (mcpWorkflow.mcps || []).filter((mcp: { authRequired: boolean }) => 
-        mcp.authRequired === true
-      );
+      logger.info(`[SERVICE_CHECK] Task ${taskId}: Workflow read from DB is ${JSON.stringify(mcpWorkflow)}`);
       
+      const requiredAuthMCPs = mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired === true);
+
       if (requiredAuthMCPs.length === 0) {
-        return true; // 没有需要授权的MCP
+        logger.info(`[SERVICE_CHECK] Task ${taskId}: No MCPs require authentication.`);
+        return true;
       }
       
-      return requiredAuthMCPs.every((mcp: { authVerified: boolean }) => 
-        mcp.authVerified === true
-      );
+      const allVerified = requiredAuthMCPs.every((mcp: any) => mcp.authVerified === true);
+      
+      if(allVerified) {
+        logger.info(`[SERVICE_CHECK] Task ${taskId}: Verification PASSED.`);
+      } else {
+        logger.error(`[SERVICE_CHECK] Task ${taskId}: Verification FAILED.`);
+      }
+      
+      return allVerified;
     } catch (error) {
-      logger.error(`检查任务MCP授权状态失败 [任务: ${taskId}]:`, error);
+      logger.error(`[SERVICE_CHECK] Task ${taskId}: Error during check:`, error);
       return false;
     }
   }
@@ -350,5 +387,52 @@ export class MCPAuthService {
       success: true,
       message: '天气服务授权信息已记录（实际应用中应验证API密钥）'
     };
+  }
+  
+  /**
+   * Twitter/X授权验证
+   * @param authData 授权数据
+   */
+  private async verifyTwitterAuth(authData: Record<string, string>): Promise<AuthVerificationResult> {
+    try {
+      const apiKey = authData.TWITTER_API_KEY;
+      const apiSecret = authData.TWITTER_API_SECRET;
+      const accessToken = authData.TWITTER_ACCESS_TOKEN;
+      const accessSecret = authData.TWITTER_ACCESS_SECRET;
+      
+      // 检查必需字段
+      if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
+        const missingFields = [];
+        if (!apiKey) missingFields.push('Twitter API Key');
+        if (!apiSecret) missingFields.push('Twitter API Secret');
+        if (!accessToken) missingFields.push('Twitter Access Token');
+        if (!accessSecret) missingFields.push('Twitter Access Secret');
+        
+        return { 
+          success: false,
+          message: '缺少必需的认证信息',
+          details: `请提供: ${missingFields.join(', ')}`
+        };
+      }
+      
+      // 这里可以添加实际的Twitter API验证
+      // 由于Twitter API v2需要OAuth，暂时只做基本验证
+      // 在实际使用时，MCP工具会使用这些凭据进行API调用
+      
+      return {
+        success: true,
+        message: 'Twitter/X认证信息已保存'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: 'Twitter/X授权验证过程中发生错误',
+        details: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  private normalizeMCPName(mcpName: string): string {
+    return mcpNameMapping[mcpName] || mcpName;
   }
 } 
