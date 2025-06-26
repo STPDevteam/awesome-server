@@ -1274,37 +1274,32 @@ You must output valid JSON with the following structure:
         
         try {
           const response = await this.llm.invoke([
-            new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for selecting the most appropriate tools based on user task requirements.
+            new SystemMessage(`You are an MCP tool selector. Your job is to select ONLY the tools that are absolutely necessary for the specific task.
 
-**IMPORTANT RULES**:
-1. **ALWAYS prioritize keyword matching**: If the task contains specific keywords, you MUST select the corresponding tools:
-   - "Twitter", "tweet", "X平台", "推特" → MUST select "x-mcp"
-   - "GitHub", "仓库", "代码库", "repository" → MUST select "github-mcp-server"
-   - "cryptocurrency", "crypto", "coin", "币价", "加密货币" → MUST select "coingecko-mcp"
-   - "12306", "火车", "高铁", "train" → MUST select "12306-mcp-service"
-   - "playwright", "浏览器自动化", "browser automation" → MUST select "playwright-mcp-service"
-   - "notion", "笔记" → MUST select "notion-mcp"
-   - And so on...
+**CRITICAL RULE**: Be very selective. Only choose tools that are directly required to complete the task. Do NOT select extra tools "just in case".
 
-2. **Pre-selected tools**: The following tools have been pre-selected based on keywords and SHOULD be included unless there's a very strong reason not to:
-${keywordBasedMCPs.map(mcp => `   - ${mcp.name}: ${mcp.description}`).join('\n')}
+**Task-specific selections**:
+- For Twitter/推文 tasks → ONLY select "x-mcp"
+- For GitHub/代码库 tasks → ONLY select "github-mcp-server" 
+- For crypto/币价 tasks → ONLY select "coingecko-mcp"
+- For 12306/火车 tasks → ONLY select "12306-mcp-service"
+- For browser automation → ONLY select "playwright-mcp-service"
 
-3. Select up to 4 most relevant tools total.
+**Current task**: "${taskContent}"
 
-Available MCP tools (grouped by category):
-${JSON.stringify(mcpsByCategory, null, 2)}
+Available MCP tools:
+${JSON.stringify(availableMCPs.map(mcp => ({
+  name: mcp.name,
+  description: mcp.description,
+  category: mcp.category
+})), null, 2)}
 
-Output format (must be valid JSON):
+Select ONLY the minimum tools needed. Respond in valid JSON:
 {
-  "selected_mcps": [
-    "Tool1Name",
-    "Tool2Name"
-  ],
-  "selection_explanation": "Explain to the user why these tools were selected",
-  "detailed_reasoning": "Detailed explanation of your selection process, especially explain if you didn't select pre-selected tools"
-}
-
- Important: The tool names MUST exactly match the name field in the available tools list.`),
+  "selected_mcps": ["tool1"],
+  "selection_explanation": "Brief explanation of why this tool was selected",
+  "detailed_reasoning": "Explain why you chose only this tool and not others"
+}`),
              new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
              new HumanMessage(`User task: ${taskContent}`)
           ]);
@@ -1326,18 +1321,13 @@ Output format (must be valid JSON):
           const parsedResponse = JSON.parse(cleanedText);
           let selectedMCPNames: string[] = parsedResponse.selected_mcps || [];
           
-          // 确保预选的MCP被包含（除非LLM有很强的理由不包含它们）
-          const missingPreselected = keywordBasedMCPs.filter(
-            pre => !selectedMCPNames.includes(pre.name)
-          );
-          
-          if (missingPreselected.length > 0 && selectedMCPNames.length < 4) {
-            logger.info(`[MCP Debug] Adding missing pre-selected MCPs: ${missingPreselected.map(m => m.name).join(', ')}`);
-            // 将缺失的预选MCP添加到列表开头
-            selectedMCPNames = [
-              ...missingPreselected.map(m => m.name),
-              ...selectedMCPNames
-            ].slice(0, 4); // 确保不超过4个
+          // 信任LLM的智能识别结果，不强制添加预选的MCP
+          // 只有当LLM没有选择任何MCP且预选列表不为空时，才使用预选结果作为备选
+          if (selectedMCPNames.length === 0 && keywordBasedMCPs.length > 0) {
+            logger.info(`[MCP Debug] LLM did not select any MCPs, using pre-selected as fallback: ${keywordBasedMCPs.map(m => m.name).join(', ')}`);
+            selectedMCPNames = keywordBasedMCPs.map(m => m.name).slice(0, 4);
+          } else {
+            logger.info(`[MCP Debug] Using LLM selected MCPs, ignoring keyword pre-selection`);
           }
           
           logger.info(`[MCP Debug] Final selected MCPs: ${JSON.stringify(selectedMCPNames)}`);
@@ -1422,28 +1412,33 @@ Output format (must be valid JSON):
       
       const response = await this.llm.invoke([
         new SystemMessage(`You are a professional project planner who needs to confirm the specific deliverables based on available MCP tools.
+
+IMPORTANT: Always respond with VALID JSON format only, no additional text or explanations outside the JSON structure.
+
+For x-mcp tool specifically:
+- The "get_home_timeline" action CAN retrieve the user's own tweets from their timeline
+- This is the standard way to get a user's recent tweets including their own posts
+- The tool is capable of accessing the authenticated user's timeline which includes their own tweets
+
 Please assess based on the user's task requirements and selected MCP tools:
 1. Whether the user's requirements can be fully met
 2. If they cannot be fully met, which parts can be implemented
 3. A specific list of deliverables
 
-Please consider the following available MCP tools:
+Available MCP tools:
 ${JSON.stringify(recommendedMCPs, null, 2)}
 
-Output format:
+MUST respond in exactly this JSON format (no extra text):
 {
-  "can_be_fulfilled": true/false,
+  "can_be_fulfilled": true,
   "deliverables": [
     "Specific deliverable 1",
-    "Specific deliverable 2",
-    ...
+    "Specific deliverable 2"
   ],
-  "limitations": "If there are requirements that cannot be met, please explain",
-  "conclusion": "Summary explanation for the user, explaining what can be accomplished and possible limitations",
-  "detailed_reasoning": "Detailed reasoning process, analyzing why requirements can/cannot be met, and how to plan delivery"
-}
-
-Please remain professional and objective, and do not over-promise features that cannot be implemented.`),
+  "limitations": "If there are limitations, explain here",
+  "conclusion": "Summary explanation",
+  "detailed_reasoning": "Detailed reasoning process"
+}`),
         new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
         new HumanMessage(taskContent)
       ]);
@@ -1451,13 +1446,24 @@ Please remain professional and objective, and do not over-promise features that 
       // Parse the returned JSON
       const responseText = response.content.toString();
       try {
-        // Clean possible Markdown formatting
-        const cleanedText = responseText
+        // Clean possible Markdown formatting and extract JSON
+        let cleanedText = responseText
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .trim();
         
-        logger.info(`[MCP Debug] Cleaned deliverables response: ${cleanedText}`);
+        // 如果响应不是以{开头，尝试提取JSON部分
+        if (!cleanedText.startsWith('{')) {
+          const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            cleanedText = jsonMatch[0];
+          }
+        }
+        
+        // 修复常见的JSON格式问题
+        cleanedText = this.fixMalformedJSON(cleanedText);
+        
+        logger.info(`[MCP Debug] Cleaned deliverables response: ${cleanedText.substring(0, 500)}...`);
         
         const parsedResponse = JSON.parse(cleanedText);
         
@@ -1605,16 +1611,66 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
       
       // Parse the returned JSON
       const responseText = response.content.toString();
+      let jsonText = responseText.trim();
+      
       try {
         // Clean possible Markdown formatting
-        const cleanedText = responseText
-          .replace(/```json\s*/g, '')
-          .replace(/```\s*$/g, '')
+        // 多步骤JSON提取和清理
+        
+        logger.info(`[MCP Debug] Original response length: ${responseText.length}`);
+        
+        // 步骤1: 提取markdown代码块中的JSON
+        const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[1].trim();
+          logger.info(`[MCP Debug] Extracted from markdown: ${jsonText.substring(0, 200)}...`);
+        } else {
+          // 步骤2: 查找第一个完整的JSON对象
+          const startIndex = responseText.indexOf('{');
+          if (startIndex !== -1) {
+            let braceCount = 0;
+            let endIndex = startIndex;
+            
+            for (let i = startIndex; i < responseText.length; i++) {
+              const char = responseText[i];
+              if (char === '{') braceCount++;
+              if (char === '}') braceCount--;
+              
+              if (braceCount === 0) {
+                endIndex = i;
+                break;
+              }
+            }
+            
+            if (braceCount === 0) {
+              jsonText = responseText.substring(startIndex, endIndex + 1);
+              logger.info(`[MCP Debug] Extracted balanced JSON: ${jsonText.substring(0, 200)}...`);
+            }
+          }
+        }
+        
+        // 步骤3: 清理常见的JSON格式问题
+        jsonText = jsonText
+          .replace(/,(\s*[}\]])/g, '$1') // 移除多余的逗号
+          .replace(/([{,]\s*)(\w+):/g, '$1"$2":') // 为未引用的键添加引号
+          .replace(/:\s*'([^']*)'(?=\s*[,}\]])/g, ':"$1"') // 将单引号字符串转换为双引号
+          .replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
+            // 更安全地处理值的引号添加
+            const trimmedValue = value.trim();
+            // 如果是数字或布尔值，不加引号
+            if (/^(true|false|\d+(\.\d+)?)$/.test(trimmedValue)) {
+              return `:${trimmedValue}`;
+            }
+            // 否则加引号
+            return `:"${trimmedValue}"`;
+          })
+          .replace(/\n/g, ' ') // 移除换行符
+          .replace(/\s+/g, ' ') // 压缩空白字符
           .trim();
         
-        logger.info(`[MCP Debug] Cleaned workflow response: ${cleanedText}`);
+        logger.info(`[MCP Debug] Cleaned workflow response: ${jsonText.substring(0, 500)}...`);
         
-        const parsedResponse = JSON.parse(cleanedText);
+        const parsedResponse = JSON.parse(jsonText);
         
         const workflow = parsedResponse.workflow || [];
         
@@ -1630,35 +1686,82 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
         };
       } catch (parseError) {
         logger.error('Failed to parse MCP workflow construction result:', parseError);
+        logger.error('Problematic JSON text:', jsonText);
         
-        // Try to extract workflow information from text
-        const workflowMatch = responseText.match(/["']workflow["']\s*:\s*\[(.*?)\]/s);
-        let workflow: Array<{
-          step: number;
-          mcp: string;
-          action: string;
-          input?: any;
-        }> = [];
-        
-        // If unable to extract formatted workflow, create a simple default workflow
-        if (!workflowMatch) {
-          workflow = recommendedMCPs.map((mcp, index) => ({
-            step: index + 1,
-            mcp: mcp.name,
-            action: `Use ${mcp.name} to perform related operations`,
-            input: "Task content"
-          }));
+        // 尝试使用更强大的JSON修复方法
+        try {
+          const fixedJson = this.fixMalformedJSON(jsonText);
+          logger.info(`[MCP Debug] Attempting advanced JSON fix: ${fixedJson.substring(0, 500)}...`);
+          const fixedResponse = JSON.parse(fixedJson);
+          
+          return {
+            content: fixedResponse.workflow_summary || "Workflow created successfully",
+            reasoning: fixedResponse.detailed_reasoning || "Workflow parsing recovered from error",
+            workflow: fixedResponse.workflow || []
+          };
+        } catch (advancedError) {
+          logger.error('Advanced JSON fix also failed:', advancedError);
+          
+          // 尝试使用更宽松的解析方法
+          try {
+            // 尝试修复常见的JSON错误
+            let fixedJson = jsonText
+              .replace(/,\s*}/g, '}') // 移除对象末尾多余的逗号
+              .replace(/,\s*]/g, ']') // 移除数组末尾多余的逗号
+              .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3') // 确保所有键都有引号
+              .replace(/:\s*'([^']*)'(?=\s*[,}\]])/g, ':"$1"') // 将单引号字符串转换为双引号
+              .replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
+                // 更安全地处理值的引号添加
+                const trimmedValue = value.trim();
+                // 如果是数字或布尔值，不加引号
+                if (/^(true|false|\d+(\.\d+)?)$/.test(trimmedValue)) {
+                  return `:${trimmedValue}`;
+                }
+                // 否则加引号
+                return `:"${trimmedValue}"`;
+              });
+            
+            logger.info(`[MCP Debug] Attempting to fix JSON: ${fixedJson.substring(0, 500)}...`);
+            const fixedResponse = JSON.parse(fixedJson);
+            
+            return {
+              content: fixedResponse.workflow_summary || "Workflow created successfully",
+              reasoning: fixedResponse.detailed_reasoning || "Workflow parsing recovered from error",
+              workflow: fixedResponse.workflow || []
+            };
+          } catch (secondError) {
+            logger.error('Second parsing attempt also failed:', secondError);
+            
+            // 最后的后备方案：从文本中提取信息
+            const workflowMatch = responseText.match(/["']workflow["']\s*:\s*\[(.*?)\]/s);
+            let workflow: Array<{
+              step: number;
+              mcp: string;
+              action: string;
+              input?: any;
+            }> = [];
+            
+            // 如果无法提取格式化的工作流，创建一个简单的默认工作流
+            if (!workflowMatch && recommendedMCPs.length > 0) {
+              workflow = [{
+                step: 1,
+                mcp: recommendedMCPs[0].name,
+                action: "Execute task using available tools",
+                input: {}
+              }];
+            }
+            
+            // 提取摘要和推理
+            const summaryMatch = responseText.match(/["']workflow_summary["']\s*:\s*["'](.+?)["']/s);
+            const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
+            
+            return {
+              content: summaryMatch ? summaryMatch[1].trim() : "Workflow created with fallback parsing",
+              reasoning: reasoningMatch ? reasoningMatch[1].trim() : "Used fallback workflow generation due to parsing issues",
+              workflow
+            };
+          }
         }
-        
-        // Extract summary and reasoning
-        const summaryMatch = responseText.match(/["']workflow_summary["']\s*:\s*["'](.+?)["']/s);
-        const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
-        
-        return {
-          content: summaryMatch ? summaryMatch[1].trim() : "Unable to parse workflow summary",
-          reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText,
-          workflow
-        };
       }
     } catch (error) {
       logger.error('Failed to build MCP workflow:', error);
@@ -1755,6 +1858,68 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
     });
     
     return actualParams;
+  }
+
+  /**
+   * 修复常见的JSON格式错误
+   * @param jsonText 需要修复的JSON文本
+   * @returns 修复后的JSON文本
+   */
+  private fixMalformedJSON(jsonText: string): string {
+    try {
+      let fixed = jsonText;
+      
+      // 1. 移除多余的逗号
+      fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+      
+      // 2. 修复未引用的键
+      fixed = fixed.replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3');
+      
+      // 3. 处理单引号字符串
+      fixed = fixed.replace(/:\s*'([^']*)'(?=\s*[,}\]\n])/g, ':"$1"');
+      
+      // 4. 处理未引用的字符串值，但保留数字和布尔值
+      fixed = fixed.replace(/:\s*([^",{\[\]}\s\n][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
+        const trimmedValue = value.trim();
+        
+        // 跳过已经有引号的值
+        if (trimmedValue.startsWith('"') && trimmedValue.endsWith('"')) {
+          return match;
+        }
+        
+        // 保留数字、布尔值和null
+        if (/^(true|false|null|\d+(\.\d+)?([eE][+-]?\d+)?)$/.test(trimmedValue)) {
+          return `:${trimmedValue}`;
+        }
+        
+        // 其他值加引号
+        return `:"${trimmedValue}"`;
+      });
+      
+      // 5. 处理换行符和多余空白
+      fixed = fixed.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+      
+      // 6. 修复可能的双引号问题
+      fixed = fixed.replace(/""([^"]*)""/g, '"$1"');
+      
+      // 7. 最后检查：确保所有冒号后的值都正确格式化
+      fixed = fixed.replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
+        const trimmedValue = value.trim();
+        
+        // 如果值已经有引号或是数字/布尔值，保持不变
+        if (trimmedValue.startsWith('"') || /^(true|false|null|\d+(\.\d+)?([eE][+-]?\d+)?)$/.test(trimmedValue)) {
+          return `:${trimmedValue}`;
+        }
+        
+        // 否则加引号
+        return `:"${trimmedValue}"`;
+      });
+      
+      return fixed;
+    } catch (error) {
+      logger.error('Error in fixMalformedJSON:', error);
+      return jsonText; // 如果修复失败，返回原始文本
+    }
   }
 
   private preselectMCPsByKeywords(taskContent: string, availableMCPs: MCPInfo[]): MCPInfo[] {

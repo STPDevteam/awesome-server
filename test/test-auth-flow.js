@@ -108,8 +108,8 @@ async function testAuthFlow() {
     console.log('');
     
     // 步骤1: 创建需要认证的任务
-    console.log('📝 步骤1: 创建任务（Twitter发推文）');
-    const task = await createTask('发送一条推文说：Hello MCP World!');
+    console.log('📝 步骤1:查询我最近的一条推文');
+    const task = await createTask('查询我最近的一条推文');
     console.log(`✅ 任务创建成功，ID: ${task.id}\n`);
     
     // 步骤2: 分析任务
@@ -154,18 +154,49 @@ async function testAuthFlow() {
     });
     console.log(`  > 验证API返回: ${fullAuthResult.success ? '成功' : '失败'}`);
     
-    // 步骤6: 认证后再次执行
-    console.log('\n🐦 步骤6: 再次执行（已认证）- 获取Twitter列表推文');
+    // 步骤6: 认证后重新分析任务以更新工作流
+    console.log('\n🔄 步骤6: 认证后重新分析任务');
     if (fullAuthResult.success) {
+      console.log('  > 重新分析任务以更新工作流...');
+      const reAnalysis = await analyzeTask(task.id);
+      console.log('  > 重新分析完成');
+      
+      // 步骤7: 执行任务
+      console.log('\n🐦 步骤7: 执行任务（已认证）- 获取Twitter列表推文');
       const executeResult2 = await executeTask(task.id);
       console.log(`  > 结果: ${executeResult2.success ? '执行成功' : '执行失败'}`);
+      console.log(`  > 完整执行结果: ${JSON.stringify(executeResult2, null, 2)}`);
       if (!executeResult2.success) {
-        console.log(`  > 错误提示: ${executeResult2.error}`);
+        console.log(`  > 错误提示: ${executeResult2.error || executeResult2.message || executeResult2.data?.error || executeResult2.data?.message || '未知错误'}`);
       } else {
-        console.log(`  > 执行摘要: ${executeResult2.summary}`);
+        console.log(`  > 执行摘要: ${executeResult2.summary || executeResult2.data?.summary}`);
+        
+        // 显示获取到的推文内容
+        const tweetResult = executeResult2.result || executeResult2.data?.result;
+        if (tweetResult) {
+          console.log(`  > 🐦 获取到的推文内容:`);
+          if (typeof tweetResult === 'string') {
+            console.log(`    ${tweetResult}`);
+          } else if (Array.isArray(tweetResult) && tweetResult.length > 0) {
+            const tweet = tweetResult[0];
+            console.log(`    作者: ${tweet.user?.name || tweet.author_name || '未知'}`);
+            console.log(`    内容: ${tweet.text || tweet.content || JSON.stringify(tweet)}`);
+            if (tweet.created_at) {
+              console.log(`    时间: ${tweet.created_at}`);
+            }
+          } else if (typeof tweetResult === 'object') {
+            console.log(`    ${JSON.stringify(tweetResult, null, 4)}`);
+          }
+        }
+        
         if (executeResult2.steps && executeResult2.steps.length > 0) {
           console.log(`  > 执行步骤:`);
           executeResult2.steps.forEach((step, index) => {
+            console.log(`    ${index + 1}. ${step.success ? '✅' : '❌'} ${step.success ? '成功' : step.error}`);
+          });
+        } else if (executeResult2.data?.steps && executeResult2.data.steps.length > 0) {
+          console.log(`  > 执行步骤:`);
+          executeResult2.data.steps.forEach((step, index) => {
             console.log(`    ${index + 1}. ${step.success ? '✅' : '❌'} ${step.success ? '成功' : step.error}`);
           });
         }
