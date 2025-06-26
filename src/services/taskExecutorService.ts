@@ -50,6 +50,62 @@ export class TaskExecutorService {
   }
   
   /**
+   * 验证并确保MCP客户端连接正常
+   * @param mcpName MCP名称
+   * @returns 验证过的客户端实例
+   */
+  private async ensureClientConnection(mcpName: string): Promise<any> {
+    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+    const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
+    
+    if (!isConnected) {
+      throw new Error(`MCP ${mcpName} not connected, please ensure MCP service is available`);
+    }
+    
+    // 验证客户端连接状态
+    const client = this.mcpManager.getClient(mcpName);
+    if (!client) {
+      throw new Error(`No client found for MCP: ${mcpName}`);
+    }
+
+    // 检查客户端实际连接状态
+    try {
+      await client.listTools();
+      logger.info(`✅ Client connection verified for ${mcpName}`);
+      return client;
+    } catch (connectionError) {
+      logger.error(`❌ Client connection failed for ${mcpName}:`, connectionError);
+      logger.info(`🔄 Attempting to reconnect ${mcpName}...`);
+      
+      // 获取MCP配置用于重连
+      const mcpConfig = connectedMCPs.find(mcp => mcp.name === mcpName);
+      if (!mcpConfig) {
+        throw new Error(`MCP ${mcpName} configuration not found for reconnection`);
+      }
+      
+      try {
+        // 尝试重新连接
+        await this.mcpManager.disconnect(mcpName);
+        await this.mcpManager.connect(mcpName, mcpConfig.command, mcpConfig.args, mcpConfig.env);
+        
+        // 验证重连后的连接
+        const reconnectedClient = this.mcpManager.getClient(mcpName);
+        if (!reconnectedClient) {
+          throw new Error(`Failed to get reconnected client for ${mcpName}`);
+        }
+        
+        await reconnectedClient.listTools();
+        logger.info(`✅ Successfully reconnected ${mcpName}`);
+        
+        return reconnectedClient;
+      } catch (reconnectError) {
+        logger.error(`❌ Failed to reconnect ${mcpName}:`, reconnectError);
+        throw new Error(`MCP ${mcpName} connection failed and reconnection failed: ${reconnectError}`);
+      }
+    }
+  }
+  
+  /**
    * Execute task workflow
    * @param taskId Task ID
    * @returns Execution result object, including execution status and summary information
@@ -351,15 +407,72 @@ export class TaskExecutorService {
       const content = Array.isArray(stepResult.content) ? stepResult.content[0] : stepResult.content;
       const resultText = content?.text || content?.toString() || '';
       
-      // 通用错误关键词检查
-      const errorKeywords = ['error', 'failed', 'unauthorized', 'forbidden', 'rate limit', 'invalid', 'exception'];
-      const hasError = errorKeywords.some(keyword => 
-        resultText.toLowerCase().includes(keyword.toLowerCase())
-      );
+      // 修复误判逻辑：只有在明确包含错误信息且没有有效数据时才判断为失败
+      const errorKeywords = ['unauthorized', 'forbidden', 'rate limit', 'invalid', 'exception', 'failed'];
       
-      if (hasError && resultText.toLowerCase().includes('error')) {
-        throw new Error(`Operation failed: ${resultText}`);
+      // 检查是否包含有效的数据结构（如JSON格式的API响应）
+      const hasValidData = this.hasValidApiData(resultText);
+      
+      // 只有在没有有效数据且包含真正的错误关键词时才抛出错误
+      if (!hasValidData) {
+        const hasError = errorKeywords.some(keyword => 
+          resultText.toLowerCase().includes(keyword.toLowerCase())
+        );
+        
+        if (hasError) {
+          throw new Error(`Operation failed: ${resultText}`);
+        }
       }
+      
+      // 对于明确的错误状态码或错误消息
+      if (resultText.includes('"error_code":') && !resultText.includes('"error_code":0')) {
+        const errorMatch = resultText.match(/"error_message":"([^"]+)"/);
+        const errorMessage = errorMatch ? errorMatch[1] : 'API returned error';
+        throw new Error(`API Error: ${errorMessage}`);
+      }
+    }
+  }
+  
+  /**
+   * 检查响应是否包含有效的API数据
+   */
+  private hasValidApiData(resultText: string): boolean {
+    try {
+      // 尝试解析JSON
+      const parsed = JSON.parse(resultText);
+      
+      // 检查是否包含常见的有效数据结构
+      if (parsed.status && parsed.data) {
+        // CoinMarketCap类型的响应
+        if (parsed.status.error_code === 0 || parsed.status.error_code === '0') {
+          return true;
+        }
+      }
+      
+      if (parsed.data && (Array.isArray(parsed.data) || typeof parsed.data === 'object')) {
+        // 包含数据数组或对象
+        return true;
+      }
+      
+      if (parsed.result || parsed.results) {
+        // 包含结果数据
+        return true;
+      }
+      
+      // 检查是否是比特币价格数据
+      if (parsed.BTC || (parsed.data && parsed.data.BTC)) {
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      // 不是JSON，检查是否包含结构化数据特征
+      const dataIndicators = [
+        '"price":', '"market_cap":', '"volume_24h":', '"symbol":"BTC"',
+        '"name":"Bitcoin"', '"rank":', '"dominance":', '"timestamp":'
+      ];
+      
+      return dataIndicators.some(indicator => resultText.includes(indicator));
     }
   }
   
@@ -370,14 +483,8 @@ export class TaskExecutorService {
     try {
       logger.info(`🔍 Calling MCP tool via LangChain [MCP: ${mcpName}, Tool: ${toolName}]`);
       
-      // 检查MCP是否已连接
-      const connectedMCPs = this.mcpManager.getConnectedMCPs();
-      const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
-      
-      if (!isConnected) {
-        logger.warn(`MCP ${mcpName} not connected, LangChain call requires MCP to be connected first`);
-        throw new Error(`MCP ${mcpName} not connected, please ensure MCP service is available`);
-      }
+      // 验证并确保客户端连接正常
+      await this.ensureClientConnection(mcpName);
       
       // 获取MCP的所有工具
       const mcpTools = await this.mcpManager.getTools(mcpName);
@@ -411,7 +518,47 @@ export class TaskExecutorService {
       console.log(`Tool Description: ${targetTool.description || 'No description'}`);
       console.log(`Tool Input Schema: ${JSON.stringify(targetTool.inputSchema, null, 2)}`);
       
-      const result = await langchainTool.invoke(input);
+      let result;
+      try {
+        result = await langchainTool.invoke(input);
+      } catch (schemaError) {
+        if (schemaError instanceof Error && schemaError.message && schemaError.message.includes('schema')) {
+          logger.warn(`Schema validation failed, attempting to convert input parameters...`);
+          console.log(`⚠️ Schema validation failed, attempting parameter conversion...`);
+          
+          // 使用LLM转换输入参数
+          const conversionPrompt = `Convert the input parameters to match the tool schema.
+
+Tool: ${targetTool.name}
+Description: ${targetTool.description || 'No description'}
+Expected Schema: ${JSON.stringify(targetTool.inputSchema, null, 2)}
+Current Input: ${JSON.stringify(input, null, 2)}
+
+Please respond with ONLY a valid JSON object that matches the expected schema.
+For cryptocurrency tools:
+- Use lowercase coin IDs like "bitcoin", "ethereum"
+- Use "usd" for vs_currency
+- Include boolean flags like include_market_cap: true, include_24hr_change: true`;
+
+          const conversionResponse = await this.llm.invoke([
+            new SystemMessage(conversionPrompt)
+          ]);
+
+          try {
+            const convertedInput = JSON.parse(conversionResponse.content.toString().trim());
+            console.log(`🔄 Converted input: ${JSON.stringify(convertedInput, null, 2)}`);
+            logger.info(`🔄 Attempting tool call with converted input: ${JSON.stringify(convertedInput)}`);
+            
+            result = await langchainTool.invoke(convertedInput);
+            console.log(`✅ Tool call succeeded with converted input`);
+          } catch (conversionError) {
+            logger.error(`❌ Parameter conversion failed: ${conversionError}`);
+            throw schemaError; // 抛出原始错误
+          }
+        } else {
+          throw schemaError;
+        }
+      }
       
       console.log(`\n==== LangChain Tool Call Raw Result ====`);
       console.log(`Raw Result Type: ${typeof result}`);
@@ -506,41 +653,87 @@ export class TaskExecutorService {
       const mcpTools = await this.mcpManager.getTools(actualMcpName);
       logger.info(`📋 Available tools in ${actualMcpName}: ${mcpTools.map(t => t.name).join(', ')}`);
 
-      // 使用LLM根据目标选择合适的工具
-      const toolSelectionPrompt = `You are an AI assistant that selects the most appropriate tool based on the task objective.
+      // 使用LLM根据目标选择合适的工具，并转换输入参数
+      const toolSelectionPrompt = `You are an AI assistant that selects the most appropriate tool and generates proper input parameters.
 
 Task objective: ${objective}
-Input parameters: ${JSON.stringify(input)}
+Original input: ${JSON.stringify(input)}
 
 Available tools:
-${mcpTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}`).join('\n')}
+${mcpTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}${tool.inputSchema ? '\n  Input schema: ' + JSON.stringify(tool.inputSchema) : ''}`).join('\n')}
 
-Select the BEST tool for this objective. Response with ONLY the exact tool name, nothing else.`;
+Please respond in JSON format with:
+{
+  "toolName": "exact_tool_name",
+  "inputParams": { /* converted parameters based on tool schema */ },
+  "reasoning": "brief explanation"
+}
+
+For cryptocurrency queries:
+- Use "bitcoin" as ID for Bitcoin, "ethereum" for Ethereum, etc.
+- Use "usd" as vs_currency for USD prices
+- Include relevant parameters like include_market_cap, include_24hr_change, etc.`;
 
       const toolSelectionResponse = await this.llm.invoke([
         new SystemMessage(toolSelectionPrompt)
       ]);
 
-      const selectedToolName = toolSelectionResponse.content.toString().trim();
+      let toolSelection;
+      try {
+        const responseText = toolSelectionResponse.content.toString().trim();
+        // 尝试解析JSON响应
+        toolSelection = JSON.parse(responseText);
+      } catch (parseError) {
+        logger.error(`Failed to parse tool selection response: ${toolSelectionResponse.content}`);
+        // 回退到简单的工具选择
+        const fallbackPrompt = `Available tools: ${mcpTools.map(t => t.name).join(', ')}\nObjective: ${objective}\nSelect ONLY the exact tool name:`;
+        const fallbackResponse = await this.llm.invoke([new SystemMessage(fallbackPrompt)]);
+        const fallbackToolName = fallbackResponse.content.toString().trim();
+        toolSelection = {
+          toolName: fallbackToolName,
+          inputParams: input,
+          reasoning: "Fallback selection due to parsing error"
+        };
+      }
+
+      const selectedToolName = toolSelection.toolName;
+      const convertedInput = toolSelection.inputParams || input;
+      
       logger.info(`🔧 LLM selected tool: ${selectedToolName}`);
+      logger.info(`🔧 Converted input parameters: ${JSON.stringify(convertedInput)}`);
+      logger.info(`🧠 Selection reasoning: ${toolSelection.reasoning || 'No reasoning provided'}`);
 
       // 验证选择的工具是否存在
-      const selectedTool = mcpTools.find(t => t.name === selectedToolName);
+      let selectedTool = mcpTools.find(t => t.name === selectedToolName);
+      let finalToolName = selectedToolName;
+      
       if (!selectedTool) {
         logger.error(`Selected tool ${selectedToolName} not found in available tools`);
-        throw new Error(`Tool selection failed: ${selectedToolName} not found`);
+        // 尝试模糊匹配
+        const fuzzyMatch = mcpTools.find(t => 
+          t.name.toLowerCase().includes(selectedToolName.toLowerCase()) ||
+          selectedToolName.toLowerCase().includes(t.name.toLowerCase())
+        );
+        if (fuzzyMatch) {
+          logger.info(`Found fuzzy match: ${fuzzyMatch.name}`);
+          selectedTool = fuzzyMatch;
+          finalToolName = fuzzyMatch.name;
+        } else {
+          throw new Error(`Tool selection failed: ${selectedToolName} not found in available tools`);
+        }
       }
 
       // 调用选定的工具
-      console.log(`\n==== MCP Objective-❤️Based Call Details ====`);
+      console.log(`\n==== MCP Objective-Based Call Details ====`);
       console.log(`Time: ${new Date().toISOString()}`);
       console.log(`Original MCP Name: ${mcpName}`);
       console.log(`Actual MCP Name: ${actualMcpName}`);
       console.log(`Objective: ${objective}`);
-      console.log(`Selected Tool: ${selectedToolName}`);
-      console.log(`Final Input Parameters: ${JSON.stringify(input, null, 2)}`);
+      console.log(`Selected Tool: ${finalToolName}`);
+      console.log(`Original Input: ${JSON.stringify(input, null, 2)}`);
+      console.log(`Converted Input Parameters: ${JSON.stringify(convertedInput, null, 2)}`);
       
-      const result = await this.callMCPToolWithLangChain(actualMcpName, selectedToolName, input);
+      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, convertedInput);
       
       console.log(`\n==== MCP Objective-Based Call Result ====`);
       console.log(`Status: Success`);
@@ -787,17 +980,22 @@ Select the BEST tool for this objective. Response with ONLY the exact tool name,
     let processedResult;
     if (rawResult.content) {
       if (Array.isArray(rawResult.content)) {
-        // 如果是数组，转换为字符串
-        processedResult = JSON.stringify(rawResult.content, null, 2);
+        // 如果是数组，检查第一个元素
+        const firstContent = rawResult.content[0];
+        if (firstContent && firstContent.text) {
+          processedResult = this.formatApiResponse(firstContent.text);
+        } else {
+          processedResult = JSON.stringify(rawResult.content, null, 2);
+        }
       } else if (typeof rawResult.content === 'object') {
         // 如果是对象，检查是否有 text 字段
         if (rawResult.content.text) {
-          processedResult = rawResult.content.text;
+          processedResult = this.formatApiResponse(rawResult.content.text);
         } else {
           processedResult = JSON.stringify(rawResult.content, null, 2);
         }
       } else {
-        processedResult = String(rawResult.content);
+        processedResult = this.formatApiResponse(String(rawResult.content));
       }
     } else {
       processedResult = JSON.stringify(rawResult, null, 2);
@@ -805,6 +1003,51 @@ Select the BEST tool for this objective. Response with ONLY the exact tool name,
     
     logger.info(`📤 MCP tool processed result: ${processedResult}`);
     return processedResult;
+  }
+  
+  /**
+   * 格式化API响应数据，使其更易读
+   */
+  private formatApiResponse(rawText: string): string {
+    try {
+      // 尝试解析JSON并格式化
+      const parsed = JSON.parse(rawText);
+      
+      // 特殊处理CoinMarketCap响应
+      if (parsed.status && parsed.data && parsed.status.error_code === 0) {
+        const result: any = {
+          success: true,
+          timestamp: parsed.status.timestamp,
+          data: parsed.data
+        };
+        
+        // 如果是比特币数据，提取关键信息
+        if (parsed.data.BTC && Array.isArray(parsed.data.BTC) && parsed.data.BTC.length > 0) {
+          const btcData = parsed.data.BTC[0];
+          const summary = {
+            name: btcData.name,
+            symbol: btcData.symbol,
+            rank: btcData.cmc_rank,
+            price: btcData.quote?.USD?.price,
+            market_cap: btcData.quote?.USD?.market_cap,
+            market_cap_dominance: btcData.quote?.USD?.market_cap_dominance,
+            volume_24h: btcData.quote?.USD?.volume_24h,
+            percent_change_24h: btcData.quote?.USD?.percent_change_24h,
+            last_updated: btcData.quote?.USD?.last_updated
+          };
+          
+          result.summary = summary;
+        }
+        
+        return JSON.stringify(result, null, 2);
+      }
+      
+      // 其他JSON响应正常格式化
+      return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      // 不是有效JSON，直接返回
+      return rawText;
+    }
   }
   
   /**
@@ -1114,19 +1357,19 @@ Based on the above task execution information, please generate a complete execut
       // 准备步骤结果详情
       const stepDetails = stepResults.map(step => {
         if (step.success) {
-          return `Step ${step.step}: Successfully executed - ${typeof step.result === 'string' && step.result.length > 100 ? 
+          return `步骤${step.step}: 成功执行 - ${typeof step.result === 'string' && step.result.length > 100 ? 
             step.result.substring(0, 100) + '...' : step.result}`;
         } else {
-          return `Step ${step.step}: Execution failed - ${step.error}`;
+          return `步骤${step.step}: 执行失败 - ${step.error}`;
         }
       }).join('\n');
       
       // 创建流式LLM实例
       const streamingLlm = new ChatOpenAI({
+        modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
+        temperature: 0.7,
         openAIApiKey: process.env.OPENAI_API_KEY,
-        modelName: process.env.TASK_EXECUTION_MODEL || 'gpt-4o',
-        temperature: 0.3,
-        streaming: true,
+        streaming: true
       });
       
       // 创建消息
@@ -1181,7 +1424,30 @@ Based on the above task execution information, please generate a complete execut
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // 使用全局统一的映射表
+    // MCP名称映射表
+    const mcpNameMapping: Record<string, string> = {
+      'coinmarketcap-mcp-service': 'coinmarketcap-mcp-service',
+      'coinmarketcap': 'coinmarketcap-mcp-service',
+      'cmc': 'coinmarketcap-mcp-service',
+      'playwright': 'playwright',
+      'github-mcp-server': 'github-mcp-server',
+      'github': 'github-mcp-server',
+      'evm-mcp': 'evm-mcp',
+      'ethereum': 'evm-mcp',
+      'dexscreener-mcp-server': 'dexscreener-mcp-server',
+      'dexscreener': 'dexscreener-mcp-server',
+      'x-mcp': 'x-mcp',
+      'twitter': 'x-mcp',
+      'coingecko-mcp': 'coingecko-mcp',
+      'coingecko': 'coingecko-mcp',
+      'notion-mcp-server': 'notion-mcp-server',
+      'notion': 'notion-mcp-server',
+      '12306-mcp': '12306-mcp',
+      'train': '12306-mcp',
+      'AWE Core MCP Server': 'AWE Core MCP Server',
+      'awe': 'AWE Core MCP Server'
+    };
+    
     return mcpNameMapping[mcpName] || mcpName;
   }
-} 
+}

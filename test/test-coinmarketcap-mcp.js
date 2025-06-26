@@ -3,7 +3,7 @@ import fetch from 'node-fetch';
 
 const BASE_URL = 'http://localhost:3001';
 const TEST_USER_ID = 'test-user-001';
-const CMC_API_KEY = '12c780a2-98f9-4b5d-8166-ae3188b2fa04';
+const CMC_API_KEY = 'CG-mCYvBLbwmzQfi1Cwao6xhrMj';
 
 // 清理用户认证状态
 async function clearUserAuth() {
@@ -351,8 +351,8 @@ async function testCoinMarketCapMCP() {
     console.log('');
     
     // 步骤1: 创建需要认证的任务
-    console.log('📝 步骤1: 创建任务 - 使用CoinMarketCap查询比特币价格');
-    const task = await createTask('使用CoinMarketCap API查询比特币(BTC)当前价格和市值排名');
+    console.log('📝 步骤1: 创建任务 - 使用coingecko查询比特币价格');
+    const task = await createTask('使用coingecko API查询比特币(BTC)当前价格和市值排名');
     console.log(`✅ 任务创建成功，ID: ${task.id}\n`);
     
     // 步骤2: 分析任务
@@ -394,8 +394,8 @@ async function testCoinMarketCapMCP() {
     
     // 步骤5: 提供CoinMarketCap认证信息
     console.log('\n🔑 步骤5: 提供CoinMarketCap认证信息');
-    const authResult = await verifyAuth(task.id, 'coinmarketcap-mcp', {
-      'COINMARKETCAP_API_KEY': CMC_API_KEY    });
+    const authResult = await verifyAuth(task.id, 'coingecko-mcp', {
+      'COINGECKO_API_KEY': CMC_API_KEY    });
     console.log(`  > 验证API返回: ${authResult.success ? '成功' : '失败'}`);
     console.log(`  > 验证详情: ${JSON.stringify(authResult, null, 2)}`);
     
