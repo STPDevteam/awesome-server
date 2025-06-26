@@ -9,15 +9,6 @@ export class MCPInfoService {
   // Predefined MCP list
   private mcpList: MCPInfo[] = [
     {
-      name: 'playwright',
-      description: 'Playwright browser automation tool, can control browsers to access web pages',
-      capabilities: ['browser', 'web-automation', 'screenshot', 'navigation'],
-      authRequired: false,
-      category: 'Automation Tools',
-      imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
-      githubUrl: 'https://github.com/microsoft/playwright'
-    },
-    {
       name: '12306-mcp',
       description: '12306 Train ticket inquiry and booking tools',
       capabilities: ['train-ticket-query', 'station-search', 'schedule-check'],
@@ -61,7 +52,7 @@ export class MCPInfoService {
       capabilities: ['read-file', 'write-file', 'list-directory'],
       authRequired: false,
       category: 'System Tools',
-      imageUrl: 'https://cdn-icons-png.flaticon.com/512/3767/3767084.png',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
       githubUrl: 'https://github.com/nodejs/node'
     },
     {
@@ -71,7 +62,7 @@ export class MCPInfoService {
       authRequired: true,
       authFields: ['api_key'],
       category: 'Network Tools',
-      imageUrl: 'https://cdn-icons-png.flaticon.com/512/2991/2991148.png',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-google-100.png',
       githubUrl: 'https://github.com/googleapis/google-api-nodejs-client'
     },
     
@@ -152,7 +143,7 @@ export class MCPInfoService {
       capabilities: ['token-security', 'rug-detection', 'contract-analysis'],
       authRequired: false,
       category: 'Market Data',
-      imageUrl: 'https://rugcheck.xyz/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
       githubUrl: 'https://github.com/kukapay/rug-check-mcp'
     },
     {
@@ -161,7 +152,7 @@ export class MCPInfoService {
       capabilities: ['price-feeds', 'oracle-data', 'real-time-prices'],
       authRequired: false,
       category: 'Market Data',
-      imageUrl: 'https://chain.link/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-chainlink-100.png',
       githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp'
     },
     {
@@ -170,7 +161,7 @@ export class MCPInfoService {
       capabilities: ['sentiment-analysis', 'market-psychology', 'fear-greed-index'],
       authRequired: false,
       category: 'Market Data',
-      imageUrl: 'https://alternative.me/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
       githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp'
     },
     {
@@ -179,7 +170,7 @@ export class MCPInfoService {
       capabilities: ['whale-tracking', 'large-transactions', 'wallet-monitoring'],
       authRequired: false,
       category: 'Market Data',
-      imageUrl: 'https://whale-alert.io/favicon.ico',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
       githubUrl: 'https://github.com/kukapay/whale-tracker-mcp'
     },
     
@@ -220,7 +211,7 @@ export class MCPInfoService {
       capabilities: ['browser-automation', 'testing', 'scraping'],
       authRequired: false,
       category: 'Development Tools',
-      imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+      imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
       githubUrl: 'https://github.com/microsoft/playwright-mcp'
     },
     {
