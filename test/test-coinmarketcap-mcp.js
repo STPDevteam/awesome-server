@@ -44,24 +44,122 @@ async function createTask(content) {
   return result.data.task;
 }
 
-// 分析任务
+// 分析任务（流式）
 async function analyzeTask(taskId) {
-  const response = await fetch(`${BASE_URL}/api/task/${taskId}/analyze`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      userId: TEST_USER_ID
-    })
+  return new Promise((resolve, reject) => {
+    fetch(`${BASE_URL}/api/task/${taskId}/analyze/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: TEST_USER_ID
+      })
+    }).then(async (res) => {
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
+
+      let buffer = '';
+      let finalResult = { success: false, mcpWorkflow: null, metadata: null };
+      let hasAnalysisComplete = false;
+      let hasError = false;
+
+      // Node.js环境下处理流式响应
+      res.body.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留不完整的行
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            
+            // 检查是否是结束标记
+            if (dataStr.trim() === '[DONE]') {
+              hasAnalysisComplete = true;
+              continue;
+            }
+            
+            try {
+              const data = JSON.parse(dataStr);
+              console.log(`    📡 流式分析数据: ${JSON.stringify(data)}`);
+              
+              // 处理不同的事件类型
+              switch (data.event) {
+                case 'analysis_start':
+                  console.log(`    🚀 开始分析任务: ${data.data.taskId}`);
+                  break;
+                  
+                case 'status_update':
+                  console.log(`    📊 状态更新: ${data.data.status}`);
+                  break;
+                  
+                case 'step_start':
+                  console.log(`    📝 开始步骤 ${data.data.stepNumber}/${data.data.totalSteps}: ${data.data.stepName}`);
+                  break;
+                  
+                case 'step_complete':
+                  console.log(`    ✅ 步骤完成 - ${data.data.stepType}`);
+                  if (data.data.mcps && data.data.mcps.length > 0) {
+                    console.log(`      推荐的MCP工具: ${data.data.mcps.map(mcp => mcp.name).join(', ')}`);
+                  }
+                  break;
+                  
+                case 'analysis_complete':
+                  console.log(`    🎉 分析完成`);
+                  finalResult.success = true;
+                  finalResult.mcpWorkflow = data.data.mcpWorkflow;
+                  finalResult.metadata = data.data.metadata;
+                  hasAnalysisComplete = true;
+                  break;
+                  
+                case 'error':
+                  console.log(`    ❌ 分析错误: ${data.data.message}`);
+                  finalResult.error = data.data.message;
+                  finalResult.details = data.data.details;
+                  hasError = true;
+                  break;
+                  
+                default:
+                  console.log(`    📡 其他事件: ${data.event}`);
+                  break;
+              }
+            } catch (parseError) {
+              console.log(`    📡 原始数据: ${dataStr}`);
+              // 如果解析失败，可能是简单的文本消息
+              if (dataStr.includes('error') || dataStr.includes('Error')) {
+                finalResult.error = dataStr;
+                hasError = true;
+              }
+            }
+          }
+        }
+      });
+
+      res.body.on('end', () => {
+        // 处理剩余的buffer数据
+        if (buffer.trim()) {
+          console.log(`    📡 剩余数据: ${buffer.trim()}`);
+        }
+
+        // 构建最终结果
+        if (!hasAnalysisComplete && !hasError) {
+          finalResult = { success: false, error: 'No analysis result received from stream' };
+        }
+
+        resolve(finalResult);
+      });
+
+      res.body.on('error', (error) => {
+        reject(error);
+      });
+
+    }).catch(reject);
   });
-  
-  const result = await response.json();
-  if (!result.success) {
-    throw new Error(`分析任务失败: ${JSON.stringify(result)}`);
-  }
-  
-  return result.data;
 }
 
 // 验证MCP授权
@@ -258,9 +356,14 @@ async function testCoinMarketCapMCP() {
     console.log(`✅ 任务创建成功，ID: ${task.id}\n`);
     
     // 步骤2: 分析任务
-    console.log('🔍 步骤2: 分析任务');
+    console.log('🔍 步骤2: 流式分析任务');
     const analysis = await analyzeTask(task.id);
-    console.log('✅ 任务分析完成\n');
+    console.log('✅ 任务流式分析完成\n');
+    
+    // 检查分析是否成功
+    if (!analysis.success) {
+      throw new Error(`任务分析失败: ${analysis.error || '未知错误'}`);
+    }
     
     // 检查认证需求
     console.log('🔐 步骤3: 检查认证需求');

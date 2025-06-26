@@ -736,6 +736,8 @@ export class TaskAnalysisService {
           }
         } 
       });
+
+      await taskService.updateTask(taskId, { status: 'completed' });
       
       logger.info(`Task streaming analysis completed [Task ID: ${taskId}]`);
       return true;
