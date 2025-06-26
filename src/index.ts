@@ -69,7 +69,7 @@ const httpMcpAdapter = new HTTPMCPAdapter();
 const mcpAuthService = new MCPAuthService();
 
 // 初始化任务分析服务
-const taskAnalysisService = new TaskAnalysisService(httpMcpAdapter);
+const taskAnalysisService = new TaskAnalysisService();
 
 // 初始化任务执行服务
 const taskExecutorService = new TaskExecutorService(httpMcpAdapter, mcpAuthService, mcpManager);

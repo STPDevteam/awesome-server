@@ -2,7 +2,8 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { AgentExecutor, createOpenAIToolsAgent } from 'langchain/agents';
 import { RunnableSequence } from '@langchain/core/runnables';
-import { PromptTemplate } from '@langchain/core/prompts';
+import { PromptTemplate, ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
+import { BufferMemory } from 'langchain/memory';
 import { conversationDao } from '../dao/conversationDao.js';
 import { messageDao } from '../dao/messageDao.js';
 import { logger } from '../utils/logger.js';
@@ -23,20 +24,102 @@ export class ConversationService {
   private taskService = getTaskService();
   private mcpToolAdapter: MCPToolAdapter;
   private taskExecutorService: TaskExecutorService;
+  private conversationMemories: Map<string, BufferMemory>;
   
   constructor(mcpToolAdapter: MCPToolAdapter, taskExecutorService: TaskExecutorService) {
     this.mcpToolAdapter = mcpToolAdapter;
     this.taskExecutorService = taskExecutorService;
+    this.conversationMemories = new Map();
     
-    // Initialize LLM
     this.llm = new ChatOpenAI({
-      openAIApiKey: process.env.OPENAI_API_KEY,
-      modelName: process.env.CONVERSATION_MODEL || 'gpt-4o', // Default to GPT-4o
-      temperature: 0.7, // Higher temperature for chat mode
-    //   configuration: {
-    //     httpAgent: agent
-    //   }
+      modelName: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.7,
+      openAIApiKey: process.env.OPENAI_API_KEY
     });
+  }
+  
+  /**
+   * 获取或创建会话记忆
+   */
+  private getConversationMemory(conversationId: string): BufferMemory {
+    if (!this.conversationMemories.has(conversationId)) {
+      const memory = new BufferMemory({
+        returnMessages: true,
+        memoryKey: 'chat_history'
+      });
+      this.conversationMemories.set(conversationId, memory);
+    }
+    return this.conversationMemories.get(conversationId)!;
+  }
+  
+  /**
+   * 使用LangChain增强的聊天处理
+   */
+  private async handleChatIntentEnhanced(conversationId: string, userId: string, content: string): Promise<{
+    response: Message;
+    taskId: undefined;
+  }> {
+    try {
+      logger.info(`[LangChain] Processing chat intent with enhanced features [Conversation ID: ${conversationId}]`);
+      
+      // 获取会话记忆
+      const memory = this.getConversationMemory(conversationId);
+      
+      // 从记忆中获取历史消息
+      const memoryVariables = await memory.loadMemoryVariables({});
+      const chatHistory = memoryVariables.chat_history || [];
+      
+      // 创建增强的提示模板
+      const enhancedPrompt = ChatPromptTemplate.fromMessages([
+        ['system', `You are a helpful AI assistant having a conversation with a user.
+Remember the conversation context and provide coherent, helpful responses.
+If the user asks about performing specific tasks, you can suggest creating a task for them.`],
+        ...chatHistory.map((msg: any) => {
+          if (msg._getType() === 'human') {
+            return ['human', msg.content];
+          } else if (msg._getType() === 'ai') {
+            return ['assistant', msg.content];
+          }
+          return ['system', msg.content];
+        }),
+        ['human', content]
+      ]);
+      
+      // 格式化提示
+      const formattedMessages = await enhancedPrompt.formatMessages({});
+      
+      // 调用LLM
+      const response = await this.llm.invoke(formattedMessages);
+      
+      // 保存到记忆
+      await memory.saveContext(
+        { input: content },
+        { output: response.content.toString() }
+      );
+      
+      // 保存助手回复
+      const assistantMessage = await messageDao.createMessage({
+        conversationId,
+        content: response.content.toString(),
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+      
+      // 增量会话消息计数
+      await conversationDao.incrementMessageCount(conversationId);
+      
+      logger.info(`[LangChain] Chat intent processed successfully with memory`);
+      
+      return {
+        response: assistantMessage,
+        taskId: undefined
+      };
+    } catch (error) {
+      logger.error(`[LangChain] Error processing enhanced chat intent:`, error);
+      
+      // 降级到原有实现
+      return this.handleChatIntent(conversationId, userId, content);
+    }
   }
   
   /**
@@ -141,8 +224,8 @@ export class ConversationService {
         // Increment conversation task count
         await conversationDao.incrementTaskCount(conversationId);
       } else {
-        // Handle chat intent
-        const chatResult = await this.handleChatIntent(conversationId, userId, content);
+        // Handle chat intent - 使用增强版本
+        const chatResult = await this.handleChatIntentEnhanced(conversationId, userId, content);
         response = chatResult.response;
         taskId = chatResult.taskId;
       }

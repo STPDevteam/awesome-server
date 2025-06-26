@@ -3,6 +3,7 @@ import { MCPManager } from './mcpManager.js';
 import { mcpAuthDao, MCPAuthDbRow } from '../dao/mcpAuthDao.js';
 import { MCPAuthData, AuthVerificationResult } from '../models/mcpAuth.js';
 import { getPredefinedMCP, mcpNameMapping } from './predefinedMCPs.js';
+import { taskDao } from '../dao/taskDao.js';
 
 /**
  * MCP授权管理服务
@@ -215,15 +216,39 @@ export class MCPAuthService {
   async checkAllMCPsVerified(taskId: string): Promise<boolean> {
     try {
       logger.info(`[SERVICE_CHECK] Task ${taskId}: Checking all MCPs.`);
-      const mcpWorkflow = await mcpAuthDao.getTaskMCPWorkflow(taskId);
       
-      if (!mcpWorkflow || !Array.isArray(mcpWorkflow.mcps)) {
+      // 首先，从DAO获取工作流
+      let mcpWorkflow = await mcpAuthDao.getTaskMCPWorkflow(taskId);
+      
+      // 如果从专用DAO未获取到，则从主任务表获取
+      if (!mcpWorkflow || !mcpWorkflow.workflow) {
+        logger.warn(`[SERVICE_CHECK] Task ${taskId}: MCP workflow not found via dedicated DAO. Falling back to main task object.`);
+        const task = await taskDao.getTaskById(taskId);
+        if (task && typeof task.mcp_workflow === 'string') {
+          mcpWorkflow = JSON.parse(task.mcp_workflow);
+        } else if (task && typeof task.mcp_workflow === 'object') {
+          mcpWorkflow = task.mcp_workflow;
+        }
+      }
+
+      if (!mcpWorkflow || !Array.isArray(mcpWorkflow.workflow)) {
         logger.warn(`[SERVICE_CHECK] Task ${taskId}: No valid MCP workflow found.`);
         return false;
       }
       
-      logger.info(`[SERVICE_CHECK] Task ${taskId}: Workflow read from DB is ${JSON.stringify(mcpWorkflow)}`);
+      logger.info(`[SERVICE_CHECK] Task ${taskId}: Workflow is ${JSON.stringify(mcpWorkflow)}`);
       
+      // 从工作流中提取所有唯一的、需要认证的MCP
+      const uniqueMcpActions = mcpWorkflow.workflow.reduce((acc: Record<string, any>, step: any) => {
+        const key = `${step.mcp}-${step.action}`;
+        if (!acc[key]) {
+          acc[key] = step;
+        }
+        return acc;
+      }, {});
+      
+      const mcpSteps = Object.values(uniqueMcpActions);
+
       const requiredAuthMCPs = mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired === true);
 
       if (requiredAuthMCPs.length === 0) {
@@ -250,11 +275,27 @@ export class MCPAuthService {
    * 从数据库行记录映射到应用层实体
    */
   private mapAuthFromDb(row: MCPAuthDbRow): MCPAuthData {
+    let authData = {};
+    
+    // 处理authData的不同格式：可能是字符串或对象
+    if (row.auth_data) {
+      if (typeof row.auth_data === 'string') {
+        try {
+          authData = JSON.parse(row.auth_data);
+        } catch (error) {
+          logger.warn(`Failed to parse auth_data for user ${row.user_id}, MCP ${row.mcp_name}:`, error);
+          authData = {};
+        }
+      } else {
+        authData = row.auth_data;
+      }
+    }
+    
     return {
       id: row.id,
       userId: row.user_id,
       mcpName: row.mcp_name,
-      authData: row.auth_data || {},
+      authData,
       isVerified: row.is_verified,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)

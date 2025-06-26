@@ -140,12 +140,12 @@ async function testAuthFlow() {
     });
     
     // 步骤4: 未认证时执行，应失败
-    console.log('\n- 步骤4: 尝试执行（未认证）');
+    console.log('\n📄 步骤4: 尝试执行（未认证）');
     const executeResult1 = await executeTask(task.id);
     console.log(`  executeResult1: ${JSON.stringify(executeResult1)}`);
     
     // 步骤5: 提供完整认证信息
-    console.log('\n- 步骤5: 提供认证信息');
+    console.log('\n🔑 步骤5: 提供认证信息');
     const fullAuthResult = await verifyAuth(task.id, 'x-mcp', {
       'TWITTER_API_KEY': '3vT3SesI6WFGTPd6lSJKwhHMB',
       'TWITTER_API_SECRET': '8LJ3gMaBIYFrDnq5S3zqgVO10UL5iwf2ryhrRCXHPzXxcCnduu',
@@ -155,12 +155,20 @@ async function testAuthFlow() {
     console.log(`  > 验证API返回: ${fullAuthResult.success ? '成功' : '失败'}`);
     
     // 步骤6: 认证后再次执行
-    console.log('\n- 步骤6: 再次执行（已认证）');
+    console.log('\n🐦 步骤6: 再次执行（已认证）- 获取Twitter列表推文');
     if (fullAuthResult.success) {
       const executeResult2 = await executeTask(task.id);
-      console.log(`  > 结果: ${executeResult2.success ? '执行成功（或因x-mcp未运行而失败）' : '测试失败'}`);
+      console.log(`  > 结果: ${executeResult2.success ? '执行成功' : '执行失败'}`);
       if (!executeResult2.success) {
-        console.log(`  > 错误提示: ${executeResult2.data?.error}`);
+        console.log(`  > 错误提示: ${executeResult2.error}`);
+      } else {
+        console.log(`  > 执行摘要: ${executeResult2.summary}`);
+        if (executeResult2.steps && executeResult2.steps.length > 0) {
+          console.log(`  > 执行步骤:`);
+          executeResult2.steps.forEach((step, index) => {
+            console.log(`    ${index + 1}. ${step.success ? '✅' : '❌'} ${step.success ? '成功' : step.error}`);
+          });
+        }
       }
     } else {
       console.log('  > 因步骤5验证失败，跳过执行');

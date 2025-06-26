@@ -11,6 +11,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { MCPManager } from './mcpManager.js';
 import { mcpInfoService } from './mcpInfoService.js';
 import { MCPInfo } from '../models/mcp.js';
+import { MCPToolAdapter } from './mcpToolAdapter.js';
 
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
@@ -19,26 +20,31 @@ const taskService = getTaskService();
 
 /**
  * Task Executor Service
- * Responsible for executing MCP workflows and generating results
+ * 通用任务执行器，负责执行MCP工作流并生成结果
+ * 不包含任何特定MCP的业务逻辑
  */
 export class TaskExecutorService {
   private llm: ChatOpenAI;
   private mcpAuthService: MCPAuthService;
   private httpAdapter: HTTPMCPAdapter;
   private mcpManager: MCPManager;
+  private mcpToolAdapter: MCPToolAdapter;
   
   constructor(httpAdapter: HTTPMCPAdapter, mcpAuthService: MCPAuthService, mcpManager: MCPManager) {
     this.httpAdapter = httpAdapter;
     this.mcpAuthService = mcpAuthService;
     this.mcpManager = mcpManager;
     
+    // 初始化MCPToolAdapter
+    this.mcpToolAdapter = new MCPToolAdapter(this.mcpManager);
+    
+    // 初始化ChatOpenAI
     this.llm = new ChatOpenAI({
-      openAIApiKey: process.env.OPENAI_API_KEY,
-      modelName: process.env.TASK_EXECUTION_MODEL || 'gpt-4o',
+      modelName: 'gpt-4o-mini',
       temperature: 0.3,
-      // configuration: {
-      //   httpAgent: agent, // ✅ 使用代理关键设置
-      // },
+      streaming: true,
+      maxTokens: 4096,
+      apiKey: process.env.OPENAI_API_KEY
     });
   }
   
@@ -46,7 +52,6 @@ export class TaskExecutorService {
    * Execute task workflow
    * @param taskId Task ID
    * @returns Execution result object, including execution status and summary information
-   * todo Core process, focus on debugging
    */
   async executeTask(taskId: string, options: { skipAuthCheck?: boolean } = {}): Promise<{
     success: boolean;
@@ -55,7 +60,6 @@ export class TaskExecutorService {
     steps?: any[];
     error?: string;
   }> {
-    logger.error("!!! RUNNING FINAL WORKAROUND CODE v3 !!!");
     try {
       const task = await taskExecutorDao.getTaskById(taskId);
       if (!task) {
@@ -109,8 +113,6 @@ export class TaskExecutorService {
       
       if (!mcpWorkflow || !mcpWorkflow.mcps || !mcpWorkflow.workflow) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
-        logger.error(`Debug info - mcpWorkflow: ${JSON.stringify(mcpWorkflow)}`);
-        logger.error(`Debug info - task data: ${JSON.stringify(task)}`);
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
           error: 'Task execution failed: No valid workflow found. Please ensure the task analysis completed successfully.'
         });
@@ -121,8 +123,9 @@ export class TaskExecutorService {
         };
       }
 
+      // 认证检查逻辑（通用化）
       if (!options.skipAuthCheck) {
-        logger.info(`[WORKAROUND_AUTH_CHECK] Task ${taskId}: Applying dynamic auth state injection.`);
+        logger.info(`Checking authentication for task ${taskId}`);
         
         const userVerifiedAuths = await this.mcpAuthService.getUserAllMCPAuths(task.user_id);
         const verifiedMcpNames = userVerifiedAuths
@@ -132,7 +135,7 @@ export class TaskExecutorService {
         if (mcpWorkflow && mcpWorkflow.mcps) {
           mcpWorkflow.mcps = mcpWorkflow.mcps.map((mcp: any) => {
             if (verifiedMcpNames.includes(this.normalizeMCPName(mcp.name))) {
-              logger.info(`[WORKAROUND_AUTH_CHECK] Task ${taskId}: Injecting authVerified=true for MCP ${mcp.name}`);
+              logger.info(`Marking MCP ${mcp.name} as authenticated`);
               return { ...mcp, authVerified: true };
             }
             return mcp;
@@ -159,7 +162,6 @@ export class TaskExecutorService {
       
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
-        // Ensure using object instead of string
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
           error: 'Task execution failed: No valid workflow, please call the task analysis API /api/task/:id/analyze first'
         });
@@ -174,6 +176,8 @@ export class TaskExecutorService {
       
       // Initialize workflow results
       const workflowResults: any[] = [];
+      let hasFailedSteps = false;
+      let criticalStepFailed = false;
       
       // Execute workflow step by step
       let finalResult = null;
@@ -183,36 +187,17 @@ export class TaskExecutorService {
         const actionName = step.action;
         let input = step.input || task.content;
 
-        // If input is a JSON string, try to parse it
-        try {
-          if (typeof input === 'string' && input.startsWith('{') && input.endsWith('}')) {
-            input = JSON.parse(input);
-          }
-        } catch (e) {
-          logger.warn(`Input for step ${stepNumber} is not a valid JSON string, will be processed as regular string: ${input}`);
-        }
+        // 通用输入处理
+        input = this.processStepInput(input);
         
         try {
           logger.info(`Executing workflow step ${stepNumber}: ${mcpName} - ${actionName}`);
           
-          // Call MCP tool
-          let stepResult: any;
-          try {
-            stepResult = await this.callMCPTool(mcpName, actionName, input);
-          } catch (error) {
-            logger.error(`Step ${stepNumber} execution failed:`, error);
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            
-            // Use DAO to record step failure result
-            await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
-            
-            workflowResults.push({
-              step: stepNumber,
-              success: false,
-              error: errorMsg
-            });
-            continue;
-          }
+          // 通用MCP工具调用
+          const stepResult = await this.callMCPTool(mcpName, actionName, input, taskId);
+          
+          // 通用结果验证
+          this.validateStepResult(mcpName, actionName, stepResult);
           
           // Handle different return formats from different adapters
           const processedResult = this.processToolResult(stepResult);
@@ -232,7 +217,7 @@ export class TaskExecutorService {
             finalResult = processedResult;
           }
         } catch (error) {
-          logger.error(`Error executing step ${stepNumber}:`, error);
+          logger.error(`Step ${stepNumber} execution failed:`, error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           
           // Use DAO to record step failure result
@@ -243,30 +228,67 @@ export class TaskExecutorService {
             success: false,
             error: errorMsg
           });
+          
+          hasFailedSteps = true;
+          
+          // 通用关键步骤判断
+          if (this.isCriticalStep(actionName)) {
+            criticalStepFailed = true;
+            logger.error(`❌ Critical step failed: ${actionName}, task will be marked as failed`);
+          }
         }
       }
+      
+      // 根据步骤执行结果决定任务最终状态
+      const successfulSteps = workflowResults.filter(result => result.success).length;
+      const totalSteps = workflowResults.length;
+      
+      logger.info(`📊 Step execution statistics: success ${successfulSteps}/${totalSteps}, critical step failed: ${criticalStepFailed}`);
+      
+      // 判断任务是否成功
+      const taskSuccess = !criticalStepFailed && successfulSteps > 0;
       
       // Generate final result summary
       const resultSummary = await this.generateResultSummary(task.content, workflowResults);
       
-      // Use DAO to update task result
+      // 根据实际执行结果更新任务状态
+      if (taskSuccess) {
       await taskExecutorDao.updateTaskResult(taskId, 'completed', {
         summary: resultSummary,
         steps: workflowResults,
         finalResult: finalResult
       });
       
-      logger.info(`Task execution completed [Task ID: ${taskId}]`);
+        logger.info(`✅ Task execution completed successfully [Task ID: ${taskId}]`);
       return {
         success: true,
         status: 'completed',
         summary: resultSummary,
         steps: workflowResults
       };
+      } else {
+        const errorMessage = criticalStepFailed 
+          ? 'Task execution failed: Critical step execution failed'
+          : `Task execution failed: ${totalSteps - successfulSteps}/${totalSteps} steps failed`;
+          
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          summary: resultSummary,
+          steps: workflowResults,
+          error: errorMessage
+        });
+        
+        logger.error(`❌ Task execution failed [Task ID: ${taskId}]: ${errorMessage}`);
+        return {
+          success: false,
+          status: 'failed',
+          summary: resultSummary,
+          steps: workflowResults,
+          error: errorMessage
+        };
+      }
     } catch (error) {
       logger.error(`Error occurred during task execution [Task ID: ${taskId}]:`, error);
       
-      // Use DAO to update task status to failed
       await taskExecutorDao.updateTaskResult(taskId, 'failed', {
         error: error instanceof Error ? error.message : String(error)
       });
@@ -280,368 +302,308 @@ export class TaskExecutorService {
   }
   
   /**
-   * 调用MCP工具
-   * 实际应用中应该调用mcpManager中的方法
+   * 通用步骤输入处理
    */
-  private async callMCPTool(mcpName: string, toolName: string, input: any): Promise<any> {
+  private processStepInput(input: any): any {
+    // 如果input是JSON字符串，尝试解析它
+    if (typeof input === 'string' && input.startsWith('{') && input.endsWith('}')) {
+      try {
+        return JSON.parse(input);
+      } catch (e) {
+        logger.warn(`Input is not a valid JSON string, will be processed as regular string: ${input}`);
+        return input;
+      }
+    }
+    return input;
+  }
+  
+  /**
+   * 通用关键步骤判断
+   */
+  private isCriticalStep(actionName: string): boolean {
+    // 定义通用的关键操作关键词
+    const criticalKeywords = [
+      'create', 'send', 'post', 'publish', 'tweet', 'payment', 'transfer', 
+      'buy', 'sell', 'trade', 'execute', 'deploy', 'delete', 'remove'
+    ];
+    
+    return criticalKeywords.some(keyword => 
+      actionName.toLowerCase().includes(keyword.toLowerCase())
+    );
+  }
+  
+  /**
+   * 通用结果验证
+   */
+  private validateStepResult(mcpName: string, actionName: string, stepResult: any): void {
+    if (!stepResult) {
+      throw new Error(`Step result is null or undefined`);
+    }
+    
+    // 检查是否包含错误信息
+    if (stepResult.error) {
+      throw new Error(`MCP returned error: ${stepResult.error}`);
+    }
+    
+    // 检查内容中是否包含常见错误关键词
+    if (stepResult.content) {
+      const content = Array.isArray(stepResult.content) ? stepResult.content[0] : stepResult.content;
+      const resultText = content?.text || content?.toString() || '';
+      
+      // 通用错误关键词检查
+      const errorKeywords = ['error', 'failed', 'unauthorized', 'forbidden', 'rate limit', 'invalid', 'exception'];
+      const hasError = errorKeywords.some(keyword => 
+        resultText.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (hasError && resultText.toLowerCase().includes('error')) {
+        throw new Error(`Operation failed: ${resultText}`);
+      }
+    }
+  }
+  
+  /**
+   * 通过LangChain调用MCP工具
+   */
+  private async callMCPToolWithLangChain(mcpName: string, toolName: string, input: any): Promise<any> {
     try {
-      logger.info(`🔍 开始调用MCP工具 [MCP: ${mcpName}, 工具: ${toolName}]`);
-      logger.info(`📥 MCP工具输入参数: ${JSON.stringify(input, null, 2)}`);
+      logger.info(`🔍 Calling MCP tool via LangChain [MCP: ${mcpName}, Tool: ${toolName}]`);
+      
+      // 检查MCP是否已连接
+      const connectedMCPs = this.mcpManager.getConnectedMCPs();
+      const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
+      
+      if (!isConnected) {
+        logger.warn(`MCP ${mcpName} not connected, LangChain call requires MCP to be connected first`);
+        throw new Error(`MCP ${mcpName} not connected, please ensure MCP service is available`);
+      }
+      
+      // 获取MCP的所有工具
+      const mcpTools = await this.mcpManager.getTools(mcpName);
+      
+      // 查找目标工具 - 处理连字符和下划线的兼容性
+      const targetTool = mcpTools.find(t => 
+        t.name === toolName || 
+        t.name.replace(/-/g, '_') === toolName.replace(/-/g, '_') ||
+        t.name.replace(/_/g, '-') === toolName.replace(/_/g, '-')
+      );
+      
+      if (!targetTool) {
+        logger.error(`Tool ${toolName} does not exist in MCP ${mcpName}`);
+        logger.info(`Available tools: ${mcpTools.map(t => t.name).join(', ')}`);
+        throw new Error(`Tool ${toolName} does not exist in MCP ${mcpName}`);
+      }
+      
+      // 将MCP工具转换为LangChain工具
+      const langchainTool = await this.mcpToolAdapter.convertMCPToolToLangChainTool(mcpName, targetTool);
+      
+      // 调用LangChain工具
+      logger.info(`📞 Calling LangChain tool: ${langchainTool.name}`);
+      logger.info(`📥 Input parameters: ${JSON.stringify(input, null, 2)}`);
+      
+      const result = await langchainTool.invoke(input);
+      
+      logger.info(`✅ LangChain tool call successful`);
+      logger.info(`📤 Raw result: ${result}`);
+      
+      // 尝试解析JSON结果
+      try {
+        const parsedResult = JSON.parse(result);
+        if (parsedResult.content) {
+          return parsedResult;
+        }
+        return {
+          content: [{
+            type: 'text',
+            text: result
+          }]
+        };
+      } catch (e) {
+        return {
+          content: [{
+            type: 'text',
+            text: result
+          }]
+        };
+      }
+    } catch (error) {
+      logger.error(`❌ LangChain tool call failed:`, error);
+      throw error;
+    }
+  }
 
-      console.log(`\n==== MCP调用详情 ====`);
-      console.log(`时间: ${new Date().toISOString()}`);
-      console.log(`MCP服务: ${mcpName}`);
-      console.log(`工具名称: ${toolName}`);
-      console.log(`输入参数: ${JSON.stringify(input, null, 2)}`);
+  /**
+   * 通用MCP工具调用方法
+   */
+  private async callMCPTool(mcpName: string, toolName: string, input: any, taskId?: string): Promise<any> {
+    try {
+      logger.info(`🔍 Calling MCP tool [MCP: ${mcpName}, Tool: ${toolName}]`);
+      logger.info(`📥 MCP tool input parameters: ${JSON.stringify(input, null, 2)}`);
+
+      console.log(`\n==== MCP Call Details ====`);
+      console.log(`Time: ${new Date().toISOString()}`);
+      console.log(`MCP Service: ${mcpName}`);
+      console.log(`Tool Name: ${toolName}`);
+      console.log(`Input Parameters: ${JSON.stringify(input, null, 2)}`);
       
       // 标准化MCP名称
-      let actualMcpName = this.normalizeMCPName(mcpName);
+      const actualMcpName = this.normalizeMCPName(mcpName);
       if (actualMcpName !== mcpName) {
-        logger.info(`MCP名称映射: 将'${mcpName}'映射为'${actualMcpName}'`);
-      }
-
-      // 处理工具名称 - 处理中文工具名称的情况
-      let actualToolName = toolName;
-      if (actualMcpName === '12306-mcp') {
-        // 12306-mcp工具名称映射表 - 使用连字符格式
-        const toolNameMap: Record<string, string> = {
-          '获取当前日期': 'get-current-date',
-          '查询车站信息': 'get-stations-code-in-city',
-          '查询列车时刻表': 'get-train-route-stations',
-          '查询余票信息': 'get-tickets',
-          '查询中转余票': 'get-interline-tickets',
-          '获取城市车站代码': 'get-station-code-of-citys',
-          '获取车站代码': 'get-station-code-by-names',
-          '获取电报码车站信息': 'get-station-by-telecode'
-        };
-        
-        // 映射工具名称
-        if (toolNameMap[toolName]) {
-          actualToolName = toolNameMap[toolName];
-          logger.info(`工具名称映射: 将'${toolName}'映射为'${actualToolName}'`);
-        }
-      }
-
-      // 处理参数映射和转换
-      if (actualMcpName === '12306-mcp') {
-        // 对于get-tickets工具，确保参数名称正确
-        if (actualToolName === 'get-tickets') {
-          // 检查是否存在中文参数名称，并转换为英文参数名称
-          const paramMap: Record<string, string> = {
-            '日期': 'date',
-            '出发地': 'fromStation',
-            '目的地': 'toStation',
-            '出发站': 'fromStation',
-            '到达站': 'toStation',
-            '车次类型': 'trainFilterFlags',
-            '排序方式': 'sortFlag',
-            '逆序': 'sortReverse',
-            '限制数量': 'limitedNum'
-          };
-          
-          // 创建新的参数对象
-          const newParams: Record<string, any> = { ...input };
-          
-          // 转换参数名称
-          for (const key in input) {
-            if (paramMap[key]) {
-              newParams[paramMap[key]] = input[key];
-              delete newParams[key];
-            }
-          }
-          
-          // 如果出发地和目的地是城市名而不是车站代码，需要先查询车站代码
-          if (newParams.fromStation && !newParams.fromStation.match(/^[A-Z]{3}$/)) {
-            try {
-              // 查询出发地车站代码
-              const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
-                citys: newParams.fromStation
-              });
-              if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
-                newParams.fromStation = fromStationResult.content[0].data[0].station_code;
-              }
-            } catch (error: any) {
-              logger.error(`查询出发地车站代码失败: ${error.message}`);
-            }
-          }
-          
-          if (newParams.toStation && !newParams.toStation.match(/^[A-Z]{3}$/)) {
-            try {
-              // 查询目的地车站代码
-              const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
-                citys: newParams.toStation
-              });
-              if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
-                newParams.toStation = toStationResult.content[0].data[0].station_code;
-              }
-            } catch (error: any) {
-              logger.error(`查询目的地车站代码失败: ${error.message}`);
-            }
-          }
-          
-          // 如果没有日期参数，或者日期参数不是标准格式，添加当前日期
-          if (!newParams.date || !newParams.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            try {
-              const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
-              if (dateResult.content && dateResult.content[0].text) {
-                const currentDate = dateResult.content[0].text;
-                
-                // 处理相对日期
-                if (newParams.date) {
-                  const relativeDateText = newParams.date.toLowerCase();
-                  if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
-                    // 计算明天的日期
-                    const tomorrow = new Date(currentDate);
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    newParams.date = tomorrow.toISOString().split('T')[0];
-                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
-                  } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
-                    // 计算后天的日期
-                    const dayAfterTomorrow = new Date(currentDate);
-                    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-                    newParams.date = dayAfterTomorrow.toISOString().split('T')[0];
-                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
-                  } else if (relativeDateText.includes('大后天')) {
-                    // 计算大后天的日期
-                    const threeDaysLater = new Date(currentDate);
-                    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-                    newParams.date = threeDaysLater.toISOString().split('T')[0];
-                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
-                  } else {
-                    // 默认使用当前日期
-                    newParams.date = currentDate;
-                    logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.date}"`);
-                  }
-                } else {
-                  // 如果没有日期参数，使用当前日期
-                  newParams.date = currentDate;
-                }
-              }
-            } catch (error: any) {
-              logger.error(`获取当前日期失败: ${error.message}`);
-            }
-          }
-          
-          // 使用新的参数对象
-          input = newParams;
-        }
-        
-        // 对于get-train-route-stations工具，确保参数名称正确
-        if (actualToolName === 'get-train-route-stations') {
-          // 检查是否存在中文参数名称，并转换为英文参数名称
-          const paramMap: Record<string, string> = {
-            '车次': 'trainNo',
-            '出发站电报码': 'fromStationTelecode',
-            '到达站电报码': 'toStationTelecode',
-            '出发日期': 'departDate',
-            '出发地': 'fromStation',
-            '目的地': 'toStation'
-          };
-          
-          // 创建新的参数对象
-          const newParams: Record<string, any> = { ...input };
-          
-          // 转换参数名称
-          for (const key in input) {
-            if (paramMap[key]) {
-              newParams[paramMap[key]] = input[key];
-              delete newParams[key];
-            }
-          }
-          
-          // 如果有出发地和目的地但没有电报码，需要先查询
-          const fromStation = newParams.fromStation || (input as Record<string, any>)['出发地'];
-          if (fromStation && !newParams.fromStationTelecode) {
-            try {
-              // 查询出发地电报码
-              const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
-                stationNames: fromStation
-              });
-              if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
-                newParams.fromStationTelecode = fromStationResult.content[0].data[0].telecode;
-              }
-            } catch (error: any) {
-              logger.error(`查询出发地电报码失败: ${error.message}`);
-            }
-          }
-          
-          const toStation = newParams.toStation || (input as Record<string, any>)['目的地'];
-          if (toStation && !newParams.toStationTelecode) {
-            try {
-              // 查询目的地电报码
-              const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
-                stationNames: toStation
-              });
-              if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
-                newParams.toStationTelecode = toStationResult.content[0].data[0].telecode;
-              }
-            } catch (error: any) {
-              logger.error(`查询目的地电报码失败: ${error.message}`);
-            }
-          }
-          
-          // 如果没有出发日期参数，或者日期参数不是标准格式，添加当前日期
-          if (!newParams.departDate || !newParams.departDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            try {
-              const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
-              if (dateResult.content && dateResult.content[0].text) {
-                const currentDate = dateResult.content[0].text;
-                
-                // 处理相对日期
-                if (newParams.departDate) {
-                  const relativeDateText = newParams.departDate.toLowerCase();
-                  if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
-                    // 计算明天的日期
-                    const tomorrow = new Date(currentDate);
-                    tomorrow.setDate(tomorrow.getDate() + 1);
-                    newParams.departDate = tomorrow.toISOString().split('T')[0];
-                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
-                  } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
-                    // 计算后天的日期
-                    const dayAfterTomorrow = new Date(currentDate);
-                    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-                    newParams.departDate = dayAfterTomorrow.toISOString().split('T')[0];
-                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
-                  } else if (relativeDateText.includes('大后天')) {
-                    // 计算大后天的日期
-                    const threeDaysLater = new Date(currentDate);
-                    threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-                    newParams.departDate = threeDaysLater.toISOString().split('T')[0];
-                    logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
-                  } else {
-                    // 默认使用当前日期
-                    newParams.departDate = currentDate;
-                    logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.departDate}"`);
-                  }
-                } else {
-                  // 如果没有日期参数，使用当前日期
-                  newParams.departDate = currentDate;
-                }
-              }
-            } catch (error: any) {
-              logger.error(`获取当前日期失败: ${error.message}`);
-            }
-          }
-          
-          // 如果没有trainNo，无法继续
-          if (!newParams.trainNo) {
-            throw new Error('缺少必要参数：trainNo（车次编号）');
-          }
-          
-          // 使用新的参数对象
-          input = newParams;
-        }
+        logger.info(`MCP name mapping: '${mcpName}' mapped to '${actualMcpName}'`);
       }
 
       // 检查MCP是否已连接
       const connectedMCPs = this.mcpManager.getConnectedMCPs();
       const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
       
-      // 如果未连接，尝试连接
+      // 如果未连接，尝试自动连接
       if (!isConnected) {
-        logger.info(`MCP ${actualMcpName} 未连接，尝试自动连接...`);
-        
-        // 从predefinedMCPs获取MCP配置
-        const { getPredefinedMCP } = await import('../services/predefinedMCPs.js');
-        const mcpConfig = getPredefinedMCP(actualMcpName);
-        
-        if (!mcpConfig) {
-          logger.error(`未找到MCP ${actualMcpName} 的配置信息`);
-          throw new Error(`MCP ${actualMcpName} configuration not found`);
+        await this.autoConnectMCP(actualMcpName, taskId);
+      }
+
+      // 使用LangChain调用MCP工具
+      logger.info(`🔗 Using LangChain to call MCP tool...`);
+      const result = await this.callMCPToolWithLangChain(actualMcpName, toolName, input);
+
+      console.log(`\n==== MCP Call Result (via LangChain) ====`);
+      console.log(`Status: Success`);
+      console.log(`Return Data: ${JSON.stringify(result, null, 2)}`);
+
+      logger.info(`📤 MCP tool return result (LangChain): ${JSON.stringify(result, null, 2)}`);
+      logger.info(`✅ MCP tool call successful (via LangChain) [MCP: ${mcpName}, Tool: ${toolName}]`);
+      
+      return result;
+    } catch (error) {
+      console.log(`\n==== MCP Call Error ====`);
+      console.log(`Status: Failed`);
+      console.log(`Error Message: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`Error Details: ${JSON.stringify(error, null, 2)}`);
+
+      logger.error(`❌ MCP tool call failed [${mcpName}/${toolName}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 自动连接MCP服务
+   */
+  private async autoConnectMCP(mcpName: string, taskId?: string): Promise<void> {
+    logger.info(`MCP ${mcpName} not connected, attempting auto-connection...`);
+    
+    // 从predefinedMCPs获取MCP配置
+    const { getPredefinedMCP } = await import('../services/predefinedMCPs.js');
+    const mcpConfig = getPredefinedMCP(mcpName);
+    
+    if (!mcpConfig) {
+      logger.error(`MCP ${mcpName} configuration not found`);
+      throw new Error(`MCP ${mcpName} configuration not found`);
+    }
+    
+    // 动态注入用户认证信息
+    const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId);
+    
+    // 使用动态环境变量创建MCP配置
+    const dynamicMcpConfig = {
+      ...mcpConfig,
+      env: dynamicEnv
+    };
+    
+    // 尝试连接MCP
+    const connected = await this.mcpManager.connectPredefined(dynamicMcpConfig);
+    if (!connected) {
+      throw new Error(`Failed to connect to MCP ${mcpName}. Please ensure the MCP server is installed and configured correctly.`);
+    }
+    
+    logger.info(`✅ MCP ${mcpName} auto-connection successful`);
+    
+    // 验证工具是否存在并详细记录
+    try {
+      const tools = await this.mcpManager.getTools(mcpName);
+      logger.info(`✅ Available tools after connection [${mcpName}]: ${tools.map(t => t.name).join(', ')}`);
+      
+      // 详细记录每个工具的信息
+      tools.forEach((tool, index) => {
+        logger.info(`🔧 Tool ${index + 1}: ${tool.name}`);
+        logger.info(`   Description: ${tool.description || 'No description'}`);
+        if (tool.inputSchema) {
+          logger.info(`   Input Schema: ${JSON.stringify(tool.inputSchema, null, 2)}`);
         }
+      });
+      
+      // 特别检查x-mcp的工具
+      if (mcpName === 'x-mcp') {
+        logger.info(`🐦 X-MCP Tools Summary:`);
+        logger.info(`   Total tools found: ${tools.length}`);
+        logger.info(`   Expected tools: get_home_timeline, create_tweet, reply_to_tweet`);
+        
+        const expectedTools = ['get_home_timeline', 'create_tweet', 'reply_to_tweet', 'get_list_tweets'];
+        expectedTools.forEach(expectedTool => {
+          const found = tools.find(t => t.name === expectedTool);
+          if (found) {
+            logger.info(`   ✅ ${expectedTool}: FOUND`);
+                  } else {
+            logger.warn(`   ❌ ${expectedTool}: NOT FOUND`);
+          }
+        });
+      }
+    } catch (toolError) {
+      logger.error(`❌ Unable to get tool list for MCP ${mcpName}:`, toolError);
+    }
+  }
+  
+  /**
+   * 动态注入用户认证信息
+   */
+  private async injectUserAuthentication(mcpConfig: any, taskId?: string): Promise<Record<string, string>> {
+        let dynamicEnv = { ...mcpConfig.env };
         
         // 检查是否需要认证
         if (mcpConfig.env) {
           const missingEnvVars: string[] = [];
+          
+          // 检查每个环境变量是否缺失
           for (const [key, value] of Object.entries(mcpConfig.env)) {
             if (!value || value === '') {
               missingEnvVars.push(key);
             }
           }
           
-          if (missingEnvVars.length > 0) {
-            logger.warn(`MCP ${actualMcpName} 需要配置以下环境变量: ${missingEnvVars.join(', ')}`);
-            // 对于 x-mcp，提供更详细的说明
-            if (actualMcpName === 'x-mcp') {
-              const errorMsg = `MCP ${actualMcpName} 需要 Twitter API 凭证才能运行。请配置以下环境变量：
-- TWITTER_API_KEY: Twitter API密钥（Consumer Key）
-- TWITTER_API_SECRET: Twitter API秘密密钥（Consumer Secret）
-- TWITTER_ACCESS_TOKEN: Twitter访问令牌
-- TWITTER_ACCESS_SECRET: Twitter访问令牌秘密
-
-您可以从 https://developer.twitter.com 获取这些凭证。`;
-              throw new Error(errorMsg);
-            }
-          }
-        }
+          // 如果有缺失的环境变量，尝试从数据库获取用户认证信息
+      if (missingEnvVars.length > 0 && taskId) {
+        logger.info(`MCP needs authentication, attempting to get user auth data from database...`);
         
-        // 尝试连接MCP
-        try {
-          const connected = await this.mcpManager.connectPredefined(mcpConfig);
-          if (!connected) {
-            logger.error(`连接MCP ${actualMcpName} 失败`);
+               try {
+                 const currentTask = await taskExecutorDao.getTaskById(taskId);
+                 if (currentTask) {
+            const userId = currentTask.user_id;
+            logger.info(`Got user ID from task context: ${userId}`);
             
-            // 提供更友好的错误信息
-            if (actualMcpName === 'x-mcp') {
-              throw new Error(`无法连接到 x-mcp-server。请确保：
-1. x-mcp-server 已安装：npm install -g x-mcp-server
-2. 已配置 Twitter API 凭证
-3. 网络连接正常`);
-            } else {
-              throw new Error(`Failed to connect to MCP ${actualMcpName}. Please ensure the MCP server is installed and configured correctly.`);
-            }
-          }
-          
-                      logger.info(`✅ MCP ${actualMcpName} 自动连接成功`);
-            
-            // 验证工具是否存在
-            try {
-              const tools = await this.mcpManager.getTools(actualMcpName);
-              const toolExists = tools.some(t => 
-                t.name === actualToolName || 
-                t.name === toolName ||
-                t.name.replace(/-/g, '_') === actualToolName.replace(/-/g, '_')
-              );
-              
-              if (!toolExists) {
-                logger.warn(`工具 ${actualToolName} 在 MCP ${actualMcpName} 中不存在`);
-                logger.info(`可用工具: ${tools.map(t => t.name).join(', ')}`);
+            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpConfig.name);
+                
+                if (userAuth && userAuth.isVerified && userAuth.authData) {
+              logger.info(`Found user ${userId} auth info for ${mcpConfig.name}, injecting environment variables...`);
+                  
+                  // 动态注入认证信息到环境变量
+                  for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                    if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                      dynamicEnv[envKey] = userAuth.authData[envKey];
+                  logger.info(`Injected environment variable ${envKey}`);
+                }
               }
-            } catch (toolError) {
-              logger.warn(`无法获取 MCP ${actualMcpName} 的工具列表:`, toolError);
+              
+                  const stillMissingVars = missingEnvVars.filter(key => !dynamicEnv[key] || dynamicEnv[key] === '');
+                  if (stillMissingVars.length === 0) {
+                logger.info(`✅ Successfully injected all required auth info for ${mcpConfig.name}`);
+                  }
             }
-        } catch (connectionError) {
-          logger.error(`自动连接 MCP ${actualMcpName} 失败:`, connectionError);
-          
-          // 如果是网络错误，提供更具体的指导
-          if (connectionError instanceof Error && connectionError.message.includes('ECONNREFUSED')) {
-            throw new Error(`无法连接到 MCP ${actualMcpName} 服务器。服务器可能未启动或端口被占用。`);
-          }
-          
-          throw connectionError;
+                }
+              } catch (error) {
+          logger.error(`Failed to get user auth info:`, error);
         }
       }
-
-      // 使用mcpManager而不是httpAdapter调用工具
-      const result = await this.mcpManager.callTool(actualMcpName, actualToolName, input);
-
-      console.log(`\n==== MCP调用结果 ====`);
-      console.log(`状态: 成功`);
-      console.log(`返回数据: ${JSON.stringify(result, null, 2)}`);
-
-      logger.info(`📤 MCP工具返回结果: ${JSON.stringify(result, null, 2)}`);
-      logger.info(`✅ MCP工具调用成功 [MCP: ${mcpName}, 工具: ${toolName}]`);
-      
-      return result;
-    } catch (error) {
-      console.log(`\n==== MCP调用错误 ====`);
-      console.log(`状态: 失败`);
-      console.log(`错误信息: ${error instanceof Error ? error.message : String(error)}`);
-      console.log(`错误详情: ${JSON.stringify(error, null, 2)}`);
-
-      logger.error(`❌ 调用MCP工具失败 [${mcpName}/${toolName}]:`, error);
-      throw error;
     }
+    
+    return dynamicEnv;
   }
   
   /**
@@ -651,7 +613,7 @@ export class TaskExecutorService {
   private processToolResult(rawResult: any): any {
     if (!rawResult) return null;
     
-    logger.info(`🔍 处理MCP工具原始返回结果: ${JSON.stringify(rawResult, null, 2)}`);
+    logger.info(`🔍 Processing MCP tool raw return result: ${JSON.stringify(rawResult, null, 2)}`);
     
     // 处理不同类型的返回结果
     let processedResult;
@@ -673,7 +635,7 @@ export class TaskExecutorService {
       processedResult = JSON.stringify(rawResult, null, 2);
     }
     
-    logger.info(`📤 MCP工具处理后结果: ${processedResult}`);
+    logger.info(`📤 MCP tool processed result: ${processedResult}`);
     return processedResult;
   }
   
@@ -684,7 +646,7 @@ export class TaskExecutorService {
    */
   private async generateResultSummary(taskContent: string, stepResults: any[]): Promise<string> {
     try {
-      logger.info('生成任务结果摘要');
+      logger.info('Generating task result summary');
       
       // 计算成功和失败步骤数
       const successSteps = stepResults.filter(step => step.success).length;
@@ -727,7 +689,7 @@ Based on the above task execution information, please generate a complete execut
       
       return response.content.toString();
     } catch (error) {
-      logger.error('生成结果摘要失败:', error);
+      logger.error('Generating result summary failed:', error);
       return `任务执行完成，共执行了${stepResults.length}个步骤，成功${stepResults.filter(s => s.success).length}个，失败${stepResults.filter(s => !s.success).length}个。请查看详细的步骤结果了解更多信息。`;
     }
   }
@@ -740,7 +702,7 @@ Based on the above task execution information, please generate a complete execut
    */
   async executeTaskStream(taskId: string, stream: (data: any) => void): Promise<boolean> {
     try {
-      logger.info(`🚀 开始流式执行任务 [任务ID: ${taskId}]`);
+      logger.info(`🚀 Starting streaming task execution [Task ID: ${taskId}]`);
       
       // 发送执行开始信息
       stream({ 
@@ -751,8 +713,8 @@ Based on the above task execution information, please generate a complete execut
       // 获取任务详情
       const task = await taskService.getTaskById(taskId);
       if (!task) {
-        logger.error(`❌ 任务不存在 [ID: ${taskId}]`);
-        stream({ event: 'error', data: { message: '任务不存在' } });
+        logger.error(`❌ Task not found [ID: ${taskId}]`);
+        stream({ event: 'error', data: { message: 'Task not found' } });
         return false;
       }
       
@@ -766,19 +728,18 @@ Based on the above task execution information, please generate a complete execut
         : task.mcpWorkflow;
 
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
-        logger.error(`❌ 任务执行失败: 没有有效的工作流 [任务ID: ${taskId}]`);
+        logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
         
         stream({ 
           event: 'error', 
           data: { 
-            message: '任务执行失败: 没有有效的工作流',
-            details: '请先调用任务分析接口 /api/task/:id/analyze'
+            message: 'Task execution failed: No valid workflow',
+            details: 'Please call task analysis API /api/task/:id/analyze first'
           } 
         });
         
-        // 更新任务状态为失败
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
-          error: '任务执行失败: 没有有效的工作流, 请先调用任务分析接口'
+          error: 'Task execution failed: No valid workflow, please call task analysis API first'
         });
         
         return false;
@@ -789,18 +750,17 @@ Based on the above task execution information, please generate a complete execut
       
       // 检查 mcpManager 是否已初始化
       if (!this.mcpManager) {
-        logger.error(`❌ mcpManager 未初始化，无法执行任务 [任务ID: ${taskId}]`);
+        logger.error(`❌ mcpManager not initialized, cannot execute task [Task ID: ${taskId}]`);
         stream({ 
           event: 'error', 
           data: { 
-            message: '任务执行失败: MCP管理器未初始化',
-            details: '服务器配置错误，请联系管理员'
+            message: 'Task execution failed: MCP manager not initialized',
+            details: 'Server configuration error, please contact administrator'
           } 
         });
         
-        // 更新任务状态为失败
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
-          error: '任务执行失败: MCP管理器未初始化'
+          error: 'Task execution failed: MCP manager not initialized'
         });
         
         return false;
@@ -814,14 +774,8 @@ Based on the above task execution information, please generate a complete execut
         const actionName = step.action;
         let input = step.input || task.content;
         
-        // 如果input是JSON字符串，尝试解析它
-        try {
-          if (typeof input === 'string' && input.startsWith('{') && input.endsWith('}')) {
-            input = JSON.parse(input);
-          }
-        } catch (e) {
-          logger.warn(`步骤 ${stepNumber} 的输入不是有效的JSON字符串，将作为普通字符串处理: ${input}`);
-        }
+        // 通用输入处理
+        input = this.processStepInput(input);
         
         // 发送步骤开始信息
         stream({ 
@@ -835,288 +789,40 @@ Based on the above task execution information, please generate a complete execut
         });
         
         try {
-          logger.info(`执行工作流步骤${stepNumber}: ${mcpName} - ${actionName}`);
+          logger.info(`Executing workflow step ${stepNumber}: ${mcpName} - ${actionName}`);
           
           // 标准化MCP名称
-          let actualMcpName = this.normalizeMCPName(mcpName);
+          const actualMcpName = this.normalizeMCPName(mcpName);
           if (actualMcpName !== mcpName) {
-            logger.info(`流式执行中的MCP名称映射: 将'${mcpName}'映射为'${actualMcpName}'`);
-          }
-          
-          // 处理工具名称 - 处理中文工具名称的情况
-          let actualActionName = actionName;
-          if (actualMcpName === '12306-mcp') {
-            // 12306-mcp工具名称映射表 - 使用连字符格式
-            const toolNameMap: Record<string, string> = {
-              '获取当前日期': 'get-current-date',
-              '查询车站信息': 'get-stations-code-in-city',
-              '查询列车时刻表': 'get-train-route-stations',
-              '查询余票信息': 'get-tickets',
-              '查询中转余票': 'get-interline-tickets',
-              '获取城市车站代码': 'get-station-code-of-citys',
-              '获取车站代码': 'get-station-code-by-names',
-              '获取电报码车站信息': 'get-station-by-telecode'
-            };
-            
-            // 映射工具名称
-            if (toolNameMap[actionName]) {
-              actualActionName = toolNameMap[actionName];
-              logger.info(`流式执行中的工具名称映射: 将'${actionName}'映射为'${actualActionName}'`);
-            }
-          }
-          
-          // 处理参数映射和转换
-          if (actualMcpName === '12306-mcp') {
-            // 对于get-tickets工具，确保参数名称正确
-            if (actualActionName === 'get-tickets') {
-              // 检查是否存在中文参数名称，并转换为英文参数名称
-              const paramMap: Record<string, string> = {
-                '日期': 'date',
-                '出发地': 'fromStation',
-                '目的地': 'toStation',
-                '出发站': 'fromStation',
-                '到达站': 'toStation',
-                '车次类型': 'trainFilterFlags',
-                '排序方式': 'sortFlag',
-                '逆序': 'sortReverse',
-                '限制数量': 'limitedNum'
-              };
-              
-              // 创建新的参数对象
-              const newParams: Record<string, any> = { ...input };
-              
-              // 转换参数名称
-              for (const key in input) {
-                if (paramMap[key]) {
-                  newParams[paramMap[key]] = input[key];
-                  delete newParams[key];
-                }
-              }
-              
-              // 如果出发地和目的地是城市名而不是车站代码，需要先查询车站代码
-              if (newParams.fromStation && !newParams.fromStation.match(/^[A-Z]{3}$/)) {
-                try {
-                  // 查询出发地车站代码
-                  const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
-                    citys: newParams.fromStation
-                  });
-                  if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
-                    newParams.fromStation = fromStationResult.content[0].data[0].station_code;
-                  }
-                } catch (error: any) {
-                  logger.error(`查询出发地车站代码失败: ${error.message}`);
-                }
-              }
-              
-              if (newParams.toStation && !newParams.toStation.match(/^[A-Z]{3}$/)) {
-                try {
-                  // 查询目的地车站代码
-                  const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-of-citys', {
-                    citys: newParams.toStation
-                  });
-                  if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
-                    newParams.toStation = toStationResult.content[0].data[0].station_code;
-                  }
-                } catch (error: any) {
-                  logger.error(`查询目的地车站代码失败: ${error.message}`);
-                }
-              }
-              
-              // 如果没有日期参数，或者日期参数不是标准格式，添加当前日期
-              if (!newParams.date || !newParams.date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                try {
-                  const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
-                  if (dateResult.content && dateResult.content[0].text) {
-                    const currentDate = dateResult.content[0].text;
-                    
-                    // 处理相对日期
-                    if (newParams.date) {
-                      const relativeDateText = newParams.date.toLowerCase();
-                      if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
-                        // 计算明天的日期
-                        const tomorrow = new Date(currentDate);
-                        tomorrow.setDate(tomorrow.getDate() + 1);
-                        newParams.date = tomorrow.toISOString().split('T')[0];
-                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
-                      } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
-                        // 计算后天的日期
-                        const dayAfterTomorrow = new Date(currentDate);
-                        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-                        newParams.date = dayAfterTomorrow.toISOString().split('T')[0];
-                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
-                      } else if (relativeDateText.includes('大后天')) {
-                        // 计算大后天的日期
-                        const threeDaysLater = new Date(currentDate);
-                        threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-                        newParams.date = threeDaysLater.toISOString().split('T')[0];
-                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.date}"`);
-                      } else {
-                        // 默认使用当前日期
-                        newParams.date = currentDate;
-                        logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.date}"`);
-                      }
-                    } else {
-                      // 如果没有日期参数，使用当前日期
-                      newParams.date = currentDate;
-                    }
-                  }
-                } catch (error: any) {
-                  logger.error(`获取当前日期失败: ${error.message}`);
-                }
-              }
-              
-              // 使用新的参数对象
-              input = newParams;
-            }
-            
-            // 对于get-train-route-stations工具，确保参数名称正确
-            if (actualActionName === 'get-train-route-stations') {
-              // 检查是否存在中文参数名称，并转换为英文参数名称
-              const paramMap: Record<string, string> = {
-                '车次': 'trainNo',
-                '出发站电报码': 'fromStationTelecode',
-                '到达站电报码': 'toStationTelecode',
-                '出发日期': 'departDate',
-                '出发地': 'fromStation',
-                '目的地': 'toStation'
-              };
-              
-              // 创建新的参数对象
-              const newParams: Record<string, any> = { ...input };
-              
-              // 转换参数名称
-              for (const key in input) {
-                if (paramMap[key]) {
-                  newParams[paramMap[key]] = input[key];
-                  delete newParams[key];
-                }
-              }
-              
-              // 如果有出发地和目的地但没有电报码，需要先查询
-              const fromStation = newParams.fromStation || (input as Record<string, any>)['出发地'];
-              if (fromStation && !newParams.fromStationTelecode) {
-                try {
-                  // 查询出发地电报码
-                  const fromStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
-                    stationNames: fromStation
-                  });
-                  if (fromStationResult.content && fromStationResult.content[0].data && fromStationResult.content[0].data[0]) {
-                    newParams.fromStationTelecode = fromStationResult.content[0].data[0].telecode;
-                  }
-                } catch (error: any) {
-                  logger.error(`查询出发地电报码失败: ${error.message}`);
-                }
-              }
-              
-              const toStation = newParams.toStation || (input as Record<string, any>)['目的地'];
-              if (toStation && !newParams.toStationTelecode) {
-                try {
-                  // 查询目的地电报码
-                  const toStationResult = await this.mcpManager.callTool(actualMcpName, 'get-station-code-by-names', {
-                    stationNames: toStation
-                  });
-                  if (toStationResult.content && toStationResult.content[0].data && toStationResult.content[0].data[0]) {
-                    newParams.toStationTelecode = toStationResult.content[0].data[0].telecode;
-                  }
-                } catch (error: any) {
-                  logger.error(`查询目的地电报码失败: ${error.message}`);
-                }
-              }
-              
-              // 如果没有出发日期参数，或者日期参数不是标准格式，添加当前日期
-              if (!newParams.departDate || !newParams.departDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                try {
-                  const dateResult = await this.mcpManager.callTool(actualMcpName, 'get-current-date', {});
-                  if (dateResult.content && dateResult.content[0].text) {
-                    const currentDate = dateResult.content[0].text;
-                    
-                    // 处理相对日期
-                    if (newParams.departDate) {
-                      const relativeDateText = newParams.departDate.toLowerCase();
-                      if (relativeDateText.includes('明天') || relativeDateText.includes('tomorrow')) {
-                        // 计算明天的日期
-                        const tomorrow = new Date(currentDate);
-                        tomorrow.setDate(tomorrow.getDate() + 1);
-                        newParams.departDate = tomorrow.toISOString().split('T')[0];
-                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
-                      } else if (relativeDateText.includes('后天') || relativeDateText.includes('day after tomorrow')) {
-                        // 计算后天的日期
-                        const dayAfterTomorrow = new Date(currentDate);
-                        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-                        newParams.departDate = dayAfterTomorrow.toISOString().split('T')[0];
-                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
-                      } else if (relativeDateText.includes('大后天')) {
-                        // 计算大后天的日期
-                        const threeDaysLater = new Date(currentDate);
-                        threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-                        newParams.departDate = threeDaysLater.toISOString().split('T')[0];
-                        logger.info(`将相对日期"${relativeDateText}"转换为"${newParams.departDate}"`);
-                      } else {
-                        // 默认使用当前日期
-                        newParams.departDate = currentDate;
-                        logger.info(`无法解析日期"${relativeDateText}"，使用当前日期"${newParams.departDate}"`);
-                      }
-                    } else {
-                      // 如果没有日期参数，使用当前日期
-                      newParams.departDate = currentDate;
-                    }
-                  }
-                } catch (error: any) {
-                  logger.error(`获取当前日期失败: ${error.message}`);
-                }
-              }
-              
-              // 如果没有trainNo，无法继续
-              if (!newParams.trainNo) {
-                throw new Error('缺少必要参数：trainNo（车次编号）');
-              }
-              
-              // 使用新的参数对象
-              input = newParams;
-            }
+            logger.info(`Streaming execution MCP name mapping: '${mcpName}' mapped to '${actualMcpName}'`);
           }
           
           // 检查MCP是否已连接
           const connectedMCPs = this.mcpManager.getConnectedMCPs();
           const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
           
-          // 如果未连接，尝试连接
+          // 如果未连接，尝试自动连接
           if (!isConnected) {
-            logger.info(`流式执行: MCP ${actualMcpName} 未连接，尝试连接...`);
+            logger.info(`Streaming execution: MCP ${actualMcpName} not connected, will auto-connect during tool call...`);
             
-            // 从predefinedMCPs获取MCP配置
-            const { getPredefinedMCP } = await import('../services/predefinedMCPs.js');
-            const mcpConfig = getPredefinedMCP(actualMcpName);
-            
-            if (!mcpConfig) {
-              logger.error(`未找到MCP ${actualMcpName} 的配置信息`);
-              throw new Error(`MCP ${actualMcpName} configuration not found`);
-            }
-            
-            // 连接MCP
-            const connected = await this.mcpManager.connectPredefined(mcpConfig);
-            if (!connected) {
-              logger.error(`连接MCP ${actualMcpName} 失败`);
-              throw new Error(`Failed to connect to MCP ${actualMcpName}`);
-            }
-            
-                          logger.info(`MCP ${actualMcpName} 连接成功`);
-              
-              // 发送MCP连接成功消息
-              stream({ 
-                event: 'mcp_connected', 
-                data: { 
-                  mcpName: actualMcpName,
-                  message: `成功连接到 ${actualMcpName} 服务`
-                } 
-              });
+            // 发送MCP准备连接消息
+            stream({ 
+              event: 'mcp_connecting', 
+              data: { 
+                mcpName: actualMcpName,
+                message: `Preparing to connect to ${actualMcpName} service...`
+              } 
+            });
           }
           
           // 确保输入是对象类型
           const inputObj = typeof input === 'string' ? { text: input } : input;
           
-          // 调用MCP工具
-          const stepResult = await this.mcpManager.callTool(actualMcpName, actualActionName, inputObj);
+          // 调用MCP工具 (使用认证信息注入功能)
+          const stepResult = await this.callMCPTool(actualMcpName, actionName, inputObj, taskId);
+          
+          // 通用结果验证
+          this.validateStepResult(actualMcpName, actionName, stepResult);
           
           // 处理不同适配器可能有的不同返回格式
           const processedResult = this.processToolResult(stepResult);
@@ -1146,7 +852,7 @@ Based on the above task execution information, please generate a complete execut
             finalResult = processedResult;
           }
         } catch (error) {
-          logger.error(`步骤${stepNumber}执行出错:`, error);
+          logger.error(`Step ${stepNumber} execution failed:`, error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           
           // 使用DAO记录步骤失败结果
@@ -1170,7 +876,7 @@ Based on the above task execution information, please generate a complete execut
       }
       
       // 生成结果摘要，使用流式生成
-      stream({ event: 'generating_summary', data: { message: '正在生成结果摘要...' } });
+      stream({ event: 'generating_summary', data: { message: 'Generating result summary...' } });
       await this.generateResultSummaryStream(task.content, workflowResults, (summaryChunk) => {
         stream({ 
           event: 'summary_chunk', 
@@ -1183,13 +889,13 @@ Based on the above task execution information, please generate a complete execut
         event: 'workflow_complete', 
         data: { 
           success: true,
-          message: '任务执行完成'
+          message: 'Task execution completed'
         }
       });
       
       // 更新任务状态为完成
       await taskExecutorDao.updateTaskResult(taskId, 'completed', {
-        summary: '任务执行完成',
+        summary: 'Task execution completed',
         steps: workflowResults,
         finalResult
       });
@@ -1197,12 +903,11 @@ Based on the above task execution information, please generate a complete execut
       // 发送任务完成信息
       stream({ event: 'task_complete', data: { taskId } });
       
-      logger.info(`任务执行完成 [任务ID: ${taskId}]`);
+      logger.info(`Task execution completed [Task ID: ${taskId}]`);
       return true;
     } catch (error) {
-      logger.error(`任务执行过程中发生错误 [任务ID: ${taskId}]:`, error);
+      logger.error(`Error occurred during task execution [Task ID: ${taskId}]:`, error);
       
-      // 使用DAO更新任务状态为失败
       await taskExecutorDao.updateTaskResult(taskId, 'failed', {
         error: error instanceof Error ? error.message : String(error)
       });
@@ -1211,7 +916,7 @@ Based on the above task execution information, please generate a complete execut
       stream({ 
         event: 'error', 
         data: { 
-          message: '任务执行失败', 
+          message: 'Task execution failed', 
           details: error instanceof Error ? error.message : String(error)
         } 
       });
@@ -1232,7 +937,7 @@ Based on the above task execution information, please generate a complete execut
     streamCallback: (chunk: string) => void
   ): Promise<void> {
     try {
-      logger.info('流式生成任务结果摘要');
+      logger.info('Streaming generation of task result summary');
       
       // 计算成功和失败步骤数
       const successSteps = stepResults.filter(step => step.success).length;
@@ -1241,10 +946,10 @@ Based on the above task execution information, please generate a complete execut
       // 准备步骤结果详情
       const stepDetails = stepResults.map(step => {
         if (step.success) {
-          return `步骤${step.step}: 成功执行 - ${typeof step.result === 'string' && step.result.length > 100 ? 
+          return `Step ${step.step}: Successfully executed - ${typeof step.result === 'string' && step.result.length > 100 ? 
             step.result.substring(0, 100) + '...' : step.result}`;
         } else {
-          return `步骤${step.step}: 执行失败 - ${step.error}`;
+          return `Step ${step.step}: Execution failed - ${step.error}`;
         }
       }).join('\n');
       
@@ -1254,9 +959,6 @@ Based on the above task execution information, please generate a complete execut
         modelName: process.env.TASK_EXECUTION_MODEL || 'gpt-4o',
         temperature: 0.3,
         streaming: true,
-        // configuration: {
-        //   httpAgent: agent, // ✅ 使用代理关键设置
-        // },
       });
       
       // 创建消息
@@ -1300,8 +1002,8 @@ Based on the above task execution information, please generate a complete execut
         }
       }
     } catch (error) {
-      logger.error('流式生成结果摘要失败:', error);
-      streamCallback(`任务执行完成，共执行了${stepResults.length}个步骤，成功${stepResults.filter(s => s.success).length}个，失败${stepResults.filter(s => !s.success).length}个。请查看详细的步骤结果了解更多信息。`);
+      logger.error('Streaming generation of result summary failed:', error);
+      streamCallback(`Task execution completed, executed ${stepResults.length} steps in total, ${stepResults.filter(s => s.success).length} successful, ${stepResults.filter(s => !s.success).length} failed. Please check detailed step results for more information.`);
     }
   }
 
@@ -1311,7 +1013,7 @@ Based on the above task execution information, please generate a complete execut
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // MCP名称映射表 - 与mcpInfoService中的名称保持一致
+    // 通用MCP名称映射表 - 与mcpInfoService中的名称保持一致
     const mcpNameMap: Record<string, string> = {
       'playwright-mcp-service': 'playwright',
       'coingecko-server': 'coingecko-mcp',

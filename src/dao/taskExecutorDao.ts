@@ -14,7 +14,7 @@ export class TaskExecutorDao {
       const result = await db.query(
         `
         SELECT * FROM tasks
-        WHERE id = $1
+        WHERE id = $1::varchar
         `,
         [taskId]
       );
@@ -34,8 +34,8 @@ export class TaskExecutorDao {
       await db.query(
         `
         UPDATE tasks
-        SET status = $1, updated_at = NOW()
-        WHERE id = $2
+        SET status = $1::varchar, updated_at = NOW()
+        WHERE id = $2::varchar
         `,
         [status, taskId]
       );
@@ -56,17 +56,32 @@ export class TaskExecutorDao {
     result: any
   ): Promise<boolean> {
     try {
-      const resultString = JSON.stringify(result || null);
-      logger.info(`[updateTaskResult] 准备更新任务 ${taskId}：status=${status}, result长度=${resultString.length}`);
+      // 确保result是有效的JSON对象或null
+      let processedResult: any = null;
+      if (result !== null && result !== undefined) {
+        if (typeof result === 'object') {
+          processedResult = result;
+        } else if (typeof result === 'string') {
+          try {
+            processedResult = JSON.parse(result);
+          } catch (parseError) {
+            processedResult = { error: result };
+          }
+        } else {
+          processedResult = { value: result };
+        }
+      }
+      
+      logger.info(`[updateTaskResult] 准备更新任务 ${taskId}：status=${status}, result类型=${typeof processedResult}`);
       
       const updateResult = await db.query(
         `
         UPDATE tasks
-        SET status = $1, result = $2::jsonb, updated_at = NOW(),
-            completed_at = CASE WHEN $1 IN ('completed', 'failed') THEN NOW() ELSE completed_at END
-        WHERE id = $3
+        SET status = $1::varchar, result = $2::jsonb, updated_at = NOW(),
+            completed_at = CASE WHEN $1::varchar IN ('completed', 'failed') THEN NOW() ELSE completed_at END
+        WHERE id = $3::varchar
         `,
-        [status, resultString, taskId]
+        [status, JSON.stringify(processedResult), taskId]
       );
       
       logger.info(`[updateTaskResult] 更新结果：影响行数=${updateResult.rowCount}`);
@@ -92,7 +107,7 @@ export class TaskExecutorDao {
       const result = await db.query(
         `
         SELECT mcp_workflow FROM tasks
-        WHERE id = $1
+        WHERE id = $1::varchar
         `,
         [taskId]
       );
@@ -178,7 +193,7 @@ export class TaskExecutorDao {
         `
         UPDATE tasks
         SET result = $1::jsonb, updated_at = NOW()
-        WHERE id = $2
+        WHERE id = $2::varchar
         `,
         [jsonString, taskId]
       );

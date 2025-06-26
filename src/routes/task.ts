@@ -20,7 +20,7 @@ const router = Router();
 const taskService = getTaskService();
 const httpMcpAdapter = new HTTPMCPAdapter();
 const mcpAuthService = new MCPAuthService();
-const taskAnalysisService = new TaskAnalysisService(httpMcpAdapter);
+const taskAnalysisService = new TaskAnalysisService();
 const mcpAlternativeService = new MCPAlternativeService();
 
 // 获取mcpManager实例，将在应用启动时通过app.set设置

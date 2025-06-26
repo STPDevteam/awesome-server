@@ -368,7 +368,7 @@ export class MCPInfoService {
       name: 'x-mcp-server',
       description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Built-in rate limit handling for free API tier',
       capabilities: [
-        'get-home-timeline', 'create-tweet', 'reply-to-tweet', 
+        'get_home_timeline', 'create_tweet', 'reply_to_tweet', 
         'rate-limit-handling', 'timeline-reading', 'tweet-engagement',
         'free-tier-support', 'monthly-usage-tracking', 'exponential-backoff'
       ],

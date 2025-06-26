@@ -1,5 +1,11 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
+import { 
+  PromptTemplate, 
+  ChatPromptTemplate
+} from '@langchain/core/prompts';
+import { JsonOutputParser } from '@langchain/core/output_parsers';
+import { z } from 'zod';
 import { logger } from '../../utils/logger.js';
 import { getTaskService } from '../taskService.js';
 import { TaskStep, TaskStepType } from '../../models/task.js';
@@ -509,7 +515,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     name: 'x-mcp',
     description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Built-in rate limit handling for free API tier',
     capabilities: [
-      'get-home-timeline', 'create-tweet', 'reply-to-tweet', 
+              'get_home_timeline', 'create_tweet', 'reply_to_tweet', 
       'rate-limit-handling', 'timeline-reading', 'tweet-engagement',
       'free-tier-support', 'monthly-usage-tracking', 'exponential-backoff'
     ],
@@ -690,20 +696,18 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
  */
 export class TaskAnalysisService {
   private llm: ChatOpenAI;
-  private httpAdapter: HTTPMCPAdapter;
-
-  constructor(httpAdapter: HTTPMCPAdapter) {
-    this.httpAdapter = httpAdapter;
-    
+  
+  constructor() {
     this.llm = new ChatOpenAI({
-      openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
-      temperature: 0.2, // 较低温度，保证推理的准确性
-      // configuration: {
-      //   httpAgent: agent, // ✅ 使用代理关键设置
-      // },
+      temperature: 0.7,
+      openAIApiKey: process.env.OPENAI_API_KEY,
+      timeout: 15000, // 15秒超时
+      maxRetries: 1 // 最多重试1次
     });
   }
+  
+
   
   /**
    * 执行任务的流式分析流程
@@ -1113,7 +1117,7 @@ export class TaskAnalysisService {
   }
   
   /**
-   * Step 1: Analyze task requirements
+   * Step 1: Analyze task requirements - 使用LangChain增强
    * @param taskContent Task content
    * @returns Requirements analysis result
    */
@@ -1121,49 +1125,100 @@ export class TaskAnalysisService {
     content: string;
     reasoning: string;
   }> {
+    // 如果没有OpenAI API Key，直接使用简单的分析
+    if (!process.env.OPENAI_API_KEY) {
+      logger.info('No OpenAI API Key, using simple analysis');
+      return {
+        content: `任务分析: ${taskContent}`,
+        reasoning: `这是一个关于"${taskContent}"的任务，系统将尝试找到合适的工具来完成它。`
+      };
+    }
+    
     try {
-      logger.info('Starting task requirements analysis');
+      logger.info('[LangChain] Starting task requirements analysis with structured prompts');
       
-      const response = await this.llm.invoke([
-        new SystemMessage(`You are a professional task analyst responsible for analyzing user task requirements.
+      // 创建一个带超时的Promise包装器
+      const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Requirements analysis timeout')), timeoutMs);
+          })
+        ]);
+      };
+      
+      // LLM分析逻辑
+      const analysisLogic = async () => {
+        // 使用LangChain的ChatPromptTemplate
+        const analysisPrompt = ChatPromptTemplate.fromMessages([
+          ['system', `You are a professional task analyst responsible for analyzing user task requirements.
 Please analyze the following task content in detail, deconstructing and identifying:
 1. Core goals and sub-goals
 2. Key constraints
 3. Necessary inputs and expected outputs
 4. Potential challenges and risk points
 
-Output format:
-{
-  "analysis": "This is the task analysis summary visible to the user, clearly and concisely explaining the core requirements and goals of the task",
-  "detailed_reasoning": "This is your detailed reasoning process, including how you understand the task, your approach to identifying key requirements, and possible solution directions"
-}
-
-Please ensure the analysis is accurate and comprehensive while remaining concise.`),
-        new HumanMessage(taskContent)
-      ]);
-      
-      // Parse the returned JSON
-      const responseText = response.content.toString();
-      try {
-        const parsedResponse = JSON.parse(responseText);
-        return {
-          content: parsedResponse.analysis || "Unable to generate task analysis",
-          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning"
-        };
-      } catch (parseError) {
-        logger.error('Failed to parse task requirements analysis result:', parseError);
-        // If parsing fails, try to extract useful parts
-        const contentMatch = responseText.match(/["']analysis["']\s*:\s*["'](.+?)["']/s);
-        const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
+You must output valid JSON with the following structure:
+{format_instructions}`],
+          ['human', '{taskContent}']
+        ]);
         
-        return {
-          content: contentMatch ? contentMatch[1].trim() : "Unable to parse task analysis",
-          reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText
-        };
-      }
+        // 使用JsonOutputParser
+        const outputParser = new JsonOutputParser();
+        
+        // 创建prompt with format instructions
+        const formattedPrompt = await analysisPrompt.formatMessages({
+          taskContent,
+          format_instructions: JSON.stringify({
+            analysis: "Task analysis summary for user (string)",
+            detailed_reasoning: "Detailed reasoning process (string)"
+          }, null, 2)
+        });
+        
+        // 调用LLM并解析
+        logger.info('[LangChain] Invoking LLM for requirements analysis');
+        const response = await this.llm.invoke(formattedPrompt);
+        logger.info('[LangChain] LLM response received, parsing...');
+        
+        try {
+          // 使用JsonOutputParser解析响应
+          const parsedResponse = await outputParser.parse(response.content.toString());
+          
+          logger.info('[LangChain] Successfully parsed requirements analysis');
+          
+          return {
+            content: parsedResponse.analysis || "Unable to generate task analysis",
+            reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning"
+          };
+        } catch (parseError) {
+          logger.error('[LangChain] Failed to parse with JsonOutputParser, using fallback:', parseError);
+          
+          // 降级到正则匹配
+          const responseText = response.content.toString();
+          const contentMatch = responseText.match(/["']analysis["']\s*:\s*["'](.+?)["']/s);
+          const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
+          
+          return {
+            content: contentMatch ? contentMatch[1].trim() : "Unable to parse task analysis",
+            reasoning: reasoningMatch ? reasoningMatch[1].trim() : responseText
+          };
+        }
+      };
+      
+      // 使用超时包装器执行分析（8秒超时）
+      const result = await withTimeout(analysisLogic(), 8000);
+      logger.info('[LangChain] Requirements analysis completed successfully');
+      return result;
+      
     } catch (error) {
-      logger.error('Task requirements analysis failed:', error);
-      throw error;
+      logger.error('[LangChain] Task requirements analysis failed:', error);
+      
+      // 降级处理：如果LLM分析失败，使用基本分析
+      logger.info('Using fallback analysis due to LLM failure');
+      return {
+        content: `基本任务分析: ${taskContent}。系统将尝试根据内容关键词找到合适的工具。`,
+        reasoning: `由于LLM分析失败（${error instanceof Error ? error.message : 'Unknown error'}），使用降级分析。任务内容为"${taskContent}"，将基于关键词匹配来选择合适的MCP工具。`
+      };
     }
   }
   
@@ -1514,15 +1569,19 @@ ${deliverables.join('\n')}
 1. DO NOT include any authentication information (API keys, tokens, etc.) in the workflow input
 2. The input should ONLY contain the actual parameters needed for the action
 3. Authentication will be handled separately through the verify-auth API
+4. **CRITICAL**: Use EXACT tool names with underscores, not dashes:
+   - For x-mcp: use "create_tweet" (NOT "create-tweet")
+   - For x-mcp: use "get_home_timeline" (NOT "get-home-timeline") 
+   - For x-mcp: use "reply_to_tweet" (NOT "reply-to-tweet")
 
 Please design an ordered step process, specifying for each step:
 1. Which MCP tool to use
-2. What specific action to perform
+2. What specific action to perform (using correct underscore format)
 3. What the input parameters are (excluding auth info)
 
 For example, for Twitter/X tasks:
-- Good input: {"text": "Hello world"}
-- Bad input: {"auth": {...}, "text": "Hello world"}
+- Correct: {"step": 1, "mcp": "x-mcp", "action": "create_tweet", "input": {"text": "Hello world"}}
+- Wrong: {"step": 1, "mcp": "x-mcp", "action": "create-tweet", "input": {"text": "Hello world"}}
 
 Output format:
 {
@@ -1530,7 +1589,7 @@ Output format:
     {
       "step": 1,
       "mcp": "Tool name",
-      "action": "Specific action",
+      "action": "Specific action (with underscores)",
       "input": {actual parameters only, no auth}
     },
     ...

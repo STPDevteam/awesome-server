@@ -354,9 +354,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'x-mcp',
-        description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get home timeline, create tweets, reply to tweets with built-in rate limiting',
-        command: 'npx',
-        args: ['-y', 'x-mcp-server'],
+        description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/x-mcp-server/build'],
         env: {
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
