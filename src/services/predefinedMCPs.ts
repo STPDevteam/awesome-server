@@ -348,7 +348,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Social',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.icoo',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
         githubUrl: 'https://github.com/sparfenyuk/mcp-telegram'
     },
     {

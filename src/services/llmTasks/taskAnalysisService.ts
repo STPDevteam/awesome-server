@@ -38,104 +38,22 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     }
   },
   {
-    name: 'GoogleSearchTool',
-    description: '谷歌搜索工具，可以执行网络搜索并获取结果',
-    capabilities: ['执行网络搜索', '获取最新信息', '回答常识问题'],
-    authRequired: true,
-    authFields: ['GOOGLE_API_KEY', 'CUSTOM_SEARCH_ENGINE_ID'],
-    category: '搜索工具',
-    imageUrl: 'https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png',
-    githubUrl: 'https://github.com/googleapis/google-api-nodejs-client',
-    authParams: {
-      apiKeyName: 'GOOGLE_API_KEY',
-      engineIdName: 'CUSTOM_SEARCH_ENGINE_ID'
-    }
-  },
-  {
     name: 'FileSystemTool',
     description: '本地文件系统操作工具',
     capabilities: ['读取文件', '写入文件', '列出目录内容', '创建目录'],
     authRequired: false,
     category: '系统工具',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/3767/3767084.png',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
     githubUrl: 'https://github.com/nodejs/node'
   },
-  {
-    name: 'WebBrowserTool',
-    description: '网页浏览和信息抓取工具',
-    capabilities: ['访问网页', '抓取网页内容', '提取结构化数据'],
-    authRequired: false,
-    category: '网络工具',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/2985/2985975.png',
-    githubUrl: 'https://github.com/puppeteer/puppeteer'
-  },
-  {
-    name: 'DatabaseQueryTool',
-    description: '数据库查询工具，支持各种SQL和NoSQL数据库',
-    capabilities: ['执行SQL查询', '获取数据统计', '数据可视化'],
-    authRequired: true,
-    authFields: ['DB_CONNECTION_STRING'],
-    category: '数据工具',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/2772/2772128.png',
-    githubUrl: 'https://github.com/sequelize/sequelize',
-    authParams: {
-      connectionStringName: 'DB_CONNECTION_STRING',
-      connectionStringDescription: '数据库连接字符串'
-    }
-  },
-  {
-    name: 'ImageAnalysisTool',
-    description: '图像分析工具，可以分析和处理图像',
-    capabilities: ['对象识别', '场景描述', '文字识别', '图像分类'],
-    authRequired: true,
-    authFields: ['VISION_API_KEY'],
-    category: '媒体工具',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/2659/2659360.png',
-    githubUrl: 'https://github.com/googleapis/nodejs-vision',
-    authParams: {
-      apiKeyName: 'VISION_API_KEY',
-      apiKeyDescription: '视觉API访问密钥'
-    }
-  },
-  {
-    name: 'TextAnalysisTool',
-    description: '文本分析工具，可以分析文本内容和情感',
-    capabilities: ['情感分析', '关键词提取', '实体识别', '文本分类'],
-    authRequired: false,
-    category: '媒体工具',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/1950/1950715.png',
-    githubUrl: 'https://github.com/NaturalNode/natural'
-  },
-  {
-    name: 'WeatherTool',
-    description: '天气信息工具，提供全球天气数据',
-    capabilities: ['获取当前天气', '天气预报', '历史天气数据'],
-    authRequired: true,
-    authFields: ['WEATHER_API_KEY'],
-    category: '信息服务',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/1163/1163763.png',
-    githubUrl: 'https://github.com/chubin/wttr.in',
-    authParams: {
-      apiKeyName: 'WEATHER_API_KEY',
-      apiKeyDescription: '天气API访问密钥'
-    }
-  },
-  {
-    name: 'cook-mcp-service',
-    description: '多功能工具集合，包含浏览器自动化、烹饪指导和网页访问功能',
-    capabilities: ['打开浏览器', '访问网页', '填写表单', '点击元素', '获取页面内容', '查找烹饪食谱', '获取食材信息'],
-    authRequired: false,
-    category: '生活服务',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/1830/1830839.png',
-    githubUrl: 'https://github.com/cook-mcp/cook-mcp'
-  },
+
   {
     name: 'playwright-mcp-service',
     description: 'Playwright 浏览器自动化工具，可以控制浏览器访问网页',
     capabilities: ['打开浏览器', '访问网页', '填写表单', '点击元素', '获取页面内容'],
     authRequired: false,
     category: '自动化工具',
-    imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
     githubUrl: 'https://github.com/microsoft/playwright'
   },
   {
@@ -144,7 +62,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['查询车站信息', '查询余票信息', '查询中转余票', '查询列车时刻表', '获取当前日期'],
     authRequired: false,
     category: '交通工具',
-    imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
     githubUrl: 'https://github.com/12306-mcp'
   },
   
@@ -155,7 +73,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['blockchain-query', 'transaction-tracking', 'smart-contract'],
     authRequired: false,
     category: 'Chain PRC',
-    imageUrl: 'https://base.org/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/base.ico',
     githubUrl: 'https://github.com/base/base-mcp'
   },
   {
@@ -192,7 +110,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['COINGECKO_API_KEY'],
     category: 'Market Data',
-    imageUrl: 'https://www.coingecko.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
     githubUrl: 'https://docs.coingecko.com/reference/mcp-server',
     authParams: {
       apiKeyName: 'COINGECKO_API_KEY',
@@ -206,7 +124,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['CMC_API_KEY'],
     category: 'Market Data',
-    imageUrl: 'https://coinmarketcap.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
     githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
     authParams: {
       apiKeyName: 'CMC_API_KEY',
@@ -219,7 +137,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['defi-protocols', 'tvl-data', 'yield-farming'],
     authRequired: false,
     category: 'Market Data',
-    imageUrl: 'https://defillama.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png',
     githubUrl: 'https://github.com/dcSpark/mcp-server-defillama'
   },
   {
@@ -229,7 +147,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['DUNE_API_KEY'],
     category: 'Market Data',
-    imageUrl: 'https://dune.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
     githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
     authParams: {
       apiKeyName: 'DUNE_API_KEY',
@@ -242,7 +160,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['token-security', 'rug-detection', 'contract-analysis'],
     authRequired: false,
     category: 'Market Data',
-    imageUrl: 'https://rugcheck.xyz/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
     githubUrl: 'https://github.com/kukapay/rug-check-mcp'
   },
   {
@@ -251,7 +169,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['price-feeds', 'oracle-data', 'real-time-prices'],
     authRequired: false,
     category: 'Market Data',
-    imageUrl: 'https://chain.link/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-chainlink-100.png',
     githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp'
   },
   {
@@ -260,7 +178,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['sentiment-analysis', 'market-psychology', 'fear-greed-index'],
     authRequired: false,
     category: 'Market Data',
-    imageUrl: 'https://alternative.me/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-binance-128.png',
     githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp'
   },
   {
@@ -269,7 +187,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['whale-tracking', 'large-transactions', 'wallet-monitoring'],
     authRequired: false,
     category: 'Market Data',
-    imageUrl: 'https://whale-alert.io/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
     githubUrl: 'https://github.com/kukapay/whale-tracker-mcp'
   },
   
@@ -295,7 +213,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['OPENAI_API_KEY'],
     category: 'Development Tools',
-    imageUrl: 'https://langchain.com/images/logo.svg',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/langchain.png',
     githubUrl: 'https://github.com/langchain-ai/langchain',
     authParams: {
       apiKeyName: 'OPENAI_API_KEY',
@@ -309,7 +227,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['MINDSDB_API_KEY'],
     category: 'Development Tools',
-    imageUrl: 'https://mindsdb.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-money-minded-68.png',
     githubUrl: 'https://github.com/mindsdb/minds-mcp',
     authParams: {
       apiKeyName: 'MINDSDB_API_KEY',
@@ -322,7 +240,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['3d-modeling', 'animation', 'rendering'],
     authRequired: false,
     category: 'Development Tools',
-    imageUrl: 'https://www.blender.org/favicon.ico',
+    imageUrl: 'ttps://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
     githubUrl: 'https://github.com/ahujasid/blender-mcp'
   },
   {
@@ -331,7 +249,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['game-development', 'unity-scripting', 'asset-management'],
     authRequired: false,
     category: 'Development Tools',
-    imageUrl: 'https://unity.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unity-100.png',
     githubUrl: 'https://github.com/justinpbarnett/unity-mcp'
   },
   {
@@ -340,7 +258,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['game-development', 'blueprints', 'level-design'],
     authRequired: false,
     category: 'Development Tools',
-    imageUrl: 'https://www.unrealengine.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unreal-engine-100.png',
     githubUrl: 'https://github.com/chongdashu/unreal-mcp'
   },
   {
@@ -350,7 +268,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['FIGMA_TOKEN'],
     category: 'Development Tools',
-    imageUrl: 'https://www.figma.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-figma-96.png',
     githubUrl: 'https://github.com/GLips/Figma-Context-MCP',
     authParams: {
       tokenName: 'FIGMA_TOKEN',
@@ -364,7 +282,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['AWS_ACCESS_KEY', 'AWS_SECRET_KEY'],
     category: 'Development Tools',
-    imageUrl: 'https://aws.amazon.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-aws-96.png',
     githubUrl: 'https://awslabs.github.io/mcp/',
     authParams: {
       accessKeyName: 'AWS_ACCESS_KEY',
@@ -380,7 +298,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['CONVEX_DEPLOY_KEY'],
     category: 'Development Tools',
-    imageUrl: 'https://convex.dev/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-convex-66.png',
     githubUrl: 'https://github.com/get-convex/convex-backend',
     authParams: {
       deployKeyName: 'CONVEX_DEPLOY_KEY',
@@ -394,7 +312,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['CLOUDFLARE_API_TOKEN'],
     category: 'Development Tools',
-    imageUrl: 'https://www.cloudflare.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-cloudflare-100.png',
     githubUrl: 'https://github.com/cloudflare/mcp-server-cloudflare',
     authParams: {
       apiTokenName: 'CLOUDFLARE_API_TOKEN',
@@ -408,7 +326,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['SUPABASE_URL', 'SUPABASE_KEY'],
     category: 'Development Tools',
-    imageUrl: 'https://supabase.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-supabase-100.png',
     githubUrl: 'https://github.com/supabase-community/supabase-mcp',
     authParams: {
       urlName: 'SUPABASE_URL',
@@ -426,7 +344,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['BINANCE_API_KEY', 'BINANCE_SECRET_KEY'],
     category: 'Trading',
-    imageUrl: 'https://www.binance.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-binance-128.png',
     githubUrl: 'https://github.com/TermiX-official/binance-mcp',
     authParams: {
       apiKeyName: 'BINANCE_API_KEY',
@@ -442,7 +360,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['PRIVATE_KEY', 'RPC_URL'],
     category: 'Trading',
-    imageUrl: 'https://uniswap.org/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-uniswap-100.png',
     githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
     authParams: {
       privateKeyName: 'PRIVATE_KEY',
@@ -458,7 +376,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['HYPERLIQUID_API_KEY', 'HYPERLIQUID_SECRET'],
     category: 'Trading',
-    imageUrl: 'https://hyperliquid.xyz/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.jpego',
     githubUrl: 'https://github.com/mektigboy/server-hyperliquid',
     authParams: {
       apiKeyName: 'HYPERLIQUID_API_KEY',
@@ -474,7 +392,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['WALLET_PRIVATE_KEY'],
     category: 'Trading',
-    imageUrl: 'https://pump.fun/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-pumpkin-96.png',
     githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server',
     authParams: {
       privateKeyName: 'WALLET_PRIVATE_KEY',
@@ -490,7 +408,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['DISCORD_BOT_TOKEN'],
     category: 'Social',
-    imageUrl: 'https://discord.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-discord-96.png',
     githubUrl: 'https://github.com/hanweg/mcp-discord',
     authParams: {
       botTokenName: 'DISCORD_BOT_TOKEN',
@@ -504,7 +422,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['TELEGRAM_BOT_TOKEN'],
     category: 'Social',
-    imageUrl: 'https://telegram.org/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
     githubUrl: 'https://github.com/sparfenyuk/mcp-telegram',
     authParams: {
       botTokenName: 'TELEGRAM_BOT_TOKEN',
@@ -522,7 +440,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['TWITTER_API_KEY', 'TWITTER_API_SECRET', 'TWITTER_ACCESS_TOKEN', 'TWITTER_ACCESS_SECRET'],
     category: 'Social',
-    imageUrl: 'https://x.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/x-mcp.ico',
     githubUrl: 'https://github.com/datawhisker/x-mcp-server',
     authParams: {
       apiKeyName: 'TWITTER_API_KEY',
@@ -542,7 +460,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['NOTION_TOKEN'],
     category: 'Productivity',
-    imageUrl: 'https://www.notion.so/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
     githubUrl: 'https://github.com/makenotion/notion-mcp-server',
     authParams: {
       tokenName: 'NOTION_TOKEN',
@@ -558,7 +476,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['DISCORD_TOKEN'],
     category: 'Social',
-    imageUrl: 'https://discord.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-discord-96.png',
     githubUrl: 'https://github.com/hanweg/mcp-discord'
   },
   {
@@ -568,7 +486,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['TELEGRAM_BOT_TOKEN'],
     category: 'Social',
-    imageUrl: 'https://telegram.org/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
     githubUrl: 'https://github.com/sparfenyuk/mcp-telegram'
   },
   {
@@ -578,7 +496,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['BINANCE_API_KEY', 'BINANCE_SECRET'],
     category: 'Trading',
-    imageUrl: 'https://www.binance.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-binance-128.png',
     githubUrl: 'https://github.com/binance/binance-mcp'
   },
   {
@@ -588,7 +506,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['PRIVATE_KEY', 'INFURA_API_KEY'],
     category: 'Trading',
-    imageUrl: 'https://uniswap.org/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-uniswap-100.png',
     githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp'
   },
   {
@@ -598,7 +516,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['HYPERLIQUID_PRIVATE_KEY'],
     category: 'Trading',
-    imageUrl: 'https://hyperliquid.xyz/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.jpego',
     githubUrl: 'https://github.com/mektigboy/server-hyperliquid'
   },
   {
@@ -608,7 +526,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['PUMPFUN_API_KEY'],
     category: 'Trading',
-    imageUrl: 'https://pump.fun/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-pumpkin-96.png',
     githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server'
   },
   {
@@ -618,7 +536,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'],
     category: 'Cloud Services',
-    imageUrl: 'https://aws.amazon.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-aws-96.png',
     githubUrl: 'https://github.com/aws/aws-mcp'
   },
   {
@@ -628,7 +546,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['CLOUDFLARE_API_TOKEN'],
     category: 'Cloud Services',
-    imageUrl: 'https://www.cloudflare.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-cloudflare-100.png',
     githubUrl: 'https://github.com/cloudflare/cloudflare-mcp'
   },
   {
@@ -638,7 +556,7 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     authRequired: true,
     authFields: ['SUPABASE_URL', 'SUPABASE_ANON_KEY'],
     category: 'Database Tools',
-    imageUrl: 'https://supabase.com/favicon.ico',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-supabase-100.png',
     githubUrl: 'https://github.com/supabase/supabase-mcp'
   },
   {
@@ -647,47 +565,9 @@ export const AVAILABLE_MCPS: MCPInfo[] = [
     capabilities: ['file-read', 'file-write', 'directory-operations', 'file-search'],
     authRequired: false,
     category: 'System Tools',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/3767/3767084.png',
+    imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
     githubUrl: 'https://github.com/modelcontextprotocol/servers'
   },
-  {
-    name: 'sqlite-mcp',
-    description: 'SQLite database operations',
-    capabilities: ['sql-queries', 'database-management', 'data-analysis', 'schema-operations'],
-    authRequired: false,
-    category: 'Database Tools',
-    imageUrl: 'https://www.sqlite.org/images/sqlite370_banner.gif',
-    githubUrl: 'https://github.com/modelcontextprotocol/servers'
-  },
-  {
-    name: 'brave-search-mcp',
-    description: 'Brave Search API integration',
-    capabilities: ['web-search', 'search-results', 'content-discovery', 'privacy-focused-search'],
-    authRequired: true,
-    authFields: ['BRAVE_SEARCH_API_KEY'],
-    category: 'Search Tools',
-    imageUrl: 'https://brave.com/favicon.ico',
-    githubUrl: 'https://github.com/modelcontextprotocol/servers'
-  },
-  {
-    name: 'memory-mcp',
-    description: 'Memory and knowledge management',
-    capabilities: ['knowledge-storage', 'memory-retrieval', 'context-management', 'learning-assistance'],
-    authRequired: false,
-    category: 'AI Tools',
-    imageUrl: 'https://cdn-icons-png.flaticon.com/512/3659/3659899.png',
-    githubUrl: 'https://github.com/modelcontextprotocol/servers'
-  },
-  {
-    name: 'postgres-mcp',
-    description: 'PostgreSQL database operations',
-    capabilities: ['sql-queries', 'database-management', 'data-analysis', 'advanced-queries'],
-    authRequired: true,
-    authFields: ['POSTGRES_CONNECTION_STRING'],
-    category: 'Database Tools',
-    imageUrl: 'https://www.postgresql.org/favicon.ico',
-    githubUrl: 'https://github.com/modelcontextprotocol/servers'
-  }
 ];
 
 /**
