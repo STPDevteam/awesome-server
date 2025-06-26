@@ -62,7 +62,7 @@ export class TaskExecutorService {
     error?: string;
   }> {
     try {
-      const task = await taskExecutorDao.getTaskById(taskId);
+      const task = await taskService.getTaskById(taskId);
       if (!task) {
         logger.error(`❌ Task not found [ID: ${taskId}]`);
         return {
@@ -72,10 +72,10 @@ export class TaskExecutorService {
         };
       }
       
-      logger.info(`📋 Task details: [Title: ${task.title}, User ID: ${task.user_id}]`);
+      logger.info(`📋 Task details: [Title: ${task.title}, User ID: ${task.userId}]`);
       
       // 处理 mcpWorkflow，确保它是一个对象
-      let mcpWorkflow = task.mcp_workflow;
+      let mcpWorkflow = task.mcpWorkflow;
       
       // 如果 mcpWorkflow 是字符串，尝试解析
       if (typeof mcpWorkflow === 'string') {
@@ -83,7 +83,7 @@ export class TaskExecutorService {
           mcpWorkflow = JSON.parse(mcpWorkflow);
         } catch (e) {
           logger.error(`Failed to parse mcpWorkflow for task ${taskId}:`, e);
-          mcpWorkflow = null;
+          mcpWorkflow = undefined;
         }
       }
       
@@ -128,7 +128,7 @@ export class TaskExecutorService {
       if (!options.skipAuthCheck) {
         logger.info(`Checking authentication for task ${taskId}`);
         
-        const userVerifiedAuths = await this.mcpAuthService.getUserAllMCPAuths(task.user_id);
+        const userVerifiedAuths = await this.mcpAuthService.getUserAllMCPAuths(task.userId);
         const verifiedMcpNames = userVerifiedAuths
           .filter(auth => auth.isVerified)
           .map(auth => this.normalizeMCPName(auth.mcpName));
@@ -717,9 +717,9 @@ Select the BEST tool for this objective. Response with ONLY the exact tool name,
         logger.info(`MCP needs authentication, attempting to get user auth data from database...`);
         
         try {
-          const currentTask = await taskExecutorDao.getTaskById(taskId);
+          const currentTask = await taskService.getTaskById(taskId);
           if (currentTask) {
-            const userId = currentTask.user_id;
+            const userId = currentTask.userId;
             logger.info(`Got user ID from task context: ${userId}`);
             console.log(`User ID: ${userId}`);
             
