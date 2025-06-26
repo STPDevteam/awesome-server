@@ -704,9 +704,6 @@ export class TaskAnalysisService {
         workflow: workflowResult.workflow
       };
       
-      // 直接使用对象，不需要转换为字符串
-      await taskService.updateTask(taskId, { mcpWorkflow });
-      
       // 为前端准备精简的mcpWorkflow数据
       const optimizedWorkflow = {
         mcps: mcpResult.recommendedMCPs.map(mcp => ({
@@ -719,6 +716,12 @@ export class TaskAnalysisService {
         })),
         workflow: workflowResult.workflow
       };
+      
+      // 先将工作流和最终状态合并更新，确保原子性
+      await taskService.updateTask(taskId, {
+        mcpWorkflow,
+        status: 'completed'
+      });
       
       // 发送分析完成信息
       stream({ 
@@ -736,8 +739,6 @@ export class TaskAnalysisService {
           }
         } 
       });
-
-      await taskService.updateTask(taskId, { status: 'completed' });
       
       logger.info(`Task streaming analysis completed [Task ID: ${taskId}]`);
       return true;
