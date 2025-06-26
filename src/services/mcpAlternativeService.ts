@@ -3,7 +3,7 @@ import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { logger } from '../utils/logger.js';
 import { MCPInfo } from '../models/mcp.js';
 import { mcpAlternativeDao } from '../dao/mcpAlternativeDao.js';
-import { mcpInfoService } from './mcpInfoService.js';
+import { getAllPredefinedMCPs } from './predefinedMCPs.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
@@ -32,8 +32,8 @@ export class MCPAlternativeService {
   private availableMCPs: MCPInfo[];
   
   constructor() {
-    // 使用mcpInfoService中的数据
-    this.availableMCPs = mcpInfoService.getAllMCPs();
+    // 使用predefinedMCPs中的数据，转换为MCPInfo格式
+    this.availableMCPs = this.convertMCPServicesToMCPInfos(getAllPredefinedMCPs());
     this.llm = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.MCP_ALTERNATIVE_MODEL || 'gpt-4o',
@@ -47,11 +47,28 @@ export class MCPAlternativeService {
   }
   
   /**
+   * 将MCPService转换为MCPInfo
+   */
+  private convertMCPServicesToMCPInfos(mcpServices: any[]): MCPInfo[] {
+    return mcpServices.map(service => ({
+      name: service.name,
+      description: service.description,
+      capabilities: [], // MCPService中没有capabilities字段，使用空数组
+      authRequired: service.authParams ? Object.keys(service.authParams).length > 0 : false,
+      authFields: service.authParams ? Object.keys(service.authParams) : undefined,
+      category: service.category,
+      imageUrl: service.imageUrl,
+      githubUrl: service.githubUrl,
+      authParams: service.authParams
+    }));
+  }
+  
+  /**
    * 获取最新的MCP列表
    * 确保每次都使用最新的MCP信息
    */
   private getAvailableMCPs(): MCPInfo[] {
-    return mcpInfoService.getAllMCPs();
+    return this.convertMCPServicesToMCPInfos(getAllPredefinedMCPs());
   }
   
   /**
@@ -299,7 +316,7 @@ Please base your ranking on factors such as tool functionality match with the ta
       logger.info(`替换任务工作流中的MCP [任务: ${taskId}, 原MCP: ${originalMcpName}, 新MCP: ${newMcpName}]`);
       
       // 获取新MCP的详细信息
-      const newMCP = mcpInfoService.getMCPById(newMcpName);
+      const newMCP = this.getAvailableMCPs().find(mcp => mcp.name === newMcpName);
       if (!newMCP) {
         logger.error(`替换失败：找不到指定的新MCP [${newMcpName}]`);
         return false;

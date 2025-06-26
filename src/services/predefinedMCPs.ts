@@ -1,6 +1,5 @@
 import { MCPService } from './mcpManager.js';
 import { logger } from '../utils/logger.js';
-import { mcpInfoService } from './mcpInfoService.js';
 
 /**
  * 预定义的MCP服务列表
@@ -15,7 +14,7 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
-        category: '自动化工具',
+        category: 'Automation Tools',
         imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
         githubUrl: 'https://github.com/microsoft/playwright'
     },
@@ -26,7 +25,7 @@ export const predefinedMCPs: MCPService[] = [
         args: ['-y', '12306-mcp'],
         env: {},
         connected: false,
-        category: '交通工具',
+        category: 'Others',
         imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
         githubUrl: 'https://github.com/12306-mcp'
     },
@@ -487,87 +486,7 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
     // 使用全局映射进行标准化
     const normalizedName = mcpNameMapping[name] || name;
     
-    // 特殊处理 playwright
-    if (normalizedName === 'playwright' || name === 'playwright-mcp-service') {
-        // 记录更多调试信息
-        logger.info(`【MCP调试】获取Playwright MCP配置，请求名称: ${name}`);
-        
-        // 使用npx直接运行，这在Docker中应该更可靠
-        return {
-            name: 'playwright',
-            description: 'Playwright Tools for MCP (Direct npx).',
-            command: 'npx',
-            args: ['@playwright/mcp@latest'],
-            env: {},
-            connected: false,
-            category: '自动化工具',
-            imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
-            githubUrl: 'https://github.com/microsoft/playwright'
-        };
-    }
-    
-    // 特殊处理 12306-mcp
-    if (normalizedName === '12306-mcp' || name === '12306-mcp-service') {
-        // 记录更多调试信息
-        logger.info(`【MCP调试】获取12306 MCP配置，请求名称: ${name}`);
-        
-        return {
-            name: '12306-mcp',
-            description: '12306 火车票查询和预订工具',
-            command: 'npx',
-            args: ['-y', '12306-mcp'],
-            env: {},
-            connected: false,
-            category: '交通工具',
-            imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
-            githubUrl: 'https://github.com/12306-mcp'
-        };
-    }
-    
-    // 特殊处理 evm-mcp
-    if (normalizedName === 'evm-mcp' || name === 'evm-mcp-service' || name === 'evm-mcp-server') {
-        // 记录更多调试信息
-        logger.info(`【MCP调试】获取EVM MCP配置，请求名称: ${name}`);
-        
-        return {
-            name: 'evm-mcp',
-            description: 'Comprehensive EVM blockchain server supporting 30+ networks',
-            command: 'npx',
-            args: ['-y', '@mcpdotdirect/evm-mcp-server'],
-            env: {
-                WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || '',
-                RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
-            },
-            connected: false,
-            category: 'Chain PRC',
-            imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
-            githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
-        };
-    }
-    
-    // 尝试从mcpInfoService中获取MCP信息
-    const mcpInfo = mcpInfoService.getMCPById(normalizedName);
-    if (mcpInfo) {
-        logger.info(`【MCP调试】从mcpInfoService获取到MCP配置 [${normalizedName}]`);
-        
-        // 根据MCP信息构建MCP服务配置
-        const mcpService: MCPService = {
-            name: mcpInfo.name,
-            description: mcpInfo.description || `MCP Service: ${mcpInfo.name}`,
-            command: 'npx',
-            args: ['-y', mcpInfo.name],
-            env: {},
-            connected: false,
-            category: mcpInfo.category,
-            imageUrl: mcpInfo.imageUrl,
-            githubUrl: mcpInfo.githubUrl,
-            authParams: mcpInfo.authParams
-        };
-        
-        return mcpService;
-    }
-    
-    // 如果没有找到，则从预定义列表中查找
+    // 从预定义列表中查找
     return predefinedMCPs.find(mcp => mcp.name === normalizedName);
 }
 

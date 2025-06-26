@@ -9,7 +9,7 @@ import { taskExecutorDao } from '../dao/taskExecutorDao.js';
 import { TaskStepResult, TaskExecutionResult, WorkflowExecutionStatus } from '../models/taskExecution.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { MCPManager } from './mcpManager.js';
-import { mcpInfoService } from './mcpInfoService.js';
+
 import { MCPInfo } from '../models/mcp.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { mcpNameMapping } from './predefinedMCPs.js';
@@ -1014,13 +1014,6 @@ Based on the above task execution information, please generate a complete execut
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // 尝试在mcpInfoService中查找MCP
-    const allMcps = mcpInfoService.getAllMCPs();
-    const exactMatch = allMcps.find((mcp: any) => mcp.name === mcpName);
-    if (exactMatch) {
-      return mcpName; // 如果在mcpInfoService中找到完全匹配，直接返回
-    }
-    
     // 使用全局统一的映射表
     return mcpNameMapping[mcpName] || mcpName;
   }
