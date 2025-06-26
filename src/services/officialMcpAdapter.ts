@@ -6,6 +6,51 @@ export class OfficialMCPAdapter {
   constructor(private mcpManager: MCPManager) {}
 
   /**
+   * 验证并确保MCP客户端连接正常
+   * @param mcpName MCP名称
+   * @param mcpConfig MCP配置信息
+   * @returns 验证过的客户端实例
+   */
+  private async ensureClientConnection(mcpName: string, mcpConfig: any): Promise<any> {
+    let client = this.mcpManager.getClient(mcpName);
+    if (!client) {
+      throw new Error(`No client found for MCP: ${mcpName}`);
+    }
+
+    // 检查客户端连接状态
+    try {
+      // 通过尝试列出工具来验证连接状态
+      await client.listTools();
+      console.log(`✅ Client connection verified for ${mcpName}`);
+      return client;
+    } catch (connectionError) {
+      console.error(`❌ Client connection failed for ${mcpName}:`, connectionError);
+      console.log(`🔄 Attempting to reconnect ${mcpName}...`);
+      
+      try {
+        // 尝试重新连接
+        await this.mcpManager.disconnect(mcpName);
+        await this.mcpManager.connect(mcpName, mcpConfig.command, mcpConfig.args, mcpConfig.env);
+        
+        // 重新获取客户端
+        const reconnectedClient = this.mcpManager.getClient(mcpName);
+        if (!reconnectedClient) {
+          throw new Error(`Failed to get reconnected client for ${mcpName}`);
+        }
+        
+        // 验证重连后的连接
+        await reconnectedClient.listTools();
+        console.log(`✅ Successfully reconnected ${mcpName}`);
+        
+        return reconnectedClient;
+      } catch (reconnectError) {
+        console.error(`❌ Failed to reconnect ${mcpName}:`, reconnectError);
+        throw new Error(`MCP ${mcpName} connection failed and reconnection failed: ${reconnectError}`);
+      }
+    }
+  }
+
+  /**
    * 使用官方 LangChain MCP Adapters 获取所有工具
    */
   async getAllTools(): Promise<StructuredToolInterface[]> {
@@ -16,12 +61,8 @@ export class OfficialMCPAdapter {
     
     for (const mcp of connectedMCPs) {
       try {
-        // 获取 MCP 客户端
-        const client = this.mcpManager.getClient(mcp.name);
-        if (!client) {
-          console.error(`❌ No client found for MCP: ${mcp.name}`);
-          continue;
-        }
+        // 验证并确保客户端连接
+        const client = await this.ensureClientConnection(mcp.name, mcp);
 
         console.log(`🔧 Loading tools from ${mcp.name} using official LangChain MCP Adapters...`);
 
@@ -65,10 +106,16 @@ export class OfficialMCPAdapter {
    * 获取特定 MCP 的工具
    */
   async getToolsFromMcp(mcpName: string, options?: LoadMcpToolsOptions): Promise<StructuredToolInterface[]> {
-    const client = this.mcpManager.getClient(mcpName);
-    if (!client) {
-      throw new Error(`MCP ${mcpName} is not connected`);
+    // 获取 MCP 配置信息
+    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+    const mcpConfig = connectedMCPs.find(mcp => mcp.name === mcpName);
+    
+    if (!mcpConfig) {
+      throw new Error(`MCP ${mcpName} configuration not found`);
     }
+
+    // 验证并确保客户端连接
+    const client = await this.ensureClientConnection(mcpName, mcpConfig);
 
     const defaultOptions: LoadMcpToolsOptions = {
       throwOnLoadError: true, // 单独加载时可以抛出错误
