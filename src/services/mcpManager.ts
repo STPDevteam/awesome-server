@@ -4,7 +4,8 @@ import { logger } from '../utils/logger.js';
 import { MCPConnection, MCPTool, MCPCallResult } from '../models/mcp.js';
 import fs from 'fs';
 import path from 'path';
-import { mcpInfoService } from './mcpInfoService.js';
+
+import { mcpNameMapping } from './predefinedMCPs.js';
 
 interface MCPClient {
   client: Client;
@@ -300,35 +301,8 @@ export class MCPManager {
    * @returns 标准化的MCP名称
    */
   private normalizeMCPName(mcpName: string): string {
-    // MCP名称映射表 - 与mcpInfoService中的名称保持一致
-    const mcpNameMap: Record<string, string> = {
-      'playwright-mcp-service': 'playwright',
-      'coingecko-server': 'coingecko-mcp',
-      'coingecko-mcp-service': 'coingecko-mcp',
-      'x-mcp-server': 'x-mcp',
-      'github-mcp-server': 'github',
-      'evm-mcp-server': 'evm-mcp',
-      'evm-mcp-service': 'evm-mcp',
-      'dune-mcp-server': 'dune-mcp',
-      'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
-      'defillama-mcp-service': 'mcp-server-defillama',
-      'rug-check-mcp-service': 'rug-check-mcp',
-      'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
-      'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
-      'whale-tracker-mcp-service': 'whale-tracker-mcp',
-      'dexscreener-mcp-service': 'dexscreener-mcp',
-      '12306-mcp-service': '12306-mcp'
-    };
-    
-    // 尝试在mcpInfoService中查找MCP
-    const allMcps = mcpInfoService.getAllMCPs();
-    const exactMatch = allMcps.find((mcp: any) => mcp.name === mcpName);
-    if (exactMatch) {
-      return mcpName; // 如果在mcpInfoService中找到完全匹配，直接返回
-    }
-    
-    // 否则使用映射表
-    return mcpNameMap[mcpName] || mcpName;
+    // 使用全局统一的映射表
+    return mcpNameMapping[mcpName] || mcpName;
   }
 
   /**
@@ -350,24 +324,6 @@ export class MCPManager {
     
     // 处理工具名称 - 处理中文工具名称的情况
     let actualTool = tool;
-    if (name === '12306-mcp') {
-      // 12306-mcp工具名称映射表 - 使用连字符格式
-      const toolNameMap: Record<string, string> = {
-        '获取当前日期': 'get-current-date',
-        '查询车站信息': 'get-stations-code-in-city',
-        '查询列车时刻表': 'get-train-route-stations',
-        '查询余票信息': 'get-tickets',
-        '查询中转余票': 'get-interline-tickets',
-        '获取城市车站代码': 'get-station-code-of-citys',
-        '获取车站代码': 'get-station-code-by-names',
-        '获取电报码车站信息': 'get-station-by-telecode'
-      };
-      
-      if (toolNameMap[tool]) {
-        actualTool = toolNameMap[tool];
-        logger.info(`【MCP Debug】Tool name mapped from '${tool}' to '${actualTool}'`);
-      }
-    }
     
     const mcpClient = this.clients.get(name);
     if (!mcpClient) {

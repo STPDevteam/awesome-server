@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { logger } from '../utils/logger.js';
 import { MCPInfo } from '../models/mcp.js';
 import { optionalAuth } from '../middleware/auth.js';
-import { mcpInfoService } from '../services/mcpInfoService.js';
+import { getAllPredefinedMCPs, getMCPsByCategory, getAllMCPCategories, getPredefinedMCP } from '../services/predefinedMCPs.js';
 
 const router = Router();
 
@@ -12,7 +12,7 @@ const router = Router();
  */
 router.get('/', optionalAuth, async (_req: Request, res: Response) => {
   try {
-    const mcps = mcpInfoService.getAllMCPs();
+    const mcps = getAllPredefinedMCPs();
     
     res.json({
       success: true,
@@ -35,7 +35,7 @@ router.get('/', optionalAuth, async (_req: Request, res: Response) => {
 router.get('/category/:category', optionalAuth, async (req: Request, res: Response) => {
   try {
     const category = req.params.category;
-    const mcpsByCategory = mcpInfoService.getMCPsByCategory(category);
+    const mcpsByCategory = getMCPsByCategory(category);
     
     res.json({
       success: true,
@@ -60,7 +60,7 @@ router.get('/category/:category', optionalAuth, async (req: Request, res: Respon
  */
 router.get('/categories', optionalAuth, async (_req: Request, res: Response) => {
   try {
-    const categories = mcpInfoService.getAllCategories();
+    const categories = getAllMCPCategories().map(category => ({ name: category, count: getMCPsByCategory(category).length }));
     
     res.json({
       success: true,
@@ -83,7 +83,7 @@ router.get('/categories', optionalAuth, async (_req: Request, res: Response) => 
 router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
   try {
     const mcpId = req.params.id;
-    const mcp = mcpInfoService.getMCPById(mcpId);
+    const mcp = getPredefinedMCP(mcpId);
     
     if (!mcp) {
       return res.status(404).json({

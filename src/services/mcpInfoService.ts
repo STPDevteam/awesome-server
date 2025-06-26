@@ -378,7 +378,7 @@ export class MCPInfoService {
       category: 'Social',
       imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
       githubUrl: 'https://github.com/makenotion/notion-mcp-server'
-    }
+    },
   ];
 
   constructor() {

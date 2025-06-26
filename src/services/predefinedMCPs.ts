@@ -1,6 +1,5 @@
 import { MCPService } from './mcpManager.js';
 import { logger } from '../utils/logger.js';
-import { mcpInfoService } from './mcpInfoService.js';
 
 /**
  * 预定义的MCP服务列表
@@ -15,18 +14,18 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
-        category: '自动化工具',
+        category: 'Automation Tools',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
         githubUrl: 'https://github.com/microsoft/playwright'
     },
     {
         name: '12306-mcp',
-        description: '12306 火车票查询和预订工具',
+        description: '12306 train ticket inquiry and booking tool',
         command: 'npx',
         args: ['-y', '12306-mcp'],
         env: {},
         connected: false,
-        category: '交通工具',
+        category: 'Others',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
         githubUrl: 'https://github.com/12306-mcp'
     },
@@ -34,9 +33,9 @@ export const predefinedMCPs: MCPService[] = [
     // Chain RPC 服务
     {
         name: 'base-mcp',
-        description: 'Base Chain RPC integration for blockchain operations',
-        command: 'npx',
-        args: ['-y', 'base-mcp'],
+        description: 'Base Chain RPC integration for blockchain operations (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/base-mcp/build/index.js'],
         env: {},
         connected: false,
         category: 'Chain PRC',
@@ -60,9 +59,9 @@ export const predefinedMCPs: MCPService[] = [
 
     {
         name: 'coingecko-mcp',
-        description: 'CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data',
-        command: 'npx',
-        args: ['-y', '@coingecko/coingecko-mcp'],
+        description: 'CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js'],
         env: {
             COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || ''
         },
@@ -286,9 +285,9 @@ export const predefinedMCPs: MCPService[] = [
     // Trading 服务
     {
         name: 'binance-mcp',
-        description: 'Binance cryptocurrency exchange trading',
-        command: 'npx',
-        args: ['-y', 'binance-mcp'],
+        description: 'Binance cryptocurrency exchange trading (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/binance-mcp/build/index.js'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -297,9 +296,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'uniswap-mcp',
-        description: 'Uniswap DEX trading and liquidity management',
-        command: 'npx',
-        args: ['-y', 'uniswap-trader-mcp'],
+        description: 'Uniswap DEX trading and liquidity management (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -319,9 +318,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'pumpfun-mcp',
-        description: 'Pump.fun meme token trading platform',
-        command: 'npx',
-        args: ['-y', 'pumpfun-mcp-server'],
+        description: 'Pump.fun meme token trading platform (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -356,7 +355,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'x-mcp',
         description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
         command: 'node',
-        args: ['/home/ubuntu/mcp-tools/x-mcp-server/build'],
+        args: ['/home/ubuntu/mcp-tools/x-mcp-server/build/index.js'],
         env: {
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
@@ -392,7 +391,17 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
         githubUrl: 'https://github.com/modelcontextprotocol/servers'
     },
-    
+    {
+        name: 'dexscreener-mcp',
+        description: 'DexScreener real-time DEX pair data, token information, and market statistics across multiple blockchains (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/dexscreener-mcp-server/build/index.js'],
+        env: {},
+        connected: false,
+        category: 'Market Data',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dexscreener.ico',
+        githubUrl: 'https://github.com/opensvm/dexscreener-mcp-server'
+    }
 
 ];
 
@@ -401,6 +410,28 @@ export const mcpNameMapping: Record<string, string> = {
     'github-mcp-server': 'github-mcp',
     'playwright-mcp-server': 'playwright',
     'cook-mcp-server': 'cook-mcp',
+    'dexscreener-mcp-server': 'dexscreener-mcp',
+    'mcp-coingecko-server': 'coingecko-mcp',
+    'pumpfun-mcp-server': 'pumpfun-mcp',
+    'uniswap-trader-mcp': 'uniswap-mcp',
+    'playwright-mcp-service': 'playwright',
+    'coingecko-server': 'coingecko-mcp',
+    'coingecko-mcp-service': 'coingecko-mcp',
+    'evm-mcp-server': 'evm-mcp',
+    'evm-mcp-service': 'evm-mcp',
+    'dune-mcp-server': 'dune-mcp',
+    'binance-mcp-server': 'binance-mcp',
+    'base-mcp-server': 'base-mcp',
+    'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
+    'defillama-mcp-service': 'mcp-server-defillama',
+    'rug-check-mcp-service': 'rug-check-mcp',
+    'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
+    'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
+    'whale-tracker-mcp-service': 'whale-tracker-mcp',
+    'discord-mcp-service': 'mcp-discord',
+    'telegram-mcp-service': 'mcp-telegram',
+    'notion-mcp-service': 'notion-mcp-server',
+    '12306-mcp-service': '12306-mcp'
 };
 
 /**
@@ -409,112 +440,10 @@ export const mcpNameMapping: Record<string, string> = {
  * @returns MCP服务配置
  */
 export function getPredefinedMCP(name: string): MCPService | undefined {
-    // 标准化MCP名称
-    const mcpNameMap: Record<string, string> = {
-        'playwright-mcp-service': 'playwright',
-        'coingecko-server': 'coingecko-mcp',
-        'coingecko-mcp-service': 'coingecko-mcp',
-        'x-mcp-server': 'x-mcp',
-        'github-mcp-server': 'github-mcp',
-        'evm-mcp-server': 'evm-mcp',
-        'evm-mcp-service': 'evm-mcp',
-        'dune-mcp-server': 'dune-mcp',
-        'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
-        'defillama-mcp-service': 'mcp-server-defillama',
-        'rug-check-mcp-service': 'rug-check-mcp',
-        'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
-        'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
-        'whale-tracker-mcp-service': 'whale-tracker-mcp',
-        'discord-mcp-service': 'mcp-discord',
-        'telegram-mcp-service': 'mcp-telegram',
-        'notion-mcp-service': 'notion-mcp-server',
-        '12306-mcp-service': '12306-mcp'
-    };
+    // 使用全局映射进行标准化
+    const normalizedName = mcpNameMapping[name] || name;
     
-    // 标准化名称
-    const normalizedName = mcpNameMap[name] || name;
-    
-    // 特殊处理 playwright
-    if (normalizedName === 'playwright' || name === 'playwright-mcp-service') {
-        // 记录更多调试信息
-        logger.info(`【MCP调试】获取Playwright MCP配置，请求名称: ${name}`);
-        
-        // 使用npx直接运行，这在Docker中应该更可靠
-        return {
-            name: 'playwright',
-            description: 'Playwright Tools for MCP (Direct npx).',
-            command: 'npx',
-            args: ['@playwright/mcp@latest'],
-            env: {},
-            connected: false,
-            category: '自动化工具',
-            imageUrl: 'https://playwright.dev/img/playwright-logo.svg',
-            githubUrl: 'https://github.com/microsoft/playwright'
-        };
-    }
-    
-    // 特殊处理 12306-mcp
-    if (normalizedName === '12306-mcp' || name === '12306-mcp-service') {
-        // 记录更多调试信息
-        logger.info(`【MCP调试】获取12306 MCP配置，请求名称: ${name}`);
-        
-        return {
-            name: '12306-mcp',
-            description: '12306 火车票查询和预订工具',
-            command: 'npx',
-            args: ['-y', '12306-mcp'],
-            env: {},
-            connected: false,
-            category: '交通工具',
-            imageUrl: 'https://www.12306.cn/index/images/logo.jpg',
-            githubUrl: 'https://github.com/12306-mcp'
-        };
-    }
-    
-    // 特殊处理 evm-mcp
-    if (normalizedName === 'evm-mcp' || name === 'evm-mcp-service' || name === 'evm-mcp-server') {
-        // 记录更多调试信息
-        logger.info(`【MCP调试】获取EVM MCP配置，请求名称: ${name}`);
-        
-        return {
-            name: 'evm-mcp',
-            description: 'Comprehensive EVM blockchain server supporting 30+ networks',
-            command: 'npx',
-            args: ['-y', '@mcpdotdirect/evm-mcp-server'],
-            env: {
-                WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || '',
-                RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
-            },
-            connected: false,
-            category: 'Chain PRC',
-            imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
-            githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
-        };
-    }
-    
-    // 尝试从mcpInfoService中获取MCP信息
-    const mcpInfo = mcpInfoService.getMCPById(normalizedName);
-    if (mcpInfo) {
-        logger.info(`【MCP调试】从mcpInfoService获取到MCP配置 [${normalizedName}]`);
-        
-        // 根据MCP信息构建MCP服务配置
-        const mcpService: MCPService = {
-            name: mcpInfo.name,
-            description: mcpInfo.description || `MCP Service: ${mcpInfo.name}`,
-            command: 'npx',
-            args: ['-y', mcpInfo.name],
-            env: {},
-            connected: false,
-            category: mcpInfo.category,
-            imageUrl: mcpInfo.imageUrl,
-            githubUrl: mcpInfo.githubUrl,
-            authParams: mcpInfo.authParams
-        };
-        
-        return mcpService;
-    }
-    
-    // 如果没有找到，则从预定义列表中查找
+    // 从预定义列表中查找
     return predefinedMCPs.find(mcp => mcp.name === normalizedName);
 }
 
