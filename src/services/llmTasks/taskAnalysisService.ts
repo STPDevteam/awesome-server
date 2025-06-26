@@ -1403,9 +1403,11 @@ Output format:
     },
     ...
   ],
-  "workflow_summary": "Workflow summary explaining what will be accomplished",
-  "detailed_reasoning": "Explain the workflow design and what limitations exist"
-}`),
+  "workflow_summary": "Workflow summary explaining to the user how the workflow will run",
+  "detailed_reasoning": "Detailed design thinking, explaining why the workflow is designed this way and the purpose of each step"
+}
+
+Please ensure the workflow logic is reasonable, with clear data flow between steps, and can effectively complete the user's requirements.`),
         new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
         new HumanMessage(taskContent)
       ]);
