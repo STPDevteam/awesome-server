@@ -458,6 +458,24 @@ export const mcpNameMapping: Record<string, string> = {
     'mcp-coingecko-server': 'coingecko-mcp',
     'pumpfun-mcp-server': 'pumpfun-mcp',
     'uniswap-trader-mcp': 'uniswap-mcp',
+    'playwright-mcp-service': 'playwright',
+    'coingecko-server': 'coingecko-mcp',
+    'coingecko-mcp-service': 'coingecko-mcp',
+    'evm-mcp-server': 'evm-mcp',
+    'evm-mcp-service': 'evm-mcp',
+    'dune-mcp-server': 'dune-mcp',
+    'binance-mcp-server': 'binance-mcp',
+    'base-mcp-server': 'base-mcp',
+    'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
+    'defillama-mcp-service': 'mcp-server-defillama',
+    'rug-check-mcp-service': 'rug-check-mcp',
+    'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
+    'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
+    'whale-tracker-mcp-service': 'whale-tracker-mcp',
+    'discord-mcp-service': 'mcp-discord',
+    'telegram-mcp-service': 'mcp-telegram',
+    'notion-mcp-service': 'notion-mcp-server',
+    '12306-mcp-service': '12306-mcp'
 };
 
 /**
@@ -466,36 +484,8 @@ export const mcpNameMapping: Record<string, string> = {
  * @returns MCP服务配置
  */
 export function getPredefinedMCP(name: string): MCPService | undefined {
-    // 标准化MCP名称
-    const mcpNameMap: Record<string, string> = {
-        'playwright-mcp-service': 'playwright',
-        'coingecko-server': 'coingecko-mcp',
-        'coingecko-mcp-service': 'coingecko-mcp',
-        'mcp-coingecko-server': 'coingecko-mcp',
-        'x-mcp-server': 'x-mcp',
-        'github-mcp-server': 'github-mcp',
-        'evm-mcp-server': 'evm-mcp',
-        'evm-mcp-service': 'evm-mcp',
-        'dune-mcp-server': 'dune-mcp',
-        'dexscreener-mcp-server': 'dexscreener-mcp',
-        'pumpfun-mcp-server': 'pumpfun-mcp',
-        'uniswap-trader-mcp': 'uniswap-mcp',
-        'binance-mcp-server': 'binance-mcp',
-        'base-mcp-server': 'base-mcp',
-        'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
-        'defillama-mcp-service': 'mcp-server-defillama',
-        'rug-check-mcp-service': 'rug-check-mcp',
-        'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
-        'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
-        'whale-tracker-mcp-service': 'whale-tracker-mcp',
-        'discord-mcp-service': 'mcp-discord',
-        'telegram-mcp-service': 'mcp-telegram',
-        'notion-mcp-service': 'notion-mcp-server',
-        '12306-mcp-service': '12306-mcp'
-    };
-    
-    // 标准化名称
-    const normalizedName = mcpNameMap[name] || name;
+    // 使用全局映射进行标准化
+    const normalizedName = mcpNameMapping[name] || name;
     
     // 特殊处理 playwright
     if (normalizedName === 'playwright' || name === 'playwright-mcp-service') {
