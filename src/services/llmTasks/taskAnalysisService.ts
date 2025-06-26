@@ -907,7 +907,7 @@ export class TaskAnalysisService {
           ...(mcp.category ? { category: mcp.category } : {}),
           ...(mcp.imageUrl ? { imageUrl: mcp.imageUrl } : {}),
           ...(mcp.githubUrl ? { githubUrl: mcp.githubUrl } : {}),
-          ...(mcp.authParams ? { authParams: mcp.authParams } : {})
+          ...(mcp.authParams ? { authParams: this.extractActualAuthParams(mcp.authParams) } : {})
         })),
         workflow: workflowResult.workflow
       };
@@ -922,8 +922,8 @@ export class TaskAnalysisService {
           description: mcp.description,
           authRequired: mcp.authRequired,
           authVerified: false,
-          // 只在需要认证时返回authParams
-          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
+          // 只在需要认证时返回实际的认证参数（不包含描述）
+          ...(mcp.authRequired && mcp.authParams ? { authParams: this.extractActualAuthParams(mcp.authParams) } : {})
         })),
         workflow: workflowResult.workflow
       };
@@ -1054,7 +1054,7 @@ export class TaskAnalysisService {
           category: mcp.category,
           imageUrl: mcp.imageUrl,
           githubUrl: mcp.githubUrl,
-          authParams: mcp.authParams
+          authParams: mcp.authParams ? this.extractActualAuthParams(mcp.authParams) : undefined
         })),
         workflow: workflowResult.workflow
       };
@@ -1729,6 +1729,34 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
    * @param availableMCPs 可用的MCP列表
    * @returns 预选的MCP列表
    */
+  /**
+   * 提取实际需要的认证参数，过滤掉描述性信息
+   * @param authParams 原始认证参数对象
+   * @returns 只包含实际参数名的对象
+   */
+  public extractActualAuthParams(authParams: any): any {
+    if (!authParams || typeof authParams !== 'object') {
+      return {};
+    }
+    
+    const actualParams: any = {};
+    
+    // 提取实际的参数名，过滤掉描述性字段
+    Object.keys(authParams).forEach(key => {
+      // 跳过包含Description的字段
+      if (!key.includes('Description') && !key.includes('description')) {
+        // 提取参数值（通常是环境变量名）
+        const paramValue = authParams[key];
+        if (typeof paramValue === 'string' && paramValue.length > 0) {
+          // 使用参数值作为键名，值设为空字符串等待用户填写
+          actualParams[paramValue] = '';
+        }
+      }
+    });
+    
+    return actualParams;
+  }
+
   private preselectMCPsByKeywords(taskContent: string, availableMCPs: MCPInfo[]): MCPInfo[] {
     const taskLower = taskContent.toLowerCase();
     const preselected: MCPInfo[] = [];
