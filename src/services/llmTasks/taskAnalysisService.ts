@@ -704,14 +704,18 @@ export class TaskAnalysisService {
         workflow: workflowResult.workflow
       };
       
-      // 为前端准备精简的mcpWorkflow数据
+      // 为前端准备完整的mcpWorkflow数据
       const optimizedWorkflow = {
         mcps: mcpResult.recommendedMCPs.map(mcp => ({
           name: mcp.name,
           description: mcp.description,
           authRequired: mcp.authRequired,
           authVerified: false,
-          // 只在需要认证时返回实际的认证参数（不包含描述）
+          // 包含完整的显示信息
+          category: mcp.category,
+          imageUrl: mcp.imageUrl,
+          githubUrl: mcp.githubUrl,
+          // 只在需要认证时返回实际的认证参数
           ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
         })),
         workflow: workflowResult.workflow
