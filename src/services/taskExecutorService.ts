@@ -1132,12 +1132,31 @@ Based on the above task execution information, please generate a complete execut
       // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
       stream({ event: 'status_update', data: { status: 'in_progress' } });
-      
+      logger.info(`json parse 之前的 该task的工作流: ${task.mcpWorkflow}`)
       // 获取任务的工作流
       const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
         ? JSON.parse(task.mcpWorkflow) 
         : task.mcpWorkflow;
-
+      logger.info(`json parse 之后的 该task的工作流: ${mcpWorkflow}`)
+      
+      // 添加详细的调试信息
+      logger.info(`🔍 [DEBUG] Workflow validation details:`)
+      logger.info(`   - mcpWorkflow exists: ${!!mcpWorkflow}`)
+      logger.info(`   - mcpWorkflow type: ${typeof mcpWorkflow}`)
+      logger.info(`   - mcpWorkflow.mcps exists: ${!!(mcpWorkflow && mcpWorkflow.mcps)}`)
+      logger.info(`   - mcpWorkflow.workflow exists: ${!!(mcpWorkflow && mcpWorkflow.workflow)}`)
+      if (mcpWorkflow) {
+        logger.info(`   - mcpWorkflow keys: ${Object.keys(mcpWorkflow)}`)
+        if (mcpWorkflow.mcps) {
+          logger.info(`   - mcps length: ${mcpWorkflow.mcps.length}`)
+        }
+        if (mcpWorkflow.workflow) {
+          logger.info(`   - workflow length: ${mcpWorkflow.workflow.length}`)
+          logger.info(`   - workflow content: ${JSON.stringify(mcpWorkflow.workflow, null, 2)}`)
+        }
+        logger.info(`   - Complete mcpWorkflow structure: ${JSON.stringify(mcpWorkflow, null, 2)}`)
+      }
+      
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
         

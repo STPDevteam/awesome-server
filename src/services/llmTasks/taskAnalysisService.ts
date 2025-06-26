@@ -1209,15 +1209,18 @@ Select ONLY the minimum tools needed. Respond in valid JSON:
 
 IMPORTANT: Always respond with VALID JSON format only, no additional text or explanations outside the JSON structure.
 
-For x-mcp tool specifically:
-- The "get_home_timeline" action CAN retrieve the user's own tweets from their timeline
-- This is the standard way to get a user's recent tweets including their own posts
-- The tool is capable of accessing the authenticated user's timeline which includes their own tweets
+**CRITICAL INSTRUCTION**: Be POSITIVE and CONSTRUCTIVE. Even if the task cannot be 100% fulfilled, focus on what CAN be accomplished with available tools.
+
+**APPROACH**: 
+- Instead of saying "cannot be fulfilled", say "can be partially fulfilled" or "can be fulfilled with available data"
+- Focus on what IS possible with the available tools
+- Be generous in interpreting what can be accomplished
+- Consider partial solutions and alternative approaches
 
 Please assess based on the user's task requirements and selected MCP tools:
-1. Whether the user's requirements can be fully met
-2. If they cannot be fully met, which parts can be implemented
-3. A specific list of deliverables
+1. What parts of the requirements CAN be met (be generous in interpretation)
+2. What valuable deliverables can be provided
+3. Focus on the POSITIVE outcomes possible
 
 Available MCP tools:
 ${JSON.stringify(recommendedMCPs, null, 2)}
@@ -1229,9 +1232,9 @@ MUST respond in exactly this JSON format (no extra text):
     "Specific deliverable 1",
     "Specific deliverable 2"
   ],
-  "limitations": "If there are limitations, explain here",
-  "conclusion": "Summary explanation",
-  "detailed_reasoning": "Detailed reasoning process"
+  "limitations": "If there are any limitations, explain here (but focus on what IS possible)",
+  "conclusion": "Positive summary of what will be accomplished",
+  "detailed_reasoning": "Detailed reasoning focusing on capabilities and positive outcomes"
 }`),
         new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
         new HumanMessage(taskContent)
@@ -1342,18 +1345,37 @@ MUST respond in exactly this JSON format (no extra text):
         };
       }
       
-      // If requirements cannot be met, return empty workflow
-      if (!canBeFulfilled || recommendedMCPs.length === 0) {
+      // 即使需求无法完全满足，也要尝试构建基本工作流
+      if (recommendedMCPs.length === 0) {
         return {
-          content: "Unable to build an effective workflow due to inability to meet requirements or lack of appropriate tool selection.",
-          reasoning: "Based on previous analysis, current requirements cannot be fully met through selected tools, or no appropriate tools were selected.",
+          content: "Unable to build an effective workflow due to lack of appropriate tool selection.",
+          reasoning: "No appropriate tools were selected for this task.",
           workflow: []
         };
       }
       
+      // 修改提示词，强调即使无法完全满足需求也要构建基本工作流
       const response = await this.llm.invoke([
         new SystemMessage(`You are a professional workflow designer who needs to design an execution process based on MCP tools.
-Please design a detailed workflow based on the user's task requirements, selected MCP tools, and determined deliverables.
+
+**IMPORTANT**: Even if the task requirements cannot be FULLY met, you should still create a basic workflow that accomplishes what IS possible with the available tools.
+
+**GENERAL PRINCIPLES**:
+- Always create a workflow unless there are absolutely no relevant tools
+- Focus on what CAN be accomplished rather than what cannot
+- Use natural language descriptions for actions, not specific tool names
+- Create workflows that maximize value with available capabilities
+- If full requirements cannot be met, create workflows for partial fulfillment
+
+**EXAMPLES**:
+- If task asks for "prediction" but tools only provide current data → create workflow to gather current data and trends
+- If task asks for "complex analysis" but tools provide basic data → create workflow to collect and present available data
+- If task asks for "automation" but tools are read-only → create workflow to gather information for manual processing
+
+Task requirements: ${taskContent}
+Requirements analysis: ${requirementsAnalysis}
+Can be fully fulfilled: ${canBeFulfilled}
+Available deliverables: ${deliverables.join(', ') || 'Limited functionality available'}
 
 Available MCP tools:
 ${JSON.stringify(recommendedMCPs.map(mcp => ({
@@ -1361,25 +1383,14 @@ ${JSON.stringify(recommendedMCPs.map(mcp => ({
   description: mcp.description
 })), null, 2)}
 
-Deliverables:
-${deliverables.join('\n')}
-
-**IMPORTANT RULES**:
+**CRITICAL RULES**:
 1. DO NOT include any authentication information (API keys, tokens, etc.) in the workflow input
-2. The workflow should specify which MCP to use and what goal to achieve
-3. DO NOT specify exact tool names - use descriptive objectives instead
-4. The system will automatically select the best available tool based on the objective
-5. Focus on WHAT to achieve, not HOW to achieve it
+2. Focus on WHAT to achieve using natural language descriptions, not specific tool names
+3. Even if requirements cannot be fully met, create a workflow for what CAN be done
+4. Use descriptive objectives that the system can understand and execute
+5. Design workflows that provide maximum value with available tools
 
-Please design an ordered step process, specifying for each step:
-1. Which MCP service to use
-2. What objective to achieve using natural language descriptions
-3. What the input parameters are (excluding auth info)
-
-For example:
-- Correct: {"step": 1, "mcp": "coinmarketcap-mcp-service", "action": "get current price and market data for Bitcoin", "input": {"symbol": "BTC"}}
-- Correct: {"step": 2, "mcp": "x-mcp", "action": "create a tweet about the price information", "input": {"content": "Bitcoin price update"}}
-- Wrong: {"step": 1, "mcp": "coinmarketcap-mcp-service", "action": "cryptoQuotesLatest", "input": {"symbol": "BTC"}}
+Design a workflow that accomplishes the maximum possible with available tools:
 
 Output format:
 {
@@ -1387,7 +1398,7 @@ Output format:
     {
       "step": 1,
       "mcp": "MCP service name",
-      "action": "Task objective description",
+      "action": "Task objective description in natural language",
       "input": {actual parameters only, no auth}
     },
     ...
@@ -1424,7 +1435,40 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
         logger.info(`[MCP Debug] Attempting to parse cleaned JSON: ${jsonText.substring(0, 500)}...`);
         const parsedResponse = JSON.parse(jsonText);
         
-        const workflow = parsedResponse.workflow || [];
+        let workflow = parsedResponse.workflow || [];
+        
+        // 如果工作流仍然为空，创建一个基本的默认工作流
+        if (workflow.length === 0 && recommendedMCPs.length > 0) {
+          logger.warn(`[MCP Debug] LLM returned empty workflow, creating default workflow`);
+          
+          // 根据MCP类型创建基本工作流
+          const primaryMcp = recommendedMCPs[0];
+          let defaultAction = "Execute task using available tools and capabilities";
+          let defaultInput: any = {};
+          
+          // 根据任务内容创建更具体的默认工作流
+          const taskLower = taskContent.toLowerCase();
+          if (taskLower.includes('price') || taskLower.includes('market') || taskLower.includes('币价')) {
+            defaultAction = "get current market data and pricing information";
+          } else if (taskLower.includes('analysis') || taskLower.includes('analyze') || taskLower.includes('分析')) {
+            defaultAction = "analyze available data and provide insights";
+          } else if (taskLower.includes('search') || taskLower.includes('find') || taskLower.includes('查找')) {
+            defaultAction = "search and retrieve relevant information";
+          } else if (taskLower.includes('get') || taskLower.includes('fetch') || taskLower.includes('获取')) {
+            defaultAction = "retrieve requested information and data";
+          } else {
+            defaultAction = "process task using available tools and provide results";
+          }
+          
+          workflow = [{
+            step: 1,
+            mcp: primaryMcp.name,
+            action: defaultAction,
+            input: defaultInput
+          }];
+          
+          logger.info(`[MCP Debug] Created default workflow: ${JSON.stringify(workflow, null, 2)}`);
+        }
         
         logger.info(`📋 Workflow step count: ${workflow.length}`);
         workflow.forEach((step: any, index: number) => {
@@ -1432,17 +1476,15 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
         });
         
         return {
-          content: parsedResponse.workflow_summary || "No workflow summary provided",
-          reasoning: parsedResponse.detailed_reasoning || "No detailed reasoning",
+          content: parsedResponse.workflow_summary || "Workflow created to accomplish available tasks",
+          reasoning: parsedResponse.detailed_reasoning || "Created workflow based on available tools and capabilities",
           workflow: workflow
         };
       } catch (parseError) {
         logger.error('Failed to parse MCP workflow construction result:', parseError);
         logger.error('Problematic JSON text:', jsonText);
         
-        // 解析失败，直接进入后备方案
-        // 最后的后备方案：从文本中提取信息
-        const workflowMatch = responseText.match(/["']workflow["']\s*:\s*(\[[\s\S]*?\])/s);
+        // 最后的后备方案：创建基本工作流
         let workflow: Array<{
           step: number;
           mcp: string;
@@ -1450,38 +1492,60 @@ Please ensure the workflow logic is reasonable, with clear data flow between ste
           input?: any;
         }> = [];
 
-        if (workflowMatch && workflowMatch[1]) {
-          try {
-            workflow = JSON.parse(workflowMatch[1]);
-            logger.info(`[MCP Debug] Successfully extracted workflow via regex.`);
-          } catch (e) {
-            logger.error(`[MCP Debug] Could not parse workflow extracted via regex: ${workflowMatch[1]}`);
-            workflow = [];
+        if (recommendedMCPs.length > 0) {
+          const primaryMcp = recommendedMCPs[0];
+          let fallbackAction = "Execute task using available tools and capabilities";
+          let fallbackInput: any = {};
+          
+          // 根据任务内容创建更合适的后备工作流
+          const taskLower = taskContent.toLowerCase();
+          if (taskLower.includes('price') || taskLower.includes('market') || taskLower.includes('币价')) {
+            fallbackAction = "get current market data and pricing information";
+          } else if (taskLower.includes('analysis') || taskLower.includes('analyze') || taskLower.includes('分析')) {
+            fallbackAction = "analyze available data and provide insights";
+          } else if (taskLower.includes('search') || taskLower.includes('find') || taskLower.includes('查找')) {
+            fallbackAction = "search and retrieve relevant information";
+          } else {
+            fallbackAction = "process task using available tools and provide results";
           }
-        }
-        
-        // 如果无法提取格式化的工作流，创建一个简单的默认工作流
-        if (workflow.length === 0 && recommendedMCPs.length > 0) {
+          
           workflow = [{
             step: 1,
-            mcp: recommendedMCPs[0].name,
-            action: "Execute task using available tools",
-            input: {}
+            mcp: primaryMcp.name,
+            action: fallbackAction,
+            input: fallbackInput
           }];
+          
+          logger.info(`[MCP Debug] Created fallback workflow due to parsing error: ${JSON.stringify(workflow, null, 2)}`);
         }
         
-        // 提取摘要和推理
-        const summaryMatch = responseText.match(/["']workflow_summary["']\s*:\s*["'](.+?)["']/s);
-        const reasoningMatch = responseText.match(/["']detailed_reasoning["']\s*:\s*["'](.+?)["']/s);
-        
         return {
-          content: summaryMatch ? summaryMatch[1].trim() : "Workflow created with fallback parsing",
-          reasoning: reasoningMatch ? reasoningMatch[1].trim() : "Used fallback workflow generation due to parsing issues",
+          content: "Workflow created with fallback parsing due to technical issues",
+          reasoning: "Used fallback workflow generation due to parsing issues, but created a basic workflow to accomplish available tasks",
           workflow
         };
       }
     } catch (error) {
       logger.error('Failed to build MCP workflow:', error);
+      
+      // 最终的错误处理：即使出错也要尝试创建基本工作流
+      if (recommendedMCPs.length > 0) {
+        const basicWorkflow = [{
+          step: 1,
+          mcp: recommendedMCPs[0].name,
+          action: "Execute task using available tools and capabilities",
+          input: {}
+        }];
+        
+        logger.info(`[MCP Debug] Created emergency fallback workflow: ${JSON.stringify(basicWorkflow, null, 2)}`);
+        
+        return {
+          content: "Emergency workflow created due to technical issues",
+          reasoning: "Created basic workflow as fallback due to system error",
+          workflow: basicWorkflow
+        };
+      }
+      
       throw error;
     }
   }

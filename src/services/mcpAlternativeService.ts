@@ -34,14 +34,32 @@ export class MCPAlternativeService {
   constructor() {
     // 使用predefinedMCPs中的数据，转换为MCPInfo格式
     this.availableMCPs = this.convertMCPServicesToMCPInfos(getAllPredefinedMCPs());
-    this.llm = new ChatOpenAI({
+    
+    // 配置LLM，根据环境决定是否使用代理
+    const llmConfig: any = {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.MCP_ALTERNATIVE_MODEL || 'gpt-4o',
       temperature: 0.3,
-      configuration: {
-        httpAgent: agent, // ✅ 使用代理关键设置
-      },
-    });
+      timeout: 10000,
+      maxRetries: 2
+    };
+    
+    // 仅在有代理且代理可用时使用代理
+    if (process.env.HTTPS_PROXY && process.env.HTTPS_PROXY !== '') {
+      try {
+        const proxyUrl = process.env.HTTPS_PROXY;
+        logger.info(`[MCP Alternative] Using proxy: ${proxyUrl}`);
+        llmConfig.configuration = {
+          httpAgent: agent
+        };
+      } catch (proxyError) {
+        logger.warn(`[MCP Alternative] Proxy configuration failed, using direct connection:`, proxyError);
+      }
+    } else {
+      logger.info(`[MCP Alternative] No proxy configured, using direct connection`);
+    }
+    
+    this.llm = new ChatOpenAI(llmConfig);
     
     logger.info(`MCPAlternativeService 已初始化，加载了 ${this.availableMCPs.length} 个可用MCP`);
   }
@@ -168,20 +186,45 @@ Please carefully analyze the user's task content and recommend up to 3 most suit
 2. Category relevance: Tools from the same or related categories should be prioritized
 3. Usability: Whether the tool is easy to use and stable
 
-Output format (must be valid JSON):
+CRITICAL: You MUST respond with ONLY a valid JSON object, no additional text, no markdown formatting, no code blocks.
+
+Output format (exactly this structure):
 {
   "alternatives": ["Tool1Name", "Tool2Name", "Tool3Name"],
   "explanation": "Detailed explanation of why these tools are recommended and how they meet the user's task requirements"
 }
 
-Important: Make sure the returned tool names exactly match the name field in the available tools list.`),
+Important: 
+- Make sure the returned tool names exactly match the name field in the available tools list
+- Do NOT use markdown code blocks or any other formatting
+- Return ONLY the JSON object`),
         new HumanMessage(`User task: ${taskContent}`)
       ]);
       
       // 解析返回的JSON
       const responseText = response.content.toString();
       try {
-        const parsedResponse = JSON.parse(responseText);
+        // 清理可能的Markdown格式
+        let cleanedText = responseText.trim();
+        
+        // 移除可能的Markdown代码块标记
+        cleanedText = cleanedText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .replace(/^```/g, '')
+          .replace(/```$/g, '');
+        
+        // 如果不是以{开头，尝试提取JSON部分
+        if (!cleanedText.startsWith('{')) {
+          const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            cleanedText = jsonMatch[0];
+          }
+        }
+        
+        logger.info(`[MCP Alternative] Cleaned response text: ${cleanedText.substring(0, 200)}...`);
+        
+        const parsedResponse = JSON.parse(cleanedText);
         const alternativeNames: string[] = parsedResponse.alternatives || [];
         
         // 获取这些替代项的详细信息
@@ -202,21 +245,59 @@ Important: Make sure the returned tool names exactly match the name field in the
         return alternatives;
       } catch (parseError) {
         logger.error('解析LLM推荐的替代MCP失败:', parseError);
+        logger.error('原始响应文本:', responseText);
         
-        // 尝试从文本中提取工具名称
-        const alternativeMatch = responseText.match(/["']alternatives["']\s*:\s*\[(.*?)\]/s);
-        if (alternativeMatch) {
-          const alternativeNames = alternativeMatch[1]
-            .split(',')
-            .map(name => name.trim().replace(/^["']|["']$/g, ''))
-            .filter(name => name.length > 0);
-          
-          return availableMCPs.filter(mcp => 
-            alternativeNames.includes(mcp.name)
-          );
+        // 尝试从文本中提取工具名称 - 更宽松的匹配
+        const extractedNames: string[] = [];
+        
+        // 尝试多种模式匹配
+        const patterns = [
+          /["']alternatives["']\s*:\s*\[(.*?)\]/s,
+          /alternatives["\']?\s*:\s*\[(.*?)\]/s,
+          /\[(.*?)\]/s // 最宽松的匹配，任何数组
+        ];
+        
+        for (const pattern of patterns) {
+          const match = responseText.match(pattern);
+          if (match && match[1]) {
+            const namesText = match[1];
+            // 提取引号内的文本
+            const nameMatches = namesText.match(/["']([^"']+)["']/g);
+            if (nameMatches) {
+              nameMatches.forEach(nameMatch => {
+                const name = nameMatch.replace(/["']/g, '');
+                if (availableMCPs.some(mcp => mcp.name === name)) {
+                  extractedNames.push(name);
+                }
+              });
+            }
+            
+            if (extractedNames.length > 0) {
+              logger.info(`[MCP Alternative] Successfully extracted names via pattern: ${extractedNames.join(', ')}`);
+              break;
+            }
+          }
         }
         
-        // 如果无法提取，随机返回1-3个其他工具
+        if (extractedNames.length > 0) {
+          return availableMCPs.filter(mcp => extractedNames.includes(mcp.name));
+        }
+        
+        // 如果无法提取，使用基于类别的智能推荐
+        logger.info(`[MCP Alternative] Using category-based fallback for ${mcpName}`);
+        const mcpToReplace = availableMCPs.find(mcp => mcp.name === mcpName);
+        if (mcpToReplace && mcpToReplace.category) {
+          const sameCategoryMCPs = availableMCPs.filter(mcp => 
+            mcp.category === mcpToReplace.category && mcp.name !== mcpName
+          );
+          
+          if (sameCategoryMCPs.length > 0) {
+            logger.info(`[MCP Alternative] Found ${sameCategoryMCPs.length} alternatives in same category: ${mcpToReplace.category}`);
+            return sameCategoryMCPs.slice(0, 3);
+          }
+        }
+        
+        // 最后的备选：返回一些通用工具
         return availableMCPs
           .filter(mcp => mcp.name !== mcpName)
           .sort(() => Math.random() - 0.5)
