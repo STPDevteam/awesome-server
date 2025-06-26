@@ -34,9 +34,9 @@ export const predefinedMCPs: MCPService[] = [
     // Chain RPC 服务
     {
         name: 'base-mcp',
-        description: 'Base Chain RPC integration for blockchain operations',
-        command: 'npx',
-        args: ['-y', 'base-mcp'],
+        description: 'Base Chain RPC integration for blockchain operations (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/base-mcp/build/index.js'],
         env: {},
         connected: false,
         category: 'Chain PRC',
@@ -60,9 +60,9 @@ export const predefinedMCPs: MCPService[] = [
 
     {
         name: 'coingecko-mcp',
-        description: 'CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data',
-        command: 'npx',
-        args: ['-y', '@coingecko/coingecko-mcp'],
+        description: 'CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js'],
         env: {
             COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || ''
         },
@@ -286,9 +286,9 @@ export const predefinedMCPs: MCPService[] = [
     // Trading 服务
     {
         name: 'binance-mcp',
-        description: 'Binance cryptocurrency exchange trading',
-        command: 'npx',
-        args: ['-y', 'binance-mcp'],
+        description: 'Binance cryptocurrency exchange trading (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/binance-mcp/build/index.js'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -297,9 +297,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'uniswap-mcp',
-        description: 'Uniswap DEX trading and liquidity management',
-        command: 'npx',
-        args: ['-y', 'uniswap-trader-mcp'],
+        description: 'Uniswap DEX trading and liquidity management (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -319,9 +319,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'pumpfun-mcp',
-        description: 'Pump.fun meme token trading platform',
-        command: 'npx',
-        args: ['-y', 'pumpfun-mcp-server'],
+        description: 'Pump.fun meme token trading platform (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -356,7 +356,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'x-mcp',
         description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
         command: 'node',
-        args: ['/home/ubuntu/mcp-tools/x-mcp-server/build'],
+        args: ['/home/ubuntu/mcp-tools/x-mcp-server/build/index.js'],
         env: {
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
@@ -435,6 +435,17 @@ export const predefinedMCPs: MCPService[] = [
         category: 'Database Tools',
         imageUrl: 'https://www.postgresql.org/favicon.ico',
         githubUrl: 'https://github.com/modelcontextprotocol/servers'
+    },
+    {
+        name: 'dexscreener-mcp',
+        description: 'DexScreener real-time DEX pair data, token information, and market statistics across multiple blockchains (LOCAL BUILD)',
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/dexscreener-mcp-server/build/index.js'],
+        env: {},
+        connected: false,
+        category: 'Market Data',
+        imageUrl: 'https://dexscreener.com/favicon.ico',
+        githubUrl: 'https://github.com/opensvm/dexscreener-mcp-server'
     }
 ];
 
@@ -443,6 +454,10 @@ export const mcpNameMapping: Record<string, string> = {
     'github-mcp-server': 'github-mcp',
     'playwright-mcp-server': 'playwright',
     'cook-mcp-server': 'cook-mcp',
+    'dexscreener-mcp-server': 'dexscreener-mcp',
+    'mcp-coingecko-server': 'coingecko-mcp',
+    'pumpfun-mcp-server': 'pumpfun-mcp',
+    'uniswap-trader-mcp': 'uniswap-mcp',
 };
 
 /**
@@ -456,11 +471,17 @@ export function getPredefinedMCP(name: string): MCPService | undefined {
         'playwright-mcp-service': 'playwright',
         'coingecko-server': 'coingecko-mcp',
         'coingecko-mcp-service': 'coingecko-mcp',
+        'mcp-coingecko-server': 'coingecko-mcp',
         'x-mcp-server': 'x-mcp',
         'github-mcp-server': 'github-mcp',
         'evm-mcp-server': 'evm-mcp',
         'evm-mcp-service': 'evm-mcp',
         'dune-mcp-server': 'dune-mcp',
+        'dexscreener-mcp-server': 'dexscreener-mcp',
+        'pumpfun-mcp-server': 'pumpfun-mcp',
+        'uniswap-trader-mcp': 'uniswap-mcp',
+        'binance-mcp-server': 'binance-mcp',
+        'base-mcp-server': 'base-mcp',
         'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
         'defillama-mcp-service': 'mcp-server-defillama',
         'rug-check-mcp-service': 'rug-check-mcp',
