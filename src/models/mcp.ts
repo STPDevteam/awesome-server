@@ -4,7 +4,6 @@
 export interface MCPInfo {
   name: string;
   description: string;
-  capabilities: string[];
   authRequired: boolean;
   authFields?: string[];
   category?: string;

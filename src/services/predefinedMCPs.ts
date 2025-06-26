@@ -76,7 +76,7 @@ export const predefinedMCPs: MCPService[] = [
         command: 'npx',
         args: ['@shinzolabs/coinmarketcap-mcp'],
         env: {
-            COINMARKETCAP_API_KEY: process.env.CMC_API_KEY || '',
+            COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY || '',
             SUBSCRIPTION_LEVEL: "Basic",
             PORT: "3002"
         },
