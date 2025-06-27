@@ -398,7 +398,7 @@ export const predefinedMCPs: MCPService[] = [
         command: 'node',
         args: ['/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js'],
         env: {
-            PUMPFUN_API_KEY: process.env.PUMPFUN_API_KEY || ''
+            HELIUS_RPC_URL: process.env.HELIUS_RPC_URL || ''
         },
         connected: false,
         category: 'Trading',
@@ -406,7 +406,7 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server',
         authRequired: true,
         authParams: {
-            PUMPFUN_API_KEY: "PUMPFUN_API_KEY"
+            HELIUS_RPC_URL: "HELIUS_RPC_URL"
         }
     },
 
