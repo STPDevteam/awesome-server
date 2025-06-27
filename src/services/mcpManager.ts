@@ -28,6 +28,7 @@ export interface MCPService {
   category?: string;
   imageUrl?: string;
   githubUrl?: string;
+  authRequired?: boolean;
   authParams?: Record<string, any>;
 }
 
