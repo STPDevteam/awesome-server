@@ -143,7 +143,7 @@ If the user asks about performing specific tasks, you can suggest creating a tas
   
   /**
    * Create new conversation with first message and auto-generate title
-   * 创建会话并处理第一条消息，自动生成标题
+   * 创建会话并基于第一条消息生成标题，但不存储消息（由前端后续调用发送消息接口处理）
    */
   async createConversationWithFirstMessage(
     userId: string, 
@@ -151,13 +151,10 @@ If the user asks about performing specific tasks, you can suggest creating a tas
     title?: string
   ): Promise<{
     conversation: Conversation;
-    userMessage: Message;
-    assistantResponse: Message;
-    intent: MessageIntent;
-    taskId?: string;
+    generatedTitle: string;
   }> {
     try {
-      logger.info(`Creating conversation with first message [User ID: ${userId}]`);
+      logger.info(`Creating conversation with first message for title generation [User ID: ${userId}]`);
       
       // 1. 生成标题（如果没有提供）
       let conversationTitle = title;
@@ -174,29 +171,18 @@ If the user asks about performing specific tasks, you can suggest creating a tas
         }
       }
       
-      // 2. 创建会话
+      // 2. 创建会话（不处理消息）
       const conversation = await conversationDao.createConversation({
         userId,
         title: conversationTitle
       });
       
       logger.info(`Conversation created with ID: ${conversation.id}, Title: ${conversationTitle}`);
-      
-      // 3. 处理第一条消息
-      const messageResult = await this.processUserMessage(conversation.id, userId, firstMessage);
-      
-      logger.info(`First message processed successfully [Intent: ${messageResult.intent}]`);
-      
-      // 4. 验证消息是否正确存储
-      const storedMessages = await messageDao.getConversationMessages(conversation.id);
-      logger.info(`Messages stored in conversation: ${storedMessages.length} messages`);
+      logger.info('First message will be processed by subsequent message sending request');
       
       return {
         conversation,
-        userMessage: messageResult.message,
-        assistantResponse: messageResult.response,
-        intent: messageResult.intent,
-        taskId: messageResult.taskId
+        generatedTitle: conversationTitle
       };
     } catch (error) {
       logger.error('Error creating conversation with first message:', error);
@@ -206,7 +192,7 @@ If the user asks about performing specific tasks, you can suggest creating a tas
   
   /**
    * Create new conversation with first message (streaming version)
-   * 创建会话并处理第一条消息的流式版本
+   * 创建会话并基于第一条消息生成标题的流式版本，但不存储消息
    */
   async createConversationWithFirstMessageStream(
     userId: string,
@@ -215,14 +201,10 @@ If the user asks about performing specific tasks, you can suggest creating a tas
     streamCallback: (chunk: any) => void
   ): Promise<{
     conversationId: string;
-    userMessageId: string;
-    assistantResponseId: string;
-    intent: MessageIntent;
-    taskId?: string;
     generatedTitle: string;
   }> {
     try {
-      logger.info(`Creating streaming conversation with first message [User ID: ${userId}]`);
+      logger.info(`Creating streaming conversation with first message for title generation [User ID: ${userId}]`);
       
       // 发送开始事件
       streamCallback({
@@ -238,12 +220,22 @@ If the user asks about performing specific tasks, you can suggest creating a tas
           data: { message: 'Generating conversation title...' }
         });
         
-        conversationTitle = await titleGeneratorService.generateTitle(firstMessage);
-        
-        streamCallback({
-          event: 'title_generated',
-          data: { title: conversationTitle }
-        });
+        try {
+          conversationTitle = await titleGeneratorService.generateTitle(firstMessage);
+          
+          streamCallback({
+            event: 'title_generated',
+            data: { title: conversationTitle }
+          });
+        } catch (error) {
+          logger.warn('Title generation failed in stream, using fallback title:', error);
+          conversationTitle = firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
+          
+          streamCallback({
+            event: 'title_generated',
+            data: { title: conversationTitle, fallback: true }
+          });
+        }
       }
       
       // 2. 创建会话
@@ -262,33 +254,15 @@ If the user asks about performing specific tasks, you can suggest creating a tas
         data: { 
           conversationId: conversation.id,
           title: conversationTitle,
-          message: 'Conversation created successfully'
+          message: 'Conversation created successfully. First message will be processed by subsequent message request.'
         }
       });
       
       logger.info(`Streaming conversation created with ID: ${conversation.id}, Title: ${conversationTitle}`);
-      
-      // 3. 流式处理第一条消息
-      streamCallback({
-        event: 'first_message_processing_start',
-        data: { message: 'Processing first message...' }
-      });
-      
-      const messageResult = await this.processUserMessageStream(
-        conversation.id, 
-        userId, 
-        firstMessage,
-        streamCallback
-      );
-      
-      logger.info(`First message processed successfully in stream [Intent: ${messageResult.intent}]`);
+      logger.info('First message will be processed by subsequent message sending request');
       
       return {
         conversationId: conversation.id,
-        userMessageId: messageResult.messageId,
-        assistantResponseId: messageResult.responseId,
-        intent: messageResult.intent,
-        taskId: messageResult.taskId,
         generatedTitle: conversationTitle
       };
     } catch (error) {

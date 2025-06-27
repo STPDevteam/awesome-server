@@ -2536,7 +2536,7 @@ data: [DONE]
 }
 ```
 
-2. **创建对话并处理第一条消息**:
+2. **创建对话并生成标题（提供firstMessage）**:
 ```json
 {
   "success": true,
@@ -2545,45 +2545,24 @@ data: [DONE]
       "id": "conv_123456",
       "userId": "user_123",
       "title": "获取比特币价格信息",
-      "lastMessageContent": "AI助手的回复内容",
-      "lastMessageAt": "2023-06-20T08:00:00.000Z",
-      "taskCount": 1,
-      "messageCount": 2,
+      "taskCount": 0,
+      "messageCount": 0,
       "createdAt": "2023-06-20T08:00:00.000Z",
       "updatedAt": "2023-06-20T08:00:00.000Z"
     },
-    "userMessage": {
-      "id": "msg_123456",
-      "conversationId": "conv_123456",
-      "content": "帮我获取比特币的当前价格",
-      "type": "user",
-      "intent": "task",
-      "taskId": "task_123456",
-      "createdAt": "2023-06-20T08:00:00.000Z"
-    },
-    "assistantResponse": {
-      "id": "msg_123457",
-      "conversationId": "conv_123456",
-      "content": "我已经为你创建了获取比特币价格的任务...",
-      "type": "assistant",
-      "intent": "task",
-      "taskId": "task_123456",
-      "createdAt": "2023-06-20T08:00:00.000Z"
-    },
-    "intent": "task",
-    "taskId": "task_123456"
+    "generatedTitle": "获取比特币价格信息",
+    "message": "Conversation created successfully. Please send the first message using the message endpoint."
   }
 }
 ```
 
 **特性说明**:
-- 如果提供`firstMessage`，系统会自动分析消息意图（聊天或任务）
+- 如果提供`firstMessage`，系统会基于消息内容自动生成标题，但不存储消息
 - 如果未提供`title`且提供了`firstMessage`，会使用AI自动生成标题（支持非流式版本）
 - 标题生成降级策略：如果AI生成失败，会使用消息内容的前30个字符作为标题
-- 支持任务创建：如果首条消息被识别为任务意图，会自动创建并分析任务
-- 消息存储：第一条消息和AI回复都会正确存储到数据库
-- 返回格式与ChatGPT等应用一致，方便前端适配
+- 消息处理分离：创建会话后，前端需要单独调用发送消息接口来处理第一条消息，避免消息重复
 - 向后兼容：仍然支持传统的仅创建对话方式（不提供firstMessage）
+- 优化体验：减少冗余操作，前端可以先创建会话获得标题，再发送消息进行处理
 
 **错误响应**:
 - `400 Bad Request`: 参数错误
@@ -2596,7 +2575,7 @@ data: [DONE]
 
 **端点**: `POST /api/conversation/stream`
 
-**描述**: 创建新对话的流式版本，实时返回标题生成、对话创建和消息处理进度。
+**描述**: 创建新对话的流式版本，实时返回标题生成和对话创建进度。不处理消息内容，仅用于生成标题。
 
 **认证**: 可选（可使用userId参数或访问令牌）
 
@@ -2609,7 +2588,7 @@ data: [DONE]
 }
 ```
 
-**注意**: 流式版本必须提供`firstMessage`参数。
+**注意**: 流式版本必须提供`firstMessage`参数用于生成标题。
 
 **流式响应事件**:
 
@@ -2666,56 +2645,19 @@ data: [DONE]
 }
 ```
 
-6. **第一条消息处理开始**:
+6. **创建完成**:
 ```json
 {
-  "event": "first_message_processing_start",
-  "data": {
-    "message": "Processing first message..."
-  }
-}
-```
-
-7. **消息意图识别**:
-```json
-{
-  "event": "intent_identified",
-  "data": {
-    "intent": "task",
-    "confidence": 0.95,
-    "explanation": "User is requesting a specific task to get Bitcoin price data"
-  }
-}
-```
-
-8. **任务创建（如果是任务意图）**:
-```json
-{
-  "event": "task_created",
-  "data": {
-    "taskId": "task_123456",
-    "title": "获取比特币价格数据",
-    "content": "帮我获取比特币的当前价格并分析趋势"
-  }
-}
-```
-
-9. **最终完成**:
-```json
-{
-  "event": "conversation_created",
+  "event": "conversation_creation_complete",
   "data": {
     "conversationId": "conv_123456",
-    "userMessageId": "msg_123456",
-    "assistantResponseId": "msg_123457",
-    "intent": "task",
-    "taskId": "task_123456",
-    "title": "获取比特币价格并分析趋势"
+    "title": "获取比特币价格并分析趋势",
+    "message": "Conversation created successfully. Please send the first message using the message endpoint."
   }
 }
 ```
 
-10. **流结束标记**:
+7. **流结束标记**:
 ```
 data: [DONE]
 ```
@@ -2723,8 +2665,8 @@ data: [DONE]
 **使用场景**:
 - 实时显示对话创建进度
 - 展示AI标题生成过程
-- 实时反馈消息处理状态
 - 适合需要良好用户体验的前端应用
+- 创建完成后，前端需要单独调用发送消息接口处理实际的消息内容
 
 ---
 
