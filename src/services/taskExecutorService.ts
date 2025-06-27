@@ -14,6 +14,11 @@ import { MCPInfo } from '../models/mcp.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { mcpNameMapping } from './predefinedMCPs.js';
 
+// 添加LangChain链式调用支持
+import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
+import { StructuredTool } from '@langchain/core/tools';
+import { z } from 'zod';
+
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
 // 获取taskService实例
@@ -853,6 +858,214 @@ Based on the above task execution information, please generate a complete execut
   }
 
   /**
+   * 构建LangChain链式工作流
+   * @param workflow 工作流配置
+   * @param taskId 任务ID
+   * @param stream 流式输出回调
+   * @returns LangChain的RunnableSequence
+   */
+  private async buildLangChainWorkflowChain(
+    workflow: Array<{ step: number; mcp: string; action: string; input?: any }>,
+    taskId: string,
+    stream: (data: any) => void
+  ): Promise<RunnableSequence> {
+    logger.info(`🔗 Building LangChain workflow chain with ${workflow.length} steps`);
+
+    // 创建工作流步骤的Runnable数组
+    const runnables = workflow.map((step) => {
+      return RunnablePassthrough.assign({
+        [`step${step.step}`]: async (previousResults: any) => {
+          const stepNumber = step.step;
+          const mcpName = step.mcp;
+          const actionName = step.action;
+          
+          // 处理输入：优先使用上一步的结果，如果没有则使用配置的输入
+          let input = step.input;
+          
+          // 如果是第一步之后的步骤，尝试使用前一步的结果
+          if (stepNumber > 1 && previousResults[`step${stepNumber - 1}`]) {
+            const prevResult = previousResults[`step${stepNumber - 1}`];
+            // 智能提取前一步结果中的有用数据
+            input = this.extractUsefulDataFromResult(prevResult, actionName);
+          }
+          
+          // 确保输入格式正确
+          input = this.processStepInput(input || {});
+          
+          logger.info(`📍 LangChain Step ${stepNumber}: ${mcpName} - ${actionName}`);
+          logger.info(`📥 Step input: ${JSON.stringify(input, null, 2)}`);
+          
+          // 发送步骤开始信息
+          stream({ 
+            event: 'step_start', 
+            data: { 
+              step: stepNumber,
+              mcpName,
+              actionName,
+              input: typeof input === 'object' ? JSON.stringify(input) : input
+            } 
+          });
+          
+          try {
+            // 标准化MCP名称
+            const actualMcpName = this.normalizeMCPName(mcpName);
+            
+            // 调用MCP工具
+            const stepResult = await this.callMCPTool(actualMcpName, actionName, input, taskId);
+            
+            // 验证结果
+            this.validateStepResult(actualMcpName, actionName, stepResult);
+            
+            // 处理结果
+            const processedResult = this.processToolResult(stepResult);
+            
+            // 保存步骤结果
+            await taskExecutorDao.saveStepResult(taskId, stepNumber, true, processedResult);
+            
+            // 发送步骤完成信息
+            stream({ 
+              event: 'step_complete', 
+              data: { 
+                step: stepNumber,
+                success: true,
+                result: processedResult
+              } 
+            });
+            
+            return {
+              step: stepNumber,
+              success: true,
+              result: processedResult,
+              parsedData: this.parseResultData(processedResult) // 解析结构化数据供下一步使用
+            };
+          } catch (error) {
+            logger.error(`❌ LangChain Step ${stepNumber} failed:`, error);
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            
+            // 保存错误结果
+            await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
+            
+            // 发送步骤错误信息
+            stream({ 
+              event: 'step_error', 
+              data: { 
+                step: stepNumber,
+                error: errorMsg
+              } 
+            });
+            
+            return {
+              step: stepNumber,
+              success: false,
+              error: errorMsg
+            };
+          }
+        }
+      });
+    });
+
+    // 使用pipe方法创建链式调用
+    if (runnables.length === 0) {
+      throw new Error('Workflow must have at least one step');
+    }
+    
+    // 使用reduce创建链式调用
+    const chain = runnables.reduce((prev, current, index) => {
+      if (index === 0) {
+        return current;
+      }
+      return prev.pipe(current);
+    }, runnables[0] as any);
+    
+    return chain as RunnableSequence;
+  }
+
+  /**
+   * 从前一步结果中智能提取有用数据
+   * @param prevResult 前一步的结果
+   * @param nextAction 下一步的动作
+   * @returns 提取的输入数据
+   */
+  private extractUsefulDataFromResult(prevResult: any, nextAction: string): any {
+    try {
+      if (!prevResult || !prevResult.result) {
+        return {};
+      }
+
+      const resultData = prevResult.parsedData || {};
+      const actionLower = nextAction.toLowerCase();
+
+      // 根据下一步的动作类型，智能提取相关数据
+      if (actionLower.includes('price') || actionLower.includes('market')) {
+        // 提取价格相关数据
+        return {
+          symbol: resultData.symbol || 'BTC',
+          price: resultData.price,
+          marketCap: resultData.marketCap,
+          ...resultData
+        };
+      } else if (actionLower.includes('analysis') || actionLower.includes('analyze')) {
+        // 提取分析所需数据
+        return {
+          data: resultData,
+          previousResult: prevResult.result
+        };
+      } else if (actionLower.includes('tweet') || actionLower.includes('post')) {
+        // 提取社交媒体发布所需数据
+        return {
+          content: this.generatePostContent(resultData),
+          data: resultData
+        };
+      }
+
+      // 默认返回所有解析的数据
+      return resultData;
+    } catch (error) {
+      logger.warn(`Failed to extract data from previous result: ${error}`);
+      return {};
+    }
+  }
+
+  /**
+   * 解析结果数据为结构化格式
+   * @param result 原始结果
+   * @returns 解析后的结构化数据
+   */
+  private parseResultData(result: any): any {
+    try {
+      if (typeof result === 'string') {
+        // 尝试解析JSON
+        const parsed = JSON.parse(result);
+        
+        // 提取关键数据
+        if (parsed.data) {
+          return parsed.data;
+        } else if (parsed.summary) {
+          return parsed.summary;
+        } else {
+          return parsed;
+        }
+      }
+      return result;
+    } catch (error) {
+      // 如果不是JSON，返回原始数据
+      return { rawData: result };
+    }
+  }
+
+  /**
+   * 生成社交媒体发布内容
+   * @param data 数据
+   * @returns 发布内容
+   */
+  private generatePostContent(data: any): string {
+    if (data.symbol && data.price) {
+      return `${data.symbol} current price: $${data.price}${data.percent_change_24h ? ` (${data.percent_change_24h > 0 ? '+' : ''}${data.percent_change_24h}%)` : ''}`;
+    }
+    return JSON.stringify(data, null, 2);
+  }
+
+  /**
    * 流式执行任务工作流
    * @param taskId 任务ID
    * @param stream 响应流，用于实时发送执行结果
@@ -860,7 +1073,7 @@ Based on the above task execution information, please generate a complete execut
    */
   async executeTaskStream(taskId: string, stream: (data: any) => void): Promise<boolean> {
     try {
-      logger.info(`🚀 Starting streaming task execution [Task ID: ${taskId}]`);
+      logger.info(`🚀 Starting streaming task execution with LangChain [Task ID: ${taskId}]`);
       
       // 发送执行开始信息
       stream({ 
@@ -879,30 +1092,13 @@ Based on the above task execution information, please generate a complete execut
       // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
       stream({ event: 'status_update', data: { status: 'in_progress' } });
-      logger.info(`json parse 之前的 该task的工作流: ${task.mcpWorkflow}`)
+      
       // 获取任务的工作流
       const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
         ? JSON.parse(task.mcpWorkflow) 
         : task.mcpWorkflow;
-      logger.info(`json parse 之后的 该task的工作流: ${mcpWorkflow}`)
       
-      // 添加详细的调试信息
-      logger.info(`🔍 [DEBUG] Workflow validation details:`)
-      logger.info(`   - mcpWorkflow exists: ${!!mcpWorkflow}`)
-      logger.info(`   - mcpWorkflow type: ${typeof mcpWorkflow}`)
-      logger.info(`   - mcpWorkflow.mcps exists: ${!!(mcpWorkflow && mcpWorkflow.mcps)}`)
-      logger.info(`   - mcpWorkflow.workflow exists: ${!!(mcpWorkflow && mcpWorkflow.workflow)}`)
-      if (mcpWorkflow) {
-        logger.info(`   - mcpWorkflow keys: ${Object.keys(mcpWorkflow)}`)
-        if (mcpWorkflow.mcps) {
-          logger.info(`   - mcps length: ${mcpWorkflow.mcps.length}`)
-        }
-        if (mcpWorkflow.workflow) {
-          logger.info(`   - workflow length: ${mcpWorkflow.workflow.length}`)
-          logger.info(`   - workflow content: ${JSON.stringify(mcpWorkflow.workflow, null, 2)}`)
-        }
-        logger.info(`   - Complete mcpWorkflow structure: ${JSON.stringify(mcpWorkflow, null, 2)}`)
-      }
+      logger.info(`📋 Workflow structure: ${JSON.stringify(mcpWorkflow, null, 2)}`);
       
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
@@ -922,9 +1118,6 @@ Based on the above task execution information, please generate a complete execut
         return false;
       }
       
-      // 初始化工作流结果
-      const workflowResults: any[] = [];
-      
       // 检查 mcpManager 是否已初始化
       if (!this.mcpManager) {
         logger.error(`❌ mcpManager not initialized, cannot execute task [Task ID: ${taskId}]`);
@@ -943,145 +1136,96 @@ Based on the above task execution information, please generate a complete execut
         return false;
       }
       
-      // 分步执行工作流
-      let finalResult = null;
-      for (const step of mcpWorkflow.workflow) {
-        const stepNumber = step.step;
-        const mcpName = step.mcp;
-        const actionName = step.action;
-        let input = step.input || task.content;
+      try {
+        // 使用LangChain构建链式工作流
+        logger.info(`🔗 Building LangChain workflow chain for ${mcpWorkflow.workflow.length} steps`);
+        const workflowChain = await this.buildLangChainWorkflowChain(
+          mcpWorkflow.workflow,
+          taskId,
+          stream
+        );
         
-        // 通用输入处理
-        input = this.processStepInput(input);
-        
-        // 发送步骤开始信息
-        stream({ 
-          event: 'step_start', 
-          data: { 
-            step: stepNumber,
-            mcpName,
-            actionName,
-            input: typeof input === 'object' ? JSON.stringify(input) : input
-          } 
+        // 执行链式调用，初始输入包含任务内容
+        logger.info(`▶️ Executing LangChain workflow chain`);
+        const chainResult = await workflowChain.invoke({
+          taskContent: task.content,
+          taskId: taskId
         });
         
-        try {
-          logger.info(`Executing workflow step ${stepNumber}: ${mcpName} - ${actionName}`);
-          
-          // 标准化MCP名称
-          const actualMcpName = this.normalizeMCPName(mcpName);
-          if (actualMcpName !== mcpName) {
-            logger.info(`Streaming execution MCP name mapping: '${mcpName}' mapped to '${actualMcpName}'`);
-          }
-          
-          // 检查MCP是否已连接
-          const connectedMCPs = this.mcpManager.getConnectedMCPs();
-          const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
-          
-          // 如果未连接，尝试自动连接
-          if (!isConnected) {
-            logger.info(`Streaming execution: MCP ${actualMcpName} not connected, will auto-connect during tool call...`);
+        // 收集所有步骤的结果
+        const workflowResults: any[] = [];
+        let finalResult = null;
+        
+        // 从chainResult中提取步骤结果
+        for (let i = 1; i <= mcpWorkflow.workflow.length; i++) {
+          const stepResult = chainResult[`step${i}`];
+          if (stepResult) {
+            workflowResults.push(stepResult);
             
-            // 发送MCP准备连接消息
-            stream({ 
-              event: 'mcp_connecting', 
-              data: { 
-                mcpName: actualMcpName,
-                message: `Preparing to connect to ${actualMcpName} service...`
-              } 
-            });
+            // 最后一步的结果作为最终结果
+            if (i === mcpWorkflow.workflow.length && stepResult.success) {
+              finalResult = stepResult.result;
+            }
           }
-          
-          // 确保输入是对象类型
-          const inputObj = typeof input === 'string' ? { text: input } : input;
-          
-          // 调用MCP工具 (使用认证信息注入功能)
-          const stepResult = await this.callMCPTool(actualMcpName, actionName, inputObj, taskId);
-          
-          // 通用结果验证
-          this.validateStepResult(actualMcpName, actionName, stepResult);
-          
-          // 处理不同适配器可能有的不同返回格式
-          const processedResult = this.processToolResult(stepResult);
-          
-          // 使用DAO记录步骤成功结果
-          await taskExecutorDao.saveStepResult(taskId, stepNumber, true, processedResult);
-          
-          // 记录步骤结果
-          workflowResults.push({
-            step: stepNumber,
-            success: true,
-            result: processedResult
-          });
-          
-          // 发送步骤完成信息
-          stream({ 
-            event: 'step_complete', 
-            data: { 
-              step: stepNumber,
-              success: true,
-              result: processedResult
-            } 
-          });
-          
-          // 最后一步的结果作为最终结果
-          if (stepNumber === mcpWorkflow.workflow.length) {
-            finalResult = processedResult;
-          }
-        } catch (error) {
-          logger.error(`Step ${stepNumber} execution failed:`, error);
-          const errorMsg = error instanceof Error ? error.message : String(error);
-          
-          // 使用DAO记录步骤失败结果
-          await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
-          
-          workflowResults.push({
-            step: stepNumber,
-            success: false,
-            error: errorMsg
-          });
-          
-          // 发送步骤错误信息
-          stream({ 
-            event: 'step_error', 
-            data: { 
-              step: stepNumber,
-              error: errorMsg
-            } 
-          });
         }
+        
+        // 生成结果摘要，使用流式生成
+        stream({ event: 'generating_summary', data: { message: 'Generating result summary...' } });
+        await this.generateResultSummaryStream(task.content, workflowResults, (summaryChunk) => {
+          stream({ 
+            event: 'summary_chunk', 
+            data: { content: summaryChunk } 
+          });
+        });
+        
+        // 判断整体执行是否成功
+        const overallSuccess = workflowResults.every(result => result.success);
+        
+        // 工作流完成
+        stream({ 
+          event: 'workflow_complete', 
+          data: { 
+            success: overallSuccess,
+            message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors'
+          }
+        });
+        
+        // 更新任务状态
+        await taskExecutorDao.updateTaskResult(
+          taskId, 
+          overallSuccess ? 'completed' : 'partial_failure',
+          {
+            summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
+            steps: workflowResults,
+            finalResult
+          }
+        );
+        
+        // 发送任务完成信息
+        stream({ event: 'task_complete', data: { taskId, success: overallSuccess } });
+        
+        logger.info(`✅ Task execution completed [Task ID: ${taskId}, Success: ${overallSuccess}]`);
+        return overallSuccess;
+        
+      } catch (chainError) {
+        logger.error(`❌ LangChain workflow execution failed:`, chainError);
+        
+        // 发送链式调用错误信息
+        stream({ 
+          event: 'error', 
+          data: { 
+            message: 'Workflow chain execution failed',
+            details: chainError instanceof Error ? chainError.message : String(chainError)
+          }
+        });
+        
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          error: `Chain execution failed: ${chainError instanceof Error ? chainError.message : String(chainError)}`
+        });
+        
+        return false;
       }
       
-      // 生成结果摘要，使用流式生成
-      stream({ event: 'generating_summary', data: { message: 'Generating result summary...' } });
-      await this.generateResultSummaryStream(task.content, workflowResults, (summaryChunk) => {
-        stream({ 
-          event: 'summary_chunk', 
-          data: { content: summaryChunk } 
-        });
-      });
-      
-      // 工作流完成
-      stream({ 
-        event: 'workflow_complete', 
-        data: { 
-          success: true,
-          message: 'Task execution completed'
-        }
-      });
-      
-      // 更新任务状态为完成
-      await taskExecutorDao.updateTaskResult(taskId, 'completed', {
-        summary: 'Task execution completed',
-        steps: workflowResults,
-        finalResult
-      });
-      
-      // 发送任务完成信息
-      stream({ event: 'task_complete', data: { taskId } });
-      
-      logger.info(`Task execution completed [Task ID: ${taskId}]`);
-      return true;
     } catch (error) {
       logger.error(`Error occurred during task execution [Task ID: ${taskId}]:`, error);
       
