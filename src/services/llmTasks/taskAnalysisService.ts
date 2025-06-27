@@ -29,7 +29,6 @@ function convertMCPServiceToMCPInfo(mcpService: MCPService): MCPInfo {
     name: mcpService.name,
     description: mcpService.description,
     authRequired: mcpService.authRequired ?? false,
-    authFields: mcpService.env ? Object.keys(mcpService.env) : undefined,
     category: mcpService.category,
     imageUrl: mcpService.imageUrl,
     githubUrl: mcpService.githubUrl,

@@ -14,26 +14,12 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
-        category: 'Automation Tools',
+        category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
         githubUrl: 'https://github.com/microsoft/playwright',
         authRequired: false,
         authParams: {}
     },
-    {
-        name: '12306-mcp',
-        description: '12306 train ticket inquiry and booking tool',
-        command: 'npx',
-        args: ['-y', '12306-mcp'],
-        env: {},
-        connected: false,
-        category: 'Others',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
-        githubUrl: 'https://github.com/12306-mcp',
-        authRequired: false,
-        authParams: {}
-    },
-    
     // Chain RPC 服务
     {
         name: 'base-mcp',
@@ -42,7 +28,7 @@ export const predefinedMCPs: MCPService[] = [
         args: ['/home/ubuntu/mcp-tools/base-mcp/build/index.js'],
         env: {},
         connected: false,
-        category: 'Chain PRC',
+        category: 'Chain RPC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/base.ico',
         githubUrl: 'https://github.com/base/base-mcp',
         authRequired: false,
@@ -58,7 +44,7 @@ export const predefinedMCPs: MCPService[] = [
             RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
         },
         connected: false,
-        category: 'Chain PRC',
+        category: 'Chain RPC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
         githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
         authRequired: false,
@@ -92,7 +78,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coinmarket.png',
         githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
         authRequired: false,
         authParams: {}
@@ -356,7 +342,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Trading',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-uniswap-100.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/uniswap.jpeg',
         githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
         authRequired: false,
         authParams: {}
@@ -369,7 +355,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Trading',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.jpego',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.png',
         githubUrl: 'https://github.com/mektigboy/server-hyperliquid',
         authRequired: false,
         authParams: {}
@@ -443,21 +429,6 @@ export const predefinedMCPs: MCPService[] = [
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
         githubUrl: 'https://github.com/makenotion/notion-mcp-server',
-        authRequired: false,
-        authParams: {}
-    },
-    
-    // 官方MCP服务 (ModelContextProtocol)
-    {
-        name: 'filesystem-mcp',
-        description: 'File system operations and management',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-filesystem'],
-        env: {},
-        connected: false,
-        category: 'System Tools',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
-        githubUrl: 'https://github.com/modelcontextprotocol/servers',
         authRequired: false,
         authParams: {}
     },

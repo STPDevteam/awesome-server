@@ -343,7 +343,7 @@ async function executeTask(taskId) {
 // 测试主函数
 async function testCoinMarketCapMCP() {
   try {
-    console.log('🚀 开始测试CoinMarketCap MCP认证流程...\n');
+    console.log('🚀 开始测试代币行情获取与推文发布流程...\n');
     
     // 步骤0: 清理用户认证状态
     console.log('🧹 步骤0: 清理用户认证状态');
@@ -352,52 +352,18 @@ async function testCoinMarketCapMCP() {
     
     // 步骤1: 创建需要认证的任务
     console.log('📝 步骤1: 创建任务');
-    const task = await createTask('使用dexscreener获取最新代币资料');
+    const task = await createTask('使用dexscreener获取最新被推荐的代币并总结300字符内的英文发布一条推文');
     console.log(`✅ 任务创建成功，ID: ${task.id}\n`);
+
+    const fullAuthResult = await verifyAuth(task.id, 'x-mcp', {
+      'TWITTER_API_KEY': '3vT3SesI6WFGTPd6lSJKwhHMB',
+      'TWITTER_API_SECRET': '8LJ3gMaBIYFrDnq5S3zqgVO10UL5iwf2ryhrRCXHPzXxcCnduu',
+      'TWITTER_ACCESS_TOKEN': '1188598506077872129-XnIN2Qzn8pBGlHGpC1X4S4qKJS3SSO',
+      'TWITTER_ACCESS_SECRET': 'bOOkHd8drIcDXn2vWVZLdvOc9U5jER87xbJHuAolY0kt1'
+    });
+    console.log(`  > 验证API返回: ${fullAuthResult.success ? '成功' : '失败'}`);
     
-    // 步骤2: 分析任务
-    // console.log('🔍 步骤2: 流式分析任务');
-    // const analysis = await analyzeTask(task.id);
-    // console.log('✅ 任务流式分析完成\n');
     
-    // // 检查分析是否成功
-    // if (!analysis.success) {
-    //   throw new Error(`任务分析失败: ${analysis.error || '未知错误'}`);
-    // }
-    
-    // 检查认证需求
-    // console.log('🔐 步骤3: 检查认证需求');
-    // console.log(`需要认证: ${analysis.metadata.requiresAuth}`);
-    // console.log(`需要认证的MCP: ${JSON.stringify(analysis.metadata.mcpsRequiringAuth)}`);
-    
-    // // 找出需要认证的MCP
-    // const mcpsNeedAuth = analysis.mcpWorkflow.mcps.filter(
-    //   mcp => mcp.authRequired && !mcp.authVerified
-    // );
-    
-    // console.log('\n需要认证的MCP详情:');
-    // mcpsNeedAuth.forEach(mcp => {
-    //   console.log(`- ${mcp.name}:`);
-    //   console.log(`  描述: ${mcp.description}`);
-    //   console.log(`  需要的认证参数:`);
-    //   Object.entries(mcp.authParams || {}).forEach(([key, value]) => {
-    //     if (!key.endsWith('Description')) {
-    //       console.log(`    ${key}: ${mcp.authParams[key + 'Description'] || value}`);
-    //     }
-    //   });
-    // });
-    
-    // // 步骤4: 未认证时执行，应失败
-    // console.log('\n📄 步骤4: 尝试执行（未认证）');
-    // const executeResult1 = await executeTask(task.id);
-    // console.log(`  executeResult1: ${JSON.stringify(executeResult1)}`);
-    
-    // // 步骤5: 提供CoinMarketCap认证信息
-    // console.log('\n🔑 步骤5: 提供CoinMarketCap认证信息');
-    // const authResult = await verifyAuth(task.id, 'coingecko-mcp', {
-    //   'COINGECKO_API_KEY': CMC_API_KEY    });
-    // console.log(`  > 验证API返回: ${authResult.success ? '成功' : '失败'}`);
-    // console.log(`  > 验证详情: ${JSON.stringify(authResult, null, 2)}`);
     
     // 步骤6: 认证后重新分析任务以更新工作流
     console.log('\n🔄 步骤6: 认证后重新分析任务');
@@ -408,7 +374,7 @@ async function testCoinMarketCapMCP() {
       console.log('  > 重新分析结果:', JSON.stringify(reAnalysis, null, 2));
       
       // 步骤7: 执行任务
-      console.log('\n💰 步骤7: 执行任务（已认证）- 获取比特币价格数据');
+      console.log('\n📊 步骤7: 执行任务（已认证）- 获取代币行情并发布推文');
       const executeResult2 = await executeTask(task.id);
       console.log(`  > 结果: ${executeResult2.success ? '执行成功' : '执行失败'}`);
       console.log(`  > 完整执行结果: ${JSON.stringify(executeResult2, null, 2)}`);
@@ -418,22 +384,33 @@ async function testCoinMarketCapMCP() {
       } else {
         console.log(`  > 执行摘要: ${executeResult2.summary || executeResult2.data?.summary}`);
         
-        // 显示获取到的价格数据
-        const priceResult = executeResult2.result || executeResult2.data?.result;
-        if (priceResult) {
-          console.log(`  > 💰 获取到的价格数据:`);
-          if (typeof priceResult === 'string') {
-            console.log(`    ${priceResult}`);
-          } else if (Array.isArray(priceResult) && priceResult.length > 0) {
-            const data = priceResult[0];
-            console.log(`    币种: ${data.name || data.symbol || '比特币'}`);
-            console.log(`    价格: $${data.price || data.quote?.USD?.price || 'N/A'}`);
-            console.log(`    市值排名: #${data.cmc_rank || data.rank || 'N/A'}`);
-            if (data.quote?.USD?.percent_change_24h) {
-              console.log(`    24h涨跌: ${data.quote.USD.percent_change_24h > 0 ? '+' : ''}${data.quote.USD.percent_change_24h.toFixed(2)}%`);
+        // 显示获取到的价格数据和推文发布结果
+        const result = executeResult2.result || executeResult2.data?.result;
+        if (result) {
+          console.log(`  > 📈 执行结果:`);
+          if (typeof result === 'string') {
+            console.log(`    ${result}`);
+          } else if (Array.isArray(result)) {
+            result.forEach((step, index) => {
+              console.log(`    步骤${index + 1}: ${JSON.stringify(step, null, 2)}`);
+            });
+          } else if (typeof result === 'object') {
+            // 显示价格数据
+            if (result.priceData) {
+              console.log(`    💰 价格数据: ${JSON.stringify(result.priceData, null, 2)}`);
             }
-          } else if (typeof priceResult === 'object') {
-            console.log(`    ${JSON.stringify(priceResult, null, 4)}`);
+            // 显示推文内容
+            if (result.tweetContent) {
+              console.log(`    🐦 推文预览: "${result.tweetContent}"`);
+            }
+            // 显示推文发布结果
+            if (result.tweetResult) {
+              console.log(`    📤 推文发布结果: ${JSON.stringify(result.tweetResult, null, 2)}`);
+            }
+            // 如果没有这些特定字段，显示完整结果
+            if (!result.priceData && !result.tweetContent && !result.tweetResult) {
+              console.log(`    ${JSON.stringify(result, null, 4)}`);
+            }
           }
         }
         
@@ -453,7 +430,7 @@ async function testCoinMarketCapMCP() {
     //   console.log('  > 因步骤5验证失败，跳过执行');
     // }
     
-    console.log('\n\n✨ CoinMarketCap MCP认证流程测试完成!');
+    console.log('\n\n✨ 代币行情获取与推文发布测试完成!');
     
   } catch (error) {
     console.error('❌ 测试失败:', error);
