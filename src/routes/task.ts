@@ -1207,14 +1207,20 @@ router.post('/:id/replace-mcp-smart', optionalAuth, async (req: Request, res: Re
     );
     
     if (replacementResult.success) {
+      // 返回与原始任务分析一致的格式
       res.json({
         success: true,
         data: {
+          taskId,
           message: replacementResult.message,
-          newWorkflow: replacementResult.newWorkflow,
-          originalMcp: originalMcpName,
-          newMcp: newMcpName,
-          taskId
+          mcpWorkflow: replacementResult.mcpWorkflow,
+          metadata: replacementResult.metadata,
+          // 额外的替换信息
+          replacementInfo: {
+            originalMcp: originalMcpName,
+            newMcp: newMcpName,
+            timestamp: new Date().toISOString()
+          }
         }
       });
     } else {

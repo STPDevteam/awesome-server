@@ -1424,7 +1424,7 @@ data: [DONE]
 
 **端点**: `POST /api/tasks/:id/replace-mcp-smart`
 
-**描述**: 智能替换任务中的MCP并重新分析工作流，确保新MCP与其他工具的协作
+**描述**: 智能替换任务中的MCP并重新分析工作流，确保新MCP与其他工具的协作。**返回格式与原始任务分析完全一致**。
 
 **认证**: 可选（可使用userId参数或访问令牌）
 
@@ -1445,8 +1445,9 @@ data: [DONE]
 {
   "success": true,
   "data": {
+    "taskId": "task_123456",
     "message": "成功将 coingecko-server 替换为 coinmarketcap-mcp 并重新生成了工作流",
-    "newWorkflow": {
+    "mcpWorkflow": {
       "mcps": [
         {
           "name": "coinmarketcap-mcp",
@@ -1455,7 +1456,14 @@ data: [DONE]
           "authVerified": false,
           "category": "Market Data",
           "imageUrl": "https://example.com/cmc.png",
-          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp"
+          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+          "authParams": {
+            "COINMARKETCAP_API_KEY": {
+              "type": "string",
+              "description": "CoinMarketCap API密钥",
+              "required": true
+            }
+          }
         }
       ],
       "workflow": [
@@ -1467,20 +1475,52 @@ data: [DONE]
         }
       ]
     },
-    "originalMcp": "coingecko-server",
-    "newMcp": "coinmarketcap-mcp",
-    "taskId": "task_123456"
+    "metadata": {
+      "totalSteps": 1,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp"]
+    },
+    "replacementInfo": {
+      "originalMcp": "coingecko-server",
+      "newMcp": "coinmarketcap-mcp",
+      "timestamp": "2023-06-20T08:30:00.000Z"
+    }
   }
 }
 ```
+
+**返回字段说明**:
+- `taskId`: 任务ID
+- `message`: 替换操作的描述信息
+- `mcpWorkflow`: **与原始任务分析格式完全一致的工作流结构**
+  - `mcps`: MCP列表，包含完整的显示信息（category、imageUrl、githubUrl等）
+  - `workflow`: 工作流步骤数组
+- `metadata`: **与原始任务分析格式一致的元数据**
+  - `totalSteps`: 工作流总步骤数
+  - `requiresAuth`: 是否需要认证
+  - `mcpsRequiringAuth`: 需要认证的MCP名称列表
+- `replacementInfo`: 替换操作的额外信息
+  - `originalMcp`: 原始MCP名称
+  - `newMcp`: 新MCP名称
+  - `timestamp`: 替换操作时间戳
+
+**认证状态处理**:
+- 如果新MCP不需要认证（`authRequired: false`），则 `authVerified: true`
+- 如果新MCP需要认证（`authRequired: true`），则 `authVerified: false`，需要用户重新提供认证信息
+- 其他未替换的MCP保持原有认证状态
 
 **处理流程**:
 1. 验证原MCP是否在当前工作流中
 2. 验证新MCP是否存在且可用
 3. 构建新的MCP列表（替换指定MCP）
-4. 使用AI重新生成适配新MCP的工作流
-5. 更新任务状态为'analyzed'
-6. 记录替换操作日志
+4. 根据新MCP的认证要求正确设置认证状态
+5. 使用AI重新生成适配新MCP的工作流
+6. 更新任务状态为'analyzed'
+7. 记录替换操作日志
+8. 返回与原始任务分析完全一致的格式
+
+**与原始任务分析的一致性**:
+此接口返回的 `mcpWorkflow` 和 `metadata` 字段与 `/api/tasks/:id/analyze-stream` 接口返回的格式完全一致，确保前端可以使用相同的逻辑处理两种情况的返回结果。
 
 **错误响应**:
 ```json
@@ -1775,12 +1815,69 @@ curl -X POST http://localhost:3001/api/tasks/task_123456/replace-mcp-smart \
   }'
 ```
 
+**响应示例**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123456",
+    "message": "成功将 coingecko-server 替换为 coinmarketcap-mcp 并重新生成了工作流",
+    "mcpWorkflow": {
+      "mcps": [
+        {
+          "name": "coinmarketcap-mcp",
+          "description": "CoinMarketCap市场数据集成",
+          "authRequired": true,
+          "authVerified": false,
+          "category": "Market Data",
+          "imageUrl": "https://example.com/cmc.png",
+          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+          "authParams": {
+            "COINMARKETCAP_API_KEY": {
+              "type": "string",
+              "description": "CoinMarketCap API密钥",
+              "required": true
+            }
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "mcp": "coinmarketcap-mcp",
+          "action": "获取比特币当前价格和市场数据",
+          "input": {}
+        }
+      ]
+    },
+    "metadata": {
+      "totalSteps": 1,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp"]
+    },
+    "replacementInfo": {
+      "originalMcp": "coingecko-server",
+      "newMcp": "coinmarketcap-mcp",
+      "timestamp": "2023-06-20T08:30:00.000Z"
+    }
+  }
+}
+```
+
+**注意**: 返回的 `mcpWorkflow` 和 `metadata` 字段格式与原始任务分析完全一致，前端可以使用相同的逻辑处理。
+
 ### 6. 验证替换结果
 
 ```bash
 curl -X GET http://localhost:3001/api/tasks/task_123456 \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
+
+**验证要点**:
+- 检查 `mcpWorkflow.mcps` 中是否包含新的MCP
+- 确认新MCP的认证状态（`authVerified`）
+- 验证工作流步骤是否正确更新
+- 如果新MCP需要认证，使用认证接口提供必要的认证信息
 
 ## 智能替换特性
 
@@ -1805,6 +1902,14 @@ curl -X GET http://localhost:3001/api/tasks/task_123456 \
 - 考虑认证复杂度和工具稳定性
 
 ## 注意事项
+
+### 返回格式一致性 ⭐
+**重要**: 智能替换MCP接口 (`/api/tasks/:id/replace-mcp-smart`) 的返回格式与原始任务分析接口 (`/api/tasks/:id/analyze-stream`) 完全一致，包括：
+- `mcpWorkflow` 结构完全相同
+- `metadata` 字段格式完全相同
+- MCP认证状态的处理逻辑完全相同
+
+这确保了前端可以使用相同的组件和逻辑来处理两种情况的返回结果，无需额外的适配代码。
 
 ### MCP替换限制
 1. **认证要求**: 替换后的MCP如果需要认证，需要重新验证

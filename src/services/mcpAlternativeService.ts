@@ -306,11 +306,11 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
   }
   
   /**
-   * 智能替换任务中的MCP并重新分析
+   * 智能替换MCP并重新分析任务
    * @param taskId 任务ID
    * @param originalMcpName 原始MCP名称
    * @param newMcpName 新MCP名称
-   * @returns 替换结果
+   * @returns 替换结果，格式与原始任务分析一致
    */
   async replaceAndReanalyzeTask(
     taskId: string,
@@ -319,10 +319,32 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
   ): Promise<{
     success: boolean;
     message: string;
-    newWorkflow?: any;
+    mcpWorkflow?: {
+      mcps: Array<{
+        name: string;
+        description: string;
+        authRequired: boolean;
+        authVerified: boolean;
+        category?: string;
+        imageUrl?: string;
+        githubUrl?: string;
+        authParams?: Record<string, any>;
+      }>;
+      workflow: Array<{
+        step: number;
+        mcp: string;
+        action: string;
+        input?: any;
+      }>;
+    };
+    metadata?: {
+      totalSteps: number;
+      requiresAuth: boolean;
+      mcpsRequiringAuth: string[];
+    };
   }> {
     try {
-      logger.info(`开始智能替换MCP并重新分析任务 [任务: ${taskId}, 原MCP: ${originalMcpName}, 新MCP: ${newMcpName}]`);
+      logger.info(`🔄 开始智能替换MCP并重新分析 [任务: ${taskId}, ${originalMcpName} -> ${newMcpName}]`);
       
       // 1. 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
@@ -353,6 +375,8 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
             name: newMCP.name,
             description: newMCP.description,
             authRequired: newMCP.authRequired,
+            // 根据新MCP是否需要认证来设置认证状态
+            // 如果不需要认证，则自动验证通过；如果需要认证，则需要重新验证
             authVerified: !newMCP.authRequired,
             category: newMCP.category,
             imageUrl: newMCP.imageUrl,
@@ -371,12 +395,24 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
         newMcpName
       );
       
-      // 6. 更新任务的工作流
+      // 6. 构建完整的mcpWorkflow结构，与原始任务分析格式一致
       const updatedMcpWorkflow = {
-        mcps: newMcpList,
+        mcps: newMcpList.map(mcp => ({
+          name: mcp.name,
+          description: mcp.description,
+          authRequired: mcp.authRequired,
+          authVerified: mcp.authVerified || false, // 确保始终是boolean类型
+          // 包含完整的显示信息
+          category: mcp.category,
+          imageUrl: mcp.imageUrl,
+          githubUrl: mcp.githubUrl,
+          // 只在需要认证时返回实际的认证参数
+          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
+        })),
         workflow: newWorkflow
       };
       
+      // 7. 更新任务
       const updateSuccess = await this.taskService.updateTask(taskId, {
         mcpWorkflow: updatedMcpWorkflow,
         status: 'analyzed' // 重新分析后的状态
@@ -386,7 +422,7 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
         return { success: false, message: '更新任务工作流失败' };
       }
       
-      // 7. 记录替换操作
+      // 8. 记录替换操作
       await mcpAlternativeDao.saveAlternativeRecommendation(
         taskId,
         originalMcpName,
@@ -394,12 +430,23 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
         `MCP替换操作：${originalMcpName} -> ${newMcpName}`
       ).catch(err => logger.error('记录MCP替换操作失败', err));
       
+      // 9. 构建元数据信息，与原始任务分析格式一致
+      const metadata = {
+        totalSteps: newWorkflow.length,
+        requiresAuth: newMcpList.some(mcp => mcp.authRequired),
+        mcpsRequiringAuth: newMcpList
+          .filter(mcp => mcp.authRequired)
+          .map(mcp => mcp.name)
+      };
+      
       logger.info(`✅ MCP替换和重新分析完成 [任务: ${taskId}]`);
       
+      // 10. 返回与原始任务分析完全一致的格式
       return {
         success: true,
         message: `成功将 ${originalMcpName} 替换为 ${newMcpName} 并重新生成了工作流`,
-        newWorkflow: updatedMcpWorkflow
+        mcpWorkflow: updatedMcpWorkflow,
+        metadata
       };
       
     } catch (error) {
