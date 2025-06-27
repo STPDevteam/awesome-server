@@ -28,9 +28,8 @@ export class TaskService {
       const task = this.mapTaskFromDb(taskRecord);
       logger.info(`Task created successfully: ${task.id}`);
       
-      // If conversationId is provided, create system notification message
+      // If conversationId is provided, only increment task count (don't create duplicate message)
       if (data.conversationId) {
-        await this.addTaskNotificationToConversation(task.id, data.conversationId, task.title);
         // Increment conversation task count
         await conversationDao.incrementTaskCount(data.conversationId);
       }
@@ -42,28 +41,7 @@ export class TaskService {
     }
   }
 
-  // Add task notification to conversation (internal method)
-  private async addTaskNotificationToConversation(
-    taskId: string, 
-    conversationId: string, 
-    taskTitle: string
-  ): Promise<void> {
-    try {
-      // Create system message to notify task creation
-      await messageDao.createMessage({
-        conversationId,
-        content: `Task created: ${taskTitle}`,
-        type: MessageType.SYSTEM,
-        intent: MessageIntent.TASK,
-        taskId
-      });
-      
-      logger.info(`Task notification added to conversation [Task ID: ${taskId}, Conversation ID: ${conversationId}]`);
-    } catch (error) {
-      logger.error(`Failed to add task notification to conversation [Task ID: ${taskId}, Conversation ID: ${conversationId}]:`, error);
-      // Non-critical error, don't throw exception
-    }
-  }
+
 
   // 获取任务详情
   async getTaskById(taskId: string): Promise<Task | null> {
