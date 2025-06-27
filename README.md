@@ -101,9 +101,7 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 
 ### 任务分析和执行接口
 
-- `POST /api/task/:id/analyze` - 分析任务
 - `POST /api/task/:id/analyze/stream` - 流式分析任务
-- `POST /api/task/:id/execute` - 执行任务
 - `POST /api/task/:id/execute/stream` - 流式执行任务
 
 ### MCP授权接口

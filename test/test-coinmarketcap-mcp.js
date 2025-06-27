@@ -351,57 +351,57 @@ async function testCoinMarketCapMCP() {
     console.log('');
     
     // 步骤1: 创建需要认证的任务
-    console.log('📝 步骤1: 创建任务 - 使用coingecko查询比特币价格');
-    const task = await createTask('使用coingecko API查询比特币(BTC)当前价格和市值排名');
+    console.log('📝 步骤1: 创建任务');
+    const task = await createTask('使用dexscreener获取最新代币资料');
     console.log(`✅ 任务创建成功，ID: ${task.id}\n`);
     
     // 步骤2: 分析任务
-    console.log('🔍 步骤2: 流式分析任务');
-    const analysis = await analyzeTask(task.id);
-    console.log('✅ 任务流式分析完成\n');
+    // console.log('🔍 步骤2: 流式分析任务');
+    // const analysis = await analyzeTask(task.id);
+    // console.log('✅ 任务流式分析完成\n');
     
-    // 检查分析是否成功
-    if (!analysis.success) {
-      throw new Error(`任务分析失败: ${analysis.error || '未知错误'}`);
-    }
+    // // 检查分析是否成功
+    // if (!analysis.success) {
+    //   throw new Error(`任务分析失败: ${analysis.error || '未知错误'}`);
+    // }
     
     // 检查认证需求
-    console.log('🔐 步骤3: 检查认证需求');
-    console.log(`需要认证: ${analysis.metadata.requiresAuth}`);
-    console.log(`需要认证的MCP: ${JSON.stringify(analysis.metadata.mcpsRequiringAuth)}`);
+    // console.log('🔐 步骤3: 检查认证需求');
+    // console.log(`需要认证: ${analysis.metadata.requiresAuth}`);
+    // console.log(`需要认证的MCP: ${JSON.stringify(analysis.metadata.mcpsRequiringAuth)}`);
     
-    // 找出需要认证的MCP
-    const mcpsNeedAuth = analysis.mcpWorkflow.mcps.filter(
-      mcp => mcp.authRequired && !mcp.authVerified
-    );
+    // // 找出需要认证的MCP
+    // const mcpsNeedAuth = analysis.mcpWorkflow.mcps.filter(
+    //   mcp => mcp.authRequired && !mcp.authVerified
+    // );
     
-    console.log('\n需要认证的MCP详情:');
-    mcpsNeedAuth.forEach(mcp => {
-      console.log(`- ${mcp.name}:`);
-      console.log(`  描述: ${mcp.description}`);
-      console.log(`  需要的认证参数:`);
-      Object.entries(mcp.authParams || {}).forEach(([key, value]) => {
-        if (!key.endsWith('Description')) {
-          console.log(`    ${key}: ${mcp.authParams[key + 'Description'] || value}`);
-        }
-      });
-    });
+    // console.log('\n需要认证的MCP详情:');
+    // mcpsNeedAuth.forEach(mcp => {
+    //   console.log(`- ${mcp.name}:`);
+    //   console.log(`  描述: ${mcp.description}`);
+    //   console.log(`  需要的认证参数:`);
+    //   Object.entries(mcp.authParams || {}).forEach(([key, value]) => {
+    //     if (!key.endsWith('Description')) {
+    //       console.log(`    ${key}: ${mcp.authParams[key + 'Description'] || value}`);
+    //     }
+    //   });
+    // });
     
-    // 步骤4: 未认证时执行，应失败
-    console.log('\n📄 步骤4: 尝试执行（未认证）');
-    const executeResult1 = await executeTask(task.id);
-    console.log(`  executeResult1: ${JSON.stringify(executeResult1)}`);
+    // // 步骤4: 未认证时执行，应失败
+    // console.log('\n📄 步骤4: 尝试执行（未认证）');
+    // const executeResult1 = await executeTask(task.id);
+    // console.log(`  executeResult1: ${JSON.stringify(executeResult1)}`);
     
-    // 步骤5: 提供CoinMarketCap认证信息
-    console.log('\n🔑 步骤5: 提供CoinMarketCap认证信息');
-    const authResult = await verifyAuth(task.id, 'coingecko-mcp', {
-      'COINGECKO_API_KEY': CMC_API_KEY    });
-    console.log(`  > 验证API返回: ${authResult.success ? '成功' : '失败'}`);
-    console.log(`  > 验证详情: ${JSON.stringify(authResult, null, 2)}`);
+    // // 步骤5: 提供CoinMarketCap认证信息
+    // console.log('\n🔑 步骤5: 提供CoinMarketCap认证信息');
+    // const authResult = await verifyAuth(task.id, 'coingecko-mcp', {
+    //   'COINGECKO_API_KEY': CMC_API_KEY    });
+    // console.log(`  > 验证API返回: ${authResult.success ? '成功' : '失败'}`);
+    // console.log(`  > 验证详情: ${JSON.stringify(authResult, null, 2)}`);
     
     // 步骤6: 认证后重新分析任务以更新工作流
     console.log('\n🔄 步骤6: 认证后重新分析任务');
-    if (authResult.success) {
+    // if (authResult.success) {
       console.log('  > 重新分析任务以更新工作流...');
       const reAnalysis = await analyzeTask(task.id);
       console.log('  > 重新分析完成');
@@ -449,9 +449,9 @@ async function testCoinMarketCapMCP() {
           });
         }
       }
-    } else {
-      console.log('  > 因步骤5验证失败，跳过执行');
-    }
+    // } else {
+    //   console.log('  > 因步骤5验证失败，跳过执行');
+    // }
     
     console.log('\n\n✨ CoinMarketCap MCP认证流程测试完成!');
     

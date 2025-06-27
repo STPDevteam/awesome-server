@@ -65,10 +65,20 @@ const createTaskSchema = z.object({
   conversationId: z.string().optional() // 关联到对话
 });
 
-// MCP验证Schema
+// MCP验证Schema (单个)
 const verifyMCPAuthSchema = z.object({
   mcpName: z.string().min(1, 'MCP name cannot be empty'),
   authData: z.record(z.string()),
+  saveForLater: z.boolean().optional(),
+  userId: z.string().optional()
+});
+
+// 批量MCP验证Schema (多个)
+const verifyMultipleMCPAuthSchema = z.object({
+  mcpAuths: z.array(z.object({
+    mcpName: z.string().min(1, 'MCP name cannot be empty'),
+    authData: z.record(z.string())
+  })).min(1, 'At least one MCP authentication is required'),
   saveForLater: z.boolean().optional(),
   userId: z.string().optional()
 });
@@ -935,78 +945,6 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 启动任务分析
- * POST /api/task/:id/analyze
- */
-router.post('/:id/analyze', async (req, res) => {
-  try {
-    const taskId = req.params.id;
-    
-    const workflow = await taskAnalysisService.analyzeTask(taskId);
-
-    if (workflow) {
-      const updatedTask = await taskService.getTaskById(taskId);
-      
-      // 优化返回的mcpWorkflow数据结构
-      if (updatedTask?.mcpWorkflow) {
-        const optimizedWorkflow = {
-          // 精简mcps数组，只保留必要信息
-          mcps: updatedTask.mcpWorkflow.mcps.map(mcp => ({
-            name: mcp.name,
-            description: mcp.description,
-            authRequired: mcp.authRequired,
-            authVerified: mcp.authVerified || false,
-            // 只在需要认证时返回authParams
-            ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
-          })),
-          // workflow保持不变
-          workflow: updatedTask.mcpWorkflow.workflow
-        };
-        
-        res.json({
-          success: true,
-          data: {
-            message: 'Task analysis completed',
-            taskId: taskId,
-            mcpWorkflow: optimizedWorkflow,
-            // 添加额外的元信息供前端使用
-            metadata: {
-              totalSteps: updatedTask.mcpWorkflow.workflow.length,
-              requiresAuth: updatedTask.mcpWorkflow.mcps.some(mcp => mcp.authRequired && !mcp.authVerified),
-              mcpsRequiringAuth: updatedTask.mcpWorkflow.mcps
-                .filter(mcp => mcp.authRequired && !mcp.authVerified)
-                .map(mcp => mcp.name)
-            }
-          }
-        });
-      } else {
-        res.json({
-          success: true,
-          data: {
-            message: 'Task analysis completed',
-            taskId: taskId,
-            mcpWorkflow: null
-          }
-        });
-      }
-    } else {
-      res.status(500).json({ 
-        success: false, 
-        error: 'Analysis Failed', 
-        message: 'Task analysis failed, please check logs for more information' 
-      });
-    }
-  } catch (error) {
-    logger.error(`Task analysis error [Task ID: ${req.params.id}]:`, error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Internal Server Error', 
-      message: 'Internal server error' 
-    });
-  }
-});
-
-/**
  * 验证MCP授权
  * POST /api/task/:id/verify-auth
  */
@@ -1090,6 +1028,88 @@ router.post('/:id/verify-auth', optionalAuth, async (req: Request, res: Response
     }
   } catch (error) {
     logger.error(`MCP authorization verification error [Task ID: ${req.params.id}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * 批量验证多个MCP授权
+ * POST /api/task/:id/verify-multiple-auth
+ */
+router.post('/:id/verify-multiple-auth', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const validationResult = verifyMultipleMCPAuthSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Invalid request parameters',
+        details: validationResult.error.errors
+      });
+    }
+    
+    const { mcpAuths, userId: bodyUserId } = validationResult.data;
+    const task = await taskService.getTaskById(taskId);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+
+    const userId = req.user?.id || bodyUserId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'User ID is required'
+      });
+    }
+    
+    // 确保用户只能为自己的任务验证授权
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to verify authorization for this task'
+      });
+    }
+    
+    // 批量验证授权
+    const batchVerificationResult = await mcpAuthService.verifyMultipleAuth(userId, mcpAuths);
+    
+    // 批量更新任务工作流状态
+    const mcpStatuses = batchVerificationResult.results
+      .filter(result => result.success)
+      .map(result => ({
+        mcpName: result.mcpName,
+        isVerified: true
+      }));
+    
+    if (mcpStatuses.length > 0) {
+      await mcpAuthService.updateMultipleTaskMCPAuthStatus(taskId, userId, mcpStatuses);
+    }
+    
+    res.json({
+      success: batchVerificationResult.success,
+      message: batchVerificationResult.success 
+        ? 'All MCP authorizations verified successfully'
+        : `${batchVerificationResult.summary.successful}/${batchVerificationResult.summary.total} MCP authorizations verified successfully`,
+      data: {
+        results: batchVerificationResult.results,
+        summary: batchVerificationResult.summary
+      }
+    });
+  } catch (error) {
+    logger.error(`Batch MCP authorization verification error [Task ID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -1216,62 +1236,6 @@ router.post('/:id/replace-mcp', async (req: Request, res: Response) => {
       success: false,
       error: 'Internal Server Error',
       message: '服务器内部错误'
-    });
-  }
-});
-
-/**
- * 执行任务
- * POST /api/task/:id/execute
- */
-router.post('/:id/execute', async (req, res) => {
-  try {
-    const taskId = req.params.id;
-    const taskExecutorService = req.app.get('taskExecutorService');
-    
-    // 获取用户ID（可选认证）
-    const userId = req.user?.id || req.body.userId;
-    
-    // 验证任务归属权
-    const task = await taskService.getTaskById(taskId);
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: 'Task not found'
-      });
-    }
-    
-    if (userId && task.userId !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'No permission to execute this task'
-      });
-    }
-    
-    // 执行任务并获取详细结果
-    const executionResult = await taskExecutorService.executeTask(taskId);
-    
-    // 返回详细执行结果
-    res.json({
-      success: executionResult.success,
-      data: {
-        taskId: taskId,
-        status: executionResult.status,
-        summary: executionResult.summary,
-        message: executionResult.success ? '任务执行成功' : '任务执行失败',
-        steps: executionResult.steps,
-        error: executionResult.error
-      }
-    });
-  } catch (error) {
-    logger.error(`执行任务路由错误 [任务ID: ${req.params.id}]:`, error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Internal Server Error', 
-      message: '启动任务执行失败',
-      details: error instanceof Error ? error.message : String(error)
     });
   }
 });

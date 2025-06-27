@@ -104,6 +104,85 @@ export class MCPAuthService {
   }
   
   /**
+   * 批量验证多个MCP授权
+   * @param userId 用户ID
+   * @param mcpAuths MCP认证数据数组
+   */
+  async verifyMultipleAuth(
+    userId: string,
+    mcpAuths: Array<{ mcpName: string; authData: Record<string, string> }>
+  ): Promise<{
+    success: boolean;
+    results: Array<{
+      mcpName: string;
+      success: boolean;
+      message: string;
+      details?: string;
+    }>;
+    summary: {
+      total: number;
+      successful: number;
+      failed: number;
+    };
+  }> {
+    try {
+      logger.info(`[verifyMultipleAuth] Verifying ${mcpAuths.length} MCPs for user ${userId}`);
+      
+      const results = [];
+      let successfulCount = 0;
+      
+      for (const mcpAuth of mcpAuths) {
+        try {
+          const verificationResult = await this.verifyAuth(
+            userId,
+            mcpAuth.mcpName,
+            mcpAuth.authData
+          );
+          
+          if (verificationResult.success) {
+            successfulCount++;
+          }
+          
+          results.push({
+            mcpName: mcpAuth.mcpName,
+            success: verificationResult.success,
+            message: verificationResult.message,
+            details: verificationResult.details
+          });
+          
+          logger.info(`[verifyMultipleAuth] MCP ${mcpAuth.mcpName}: ${verificationResult.success ? 'SUCCESS' : 'FAILED'}`);
+        } catch (error) {
+          results.push({
+            mcpName: mcpAuth.mcpName,
+            success: false,
+            message: 'Verification process failed',
+            details: error instanceof Error ? error.message : String(error)
+          });
+          
+          logger.error(`[verifyMultipleAuth] MCP ${mcpAuth.mcpName} verification error:`, error);
+        }
+      }
+      
+      const allSuccessful = successfulCount === mcpAuths.length;
+      
+      logger.info(`[verifyMultipleAuth] Batch verification completed: ${successfulCount}/${mcpAuths.length} successful`);
+      
+      return {
+        success: allSuccessful,
+        results,
+        summary: {
+          total: mcpAuths.length,
+          successful: successfulCount,
+          failed: mcpAuths.length - successfulCount
+        }
+      };
+    } catch (error) {
+      logger.error(`[verifyMultipleAuth] Batch verification failed for user ${userId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * 验证MCP授权
    * @param userId 用户ID
    * @param mcpName MCP名称
@@ -181,6 +260,65 @@ export class MCPAuthService {
     } catch (error) {
       logger.error(`更新任务MCP授权状态失败 [任务: ${taskId}, MCP: ${mcpName}]:`, error);
       return false;
+    }
+  }
+
+  /**
+   * 批量更新任务的多个MCP授权状态
+   * @param taskId 任务ID
+   * @param userId 用户ID
+   * @param mcpStatuses MCP状态数组
+   */
+  async updateMultipleTaskMCPAuthStatus(
+    taskId: string,
+    userId: string,
+    mcpStatuses: Array<{ mcpName: string; isVerified: boolean }>
+  ): Promise<{ successful: number; failed: number; results: Array<{ mcpName: string; success: boolean }> }> {
+    try {
+      logger.info(`[updateMultipleTaskMCPAuthStatus] Updating ${mcpStatuses.length} MCP statuses for task ${taskId}`);
+      
+      const results = [];
+      let successfulCount = 0;
+      
+      for (const status of mcpStatuses) {
+        try {
+          const success = await this.updateTaskMCPAuthStatus(
+            taskId,
+            userId,
+            status.mcpName,
+            status.isVerified
+          );
+          
+          if (success) {
+            successfulCount++;
+          }
+          
+          results.push({
+            mcpName: status.mcpName,
+            success
+          });
+          
+          logger.info(`[updateMultipleTaskMCPAuthStatus] MCP ${status.mcpName}: ${success ? 'SUCCESS' : 'FAILED'}`);
+        } catch (error) {
+          results.push({
+            mcpName: status.mcpName,
+            success: false
+          });
+          
+          logger.error(`[updateMultipleTaskMCPAuthStatus] Failed to update MCP ${status.mcpName}:`, error);
+        }
+      }
+      
+      logger.info(`[updateMultipleTaskMCPAuthStatus] Batch update completed: ${successfulCount}/${mcpStatuses.length} successful`);
+      
+      return {
+        successful: successfulCount,
+        failed: mcpStatuses.length - successfulCount,
+        results
+      };
+    } catch (error) {
+      logger.error(`[updateMultipleTaskMCPAuthStatus] Batch update failed for task ${taskId}:`, error);
+      throw error;
     }
   }
   
