@@ -73,7 +73,6 @@ export class MCPAlternativeService {
       description: service.description,
       capabilities: [], // MCPService中没有capabilities字段，使用空数组
       authRequired: service.authParams ? Object.keys(service.authParams).length > 0 : false,
-      authFields: service.authParams ? Object.keys(service.authParams) : undefined,
       category: service.category,
       imageUrl: service.imageUrl,
       githubUrl: service.githubUrl,
