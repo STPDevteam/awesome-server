@@ -385,47 +385,52 @@ data: [DONE]
   "data": {
     "plus": {
       "monthly": {
-        "amount": "4.99",
-        "currency": "USD",
-        "features": ["基础功能", "100个请求/月", "邮件支持"]
+        "amount": "20",
+        "currency": "USDT"
       },
       "yearly": {
-        "amount": "47.99",
-        "currency": "USD",
-        "features": ["基础功能", "100个请求/月", "邮件支持", "节省20%"]
+        "amount": "200",
+        "currency": "USDT"
       }
     },
     "pro": {
       "monthly": {
-        "amount": "14.99",
-        "currency": "USD",
-        "features": ["高级功能", "无限请求", "优先支持", "API访问"]
+        "amount": "200",
+        "currency": "USDT"
       },
       "yearly": {
-        "amount": "143.99",
-        "currency": "USD",
-        "features": ["高级功能", "无限请求", "优先支持", "API访问", "节省20%"]
+        "amount": "2000",
+        "currency": "USDT"
       }
     },
     "aweAmountForPlusMonthlyInWei": "40453200000000000000",
     "aweAmountForPlusYearlyInWei": "388950700000000000000",
     "aweAmountForProMonthlyInWei": "121459700000000000000",
-    "aweAmountForProYearlyInWei": "1167852200000000000000"
+    "aweAmountForProYearlyInWei": "1167852200000000000000",
+    "usdtAmountForPlusMonthlyByAwe": 16,
+    "usdtAmountForPlusYearlyByAwe": 160,
+    "usdtAmountForProMonthlyByAwe": 160,
+    "usdtAmountForProYearlyByAwe": 1600
   }
 }
 ```
 
 **字段说明**:
-- `plus/pro.monthly/yearly`: 各会员档位的USD定价和功能介绍
+- `plus/pro.monthly/yearly`: 各会员档位的USDT定价
 - `aweAmountForPlusMonthlyInWei`: Plus月付所需的AWE数量（以Wei为单位）
 - `aweAmountForPlusYearlyInWei`: Plus年付所需的AWE数量（以Wei为单位）
 - `aweAmountForProMonthlyInWei`: Pro月付所需的AWE数量（以Wei为单位）
 - `aweAmountForProYearlyInWei`: Pro年付所需的AWE数量（以Wei为单位）
+- `usdtAmountForPlusMonthlyByAwe`: 使用AWE支付Plus月付对应的USDT价格（原价*0.8）
+- `usdtAmountForPlusYearlyByAwe`: 使用AWE支付Plus年付对应的USDT价格（原价*0.8）
+- `usdtAmountForProMonthlyByAwe`: 使用AWE支付Pro月付对应的USDT价格（原价*0.8）
+- `usdtAmountForProYearlyByAwe`: 使用AWE支付Pro年付对应的USDT价格（原价*0.8）
 
 **注意**:
 - AWE价格是基于当前市场汇率实时计算的，会随币价波动而变化
 - 1 AWE = 10^18 Wei
 - 这些Wei值可直接用于前端支付计算，无需再次调用calculate-awe-price接口
+- 使用AWE支付享受8折优惠，`usdtAmountForXxxByAwe` 字段表示折扣后的等值USDT价格
 
 **错误响应**:
 - `500 Internal Server Error`: 获取价格信息失败

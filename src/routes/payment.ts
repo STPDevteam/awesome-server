@@ -22,6 +22,12 @@ router.get('/pricing', async (req, res) => {
     const aweAmountForProMonthlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProMonthly.toFixed(2), 18).toString();
     const aweAmountForProYearlyInWei = ethers.parseUnits(priceInfo.data.aweAmountForProYearly.toFixed(2), 18).toString();
     
+    // 计算AWE支付对应的USDT数量（原价*0.8）
+    const usdtAmountForPlusMonthlyByAwe = parseFloat(MEMBERSHIP_PRICING.plus.monthly.amount) * 0.8;
+    const usdtAmountForPlusYearlyByAwe = parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) * 0.8;
+    const usdtAmountForProMonthlyByAwe = parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) * 0.8;
+    const usdtAmountForProYearlyByAwe = parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) * 0.8;
+
     res.json({
       success: true,
       data: {
@@ -29,7 +35,12 @@ router.get('/pricing', async (req, res) => {
         aweAmountForPlusMonthlyInWei,
         aweAmountForPlusYearlyInWei,
         aweAmountForProMonthlyInWei,
-        aweAmountForProYearlyInWei
+        aweAmountForProYearlyInWei,
+        // AWE支付对应的USDT数量（原价*0.8）
+        usdtAmountForPlusMonthlyByAwe,
+        usdtAmountForPlusYearlyByAwe,
+        usdtAmountForProMonthlyByAwe,
+        usdtAmountForProYearlyByAwe
       }
     });
   } catch (error) {
