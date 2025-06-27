@@ -16,7 +16,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Automation Tools',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
-        githubUrl: 'https://github.com/microsoft/playwright'
+        githubUrl: 'https://github.com/microsoft/playwright',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: '12306-mcp',
@@ -27,7 +29,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Others',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/12306.png',
-        githubUrl: 'https://github.com/12306-mcp'
+        githubUrl: 'https://github.com/12306-mcp',
+        authRequired: false,
+        authParams: {}
     },
     
     // Chain RPC 服务
@@ -40,7 +44,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Chain PRC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/base.ico',
-        githubUrl: 'https://github.com/base/base-mcp'
+        githubUrl: 'https://github.com/base/base-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'evm-mcp',
@@ -54,7 +60,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Chain PRC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
-        githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server'
+        githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
+        authRequired: false,
+        authParams: {}
     },
 
     {
@@ -68,7 +76,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
-        githubUrl: 'https://docs.coingecko.com/reference/mcp-server'
+        githubUrl: 'https://docs.coingecko.com/reference/mcp-server',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'coinmarketcap-mcp',
@@ -83,7 +93,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
-        githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp'
+        githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'defillama-mcp',
@@ -94,7 +106,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png',
-        githubUrl: 'https://github.com/dcSpark/mcp-server-defillama'
+        githubUrl: 'https://github.com/dcSpark/mcp-server-defillama',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'dune-mcp',
@@ -105,7 +119,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
-        githubUrl: 'https://github.com/ekailabs/dune-mcp-server'
+        githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'rugcheck-mcp',
@@ -116,7 +132,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
-        githubUrl: 'https://github.com/kukapay/rug-check-mcp'
+        githubUrl: 'https://github.com/kukapay/rug-check-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'chainlink-mcp',
@@ -127,7 +145,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-chainlink-100.png',
-        githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp'
+        githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'feargreed-mcp',
@@ -138,7 +158,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
-        githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp'
+        githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'whaletracker-mcp',
@@ -149,7 +171,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
-        githubUrl: 'https://github.com/kukapay/whale-tracker-mcp'
+        githubUrl: 'https://github.com/kukapay/whale-tracker-mcp',
+        authRequired: false,
+        authParams: {}
     },
     
     // Development Tools 服务
@@ -162,7 +186,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
-        githubUrl: 'https://github.com/github/github-mcp-server'
+        githubUrl: 'https://github.com/github/github-mcp-server',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'langchain-mcp',
@@ -173,7 +199,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/langchain.png',
-        githubUrl: 'https://github.com/langchain-ai/langchain'
+        githubUrl: 'https://github.com/langchain-ai/langchain',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'mindsdb-mcp',
@@ -184,7 +212,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-money-minded-68.png',
-        githubUrl: 'https://github.com/mindsdb/minds-mcp'
+        githubUrl: 'https://github.com/mindsdb/minds-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'playwright-mcp',
@@ -195,7 +225,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
-        githubUrl: 'https://github.com/microsoft/playwright-mcp'
+        githubUrl: 'https://github.com/microsoft/playwright-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'blender-mcp',
@@ -206,7 +238,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
-        githubUrl: 'https://github.com/ahujasid/blender-mcp'
+        githubUrl: 'https://github.com/ahujasid/blender-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'unity-mcp',
@@ -217,7 +251,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unity-100.png',
-        githubUrl: 'https://github.com/justinpbarnett/unity-mcp'
+        githubUrl: 'https://github.com/justinpbarnett/unity-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'unreal-mcp',
@@ -228,7 +264,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-unreal-engine-100.png',
-        githubUrl: 'https://github.com/chongdashu/unreal-mcp'
+        githubUrl: 'https://github.com/chongdashu/unreal-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'figma-mcp',
@@ -239,7 +277,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-figma-96.png',
-        githubUrl: 'https://github.com/GLips/Figma-Context-MCP'
+        githubUrl: 'https://github.com/GLips/Figma-Context-MCP',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'aws-mcp',
@@ -250,7 +290,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-aws-96.png',
-        githubUrl: 'https://awslabs.github.io/mcp/'
+        githubUrl: 'https://awslabs.github.io/mcp/',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'convex-mcp',
@@ -261,7 +303,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-convex-66.png',
-        githubUrl: 'https://github.com/get-convex/convex-backend/blob/main/npm-packages/convex/src/cli/mcp.ts'
+        githubUrl: 'https://github.com/get-convex/convex-backend/blob/main/npm-packages/convex/src/cli/mcp.ts',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'cloudflare-mcp',
@@ -272,7 +316,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-cloudflare-100.png',
-        githubUrl: 'https://github.com/cloudflare/mcp-server-cloudflare'
+        githubUrl: 'https://github.com/cloudflare/mcp-server-cloudflare',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'supabase-mcp',
@@ -283,7 +329,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-supabase-100.png',
-        githubUrl: 'https://github.com/supabase-community/supabase-mcp'
+        githubUrl: 'https://github.com/supabase-community/supabase-mcp',
+        authRequired: false,
+        authParams: {}
     },
     
     // Trading 服务
@@ -296,7 +344,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-binance-128.png',
-        githubUrl: 'https://github.com/TermiX-official/binance-mcp'
+        githubUrl: 'https://github.com/TermiX-official/binance-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'uniswap-mcp',
@@ -307,7 +357,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-uniswap-100.png',
-        githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp'
+        githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'hyperliquid-mcp',
@@ -318,7 +370,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.jpego',
-        githubUrl: 'https://github.com/mektigboy/server-hyperliquid'
+        githubUrl: 'https://github.com/mektigboy/server-hyperliquid',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'pumpfun-mcp',
@@ -329,7 +383,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-pumpkin-96.png',
-        githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server'
+        githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server',
+        authRequired: false,
+        authParams: {}
     },
     
     // Social 服务
@@ -342,7 +398,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-discord-96.png',
-        githubUrl: 'https://github.com/hanweg/mcp-discord'
+        githubUrl: 'https://github.com/hanweg/mcp-discord',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'telegram-mcp',
@@ -353,7 +411,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
-        githubUrl: 'https://github.com/sparfenyuk/mcp-telegram'
+        githubUrl: 'https://github.com/sparfenyuk/mcp-telegram',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'x-mcp',
@@ -369,7 +429,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/x-mcp.ico',
-        githubUrl: 'https://github.com/datawhisker/x-mcp-server'
+        githubUrl: 'https://github.com/datawhisker/x-mcp-server',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'notion-mcp',
@@ -380,7 +442,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
-        githubUrl: 'https://github.com/makenotion/notion-mcp-server'
+        githubUrl: 'https://github.com/makenotion/notion-mcp-server',
+        authRequired: false,
+        authParams: {}
     },
     
     // 官方MCP服务 (ModelContextProtocol)
@@ -393,7 +457,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'System Tools',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-file-100.png',
-        githubUrl: 'https://github.com/modelcontextprotocol/servers'
+        githubUrl: 'https://github.com/modelcontextprotocol/servers',
+        authRequired: false,
+        authParams: {}
     },
     {
         name: 'dexscreener-mcp',
@@ -404,7 +470,9 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dexscreener.ico',
-        githubUrl: 'https://github.com/opensvm/dexscreener-mcp-server'
+        githubUrl: 'https://github.com/opensvm/dexscreener-mcp-server',
+        authRequired: false,
+        authParams: {}
     }
 
 ];
