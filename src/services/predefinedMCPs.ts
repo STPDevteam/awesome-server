@@ -26,13 +26,29 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Base Chain RPC integration for blockchain operations (LOCAL BUILD)',
         command: 'node',
         args: ['/home/ubuntu/mcp-tools/base-mcp/build/index.js'],
-        env: {},
+        env: {
+            COINBASE_API_KEY_NAME: process.env.COINBASE_API_KEY_NAME || '',
+            COINBASE_API_PRIVATE_KEY: process.env.COINBASE_API_PRIVATE_KEY || '',
+            SEED_PHRASE: process.env.SEED_PHRASE || '',
+            COINBASE_PROJECT_ID: process.env.COINBASE_PROJECT_ID || '',
+            ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY || '',
+            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
+            CHAIN_ID: process.env.CHAIN_ID || '',
+        },
         connected: false,
         category: 'Chain RPC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/base.ico',
         githubUrl: 'https://github.com/base/base-mcp',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            COINBASE_API_KEY_NAME: "COINBASE_API_KEY_NAME",
+            COINBASE_API_PRIVATE_KEY: "COINBASE_API_PRIVATE_KEY",
+            SEED_PHRASE: "SEED_PHRASE",
+            COINBASE_PROJECT_ID: "COINBASE_PROJECT_ID",
+            ALCHEMY_API_KEY: "ALCHEMY_API_KEY",
+            OPENROUTER_API_KEY: "OPENROUTER_API_KEY",
+            CHAIN_ID: "CHAIN_ID"
+        }
     },
     {
         name: 'evm-mcp',
@@ -63,8 +79,10 @@ export const predefinedMCPs: MCPService[] = [
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
         githubUrl: 'https://docs.coingecko.com/reference/mcp-server',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            COINGECKO_API_KEY: "COINGECKO_API_KEY"
+        }
     },
     {
         name: 'coinmarketcap-mcp',
@@ -80,8 +98,10 @@ export const predefinedMCPs: MCPService[] = [
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coinmarket.png',
         githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY
+        }
     },
     {
         name: 'defillama-mcp',
@@ -161,7 +181,7 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: false,
         authParams: {}
     },
-    
+
     // Development Tools 服务
     {
         name: 'github-mcp',
@@ -319,33 +339,45 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: false,
         authParams: {}
     },
-    
+
     // Trading 服务
     {
         name: 'binance-mcp',
         description: 'Binance cryptocurrency exchange trading (LOCAL BUILD)',
         command: 'node',
         args: ['/home/ubuntu/mcp-tools/binance-mcp/build/index.js'],
-        env: {},
+        env: {
+            BINANCE_API_KEY: process.env.BINANCE_API_KEY || '',
+            BINANCE_API_SECRET: process.env.BINANCE_API_SECRET || ''
+        },
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-binance-128.png',
         githubUrl: 'https://github.com/TermiX-official/binance-mcp',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            BINANCE_API_KEY: "BINANCE_API_KEY",
+            BINANCE_API_SECRET: "BINANCE_API_SECRET"
+        }
     },
     {
         name: 'uniswap-mcp',
         description: 'Uniswap DEX trading and liquidity management (LOCAL BUILD)',
         command: 'node',
         args: ['/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js'],
-        env: {},
+        env: {
+            INFURA_KEY: process.env.UNISWAP_INFURA_KEY || '',
+            WALLET_PRIVATE_KEY: process.env.UNISWAP_WALLET_PRIVATE_KEY || ''
+        },
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/uniswap.jpeg',
         githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            INFURA_KEY: "INFURA_KEY",
+            WALLET_PRIVATE_KEY: "WALLET_PRIVATE_KEY"
+        }
     },
     {
         name: 'hyperliquid-mcp',
@@ -365,15 +397,19 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Pump.fun meme token trading platform (LOCAL BUILD)',
         command: 'node',
         args: ['/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js'],
-        env: {},
+        env: {
+            PUMPFUN_API_KEY: process.env.PUMPFUN_API_KEY || ''
+        },
         connected: false,
         category: 'Trading',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-pumpkin-96.png',
         githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            PUMPFUN_API_KEY: "PUMPFUN_API_KEY"
+        }
     },
-    
+
     // Social 服务
     {
         name: 'discord-mcp',
@@ -416,8 +452,13 @@ export const predefinedMCPs: MCPService[] = [
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/x-mcp.ico',
         githubUrl: 'https://github.com/datawhisker/x-mcp-server',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            TWITTER_API_KEY: "TWITTER_API_KEY",
+            TWITTER_API_SECRET: "TWITTER_API_SECRET",
+            TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
+            TWITTER_ACCESS_SECRET: "TWITTER_ACCESS_SECRET"
+        }
     },
     {
         name: 'notion-mcp',
@@ -486,7 +527,7 @@ export const mcpNameMapping: Record<string, string> = {
 export function getPredefinedMCP(name: string): MCPService | undefined {
     // 使用全局映射进行标准化
     const normalizedName = mcpNameMapping[name] || name;
-    
+
     // 从预定义列表中查找
     return predefinedMCPs.find(mcp => mcp.name === normalizedName);
 }
