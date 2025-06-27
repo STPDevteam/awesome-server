@@ -41,13 +41,13 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/base/base-mcp',
         authRequired: true,
         authParams: {
-            COINBASE_API_KEY_NAME: process.env.COINBASE_API_KEY_NAME,
-            COINBASE_API_PRIVATE_KEY: process.env.COINBASE_API_PRIVATE_KEY,
-            SEED_PHRASE: process.env.SEED_PHRASE,
-            COINBASE_PROJECT_ID: process.env.COINBASE_PROJECT_ID,
-            ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY,
-            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
-            CHAIN_ID: process.env.CHAIN_ID
+            COINBASE_API_KEY_NAME: "COINBASE_API_KEY_NAME",
+            COINBASE_API_PRIVATE_KEY: "COINBASE_API_PRIVATE_KEY",
+            SEED_PHRASE: "SEED_PHRASE",
+            COINBASE_PROJECT_ID: "COINBASE_PROJECT_ID",
+            ALCHEMY_API_KEY: "ALCHEMY_API_KEY",
+            OPENROUTER_API_KEY: "OPENROUTER_API_KEY",
+            CHAIN_ID: "CHAIN_ID"
         }
     },
     {
@@ -81,7 +81,7 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://docs.coingecko.com/reference/mcp-server',
         authRequired: true,
         authParams: {
-            COINGECKO_API_KEY: process.env.COINGECKO_API_KEY
+            COINGECKO_API_KEY: "COINGECKO_API_KEY"
         }
     },
     {
@@ -356,8 +356,8 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/TermiX-official/binance-mcp',
         authRequired: true,
         authParams: {
-            BINANCE_API_KEY: process.env.BINANCE_API_KEY,
-            BINANCE_API_SECRET: process.env.BINANCE_API_SECRET
+            BINANCE_API_KEY: "BINANCE_API_KEY",
+            BINANCE_API_SECRET: "BINANCE_API_SECRET"
         }
     },
     {
@@ -375,8 +375,8 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
         authRequired: true,
         authParams: {
-            INFURA_KEY: process.env.UNISWAP_INFURA_KEY,
-            WALLET_PRIVATE_KEY: process.env.UNISWAP_WALLET_PRIVATE_KEY
+            INFURA_KEY: "INFURA_KEY",
+            WALLET_PRIVATE_KEY: "WALLET_PRIVATE_KEY"
         }
     },
     {
@@ -406,7 +406,7 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/noahgsolomon/pumpfun-mcp-server',
         authRequired: true,
         authParams: {
-            PUMPFUN_API_KEY: process.env.PUMPFUN_API_KEY
+            PUMPFUN_API_KEY: "PUMPFUN_API_KEY"
         }
     },
 
@@ -454,10 +454,10 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/datawhisker/x-mcp-server',
         authRequired: true,
         authParams: {
-            TWITTER_API_KEY: process.env.TWITTER_API_KEY,
-            TWITTER_API_SECRET: process.env.TWITTER_API_SECRET,
-            TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN,
-            TWITTER_ACCESS_SECRET: process.env.TWITTER_ACCESS_SECRET
+            TWITTER_API_KEY: "TWITTER_API_KEY",
+            TWITTER_API_SECRET: "TWITTER_API_SECRET",
+            TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
+            TWITTER_ACCESS_SECRET: "TWITTER_ACCESS_SECRET"
         }
     },
     {
