@@ -70,7 +70,7 @@ router.post('/', optionalAuth, async (req: Request, res: Response) => {
     // 获取对话服务
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
     
-    // 如果提供了第一条消息，创建会话并处理消息
+    // 如果提供了第一条消息，创建会话并生成标题（不处理消息）
     if (firstMessage) {
       const result = await conversationService.createConversationWithFirstMessage(
         userId, 
@@ -82,10 +82,8 @@ router.post('/', optionalAuth, async (req: Request, res: Response) => {
         success: true,
         data: {
           conversation: result.conversation,
-          userMessage: result.userMessage,
-          assistantResponse: result.assistantResponse,
-          intent: result.intent,
-          taskId: result.taskId
+          generatedTitle: result.generatedTitle,
+          message: 'Conversation created successfully. Please send the first message using the message endpoint.'
         }
       });
     } else {
@@ -174,21 +172,14 @@ router.post('/stream', optionalAuth, async (req: Request, res: Response) => {
     processingPromise
       .then((result: {
         conversationId: string;
-        userMessageId: string;
-        assistantResponseId: string;
-        intent: MessageIntent;
-        taskId?: string;
         generatedTitle: string;
       }) => {
         res.write(`data: ${JSON.stringify({
-          event: 'conversation_created',
+          event: 'conversation_creation_complete',
           data: {
             conversationId: result.conversationId,
-            userMessageId: result.userMessageId,
-            assistantResponseId: result.assistantResponseId,
-            intent: result.intent,
-            taskId: result.taskId,
-            title: result.generatedTitle
+            title: result.generatedTitle,
+            message: 'Conversation created successfully. Please send the first message using the message endpoint.'
           }
         })}\n\n`);
         res.write('data: [DONE]\n\n');
