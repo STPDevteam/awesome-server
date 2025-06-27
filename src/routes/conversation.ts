@@ -40,7 +40,7 @@ const sendMessageSchema = z.object({
  * 创建新对话
  * POST /api/conversation
  */
-router.post('/', optionalAuth, async (req: Request, res: Response) => {
+router.post('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const validationResult = createConversationSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -111,7 +111,7 @@ router.post('/', optionalAuth, async (req: Request, res: Response) => {
  * 创建新对话（流式版本）
  * POST /api/conversation/stream
  */
-router.post('/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/stream', requireAuth, async (req: Request, res: Response) => {
   try {
     const validationResult = createConversationSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -213,7 +213,7 @@ router.post('/stream', optionalAuth, async (req: Request, res: Response) => {
  * 获取对话列表
  * GET /api/conversation
  */
-router.get('/', optionalAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { limit, offset, sortBy, sortDir } = req.query;
     
@@ -255,7 +255,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
  * 获取特定对话
  * GET /api/conversation/:id
  */
-router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
+router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
     
@@ -317,7 +317,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
  * 发送消息
  * POST /api/conversation/:id/message
  */
-router.post('/:id/message', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/message', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
     
@@ -392,7 +392,7 @@ router.post('/:id/message', optionalAuth, async (req: Request, res: Response) =>
  * 流式发送消息
  * POST /api/conversation/:id/message/stream
  */
-router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/message/stream', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
     
@@ -502,7 +502,7 @@ router.post('/:id/message/stream', optionalAuth, async (req: Request, res: Respo
  * 获取对话关联的任务列表
  * GET /api/conversation/:id/tasks
  */
-router.get('/:id/tasks', optionalAuth, async (req: Request, res: Response) => {
+router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
     

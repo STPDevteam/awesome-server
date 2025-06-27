@@ -244,10 +244,10 @@ export class AwePaymentService {
       const aweUsdPrice = await this.getAweUsdPrice();
       
       // 计算各种会员类型的AWE金额（保留2位小数）
-      const aweAmountForPlusMonthly = Math.round((parseFloat(MEMBERSHIP_PRICING.plus.monthly.amount) / aweUsdPrice) * 100) / 100;
-      const aweAmountForPlusYearly = Math.round((parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) / aweUsdPrice) * 100) / 100;
-      const aweAmountForProMonthly = Math.round((parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) / aweUsdPrice) * 100) / 100;
-      const aweAmountForProYearly = Math.round((parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) / aweUsdPrice) * 100) / 100;
+      const aweAmountForPlusMonthly = Math.round((parseFloat(MEMBERSHIP_PRICING.plus.monthly.amount) / aweUsdPrice * 0.8) * 100) / 100;
+      const aweAmountForPlusYearly = Math.round((parseFloat(MEMBERSHIP_PRICING.plus.yearly.amount) / aweUsdPrice * 0.8) * 100) / 100;
+      const aweAmountForProMonthly = Math.round((parseFloat(MEMBERSHIP_PRICING.pro.monthly.amount) / aweUsdPrice * 0.8) * 100) / 100;
+      const aweAmountForProYearly = Math.round((parseFloat(MEMBERSHIP_PRICING.pro.yearly.amount) / aweUsdPrice * 0.8) * 100) / 100;
 
       // 计算Wei单位的金额（基于2位小数的AWE数量）
       const aweAmountForPlusMonthlyInWei = ethers.parseUnits(aweAmountForPlusMonthly.toFixed(2), AWE_TOKEN_CONFIG.decimals).toString();

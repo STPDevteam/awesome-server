@@ -735,7 +735,7 @@ router.get('/all-predefined-mcps', async (req, res) => {
  * 创建或更新任务
  * POST /api/task[/:id]
  */
-router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => {
+router.post(['/', '/:id'], requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     
@@ -868,7 +868,7 @@ router.post(['/', '/:id'], optionalAuth, async (req: Request, res: Response) => 
  * 获取用户的任务列表
  * GET /api/task
  */
-router.get('/', optionalAuth, async (req: Request, res: Response) => {
+router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const { status, limit, offset, sortBy, sortDir } = req.query;
     
@@ -909,7 +909,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
  * 获取任务详情
  * GET /api/task/:id
  */
-router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
+router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const task = await taskService.getTaskById(taskId);
@@ -966,7 +966,7 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
  * 验证MCP授权
  * POST /api/task/:id/verify-auth
  */
-router.post('/:id/verify-auth', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const validationResult = verifyMCPAuthSchema.safeParse(req.body);
@@ -1059,7 +1059,7 @@ router.post('/:id/verify-auth', optionalAuth, async (req: Request, res: Response
  * 获取MCP替代选项
  * GET /api/task/:id/mcp-alternatives/:mcpName
  */
-router.get('/:id/mcp-alternatives/:mcpName', optionalAuth, async (req: Request, res: Response) => {
+router.get('/:id/mcp-alternatives/:mcpName', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const mcpName = req.params.mcpName;
@@ -1116,7 +1116,7 @@ router.get('/:id/mcp-alternatives/:mcpName', optionalAuth, async (req: Request, 
  * 验证MCP替换的合理性
  * POST /api/task/:id/validate-mcp-replacement
  */
-router.post('/:id/validate-mcp-replacement', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/validate-mcp-replacement', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const { originalMcpName, newMcpName } = req.body;
@@ -1177,7 +1177,7 @@ router.post('/:id/validate-mcp-replacement', optionalAuth, async (req: Request, 
  * 流式分析任务
  * POST /api/task/:id/analyze/stream
  */
-router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/analyze/stream', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const task = await taskService.getTaskById(taskId);
@@ -1260,7 +1260,7 @@ router.post('/:id/analyze/stream', optionalAuth, async (req: Request, res: Respo
  * 流式执行任务
  * POST /api/task/:id/execute/stream
  */
-router.post('/:id/execute/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/execute/stream', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const task = await taskService.getTaskById(taskId);
@@ -1431,7 +1431,7 @@ router.post('/execute-playwright-search', async (req, res) => {
  * 获取与任务关联的对话
  * GET /api/task/:id/conversation
  */
-router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response) => {
+router.get('/:id/conversation', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const task = await taskService.getTaskById(taskId);
@@ -1502,7 +1502,7 @@ router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response
  * 批量替换MCP并重新分析任务（流式版本）
  * POST /api/task/:id/batch-replace-mcp/stream
  */
-router.post('/:id/batch-replace-mcp/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/batch-replace-mcp/stream', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const validationResult = batchReplaceMCPSchema.safeParse(req.body);
@@ -1613,7 +1613,7 @@ router.post('/:id/batch-replace-mcp/stream', optionalAuth, async (req: Request, 
  * 确认替换MCP并重新分析任务（流式版本）
  * POST /api/task/:id/confirm-replacement/stream
  */
-router.post('/:id/confirm-replacement/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/:id/confirm-replacement/stream', requireAuth, async (req: Request, res: Response) => {
   try {
     const taskId = req.params.id;
     const validationResult = confirmReplacementSchema.safeParse(req.body);
