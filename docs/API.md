@@ -946,16 +946,616 @@ data: [DONE]
 
 ### 任务管理 API
 
-#### 获取任务关联的会话
+#### 1. 创建任务
 
-**端点**: `GET /api/task/:id/conversation`
+**端点**: `POST /api/tasks`
 
-**描述**: 获取与特定任务关联的会话信息
+**描述**: 创建一个新任务
 
-**认证**: 需要访问令牌
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**请求体**:
+```json
+{
+  "content": "获取比特币当前价格和市场分析",
+  "title": "任务标题（可选）",
+  "conversationId": "关联的会话ID（可选）",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "task": {
+      "id": "task_123456",
+      "userId": "user_id",
+      "title": "获取比特币当前价格和市场分析",
+      "content": "获取比特币当前价格和市场分析",
+      "status": "created",
+      "conversationId": "conv_123456",
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:00:00.000Z"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效或缺少用户ID
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 2. 获取任务列表
+
+**端点**: `GET /api/tasks`
+
+**描述**: 获取用户的任务列表
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+- `status`: 任务状态过滤（可选）
+- `limit`: 每页数量（可选，默认10）
+- `offset`: 偏移量（可选，默认0）
+- `sortBy`: 排序字段（可选）
+- `sortDir`: 排序方向，asc或desc（可选）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "tasks": [
+      {
+        "id": "task_123456",
+        "userId": "user_id",
+        "title": "获取比特币当前价格和市场分析",
+        "content": "获取比特币当前价格和市场分析",
+        "status": "completed",
+        "conversationId": "conv_123456",
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:30:00.000Z",
+        "completedAt": "2023-06-20T08:30:00.000Z"
+      }
+    ],
+    "total": 25
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 缺少用户ID
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 3. 获取任务详情
+
+**端点**: `GET /api/tasks/:id`
+
+**描述**: 获取特定任务的详细信息
+
+**认证**: 可选（可使用userId参数或访问令牌）
 
 **路径参数**:
 - `id`: 任务ID
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "task": {
+      "id": "task_123456",
+      "userId": "user_id",
+      "title": "获取比特币当前价格和市场分析",
+      "content": "获取比特币当前价格和市场分析",
+      "status": "completed",
+      "mcpWorkflow": {
+        "mcps": [
+          {
+            "name": "coingecko-server",
+            "description": "CoinGecko官方MCP服务器",
+            "authRequired": true,
+            "authVerified": true,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coingecko.png",
+            "githubUrl": "https://github.com/coingecko/mcp-server"
+          }
+        ],
+        "workflow": [
+          {
+            "step": 1,
+            "mcp": "coingecko-server",
+            "action": "获取比特币当前价格",
+            "input": {}
+          }
+        ]
+      },
+      "result": "比特币当前价格：$45,000",
+      "conversationId": "conv_123456",
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:30:00.000Z",
+      "completedAt": "2023-06-20T08:30:00.000Z"
+    },
+    "steps": [
+      {
+        "id": "step_1",
+        "taskId": "task_123456",
+        "stepType": "analysis",
+        "title": "分析任务需求",
+        "content": "分析用户需求：获取比特币价格信息",
+        "reasoning": "用户需要获取比特币的实时价格数据",
+        "orderIndex": 1,
+        "createdAt": "2023-06-20T08:05:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 缺少用户ID
+- `403 Forbidden`: 无权访问该任务
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 4. 流式分析任务
+
+**端点**: `POST /api/tasks/:id/analyze-stream`
+
+**描述**: 使用AI分析任务并生成MCP工作流（流式响应）
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**: Server-Sent Events (SSE) 流
+
+```
+data: {"event":"analysis_start","data":{"step":"开始分析任务需求"}}
+
+data: {"event":"step_complete","data":{"step":1,"title":"分析任务需求","status":"completed"}}
+
+data: {"event":"step_complete","data":{"step":2,"title":"识别相关MCP工具","status":"completed"}}
+
+data: {"event":"step_complete","data":{"step":3,"title":"确认可交付内容","status":"completed"}}
+
+data: {"event":"step_complete","data":{"step":4,"title":"构建MCP工作流","status":"completed"}}
+
+data: {"event":"analysis_complete","data":{"mcpWorkflow":{"mcps":[...],"workflow":[...]}}}
+
+data: [DONE]
+```
+
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
+
+---
+
+#### 5. 流式执行任务
+
+**端点**: `POST /api/tasks/:id/execute-stream`
+
+**描述**: 执行任务工作流（流式响应）
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**: Server-Sent Events (SSE) 流
+
+```
+data: {"event":"execution_start","data":{"taskId":"task_123456"}}
+
+data: {"event":"step_start","data":{"step":1,"mcp":"coingecko-server","action":"获取比特币价格"}}
+
+data: {"event":"step_complete","data":{"step":1,"status":"success","result":"BTC价格：$45,000"}}
+
+data: {"event":"execution_complete","data":{"summary":"任务执行完成，成功获取比特币价格信息"}}
+
+data: [DONE]
+```
+
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
+
+---
+
+#### 6. 验证MCP授权
+
+**端点**: `POST /api/tasks/:id/verify-auth`
+
+**描述**: 验证单个MCP的授权信息
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "mcpName": "coingecko-server",
+  "authData": {
+    "COINGECKO_API_KEY": "your_api_key_here"
+  },
+  "saveForLater": true,
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "授权验证成功",
+  "data": {
+    "verified": true,
+    "details": "API密钥有效，权限正常",
+    "mcpName": "coingecko-server"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效
+- `401 Unauthorized`: 缺少用户ID
+- `403 Forbidden`: 无权验证该任务的授权
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 7. 批量验证MCP授权
+
+**端点**: `POST /api/tasks/:id/verify-multiple-auth`
+
+**描述**: 批量验证多个MCP的授权信息
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "mcpAuths": [
+    {
+      "mcpName": "coingecko-server",
+      "authData": {
+        "COINGECKO_API_KEY": "your_api_key_here"
+      }
+    },
+    {
+      "mcpName": "github-mcp-server",
+      "authData": {
+        "github_token": "your_github_token"
+      }
+    }
+  ],
+  "saveForLater": true,
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "2/2 MCP授权验证成功",
+  "data": {
+    "results": [
+      {
+        "mcpName": "coingecko-server",
+        "success": true,
+        "message": "授权验证成功",
+        "details": "API密钥有效"
+      },
+      {
+        "mcpName": "github-mcp-server",
+        "success": true,
+        "message": "授权验证成功",
+        "details": "GitHub令牌有效"
+      }
+    ],
+    "summary": {
+      "total": 2,
+      "successful": 2,
+      "failed": 0
+    }
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效
+- `401 Unauthorized`: 缺少用户ID
+- `403 Forbidden`: 无权验证该任务的授权
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### MCP替换和替代API
+
+#### 8. 获取MCP替代选项（增强版）
+
+**端点**: `GET /api/tasks/:id/mcp-alternatives/:mcpName`
+
+**描述**: 智能获取指定MCP的替代选项，考虑任务内容和当前工作流上下文
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+- `mcpName`: 要替换的MCP名称
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "originalMcp": "coingecko-server",
+    "alternatives": [
+      {
+        "name": "coinmarketcap-mcp",
+        "description": "CoinMarketCap市场数据集成",
+        "authRequired": true,
+        "category": "Market Data",
+        "imageUrl": "https://example.com/cmc.png",
+        "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp"
+      },
+      {
+        "name": "dexscreener-mcp-server",
+        "description": "DexScreener去中心化交易所数据",
+        "authRequired": false,
+        "category": "Market Data",
+        "imageUrl": "https://example.com/dexscreener.png",
+        "githubUrl": "https://github.com/dexscreener/mcp-server"
+      }
+    ],
+    "taskContent": "获取比特币当前价格和市场分析",
+    "currentWorkflow": {
+      "mcps": [...],
+      "workflow": [...]
+    }
+  }
+}
+```
+
+**错误响应**:
+- `403 Forbidden`: 无权访问该任务
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 9. 验证MCP替换的合理性
+
+**端点**: `POST /api/tasks/:id/validate-mcp-replacement`
+
+**描述**: 使用AI验证将一个MCP替换为另一个MCP的合理性和可行性
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "originalMcpName": "coingecko-server",
+  "newMcpName": "coinmarketcap-mcp",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "validation": {
+      "isValid": true,
+      "confidence": 85,
+      "reasons": [
+        "两个工具都提供加密货币市场数据",
+        "功能高度相似，可以完成相同的任务",
+        "都支持实时价格查询"
+      ],
+      "warnings": [
+        "API接口可能略有不同，需要调整参数",
+        "数据格式可能存在差异"
+      ]
+    },
+    "originalMcp": "coingecko-server",
+    "newMcp": "coinmarketcap-mcp",
+    "taskId": "task_123456"
+  }
+}
+```
+
+**字段说明**:
+- `isValid`: 是否建议进行替换
+- `confidence`: 替换成功的置信度（0-100）
+- `reasons`: 支持替换的理由列表
+- `warnings`: 替换时需要注意的问题列表
+
+**错误响应**:
+- `400 Bad Request`: 缺少必要参数
+- `403 Forbidden`: 无权访问该任务
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 10. 智能替换MCP并重新分析任务
+
+**端点**: `POST /api/tasks/:id/replace-mcp-smart`
+
+**描述**: 智能替换任务中的MCP并重新分析工作流，确保新MCP与其他工具的协作。**返回格式与原始任务分析完全一致**。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "originalMcpName": "coingecko-server",
+  "newMcpName": "coinmarketcap-mcp",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123456",
+    "message": "成功将 coingecko-server 替换为 coinmarketcap-mcp 并重新生成了工作流",
+    "mcpWorkflow": {
+      "mcps": [
+        {
+          "name": "coinmarketcap-mcp",
+          "description": "CoinMarketCap市场数据集成",
+          "authRequired": true,
+          "authVerified": false,
+          "category": "Market Data",
+          "imageUrl": "https://example.com/cmc.png",
+          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+          "authParams": {
+            "COINMARKETCAP_API_KEY": {
+              "type": "string",
+              "description": "CoinMarketCap API密钥",
+              "required": true
+            }
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "mcp": "coinmarketcap-mcp",
+          "action": "获取比特币当前价格和市场数据",
+          "input": {}
+        }
+      ]
+    },
+    "metadata": {
+      "totalSteps": 1,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp"]
+    },
+    "replacementInfo": {
+      "originalMcp": "coingecko-server",
+      "newMcp": "coinmarketcap-mcp",
+      "timestamp": "2023-06-20T08:30:00.000Z"
+    }
+  }
+}
+```
+
+**返回字段说明**:
+- `taskId`: 任务ID
+- `message`: 替换操作的描述信息
+- `mcpWorkflow`: **与原始任务分析格式完全一致的工作流结构**
+  - `mcps`: MCP列表，包含完整的显示信息（category、imageUrl、githubUrl等）
+  - `workflow`: 工作流步骤数组
+- `metadata`: **与原始任务分析格式一致的元数据**
+  - `totalSteps`: 工作流总步骤数
+  - `requiresAuth`: 是否需要认证
+  - `mcpsRequiringAuth`: 需要认证的MCP名称列表
+- `replacementInfo`: 替换操作的额外信息
+  - `originalMcp`: 原始MCP名称
+  - `newMcp`: 新MCP名称
+  - `timestamp`: 替换操作时间戳
+
+**认证状态处理**:
+- 如果新MCP不需要认证（`authRequired: false`），则 `authVerified: true`
+- 如果新MCP需要认证（`authRequired: true`），则 `authVerified: false`，需要用户重新提供认证信息
+- 其他未替换的MCP保持原有认证状态
+
+**处理流程**:
+1. 验证原MCP是否在当前工作流中
+2. 验证新MCP是否存在且可用
+3. 构建新的MCP列表（替换指定MCP）
+4. 根据新MCP的认证要求正确设置认证状态
+5. 使用AI重新生成适配新MCP的工作流
+6. 更新任务状态为'analyzed'
+7. 记录替换操作日志
+8. 返回与原始任务分析完全一致的格式
+
+**与原始任务分析的一致性**:
+此接口返回的 `mcpWorkflow` 和 `metadata` 字段与 `/api/tasks/:id/analyze-stream` 接口返回的格式完全一致，确保前端可以使用相同的逻辑处理两种情况的返回结果。
+
+**错误响应**:
+```json
+{
+  "success": false,
+  "error": "Replacement Failed",
+  "message": "找不到指定的新MCP: invalid-mcp-name"
+}
+```
+
+常见错误情况：
+- `400 Bad Request`: 缺少必要参数或用户ID
+- `403 Forbidden`: 无权替换该任务的MCP
+- `404 Not Found`: 任务不存在
+- 替换失败的具体原因：
+  - 任务没有工作流信息
+  - 找不到指定的新MCP
+  - 原MCP不在当前工作流中
+  - 更新任务工作流失败
+
+---
+
+#### 获取任务关联的会话
+
+**端点**: `GET /api/tasks/:id/conversation`
+
+**描述**: 获取与特定任务关联的会话信息
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
 
 **响应**:
 ```json
@@ -991,168 +1591,334 @@ data: [DONE]
 ```
 
 **错误响应**:
-- `401 Unauthorized`: 无效的访问令牌
+- `400 Bad Request`: 缺少用户ID
 - `403 Forbidden`: 无权访问该任务
 - `404 Not Found`: 任务不存在
 - `500 Internal Server Error`: 服务器内部错误
 
-## 错误代码
+---
 
-| 状态码 | 错误类型 | 描述 |
-|--------|----------|------|
-| 400 | Bad Request | 请求参数错误或缺失 |
-| 401 | Unauthorized | 认证失败或令牌无效 |
-| 403 | Forbidden | 权限不足 |
-| 404 | Not Found | 资源不存在 |
-| 429 | Too Many Requests | 请求频率超限 |
-| 500 | Internal Server Error | 服务器内部错误 |
+### MCP信息查询API
 
-## 速率限制
+#### 11. 获取所有MCP列表
 
-- **登录相关端点**: 每15分钟最多5次请求
-- **其他端点**: 每15分钟最多100次请求
+**端点**: `GET /api/mcp`
 
-## 钱包登录流程
+**描述**: 获取所有可用的MCP工具列表
 
-1. **获取nonce**: 调用 `/api/auth/wallet/nonce` 获取随机数和SIWE消息
-2. **签名消息**: 使用钱包（如MetaMask）对SIWE消息进行签名
-3. **验证登录**: 调用 `/api/auth/wallet/login` 提交消息和签名
-4. **使用令牌**: 在后续请求中使用返回的访问令牌
+**认证**: 可选
 
-## 示例代码
-
-### JavaScript 钱包登录示例
-
-```javascript
-// 1. 获取nonce
-const nonceResponse = await fetch('/api/auth/wallet/nonce', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ address: walletAddress })
-});
-const { data } = await nonceResponse.json();
-
-// 2. 签名消息
-const signature = await ethereum.request({
-  method: 'personal_sign',
-  params: [data.message, walletAddress]
-});
-
-// 3. 登录
-const loginResponse = await fetch('/api/auth/wallet/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    message: data.message,
-    signature,
-    username: '用户名',
-    avatar: '头像URL'
-  })
-});
-const loginData = await loginResponse.json();
-
-// 4. 使用访问令牌
-const chatResponse = await fetch('/api/chat', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${loginData.data.tokens.accessToken}`
-  },
-  body: JSON.stringify({
-    messages: [{ role: 'user', content: '你好' }]
-  })
-});
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "coingecko-server",
+      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+      "authRequired": true,
+      "authFields": ["COINGECKO_API_KEY"],
+      "category": "Market Data",
+      "imageUrl": "https://example.com/coingecko.png",
+      "githubUrl": "https://docs.coingecko.com/reference/mcp-server"
+    },
+    {
+      "name": "github-mcp-server",
+      "description": "GitHub仓库管理和操作",
+      "authRequired": true,
+      "authFields": ["github_token"],
+      "category": "Development Tools",
+      "imageUrl": "https://example.com/github.png",
+      "githubUrl": "https://github.com/github/github-mcp-server"
+    }
+  ]
+}
 ```
 
-### cURL 示例
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 12. 按类别获取MCP
+
+**端点**: `GET /api/mcp/category/:category`
+
+**描述**: 获取指定类别的MCP工具列表
+
+**认证**: 可选
+
+**路径参数**:
+- `category`: MCP类别名称（如：Market Data、Development Tools、Trading等）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "category": "Market Data",
+    "mcps": [
+      {
+        "name": "coingecko-server",
+        "description": "CoinGecko官方MCP服务器",
+        "authRequired": true,
+        "category": "Market Data",
+        "imageUrl": "https://example.com/coingecko.png",
+        "githubUrl": "https://docs.coingecko.com/reference/mcp-server"
+      }
+    ]
+  }
+}
+```
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 13. 获取所有MCP类别
+
+**端点**: `GET /api/mcp/categories`
+
+**描述**: 获取所有可用的MCP类别及其包含的工具数量
+
+**认证**: 可选
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "Market Data",
+      "count": 8
+    },
+    {
+      "name": "Development Tools",
+      "count": 12
+    },
+    {
+      "name": "Trading",
+      "count": 4
+    },
+    {
+      "name": "Social",
+      "count": 4
+    },
+    {
+      "name": "Chain PRC",
+      "count": 2
+    }
+  ]
+}
+```
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 14. 根据ID获取MCP详情
+
+**端点**: `GET /api/mcp/:id`
+
+**描述**: 获取指定MCP的详细信息
+
+**认证**: 可选
+
+**路径参数**:
+- `id`: MCP的名称/ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "coingecko-server",
+    "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据、历史价格和OHLC K线数据",
+    "authRequired": true,
+    "authFields": ["COINGECKO_API_KEY"],
+    "category": "Market Data",
+    "imageUrl": "https://example.com/coingecko.png",
+    "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+    "authParams": {
+      "COINGECKO_API_KEY": {
+        "type": "string",
+        "description": "CoinGecko API密钥",
+        "required": true
+      }
+    }
+  }
+}
+```
+
+**错误响应**:
+- `404 Not Found`: 指定的MCP不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+## 智能MCP替换流程示例
+
+以下是一个完整的智能MCP替换流程示例：
+
+### 1. 创建任务并分析
 
 ```bash
-# 获取nonce
-curl -X POST http://localhost:3001/api/auth/wallet/nonce \
-  -H "Content-Type: application/json" \
-  -d '{"address":"0x742d35Cc6634C0532925a3b8D4C9db96C4b4d8e8"}'
-
-# 聊天（需要先登录获取token）
-curl -X POST http://localhost:3001/api/chat \
+# 创建任务
+curl -X POST http://localhost:3001/api/tasks \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{"messages":[{"role":"user","content":"你好"}]}'
+  -d '{"content":"获取比特币当前价格和市场分析"}'
+
+# 分析任务（流式）
+curl -X POST http://localhost:3001/api/tasks/task_123456/analyze-stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
+
+### 2. 查看生成的工作流
+
+```bash
+curl -X GET http://localhost:3001/api/tasks/task_123456 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### 3. 获取MCP替代选项
+
+```bash
+curl -X GET http://localhost:3001/api/tasks/task_123456/mcp-alternatives/coingecko-server \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### 4. 验证替换的合理性
+
+```bash
+curl -X POST http://localhost:3001/api/tasks/task_123456/validate-mcp-replacement \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "originalMcpName": "coingecko-server",
+    "newMcpName": "coinmarketcap-mcp"
+  }'
+```
+
+### 5. 执行智能替换
+
+```bash
+curl -X POST http://localhost:3001/api/tasks/task_123456/replace-mcp-smart \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "originalMcpName": "coingecko-server",
+    "newMcpName": "coinmarketcap-mcp"
+  }'
+```
+
+**响应示例**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123456",
+    "message": "成功将 coingecko-server 替换为 coinmarketcap-mcp 并重新生成了工作流",
+    "mcpWorkflow": {
+      "mcps": [
+        {
+          "name": "coinmarketcap-mcp",
+          "description": "CoinMarketCap市场数据集成",
+          "authRequired": true,
+          "authVerified": false,
+          "category": "Market Data",
+          "imageUrl": "https://example.com/cmc.png",
+          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+          "authParams": {
+            "COINMARKETCAP_API_KEY": {
+              "type": "string",
+              "description": "CoinMarketCap API密钥",
+              "required": true
+            }
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "mcp": "coinmarketcap-mcp",
+          "action": "获取比特币当前价格和市场数据",
+          "input": {}
+        }
+      ]
+    },
+    "metadata": {
+      "totalSteps": 1,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp"]
+    },
+    "replacementInfo": {
+      "originalMcp": "coingecko-server",
+      "newMcp": "coinmarketcap-mcp",
+      "timestamp": "2023-06-20T08:30:00.000Z"
+    }
+  }
+}
+```
+
+**注意**: 返回的 `mcpWorkflow` 和 `metadata` 字段格式与原始任务分析完全一致，前端可以使用相同的逻辑处理。
+
+### 6. 验证替换结果
+
+```bash
+curl -X GET http://localhost:3001/api/tasks/task_123456 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+**验证要点**:
+- 检查 `mcpWorkflow.mcps` 中是否包含新的MCP
+- 确认新MCP的认证状态（`authVerified`）
+- 验证工作流步骤是否正确更新
+- 如果新MCP需要认证，使用认证接口提供必要的认证信息
+
+## 智能替换特性
+
+### 1. 上下文感知替换
+- 考虑当前任务内容和目标
+- 分析与其他MCP工具的协作关系
+- 智能评估功能匹配度
+
+### 2. 合理性验证
+- AI驱动的替换可行性分析
+- 提供置信度评分（0-100）
+- 详细的支持理由和潜在风险警告
+
+### 3. 自动工作流重建
+- 替换后自动重新生成工作流
+- 确保新MCP与其他工具的兼容性
+- 保持任务目标的一致性
+
+### 4. 智能推荐算法
+- 移除硬编码的替代映射
+- 基于类别、功能和任务内容的智能推荐
+- 考虑认证复杂度和工具稳定性
 
 ## 注意事项
 
-1. **安全性**: 
-   - 访问令牌有效期为1小时
-   - 刷新令牌有效期为7天
-   - 所有敏感操作都需要认证
+### 返回格式一致性 ⭐
+**重要**: 智能替换MCP接口 (`/api/tasks/:id/replace-mcp-smart`) 的返回格式与原始任务分析接口 (`/api/tasks/:id/analyze-stream`) 完全一致，包括：
+- `mcpWorkflow` 结构完全相同
+- `metadata` 字段格式完全相同
+- MCP认证状态的处理逻辑完全相同
 
-2. **SIWE标准**: 
-   - 严格遵循EIP-4361标准
-   - 支持EIP-55地址校验和格式
-   - nonce有效期为10分钟
+这确保了前端可以使用相同的组件和逻辑来处理两种情况的返回结果，无需额外的适配代码。
 
-3. **工具调用**: 
-   - AI可以自动调用MCP工具
-   - 支持官方和自定义MCP适配器
-   - 工具执行结果会自动整合到对话中
+### MCP替换限制
+1. **认证要求**: 替换后的MCP如果需要认证，需要重新验证
+2. **功能差异**: 不同MCP的API接口可能存在差异
+3. **数据格式**: 返回的数据格式可能不完全一致
+4. **性能影响**: 替换操作会触发工作流重新分析
 
-4. **流式响应**: 
-   - 使用Server-Sent Events (SSE)
-   - 适合长文本生成场景
-   - 需要正确处理连接关闭 
-
-## 使用示例
-
-### 会话-任务流程示例
-
-以下是一个完整的会话-任务流程示例：
-
-1. 创建新会话
-
-```bash
-curl -X POST http://localhost:3001/api/conversation \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{"title":"自动化任务会话"}'
-```
-
-2. 在会话中发送消息（询问信息）
-
-```bash
-curl -X POST http://localhost:3001/api/conversation/conv_123456/message \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{"content":"你能告诉我什么是MCP协议吗？"}'
-```
-
-3. 在会话中发送任务请求
-
-```bash
-curl -X POST http://localhost:3001/api/conversation/conv_123456/message \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{"content":"帮我使用Playwright访问百度并搜索MCP协议"}'
-```
-
-4. 获取会话关联的任务
-
-```bash
-curl -X GET http://localhost:3001/api/conversation/conv_123456/tasks \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
-
-5. 获取任务详情
-
-```bash
-curl -X GET http://localhost:3001/api/task/task_123 \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
-```
-
-6. 查看任务结果后，继续在会话中对话
-
-```bash
-curl -X POST http://localhost:3001/api/conversation/conv_123456/message \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -d '{"content":"搜索结果看起来不错，可以帮我总结一下MCP协议的主要特点吗？"}'
-``` 
+### 最佳实践
+1. **替换前验证**: 始终使用验证接口检查替换的合理性
+2. **备份工作流**: 重要任务建议备份原始工作流
+3. **分步测试**: 替换后先测试基本功能再执行完整任务
+4. **监控结果**: 关注替换后任务执行的成功率和质量 
