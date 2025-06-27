@@ -496,16 +496,17 @@ You must output valid JSON with the following structure:
         
         try {
           const response = await this.llm.invoke([
-            new SystemMessage(`You are an MCP tool selector. Your responsibility is to analyze the user's task and select the most appropriate MCP tool(s) needed to complete it, along with alternative tools for each selected tool.
+            new SystemMessage(`You are an MCP tool selector. Your responsibility is to analyze the user's task and select the most appropriate MCP tool(s) needed to complete it, along with suitable alternative tools if they exist.
 
 SELECTION PRINCIPLES:
 ✅ Choose tools that are DIRECTLY required for the task
 ✅ Be selective - only choose what is actually needed
 ✅ Consider the core functionality required
-✅ **IMPORTANT**: For each selected tool, you MUST provide 2-3 alternative tools that could serve similar purposes
-✅ Look for tools in the same category or with similar functionality as alternatives
-✅ If no suitable alternatives exist for a tool, provide an empty alternatives array
+✅ For each selected tool, identify alternative tools ONLY if they can provide similar functionality
+✅ Alternatives should be genuinely capable of serving the same purpose
+✅ If no suitable alternatives exist for a tool, leave the alternatives array empty
 ❌ Do NOT select extra tools "just in case"
+❌ Do NOT force alternatives if none are truly suitable
 ❌ Do NOT select tools based on loose associations
 
 **Current task**: "${taskContent}"
@@ -518,23 +519,23 @@ ${JSON.stringify(availableMCPs.reduce((acc, mcp) => {
   return acc;
 }, {} as Record<string, any[]>), null, 2)}
 
-**ALTERNATIVE SELECTION GUIDELINES**:
-- For cryptocurrency tools: Look for other crypto data providers (CoinGecko, CoinMarketCap, etc.)
-- For social media tools: Look for other social platforms or posting tools
-- For web automation: Look for other browser automation or web scraping tools
-- For development tools: Look for similar programming/deployment tools
-- For data analysis: Look for other analysis or visualization tools
+**ALTERNATIVE IDENTIFICATION GUIDELINES**:
+- Only suggest alternatives that can perform the same core function
+- For cryptocurrency data: Other crypto data providers are valid alternatives
+- For web automation: Other browser/web tools are valid alternatives
+- For specific APIs: Only tools accessing the same or equivalent APIs are alternatives
+- When in doubt, it's better to have no alternatives than wrong alternatives
 
 Analyze the task and respond with valid JSON in this exact structure:
 {
   "selected_mcps": [
     {
       "name": "primary_tool_name",
-      "alternatives": ["alternative1", "alternative2", "alternative3"]
+      "alternatives": []
     }
   ],
-  "selection_explanation": "Brief explanation of why these tools were selected and how alternatives were chosen",
-  "detailed_reasoning": "Detailed explanation of the selection logic, how these tools address the task requirements, and why specific alternatives were recommended"
+  "selection_explanation": "Brief explanation of why these tools were selected",
+  "detailed_reasoning": "Detailed explanation of the selection logic and how these tools address the task requirements"
 }`),
              new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
              new HumanMessage(`User task: ${taskContent}`)
