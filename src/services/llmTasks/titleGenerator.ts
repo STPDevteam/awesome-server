@@ -13,20 +13,28 @@ export class TitleGeneratorService {
   constructor() {
     // 检查是否有OpenAI API Key
     if (!process.env.OPENAI_API_KEY) {
-      logger.warn('No OpenAI API Key found, title generation will be disabled');
+      logger.warn('No OpenAI API Key found, title generation will use fallback method');
+      // 即使没有API密钥也初始化LLM实例，但不会实际调用
+      this.llm = new ChatOpenAI({
+        openAIApiKey: 'dummy', // 占位符
+        modelName: 'gpt-3.5-turbo',
+        temperature: 0.3,
+        timeout: 10000,
+        maxRetries: 1,
+      });
+    } else {
+      this.llm = new ChatOpenAI({
+        openAIApiKey: process.env.OPENAI_API_KEY,
+        modelName: 'gpt-3.5-turbo',
+        temperature: 0.3,
+        timeout: 10000, // 10秒超时
+        maxRetries: 1, // 最多重试1次
+        // 如果需要代理，可以取消注释下面的行
+        // configuration: {
+        //   httpAgent: new HttpsProxyAgent(process.env.HTTPS_PROXY || 'http://127.0.0.1:7890'),
+        // },
+      });
     }
-    
-    this.llm = new ChatOpenAI({
-      openAIApiKey: process.env.OPENAI_API_KEY,
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.3,
-      timeout: 10000, // 10秒超时
-      maxRetries: 1, // 最多重试1次
-      // 如果需要代理，可以取消注释下面的行
-      // configuration: {
-      //   httpAgent: new HttpsProxyAgent(process.env.HTTPS_PROXY || 'http://127.0.0.1:7890'),
-      // },
-    });
   }
 
   /**

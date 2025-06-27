@@ -163,7 +163,15 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       let conversationTitle = title;
       if (!conversationTitle) {
         logger.info('Generating title for conversation based on first message');
-        conversationTitle = await titleGeneratorService.generateTitle(firstMessage);
+        try {
+          // 尝试生成标题，如果失败则使用默认标题
+          conversationTitle = await titleGeneratorService.generateTitle(firstMessage);
+          logger.info(`Generated title: ${conversationTitle}`);
+        } catch (error) {
+          logger.warn('Title generation failed, using fallback title:', error);
+          // 使用消息内容的前30个字符作为标题
+          conversationTitle = firstMessage.length > 30 ? firstMessage.substring(0, 30) + '...' : firstMessage;
+        }
       }
       
       // 2. 创建会话
@@ -178,6 +186,10 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       const messageResult = await this.processUserMessage(conversation.id, userId, firstMessage);
       
       logger.info(`First message processed successfully [Intent: ${messageResult.intent}]`);
+      
+      // 4. 验证消息是否正确存储
+      const storedMessages = await messageDao.getConversationMessages(conversation.id);
+      logger.info(`Messages stored in conversation: ${storedMessages.length} messages`);
       
       return {
         conversation,
