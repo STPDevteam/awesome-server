@@ -1,6 +1,19 @@
 // 任务状态类型
 export type TaskStatus = 'created' | 'in_progress' | 'completed' | 'failed' | 'analyzed';
 
+// 备选MCP信息类型（与主MCP格式完全一致）
+export interface AlternativeMCP {
+  name: string;
+  description: string;
+  authRequired: boolean;
+  authVerified?: boolean; // 认证状态，方便前端处理
+  authData?: Record<string, any>; // 认证数据
+  category?: string;
+  imageUrl?: string;
+  githubUrl?: string;
+  authParams?: Record<string, any>; // 认证参数配置
+}
+
 // MCP工作流配置类型
 export interface MCPWorkflow {
   mcps: Array<{
@@ -13,6 +26,7 @@ export interface MCPWorkflow {
     imageUrl?: string;
     githubUrl?: string;
     authParams?: Record<string, any>;
+    alternatives?: AlternativeMCP[]; // 完整的备选MCP信息列表
   }>;
   workflow: Array<{
     step: number;

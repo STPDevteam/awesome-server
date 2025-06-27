@@ -1068,7 +1068,30 @@ data: [DONE]
             "authVerified": true,
             "category": "Market Data",
             "imageUrl": "https://example.com/coingecko.png",
-            "githubUrl": "https://github.com/coingecko/mcp-server"
+            "githubUrl": "https://github.com/coingecko/mcp-server",
+            "alternatives": [
+              {
+                "name": "coinmarketcap-mcp-service",
+                "description": "CoinMarketCap MCP service for crypto data",
+                "authRequired": false,
+                "authVerified": true,
+                "category": "Market Data",
+                "imageUrl": "https://example.com/coinmarketcap.png",
+                "githubUrl": "https://github.com/example/coinmarketcap-mcp"
+              },
+              {
+                "name": "cryptocompare-mcp",
+                "description": "CryptoCompare MCP for cryptocurrency information",
+                "authRequired": true,
+                "authVerified": false,
+                "category": "Market Data",
+                "imageUrl": "https://example.com/cryptocompare.png",
+                "githubUrl": "https://github.com/example/cryptocompare-mcp",
+                "authParams": {
+                  "api_key": "string"
+                }
+              }
+            ]
           }
         ],
         "workflow": [
@@ -1145,6 +1168,59 @@ data: {"event":"analysis_complete","data":{"mcpWorkflow":{"mcps":[...],"workflow
 
 data: [DONE]
 ```
+
+**重要更新**: 从v2.0开始，每个推荐的MCP都会包含备选MCP列表，格式如下：
+
+```json
+{
+  "mcpWorkflow": {
+    "mcps": [
+      {
+        "name": "coingecko-server",
+        "description": "CoinGecko官方MCP服务器",
+        "authRequired": true,
+        "authVerified": false,
+        "category": "Market Data",
+        "imageUrl": "https://example.com/coingecko.png",
+        "githubUrl": "https://github.com/coingecko/mcp-server",
+        "alternatives": [
+          {
+            "name": "coinmarketcap-mcp-service",
+            "description": "CoinMarketCap MCP service for crypto data",
+            "authRequired": false,
+            "authVerified": true,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coinmarketcap.png",
+            "githubUrl": "https://github.com/example/coinmarketcap-mcp"
+          },
+          {
+            "name": "cryptocompare-mcp",
+            "description": "CryptoCompare MCP for cryptocurrency information",
+            "authRequired": true,
+            "authVerified": false,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/cryptocompare.png",
+            "githubUrl": "https://github.com/example/cryptocompare-mcp",
+            "authParams": {
+              "api_key": "string"
+            }
+          }
+        ]
+      }
+    ],
+    "workflow": [...]
+  }
+}
+```
+
+**alternatives字段说明**:
+- 包含2-3个功能相似的备选MCP工具的完整信息
+- 每个备选工具包含与主MCP完全一致的字段：name、description、authRequired、authVerified、category、imageUrl、githubUrl等
+- authVerified字段表示认证状态：不需要认证的工具为true，需要认证的工具为false（需要用户重新认证）
+- 如果需要认证，还会包含authParams字段，描述需要的认证参数
+- 如果没有合适的备选方案，该字段可能为空数组
+- 备选MCP按推荐优先级排序
+- 前端可以直接使用这些完整信息进行MCP替换，包括处理认证流程，无需额外的API调用
 
 **错误响应**:
 - 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
@@ -1458,11 +1534,7 @@ data: [DONE]
           "imageUrl": "https://example.com/cmc.png",
           "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
           "authParams": {
-            "COINMARKETCAP_API_KEY": {
-              "type": "string",
-              "description": "CoinMarketCap API密钥",
-              "required": true
-            }
+            "API_KEY": "CoinMarketCap API密钥"
           }
         }
       ],
@@ -1471,7 +1543,9 @@ data: [DONE]
           "step": 1,
           "mcp": "coinmarketcap-mcp",
           "action": "获取比特币当前价格和市场数据",
-          "input": {}
+          "input": {
+            "symbol": "BTC"
+          }
         }
       ]
     },
@@ -1483,63 +1557,206 @@ data: [DONE]
     "replacementInfo": {
       "originalMcp": "coingecko-server",
       "newMcp": "coinmarketcap-mcp",
-      "timestamp": "2023-06-20T08:30:00.000Z"
+      "timestamp": "2023-06-20T08:00:00.000Z"
     }
   }
 }
 ```
 
-**返回字段说明**:
-- `taskId`: 任务ID
-- `message`: 替换操作的描述信息
-- `mcpWorkflow`: **与原始任务分析格式完全一致的工作流结构**
-  - `mcps`: MCP列表，包含完整的显示信息（category、imageUrl、githubUrl等）
-  - `workflow`: 工作流步骤数组
-- `metadata`: **与原始任务分析格式一致的元数据**
-  - `totalSteps`: 工作流总步骤数
-  - `requiresAuth`: 是否需要认证
-  - `mcpsRequiringAuth`: 需要认证的MCP名称列表
-- `replacementInfo`: 替换操作的额外信息
-  - `originalMcp`: 原始MCP名称
-  - `newMcp`: 新MCP名称
-  - `timestamp`: 替换操作时间戳
-
-**认证状态处理**:
-- 如果新MCP不需要认证（`authRequired: false`），则 `authVerified: true`
-- 如果新MCP需要认证（`authRequired: true`），则 `authVerified: false`，需要用户重新提供认证信息
-- 其他未替换的MCP保持原有认证状态
-
-**处理流程**:
-1. 验证原MCP是否在当前工作流中
-2. 验证新MCP是否存在且可用
-3. 构建新的MCP列表（替换指定MCP）
-4. 根据新MCP的认证要求正确设置认证状态
-5. 使用AI重新生成适配新MCP的工作流
-6. 更新任务状态为'analyzed'
-7. 记录替换操作日志
-8. 返回与原始任务分析完全一致的格式
-
-**与原始任务分析的一致性**:
-此接口返回的 `mcpWorkflow` 和 `metadata` 字段与 `/api/tasks/:id/analyze-stream` 接口返回的格式完全一致，确保前端可以使用相同的逻辑处理两种情况的返回结果。
-
 **错误响应**:
+- `400 Bad Request`: 参数错误或替换失败
+- `403 Forbidden`: 无权限替换此任务的MCP
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 11. 智能替换MCP并重新分析任务（流式版本）
+
+**端点**: `POST /api/tasks/:id/replace-mcp-smart/stream`
+
+**描述**: 智能替换任务中的MCP并重新分析工作流的流式版本，实时返回替换和分析进度。**最终结果格式与原始任务分析完全一致**。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
 ```json
 {
-  "success": false,
-  "error": "Replacement Failed",
-  "message": "找不到指定的新MCP: invalid-mcp-name"
+  "originalMcpName": "coingecko-server",
+  "newMcpName": "coinmarketcap-mcp",
+  "userId": "用户ID（当未使用访问令牌时必需）"
 }
 ```
 
-常见错误情况：
-- `400 Bad Request`: 缺少必要参数或用户ID
-- `403 Forbidden`: 无权替换该任务的MCP
+**响应**: Server-Sent Events (SSE) 流式响应
+
+**响应头**:
+```
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+```
+
+**流式事件格式**:
+
+1. **替换开始**:
+```json
+{
+  "event": "replacement_start",
+  "data": {
+    "taskId": "task_123456",
+    "originalMcp": "coingecko-server",
+    "newMcp": "coinmarketcap-mcp",
+    "timestamp": "2023-06-20T08:00:00.000Z"
+  }
+}
+```
+
+2. **步骤开始**:
+```json
+{
+  "event": "step_start",
+  "data": {
+    "stepType": "validation",
+    "stepName": "验证替换条件",
+    "stepNumber": 1,
+    "totalSteps": 5
+  }
+}
+```
+
+3. **步骤完成**:
+```json
+{
+  "event": "step_complete",
+  "data": {
+    "stepType": "validation",
+    "content": "验证通过：可以将 coingecko-server 替换为 coinmarketcap-mcp",
+    "reasoning": "新MCP coinmarketcap-mcp 存在且原MCP在当前工作流中"
+  }
+}
+```
+
+4. **MCP列表构建完成**:
+```json
+{
+  "event": "step_complete",
+  "data": {
+    "stepType": "mcp_replacement",
+    "content": "已构建新的MCP列表，包含 1 个工具",
+    "reasoning": "成功将 coingecko-server 替换为 coinmarketcap-mcp，保持其他MCP不变",
+    "mcps": [
+      {
+        "name": "coinmarketcap-mcp",
+        "description": "CoinMarketCap市场数据集成",
+        "authRequired": true,
+        "authVerified": false
+      }
+    ]
+  }
+}
+```
+
+5. **工作流重新生成完成**:
+```json
+{
+  "event": "step_complete",
+  "data": {
+    "stepType": "workflow_regeneration",
+    "content": "已重新生成工作流，包含 1 个步骤",
+    "reasoning": "基于新的MCP组合重新分析任务，生成优化的执行步骤",
+    "workflow": [
+      {
+        "step": 1,
+        "mcp": "coinmarketcap-mcp",
+        "action": "获取比特币当前价格和市场数据",
+        "input": {
+          "symbol": "BTC"
+        }
+      }
+    ]
+  }
+}
+```
+
+6. **替换完成**:
+```json
+{
+  "event": "replacement_complete",
+  "data": {
+    "taskId": "task_123456",
+    "message": "成功将 coingecko-server 替换为 coinmarketcap-mcp 并重新生成了工作流",
+    "mcpWorkflow": {
+      "mcps": [
+        {
+          "name": "coinmarketcap-mcp",
+          "description": "CoinMarketCap市场数据集成",
+          "authRequired": true,
+          "authVerified": false,
+          "category": "Market Data",
+          "imageUrl": "https://example.com/cmc.png",
+          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+          "authParams": {
+            "API_KEY": "CoinMarketCap API密钥"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "mcp": "coinmarketcap-mcp",
+          "action": "获取比特币当前价格和市场数据",
+          "input": {
+            "symbol": "BTC"
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "totalSteps": 1,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp"]
+    },
+    "replacementInfo": {
+      "originalMcp": "coingecko-server",
+      "newMcp": "coinmarketcap-mcp",
+      "timestamp": "2023-06-20T08:00:00.000Z"
+    }
+  }
+}
+```
+
+7. **流结束标记**:
+```
+data: [DONE]
+```
+
+**错误事件**:
+```json
+{
+  "event": "error",
+  "data": {
+    "message": "替换失败: 找不到指定的新MCP",
+    "details": "错误详细信息"
+  }
+}
+```
+
+**步骤类型说明**:
+- `validation`: 验证替换条件
+- `mcp_replacement`: 构建新的MCP列表
+- `workflow_regeneration`: 重新生成工作流
+- `task_update`: 更新任务信息
+- `completion`: 完成替换操作
+
+**错误响应**:
+- `400 Bad Request`: 参数错误
+- `403 Forbidden`: 无权限替换此任务的MCP
 - `404 Not Found`: 任务不存在
-- 替换失败的具体原因：
-  - 任务没有工作流信息
-  - 找不到指定的新MCP
-  - 原MCP不在当前工作流中
-  - 更新任务工作流失败
+- `500 Internal Server Error`: 服务器内部错误
 
 ---
 
@@ -1833,11 +2050,7 @@ curl -X POST http://localhost:3001/api/tasks/task_123456/replace-mcp-smart \
           "imageUrl": "https://example.com/cmc.png",
           "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
           "authParams": {
-            "COINMARKETCAP_API_KEY": {
-              "type": "string",
-              "description": "CoinMarketCap API密钥",
-              "required": true
-            }
+            "API_KEY": "CoinMarketCap API密钥"
           }
         }
       ],
@@ -1846,7 +2059,9 @@ curl -X POST http://localhost:3001/api/tasks/task_123456/replace-mcp-smart \
           "step": 1,
           "mcp": "coinmarketcap-mcp",
           "action": "获取比特币当前价格和市场数据",
-          "input": {}
+          "input": {
+            "symbol": "BTC"
+          }
         }
       ]
     },
@@ -1858,7 +2073,7 @@ curl -X POST http://localhost:3001/api/tasks/task_123456/replace-mcp-smart \
     "replacementInfo": {
       "originalMcp": "coingecko-server",
       "newMcp": "coinmarketcap-mcp",
-      "timestamp": "2023-06-20T08:30:00.000Z"
+      "timestamp": "2023-06-20T08:00:00.000Z"
     }
   }
 }
@@ -1922,3 +2137,796 @@ curl -X GET http://localhost:3001/api/tasks/task_123456 \
 2. **备份工作流**: 重要任务建议备份原始工作流
 3. **分步测试**: 替换后先测试基本功能再执行完整任务
 4. **监控结果**: 关注替换后任务执行的成功率和质量 
+
+**步骤类型说明**:
+- `validation`: 验证替换条件
+- `mcp_replacement`: 构建新的MCP列表
+- `workflow_regeneration`: 重新生成工作流
+- `task_update`: 更新任务信息
+- `completion`: 完成替换操作
+
+**错误响应**:
+- `400 Bad Request`: 参数错误
+- `403 Forbidden`: 无权限替换此任务的MCP
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 12. 批量替换MCP并重新分析任务
+
+**端点**: `POST /api/tasks/:id/batch-replace-mcp`
+
+**描述**: 批量替换任务中的多个MCP并重新分析工作流。**最终结果格式与原始任务分析完全一致**。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "replacements": [
+    {
+      "originalMcpName": "coingecko-server",
+      "newMcpName": "coinmarketcap-mcp"
+    },
+    {
+      "originalMcpName": "github-mcp-server",
+      "newMcpName": "gitlab-mcp-server"
+    }
+  ],
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123456",
+    "message": "Successfully replaced 2 MCPs and regenerated workflow: coingecko-server -> coinmarketcap-mcp, github-mcp-server -> gitlab-mcp-server",
+    "mcpWorkflow": {
+      "mcps": [
+        {
+          "name": "coinmarketcap-mcp",
+          "description": "CoinMarketCap市场数据集成",
+          "authRequired": true,
+          "authVerified": false,
+          "category": "Market Data",
+          "imageUrl": "https://example.com/cmc.png",
+          "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+          "authParams": {
+            "API_KEY": "CoinMarketCap API密钥"
+          }
+        },
+        {
+          "name": "gitlab-mcp-server",
+          "description": "GitLab代码仓库管理",
+          "authRequired": true,
+          "authVerified": false,
+          "category": "Development",
+          "imageUrl": "https://example.com/gitlab.png",
+          "githubUrl": "https://github.com/example/gitlab-mcp",
+          "authParams": {
+            "GITLAB_TOKEN": "GitLab访问令牌"
+          }
+        }
+      ],
+      "workflow": [
+        {
+          "step": 1,
+          "mcp": "coinmarketcap-mcp",
+          "action": "获取比特币当前价格和市场数据",
+          "input": {
+            "symbol": "BTC"
+          }
+        },
+        {
+          "step": 2,
+          "mcp": "gitlab-mcp-server",
+          "action": "创建项目分析报告",
+          "input": {
+            "project": "crypto-analysis"
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "totalSteps": 2,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp", "gitlab-mcp-server"]
+    },
+    "replacementInfo": {
+      "replacements": [
+        {
+          "originalMcpName": "coingecko-server",
+          "newMcpName": "coinmarketcap-mcp"
+        },
+        {
+          "originalMcpName": "github-mcp-server",
+          "newMcpName": "gitlab-mcp-server"
+        }
+      ],
+      "timestamp": "2023-06-20T08:00:00.000Z",
+      "totalReplacements": 2
+    }
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 参数错误或批量替换失败
+- `403 Forbidden`: 无权限替换此任务的MCP
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### 13. 批量替换MCP并重新分析任务（流式版本）
+
+**端点**: `POST /api/tasks/:id/batch-replace-mcp/stream`
+
+**描述**: 批量替换任务中的多个MCP并重新分析工作流的流式版本，实时返回批量替换和分析进度。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "replacements": [
+    {
+      "originalMcpName": "coingecko-server",
+      "newMcpName": "coinmarketcap-mcp"
+    },
+    {
+      "originalMcpName": "github-mcp-server",
+      "newMcpName": "gitlab-mcp-server"
+    }
+  ],
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**流式响应事件**:
+
+1. **批量替换开始**:
+```json
+{
+  "event": "batch_replacement_start",
+  "data": {
+    "taskId": "task_123456",
+    "replacements": [
+      {
+        "originalMcpName": "coingecko-server",
+        "newMcpName": "coinmarketcap-mcp"
+      },
+      {
+        "originalMcpName": "github-mcp-server",
+        "newMcpName": "gitlab-mcp-server"
+      }
+    ],
+    "totalReplacements": 2,
+    "timestamp": "2023-06-20T08:00:00.000Z"
+  }
+}
+```
+
+2. **步骤开始**:
+```json
+{
+  "event": "step_start",
+  "data": {
+    "stepType": "batch_validation",
+    "stepName": "Validate Batch Replacement Conditions",
+    "stepNumber": 1,
+    "totalSteps": 5
+  }
+}
+```
+
+3. **步骤完成**:
+```json
+{
+  "event": "step_complete",
+  "data": {
+    "stepType": "batch_validation",
+    "content": "Batch validation passed: Can replace 2 MCPs",
+    "reasoning": "All replacement MCPs exist and original MCPs are in current workflow",
+    "replacements": "coingecko-server -> coinmarketcap-mcp, github-mcp-server -> gitlab-mcp-server"
+  }
+}
+```
+
+4. **批量替换完成**:
+```json
+{
+  "event": "batch_replacement_complete",
+  "data": {
+    "taskId": "task_123456",
+    "message": "Successfully replaced 2 MCPs and regenerated workflow",
+    "mcpWorkflow": {
+      "mcps": [...],
+      "workflow": [...]
+    },
+    "metadata": {
+      "totalSteps": 2,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp", "gitlab-mcp-server"]
+    },
+    "replacementInfo": {
+      "replacements": [...],
+      "replacementSummary": "coingecko-server -> coinmarketcap-mcp, github-mcp-server -> gitlab-mcp-server",
+      "timestamp": "2023-06-20T08:00:00.000Z",
+      "totalReplacements": 2
+    }
+  }
+}
+```
+
+5. **流结束标记**:
+```
+data: [DONE]
+```
+
+**批量替换步骤类型**:
+- `batch_validation`: 验证批量替换条件
+- `batch_mcp_replacement`: 构建新的MCP列表
+- `batch_workflow_regeneration`: 重新生成工作流
+- `batch_task_update`: 更新任务信息
+- `batch_completion`: 完成批量替换操作
+
+---
+
+#### 14. 确认替换MCP并重新分析任务（前端确认后调用）
+
+**端点**: `POST /api/tasks/:id/confirm-replacement`
+
+**描述**: 用户在前端确认替换选择后，执行最终的MCP替换并重新分析工作流。这是前端确认流程的最后一步。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "replacements": [
+    {
+      "originalMcpName": "coingecko-server",
+      "newMcpName": "coinmarketcap-mcp"
+    },
+    {
+      "originalMcpName": "github-mcp-server",
+      "newMcpName": "gitlab-mcp-server"
+    }
+  ],
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "taskId": "task_123456",
+    "message": "Successfully replaced 2 MCPs and regenerated workflow: coingecko-server -> coinmarketcap-mcp, github-mcp-server -> gitlab-mcp-server",
+    "mcpWorkflow": {
+      "mcps": [...],
+      "workflow": [...]
+    },
+    "metadata": {
+      "totalSteps": 2,
+      "requiresAuth": true,
+      "mcpsRequiringAuth": ["coinmarketcap-mcp", "gitlab-mcp-server"]
+    },
+    "confirmationInfo": {
+      "replacements": [...],
+      "timestamp": "2023-06-20T08:00:00.000Z",
+      "totalReplacements": 2,
+      "confirmed": true
+    }
+  }
+}
+```
+
+---
+
+#### 15. 确认替换MCP并重新分析任务（流式版本）
+
+**端点**: `POST /api/tasks/:id/confirm-replacement/stream`
+
+**描述**: 用户确认替换的流式版本，实时返回确认和重新分析的进度。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "replacements": [
+    {
+      "originalMcpName": "coingecko-server",
+      "newMcpName": "coinmarketcap-mcp"
+    }
+  ],
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**流式响应事件**:
+
+1. **确认开始**:
+```json
+{
+  "event": "confirmation_start",
+  "data": {
+    "taskId": "task_123456",
+    "replacements": [...],
+    "totalReplacements": 1,
+    "timestamp": "2023-06-20T08:00:00.000Z"
+  }
+}
+```
+
+2. **确认完成**:
+```json
+{
+  "event": "confirmation_complete",
+  "data": {
+    "taskId": "task_123456",
+    "message": "MCP replacement confirmed and task reanalysis completed",
+    "confirmed": true
+  }
+}
+```
+
+3. **流结束标记**:
+```
+data: [DONE]
+```
+
+---
+
+## 对话管理 API
+
+### 1. 创建新对话
+
+**端点**: `POST /api/conversation`
+
+**描述**: 创建新对话，支持传入第一条消息并自动生成标题。类似ChatGPT、DeepSeek等AI聊天应用的体验。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**请求体**:
+```json
+{
+  "title": "自定义标题（可选）",
+  "firstMessage": "第一条消息内容（可选）",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+
+1. **仅创建对话（未提供firstMessage）**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_123456",
+      "userId": "user_123",
+      "title": "自定义标题",
+      "taskCount": 0,
+      "messageCount": 0,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:00:00.000Z"
+    }
+  }
+}
+```
+
+2. **创建对话并处理第一条消息**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_123456",
+      "userId": "user_123",
+      "title": "获取比特币价格信息",
+      "lastMessageContent": "AI助手的回复内容",
+      "lastMessageAt": "2023-06-20T08:00:00.000Z",
+      "taskCount": 1,
+      "messageCount": 2,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:00:00.000Z"
+    },
+    "userMessage": {
+      "id": "msg_123456",
+      "conversationId": "conv_123456",
+      "content": "帮我获取比特币的当前价格",
+      "type": "user",
+      "intent": "task",
+      "taskId": "task_123456",
+      "createdAt": "2023-06-20T08:00:00.000Z"
+    },
+    "assistantResponse": {
+      "id": "msg_123457",
+      "conversationId": "conv_123456",
+      "content": "我已经为你创建了获取比特币价格的任务...",
+      "type": "assistant",
+      "intent": "task",
+      "taskId": "task_123456",
+      "createdAt": "2023-06-20T08:00:00.000Z"
+    },
+    "intent": "task",
+    "taskId": "task_123456"
+  }
+}
+```
+
+**特性说明**:
+- 如果提供`firstMessage`，系统会自动分析消息意图（聊天或任务）
+- 如果未提供`title`且提供了`firstMessage`，会使用AI自动生成标题
+- 支持任务创建：如果首条消息被识别为任务意图，会自动创建并分析任务
+- 返回格式与ChatGPT等应用一致，方便前端适配
+
+---
+
+### 2. 创建新对话（流式版本）
+
+**端点**: `POST /api/conversation/stream`
+
+**描述**: 创建新对话的流式版本，实时返回标题生成、对话创建和消息处理进度。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**请求体**:
+```json
+{
+  "firstMessage": "帮我获取比特币的当前价格并分析趋势",
+  "title": "自定义标题（可选）",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**注意**: 流式版本必须提供`firstMessage`参数。
+
+**流式响应事件**:
+
+1. **对话创建开始**:
+```json
+{
+  "event": "conversation_creation_start",
+  "data": {
+    "userId": "user_123",
+    "message": "Starting conversation creation..."
+  }
+}
+```
+
+2. **标题生成开始**:
+```json
+{
+  "event": "title_generation_start",
+  "data": {
+    "message": "Generating conversation title..."
+  }
+}
+```
+
+3. **标题生成完成**:
+```json
+{
+  "event": "title_generated",
+  "data": {
+    "title": "获取比特币价格并分析趋势"
+  }
+}
+```
+
+4. **对话创建中**:
+```json
+{
+  "event": "conversation_creating",
+  "data": {
+    "message": "Creating conversation record..."
+  }
+}
+```
+
+5. **对话创建完成**:
+```json
+{
+  "event": "conversation_created",
+  "data": {
+    "conversationId": "conv_123456",
+    "title": "获取比特币价格并分析趋势",
+    "message": "Conversation created successfully"
+  }
+}
+```
+
+6. **第一条消息处理开始**:
+```json
+{
+  "event": "first_message_processing_start",
+  "data": {
+    "message": "Processing first message..."
+  }
+}
+```
+
+7. **消息意图识别**:
+```json
+{
+  "event": "intent_identified",
+  "data": {
+    "intent": "task",
+    "confidence": 0.95,
+    "explanation": "User is requesting a specific task to get Bitcoin price data"
+  }
+}
+```
+
+8. **任务创建（如果是任务意图）**:
+```json
+{
+  "event": "task_created",
+  "data": {
+    "taskId": "task_123456",
+    "title": "获取比特币价格数据",
+    "content": "帮我获取比特币的当前价格并分析趋势"
+  }
+}
+```
+
+9. **最终完成**:
+```json
+{
+  "event": "conversation_created",
+  "data": {
+    "conversationId": "conv_123456",
+    "userMessageId": "msg_123456",
+    "assistantResponseId": "msg_123457",
+    "intent": "task",
+    "taskId": "task_123456",
+    "title": "获取比特币价格并分析趋势"
+  }
+}
+```
+
+10. **流结束标记**:
+```
+data: [DONE]
+```
+
+**使用场景**:
+- 实时显示对话创建进度
+- 展示AI标题生成过程
+- 实时反馈消息处理状态
+- 适合需要良好用户体验的前端应用
+
+---
+
+### 3. 获取对话列表
+
+**端点**: `GET /api/conversation`
+
+**描述**: 获取用户的对话列表。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+- `limit`: 每页数量（默认10）
+- `offset`: 偏移量（默认0）
+- `sortBy`: 排序字段（默认last_message_at）
+- `sortDir`: 排序方向（asc/desc，默认desc）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversations": [
+      {
+        "id": "conv_123456",
+        "userId": "user_123",
+        "title": "获取比特币价格信息",
+        "lastMessageContent": "任务已完成，比特币当前价格为...",
+        "lastMessageAt": "2023-06-20T08:30:00.000Z",
+        "taskCount": 1,
+        "messageCount": 4,
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:30:00.000Z"
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+---
+
+### 4. 获取对话详情
+
+**端点**: `GET /api/conversation/:id`
+
+**描述**: 获取特定对话的详细信息和所有消息。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 对话ID
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_123456",
+      "userId": "user_123",
+      "title": "获取比特币价格信息",
+      "lastMessageContent": "任务已完成",
+      "lastMessageAt": "2023-06-20T08:30:00.000Z",
+      "taskCount": 1,
+      "messageCount": 4,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:30:00.000Z"
+    },
+    "messages": [
+      {
+        "id": "msg_123456",
+        "conversationId": "conv_123456",
+        "content": "帮我获取比特币的当前价格",
+        "type": "user",
+        "intent": "task",
+        "taskId": "task_123456",
+        "createdAt": "2023-06-20T08:00:00.000Z"
+      },
+      {
+        "id": "msg_123457",
+        "conversationId": "conv_123456",
+        "content": "我已经为你创建了获取比特币价格的任务...",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_123456",
+        "createdAt": "2023-06-20T08:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 5. 发送消息
+
+**端点**: `POST /api/conversation/:id/message`
+
+**描述**: 向指定对话发送消息。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 对话ID
+
+**请求体**:
+```json
+{
+  "content": "消息内容",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": {
+      "id": "msg_123458",
+      "conversationId": "conv_123456",
+      "content": "消息内容",
+      "type": "user",
+      "intent": "chat",
+      "createdAt": "2023-06-20T08:35:00.000Z"
+    },
+    "assistantResponse": {
+      "id": "msg_123459",
+      "conversationId": "conv_123456",
+      "content": "AI助手的回复",
+      "type": "assistant",
+      "intent": "chat",
+      "createdAt": "2023-06-20T08:35:00.000Z"
+    },
+    "intent": "chat",
+    "taskId": null
+  }
+}
+```
+
+---
+
+### 6. 发送消息（流式版本）
+
+**端点**: `POST /api/conversation/:id/message/stream`
+
+**描述**: 向指定对话发送消息的流式版本。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 对话ID
+
+**请求体**:
+```json
+{
+  "content": "消息内容",
+  "userId": "用户ID（当未使用访问令牌时必需）"
+}
+```
+
+**流式响应**: 参考消息处理的流式事件格式。
+
+---
+
+### 7. 获取对话关联的任务
+
+**端点**: `GET /api/conversation/:id/tasks`
+
+**描述**: 获取对话中创建的所有任务。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 对话ID
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "conv_123456",
+    "tasks": [
+      {
+        "id": "task_123456",
+        "userId": "user_123",
+        "title": "获取比特币价格数据",
+        "content": "帮我获取比特币的当前价格",
+        "status": "completed",
+        "conversationId": "conv_123456",
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:30:00.000Z",
+        "completedAt": "2023-06-20T08:30:00.000Z"
+      }
+    ],
+    "count": 1
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 参数错误
+- `403 Forbidden`: 无权限访问此对话
+- `404 Not Found`: 对话不存在
+- `500 Internal Server Error`: 服务器内部错误

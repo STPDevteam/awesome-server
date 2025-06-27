@@ -28,7 +28,8 @@ router.use((req, res, next) => {
 
 // 验证请求内容的Schema
 const createConversationSchema = z.object({
-  title: z.string().optional()
+  title: z.string().optional(),
+  firstMessage: z.string().min(1, 'First message content cannot be empty').optional()
 });
 
 const sendMessageSchema = z.object({
@@ -39,7 +40,7 @@ const sendMessageSchema = z.object({
  * 创建新对话
  * POST /api/conversation
  */
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', optionalAuth, async (req: Request, res: Response) => {
   try {
     const validationResult = createConversationSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -51,23 +52,164 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    const { title } = validationResult.data;
-    const userId = req.user!.id;
+    const { title, firstMessage } = validationResult.data;
+    
+    // 获取用户ID
+    const userId = req.user?.id || req.body.userId;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
+      });
+    }
 
     logger.info(`Creating conversation request [User ID: ${userId}]`);
 
     // 获取对话服务
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
-    const conversation = await conversationService.createConversation(userId, title);
-
-    res.json({
-      success: true,
-      data: {
-        conversation
-      }
-    });
+    
+    // 如果提供了第一条消息，创建会话并处理消息
+    if (firstMessage) {
+      const result = await conversationService.createConversationWithFirstMessage(
+        userId, 
+        firstMessage, 
+        title
+      );
+      
+      res.json({
+        success: true,
+        data: {
+          conversation: result.conversation,
+          userMessage: result.userMessage,
+          assistantResponse: result.assistantResponse,
+          intent: result.intent,
+          taskId: result.taskId
+        }
+      });
+    } else {
+      // 如果没有第一条消息，使用原来的创建方式
+      const conversation = await conversationService.createConversation(userId, title);
+      
+      res.json({
+        success: true,
+        data: {
+          conversation
+        }
+      });
+    }
   } catch (error) {
     logger.error('Error creating conversation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * 创建新对话（流式版本）
+ * POST /api/conversation/stream
+ */
+router.post('/stream', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const validationResult = createConversationSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Invalid request parameters',
+        details: validationResult.error.errors
+      });
+    }
+
+    const { title, firstMessage } = validationResult.data;
+    
+    // 获取用户ID
+    const userId = req.user?.id || req.body.userId;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
+      });
+    }
+
+    // 如果没有第一条消息，不支持流式创建
+    if (!firstMessage) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'First message is required for streaming conversation creation'
+      });
+    }
+
+    logger.info(`Creating streaming conversation request [User ID: ${userId}]`);
+
+    // 设置SSE响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // 流式回调函数
+    const streamHandler = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    // 获取对话服务
+    const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
+    
+    // 流式创建会话并处理第一条消息
+    const processingPromise = conversationService.createConversationWithFirstMessageStream(
+      userId,
+      firstMessage,
+      title,
+      streamHandler
+    );
+    
+    // 处理完成后发送完成标记
+    processingPromise
+      .then((result: {
+        conversationId: string;
+        userMessageId: string;
+        assistantResponseId: string;
+        intent: MessageIntent;
+        taskId?: string;
+        generatedTitle: string;
+      }) => {
+        res.write(`data: ${JSON.stringify({
+          event: 'conversation_created',
+          data: {
+            conversationId: result.conversationId,
+            userMessageId: result.userMessageId,
+            assistantResponseId: result.assistantResponseId,
+            intent: result.intent,
+            taskId: result.taskId,
+            title: result.generatedTitle
+          }
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      })
+      .catch((error: Error) => {
+        logger.error(`Error creating conversation with stream:`, error);
+        res.write(`data: ${JSON.stringify({
+          event: 'error',
+          data: {
+            message: 'Error creating conversation',
+            details: error instanceof Error ? error.message : String(error)
+          }
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+  } catch (error) {
+    logger.error(`Error initializing stream conversation creation:`, error);
+    
+    // 对于初始设置错误，使用标准JSON响应
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',

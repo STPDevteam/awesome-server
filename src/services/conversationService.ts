@@ -11,6 +11,7 @@ import { Conversation, ConversationSearchOptions, Message, MessageType, MessageI
 import { getTaskService } from './taskService.js';
 import { TaskExecutorService } from './taskExecutorService.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
+import { titleGeneratorService } from './llmTasks/titleGenerator.js';
 import { db } from '../config/database.js';
 // import { HttpsProxyAgent } from 'https-proxy-agent';
 // const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
@@ -136,6 +137,157 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       });
     } catch (error) {
       logger.error('Error creating conversation:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Create new conversation with first message and auto-generate title
+   * 创建会话并处理第一条消息，自动生成标题
+   */
+  async createConversationWithFirstMessage(
+    userId: string, 
+    firstMessage: string, 
+    title?: string
+  ): Promise<{
+    conversation: Conversation;
+    userMessage: Message;
+    assistantResponse: Message;
+    intent: MessageIntent;
+    taskId?: string;
+  }> {
+    try {
+      logger.info(`Creating conversation with first message [User ID: ${userId}]`);
+      
+      // 1. 生成标题（如果没有提供）
+      let conversationTitle = title;
+      if (!conversationTitle) {
+        logger.info('Generating title for conversation based on first message');
+        conversationTitle = await titleGeneratorService.generateTitle(firstMessage);
+      }
+      
+      // 2. 创建会话
+      const conversation = await conversationDao.createConversation({
+        userId,
+        title: conversationTitle
+      });
+      
+      logger.info(`Conversation created with ID: ${conversation.id}, Title: ${conversationTitle}`);
+      
+      // 3. 处理第一条消息
+      const messageResult = await this.processUserMessage(conversation.id, userId, firstMessage);
+      
+      logger.info(`First message processed successfully [Intent: ${messageResult.intent}]`);
+      
+      return {
+        conversation,
+        userMessage: messageResult.message,
+        assistantResponse: messageResult.response,
+        intent: messageResult.intent,
+        taskId: messageResult.taskId
+      };
+    } catch (error) {
+      logger.error('Error creating conversation with first message:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Create new conversation with first message (streaming version)
+   * 创建会话并处理第一条消息的流式版本
+   */
+  async createConversationWithFirstMessageStream(
+    userId: string,
+    firstMessage: string,
+    title: string | undefined,
+    streamCallback: (chunk: any) => void
+  ): Promise<{
+    conversationId: string;
+    userMessageId: string;
+    assistantResponseId: string;
+    intent: MessageIntent;
+    taskId?: string;
+    generatedTitle: string;
+  }> {
+    try {
+      logger.info(`Creating streaming conversation with first message [User ID: ${userId}]`);
+      
+      // 发送开始事件
+      streamCallback({
+        event: 'conversation_creation_start',
+        data: { userId, message: 'Starting conversation creation...' }
+      });
+      
+      // 1. 生成标题（如果没有提供）
+      let conversationTitle = title;
+      if (!conversationTitle) {
+        streamCallback({
+          event: 'title_generation_start',
+          data: { message: 'Generating conversation title...' }
+        });
+        
+        conversationTitle = await titleGeneratorService.generateTitle(firstMessage);
+        
+        streamCallback({
+          event: 'title_generated',
+          data: { title: conversationTitle }
+        });
+      }
+      
+      // 2. 创建会话
+      streamCallback({
+        event: 'conversation_creating',
+        data: { message: 'Creating conversation record...' }
+      });
+      
+      const conversation = await conversationDao.createConversation({
+        userId,
+        title: conversationTitle
+      });
+      
+      streamCallback({
+        event: 'conversation_created',
+        data: { 
+          conversationId: conversation.id,
+          title: conversationTitle,
+          message: 'Conversation created successfully'
+        }
+      });
+      
+      logger.info(`Streaming conversation created with ID: ${conversation.id}, Title: ${conversationTitle}`);
+      
+      // 3. 流式处理第一条消息
+      streamCallback({
+        event: 'first_message_processing_start',
+        data: { message: 'Processing first message...' }
+      });
+      
+      const messageResult = await this.processUserMessageStream(
+        conversation.id, 
+        userId, 
+        firstMessage,
+        streamCallback
+      );
+      
+      logger.info(`First message processed successfully in stream [Intent: ${messageResult.intent}]`);
+      
+      return {
+        conversationId: conversation.id,
+        userMessageId: messageResult.messageId,
+        assistantResponseId: messageResult.responseId,
+        intent: messageResult.intent,
+        taskId: messageResult.taskId,
+        generatedTitle: conversationTitle
+      };
+    } catch (error) {
+      logger.error('Error creating streaming conversation with first message:', error);
+      streamCallback({
+        event: 'error',
+        data: {
+          message: 'Error creating conversation',
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
       throw error;
     }
   }

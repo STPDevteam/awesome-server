@@ -89,6 +89,24 @@ const replaceMCPSchema = z.object({
   newMcpName: z.string().min(1, 'New MCP name cannot be empty')
 });
 
+// 批量替换MCP Schema
+const batchReplaceMCPSchema = z.object({
+  replacements: z.array(z.object({
+    originalMcpName: z.string().min(1, 'Original MCP name cannot be empty'),
+    newMcpName: z.string().min(1, 'New MCP name cannot be empty')
+  })).min(1, 'At least one replacement is required'),
+  userId: z.string().optional()
+});
+
+// 确认替换MCP Schema
+const confirmReplacementSchema = z.object({
+  replacements: z.array(z.object({
+    originalMcpName: z.string().min(1, 'Original MCP name cannot be empty'),
+    newMcpName: z.string().min(1, 'New MCP name cannot be empty')
+  })).min(1, 'At least one replacement is required'),
+  userId: z.string().optional()
+});
+
 /**
  * 生成任务标题
  * POST /api/task/title
@@ -1241,6 +1259,115 @@ router.post('/:id/replace-mcp-smart', optionalAuth, async (req: Request, res: Re
 });
 
 /**
+ * 智能替换MCP并重新分析任务（流式版本）
+ * POST /api/task/:id/replace-mcp-smart/stream
+ */
+router.post('/:id/replace-mcp-smart/stream', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const { originalMcpName, newMcpName } = req.body;
+    
+    if (!originalMcpName || !newMcpName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: '缺少必要参数：originalMcpName 和 newMcpName'
+      });
+    }
+    
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+    
+    const userId = req.user?.id || req.body.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID'
+      });
+    }
+    
+    // 确保用户只能替换自己的任务中的MCP
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to replace MCP for this task'
+      });
+    }
+    
+    // 设置SSE响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // 流式回调函数
+    const streamHandler = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    // 发送替换开始信息
+    streamHandler({ 
+      event: 'replacement_start', 
+      data: { 
+        taskId, 
+        originalMcp: originalMcpName,
+        newMcp: newMcpName,
+        timestamp: new Date().toISOString() 
+      } 
+    });
+    
+    // 执行智能替换和重新分析（流式版本）
+    const replacementStarted = mcpAlternativeService.replaceAndReanalyzeTaskStream(
+      taskId,
+      originalMcpName,
+      newMcpName,
+      streamHandler
+    );
+    
+    // 替换结束后发送完成标记
+    replacementStarted
+      .then((success: boolean) => {
+        if (!success) {
+          res.write(`data: ${JSON.stringify({ 
+            event: 'error', 
+            data: { message: 'MCP replacement and reanalysis failed' } 
+          })}\n\n`);
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+      })
+      .catch((error: Error) => {
+        logger.error(`流式智能替换MCP错误 [任务ID: ${taskId}]:`, error);
+        res.write(`data: ${JSON.stringify({ 
+          event: 'error', 
+          data: { 
+            message: 'Error occurred during MCP replacement and reanalysis',
+            details: error instanceof Error ? error.message : String(error)
+          } 
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+  } catch (error) {
+    logger.error(`流式智能替换MCP错误 [任务ID: ${req.params.id}]:`, error);
+    
+    // 对于初始设置错误，使用标准JSON响应
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: '服务器内部错误'
+    });
+  }
+});
+
+/**
  * 流式分析任务
  * POST /api/task/:id/analyze/stream
  */
@@ -1561,6 +1688,415 @@ router.get('/:id/conversation', optionalAuth, async (req: Request, res: Response
       success: false,
       error: 'Internal Server Error',
       message: '服务器内部错误'
+    });
+  }
+});
+
+/**
+ * 批量替换MCP并重新分析任务
+ * POST /api/task/:id/batch-replace-mcp
+ */
+router.post('/:id/batch-replace-mcp', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const validationResult = batchReplaceMCPSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Invalid request parameters',
+        details: validationResult.error.errors
+      });
+    }
+    
+    const { replacements } = validationResult.data;
+    
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+    
+    const userId = req.user?.id || req.body.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID'
+      });
+    }
+    
+    // 确保用户只能替换自己的任务中的MCP
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to replace MCP for this task'
+      });
+    }
+    
+    // 执行批量替换
+    const batchResult = await mcpAlternativeService.batchReplaceAndReanalyzeTask(
+      taskId,
+      replacements
+    );
+    
+    if (batchResult.success) {
+      res.json({
+        success: true,
+        data: {
+          taskId,
+          message: batchResult.message,
+          mcpWorkflow: batchResult.mcpWorkflow,
+          metadata: batchResult.metadata,
+          replacementInfo: {
+            replacements,
+            timestamp: new Date().toISOString(),
+            totalReplacements: replacements.length
+          }
+        }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Batch Replacement Failed',
+        message: batchResult.message
+      });
+    }
+  } catch (error) {
+    logger.error(`批量替换MCP错误 [任务ID: ${req.params.id}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * 批量替换MCP并重新分析任务（流式版本）
+ * POST /api/task/:id/batch-replace-mcp/stream
+ */
+router.post('/:id/batch-replace-mcp/stream', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const validationResult = batchReplaceMCPSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Invalid request parameters',
+        details: validationResult.error.errors
+      });
+    }
+    
+    const { replacements } = validationResult.data;
+    
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+    
+    const userId = req.user?.id || req.body.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID'
+      });
+    }
+    
+    // 确保用户只能替换自己的任务中的MCP
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to replace MCP for this task'
+      });
+    }
+    
+    // 设置SSE响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // 流式回调函数
+    const streamHandler = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    // 发送批量替换开始信息
+    streamHandler({ 
+      event: 'batch_replacement_start', 
+      data: { 
+        taskId, 
+        replacements,
+        totalReplacements: replacements.length,
+        timestamp: new Date().toISOString() 
+      } 
+    });
+    
+    // 执行批量替换和重新分析（流式版本）
+    const batchReplacementStarted = mcpAlternativeService.batchReplaceAndReanalyzeTaskStream(
+      taskId,
+      replacements,
+      streamHandler
+    );
+    
+    // 替换结束后发送完成标记
+    batchReplacementStarted
+      .then((success: boolean) => {
+        if (!success) {
+          res.write(`data: ${JSON.stringify({ 
+            event: 'error', 
+            data: { message: 'Batch MCP replacement and reanalysis failed' } 
+          })}\n\n`);
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+      })
+      .catch((error: Error) => {
+        logger.error(`流式批量替换MCP错误 [任务ID: ${taskId}]:`, error);
+        res.write(`data: ${JSON.stringify({ 
+          event: 'error', 
+          data: { 
+            message: 'Error occurred during batch MCP replacement and reanalysis',
+            details: error instanceof Error ? error.message : String(error)
+          } 
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+  } catch (error) {
+    logger.error(`流式批量替换MCP错误 [任务ID: ${req.params.id}]:`, error);
+    
+    // 对于初始设置错误，使用标准JSON响应
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * 确认替换MCP并重新分析任务（前端确认后调用）
+ * POST /api/task/:id/confirm-replacement
+ */
+router.post('/:id/confirm-replacement', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const validationResult = confirmReplacementSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Invalid request parameters',
+        details: validationResult.error.errors
+      });
+    }
+    
+    const { replacements } = validationResult.data;
+    
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+    
+    const userId = req.user?.id || req.body.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID'
+      });
+    }
+    
+    // 确保用户只能确认替换自己的任务中的MCP
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to confirm replacement for this task'
+      });
+    }
+    
+    logger.info(`🔄 用户确认替换MCP [任务: ${taskId}, 替换数量: ${replacements.length}]`);
+    
+    // 执行确认的替换操作，使用批量替换方法
+    const confirmResult = await mcpAlternativeService.batchReplaceAndReanalyzeTask(
+      taskId,
+      replacements
+    );
+    
+    if (confirmResult.success) {
+      // 返回与原始任务分析一致的格式
+      res.json({
+        success: true,
+        data: {
+          taskId,
+          message: confirmResult.message,
+          mcpWorkflow: confirmResult.mcpWorkflow,
+          metadata: confirmResult.metadata,
+          // 额外的确认信息
+          confirmationInfo: {
+            replacements,
+            timestamp: new Date().toISOString(),
+            totalReplacements: replacements.length,
+            confirmed: true
+          }
+        }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Confirmation Failed',
+        message: confirmResult.message
+      });
+    }
+  } catch (error) {
+    logger.error(`确认替换MCP错误 [任务ID: ${req.params.id}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * 确认替换MCP并重新分析任务（流式版本）
+ * POST /api/task/:id/confirm-replacement/stream
+ */
+router.post('/:id/confirm-replacement/stream', optionalAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const validationResult = confirmReplacementSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Invalid request parameters',
+        details: validationResult.error.errors
+      });
+    }
+    
+    const { replacements } = validationResult.data;
+    
+    const task = await taskService.getTaskById(taskId);
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+    
+    const userId = req.user?.id || req.body.userId;
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID'
+      });
+    }
+    
+    // 确保用户只能确认替换自己的任务中的MCP
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to confirm replacement for this task'
+      });
+    }
+    
+    // 设置SSE响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // 流式回调函数
+    const streamHandler = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    // 发送确认替换开始信息
+    streamHandler({ 
+      event: 'confirmation_start', 
+      data: { 
+        taskId, 
+        replacements,
+        totalReplacements: replacements.length,
+        timestamp: new Date().toISOString() 
+      } 
+    });
+    
+    logger.info(`🔄 用户确认流式替换MCP [任务: ${taskId}, 替换数量: ${replacements.length}]`);
+    
+    // 执行确认的替换操作（流式版本）
+    const confirmStarted = mcpAlternativeService.batchReplaceAndReanalyzeTaskStream(
+      taskId,
+      replacements,
+      streamHandler
+    );
+    
+    // 替换结束后发送完成标记
+    confirmStarted
+      .then((success: boolean) => {
+        if (!success) {
+          res.write(`data: ${JSON.stringify({ 
+            event: 'error', 
+            data: { message: 'MCP replacement confirmation failed' } 
+          })}\n\n`);
+        } else {
+          // 发送确认完成事件
+          res.write(`data: ${JSON.stringify({ 
+            event: 'confirmation_complete', 
+            data: { 
+              taskId,
+              message: 'MCP replacement confirmed and task reanalysis completed',
+              confirmed: true
+            } 
+          })}\n\n`);
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+      })
+      .catch((error: Error) => {
+        logger.error(`流式确认替换MCP错误 [任务ID: ${taskId}]:`, error);
+        res.write(`data: ${JSON.stringify({ 
+          event: 'error', 
+          data: { 
+            message: 'Error occurred during MCP replacement confirmation',
+            details: error instanceof Error ? error.message : String(error)
+          } 
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+  } catch (error) {
+    logger.error(`流式确认替换MCP错误 [任务ID: ${req.params.id}]:`, error);
+    
+    // 对于初始设置错误，使用标准JSON响应
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
     });
   }
 });

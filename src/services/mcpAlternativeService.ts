@@ -158,38 +158,38 @@ export class MCPAlternativeService {
         '';
       
       const response = await this.llm.invoke([
-        new SystemMessage(`你是一个MCP工具专家，负责智能推荐最合适的替代工具。
+        new SystemMessage(`You are an MCP tool expert responsible for intelligently recommending the most suitable alternative tools.
 
-**当前情况**：
-- 用户无法使用 "${mcpName}" 工具
-- 需要找到其他MCP工具来替代其功能
-- 必须考虑与其他工具的协作关系
+**Current Situation**:
+- User cannot use the "${mcpName}" tool
+- Need to find other MCP tools to replace its functionality
+- Must consider collaboration relationships with other tools
 
-**需要替代的工具信息**：
+**Tool to Replace**:
 ${JSON.stringify(mcpToReplace, null, 2)}
 
-**可用的替代MCP工具（按类别分组）**：
+**Available Alternative MCP Tools (grouped by category)**:
 ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
 
-**推荐标准**：
-1. **功能匹配度**：工具能力是否能满足任务需求
-2. **类别相关性**：优先推荐同类别或相关类别的工具
-3. **协作兼容性**：与现有工作流中其他工具的配合程度
-4. **认证复杂度**：优先推荐认证简单的工具
-5. **稳定性**：工具的可靠性和成熟度
+**Recommendation Criteria**:
+1. **Functionality Match**: Whether the tool capabilities can meet task requirements
+2. **Category Relevance**: Prioritize tools from the same or related categories
+3. **Collaboration Compatibility**: Degree of compatibility with other tools in the existing workflow
+4. **Authentication Complexity**: Prioritize tools with simple authentication
+5. **Stability**: Tool reliability and maturity
 
-**重要提示**：
-- 必须返回纯JSON格式，不要使用markdown代码块
-- 最多推荐3个最合适的替代工具
-- 工具名称必须与可用工具列表中的name字段完全匹配
+**Important Notes**:
+- Must return pure JSON format, do not use markdown code blocks
+- Recommend at most 3 most suitable alternative tools
+- Tool names must exactly match the name field in the available tools list
 
-返回格式：
+Return Format:
 {
-  "alternatives": ["工具1名称", "工具2名称", "工具3名称"],
-  "explanation": "详细说明为什么推荐这些工具，以及它们如何满足用户的任务需求和与其他工具协作",
-  "compatibility_analysis": "分析这些替代工具与现有工作流的兼容性"
+  "alternatives": ["tool1_name", "tool2_name", "tool3_name"],
+  "explanation": "Detailed explanation of why these tools are recommended and how they meet user task requirements and collaborate with other tools",
+  "compatibility_analysis": "Analysis of compatibility between these alternative tools and the existing workflow"
 }`),
-        new HumanMessage(`用户任务：${taskContent}`)
+        new HumanMessage(`User Task: ${taskContent}`)
       ]);
       
       // 解析返回的JSON
@@ -349,11 +349,11 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
       // 1. 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
       if (!task) {
-        return { success: false, message: '任务不存在' };
+        return { success: false, message: 'Task not found' };
       }
       
       if (!task.mcpWorkflow) {
-        return { success: false, message: '任务没有工作流信息' };
+        return { success: false, message: 'Task has no workflow information' };
       }
       
       // 2. 验证新MCP是否存在
@@ -419,7 +419,7 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
       });
       
       if (!updateSuccess) {
-        return { success: false, message: '更新任务工作流失败' };
+        return { success: false, message: 'Failed to update task workflow' };
       }
       
       // 8. 记录替换操作
@@ -444,7 +444,7 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
       // 10. 返回与原始任务分析完全一致的格式
       return {
         success: true,
-        message: `成功将 ${originalMcpName} 替换为 ${newMcpName} 并重新生成了工作流`,
+        message: `Successfully replaced ${originalMcpName} with ${newMcpName} and regenerated workflow`,
         mcpWorkflow: updatedMcpWorkflow,
         metadata
       };
@@ -453,8 +453,245 @@ ${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
       logger.error(`智能替换MCP失败 [任务: ${taskId}]:`, error);
       return {
         success: false,
-        message: `替换失败: ${error instanceof Error ? error.message : String(error)}`
+        message: `Replacement failed: ${error instanceof Error ? error.message : String(error)}`
       };
+    }
+  }
+
+  /**
+   * 智能替换MCP并重新分析任务（流式版本）
+   * @param taskId 任务ID
+   * @param originalMcpName 原始MCP名称
+   * @param newMcpName 新MCP名称
+   * @param stream 流式回调函数
+   * @returns 是否成功
+   */
+  async replaceAndReanalyzeTaskStream(
+    taskId: string,
+    originalMcpName: string,
+    newMcpName: string,
+    stream: (data: any) => void
+  ): Promise<boolean> {
+    try {
+      logger.info(`🔄 开始流式智能替换MCP并重新分析 [任务: ${taskId}, ${originalMcpName} -> ${newMcpName}]`);
+      
+      // 1. 验证阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'validation',
+          stepName: 'Validate Replacement Conditions',
+          stepNumber: 1,
+          totalSteps: 5
+        } 
+      });
+      
+      // 获取任务信息
+      const task = await this.taskService.getTaskById(taskId);
+      if (!task) {
+        stream({ event: 'error', data: { message: 'Task not found' } });
+        return false;
+      }
+      
+      if (!task.mcpWorkflow) {
+        stream({ event: 'error', data: { message: 'Task has no workflow information' } });
+        return false;
+      }
+      
+      // 验证新MCP是否存在
+      const newMCP = this.getAvailableMCPs().find(mcp => mcp.name === newMcpName);
+      if (!newMCP) {
+        stream({ event: 'error', data: { message: `Cannot find specified new MCP: ${newMcpName}` } });
+        return false;
+      }
+      
+      // 检查原MCP是否在当前工作流中
+      const originalMcpExists = task.mcpWorkflow.mcps.some(mcp => mcp.name === originalMcpName);
+      if (!originalMcpExists) {
+        stream({ event: 'error', data: { message: `Original MCP ${originalMcpName} is not in current workflow` } });
+        return false;
+      }
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'validation',
+          content: `Validation passed: Can replace ${originalMcpName} with ${newMcpName}`,
+          reasoning: `New MCP ${newMcpName} exists and original MCP is in current workflow`
+        } 
+      });
+      
+      // 2. 构建新MCP列表阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'mcp_replacement',
+          stepName: 'Build New MCP List',
+          stepNumber: 2,
+          totalSteps: 5
+        } 
+      });
+      
+      const newMcpList = task.mcpWorkflow.mcps.map(mcp => {
+        if (mcp.name === originalMcpName) {
+          return {
+            name: newMCP.name,
+            description: newMCP.description,
+            authRequired: newMCP.authRequired,
+            authVerified: !newMCP.authRequired,
+            category: newMCP.category,
+            imageUrl: newMCP.imageUrl,
+            githubUrl: newMCP.githubUrl,
+            authParams: newMCP.authParams
+          };
+        }
+        return mcp;
+      });
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'mcp_replacement',
+          content: `Built new MCP list with ${newMcpList.length} tools`,
+          reasoning: `Successfully replaced ${originalMcpName} with ${newMcpName}, keeping other MCPs unchanged`,
+          mcps: newMcpList.map(mcp => ({
+            name: mcp.name,
+            description: mcp.description,
+            authRequired: mcp.authRequired,
+            authVerified: mcp.authVerified
+          }))
+        } 
+      });
+      
+      // 3. 重新生成工作流阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'workflow_regeneration',
+          stepName: 'Regenerate Workflow',
+          stepNumber: 3,
+          totalSteps: 5
+        } 
+      });
+      
+      const newWorkflow = await this.regenerateWorkflowWithNewMCP(
+        task.content,
+        newMcpList,
+        originalMcpName,
+        newMcpName
+      );
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'workflow_regeneration',
+          content: `Regenerated workflow with ${newWorkflow.length} steps`,
+          reasoning: `Reanalyzed task based on new MCP combination, generated optimized execution steps`,
+          workflow: newWorkflow
+        } 
+      });
+      
+      // 4. 更新任务阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'task_update',
+          stepName: 'Update Task Information',
+          stepNumber: 4,
+          totalSteps: 5
+        } 
+      });
+      
+      const updatedMcpWorkflow = {
+        mcps: newMcpList.map(mcp => ({
+          name: mcp.name,
+          description: mcp.description,
+          authRequired: mcp.authRequired,
+          authVerified: mcp.authVerified || false,
+          category: mcp.category,
+          imageUrl: mcp.imageUrl,
+          githubUrl: mcp.githubUrl,
+          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
+        })),
+        workflow: newWorkflow
+      };
+      
+      const updateSuccess = await this.taskService.updateTask(taskId, {
+        mcpWorkflow: updatedMcpWorkflow,
+        status: 'analyzed'
+      });
+      
+      if (!updateSuccess) {
+        stream({ event: 'error', data: { message: 'Failed to update task workflow' } });
+        return false;
+      }
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'task_update',
+          content: '任务信息更新成功',
+          reasoning: '工作流已保存到数据库，任务状态已更新为已分析'
+        } 
+      });
+      
+      // 5. 完成阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'completion',
+          stepName: '完成替换操作',
+          stepNumber: 5,
+          totalSteps: 5
+        } 
+      });
+      
+      // 记录替换操作
+      await mcpAlternativeDao.saveAlternativeRecommendation(
+        taskId,
+        originalMcpName,
+        [newMcpName],
+        `MCP替换操作：${originalMcpName} -> ${newMcpName}`
+      ).catch(err => logger.error('记录MCP替换操作失败', err));
+      
+      // 构建元数据信息
+      const metadata = {
+        totalSteps: newWorkflow.length,
+        requiresAuth: newMcpList.some(mcp => mcp.authRequired),
+        mcpsRequiringAuth: newMcpList
+          .filter(mcp => mcp.authRequired)
+          .map(mcp => mcp.name)
+      };
+      
+      // 发送最终完成信息
+      stream({ 
+        event: 'replacement_complete', 
+        data: { 
+          taskId,
+          message: `成功将 ${originalMcpName} 替换为 ${newMcpName} 并重新生成了工作流`,
+          mcpWorkflow: updatedMcpWorkflow,
+          metadata,
+          replacementInfo: {
+            originalMcp: originalMcpName,
+            newMcp: newMcpName,
+            timestamp: new Date().toISOString()
+          }
+        } 
+      });
+      
+      logger.info(`✅ 流式MCP替换和重新分析完成 [任务: ${taskId}]`);
+      return true;
+      
+    } catch (error) {
+      logger.error(`流式智能替换MCP失败 [任务: ${taskId}]:`, error);
+      stream({ 
+        event: 'error', 
+        data: { 
+          message: `替换失败: ${error instanceof Error ? error.message : String(error)}`,
+          details: error instanceof Error ? error.stack : undefined
+        } 
+      });
+      return false;
     }
   }
   
@@ -588,6 +825,494 @@ ${JSON.stringify(newMcp, null, 2)}
         reasons: ['验证过程出错'],
         warnings: ['系统错误']
       };
+    }
+  }
+
+  /**
+   * 批量替换MCP并重新分析任务
+   * @param taskId 任务ID
+   * @param replacements 替换列表
+   * @returns 替换结果，格式与原始任务分析一致
+   */
+  async batchReplaceAndReanalyzeTask(
+    taskId: string,
+    replacements: Array<{ originalMcpName: string; newMcpName: string }>
+  ): Promise<{
+    success: boolean;
+    message: string;
+    mcpWorkflow?: {
+      mcps: Array<{
+        name: string;
+        description: string;
+        authRequired: boolean;
+        authVerified: boolean;
+        category?: string;
+        imageUrl?: string;
+        githubUrl?: string;
+        authParams?: Record<string, any>;
+      }>;
+      workflow: Array<{
+        step: number;
+        mcp: string;
+        action: string;
+        input?: any;
+      }>;
+    };
+    metadata?: {
+      totalSteps: number;
+      requiresAuth: boolean;
+      mcpsRequiringAuth: string[];
+    };
+  }> {
+    try {
+      logger.info(`🔄 开始批量替换MCP并重新分析 [任务: ${taskId}, 替换数量: ${replacements.length}]`);
+      
+      // 1. 获取任务信息
+      const task = await this.taskService.getTaskById(taskId);
+      if (!task) {
+        return { success: false, message: 'Task not found' };
+      }
+      
+      if (!task.mcpWorkflow) {
+        return { success: false, message: 'Task has no workflow information' };
+      }
+      
+      // 2. 验证所有新MCP是否存在
+      const availableMCPs = this.getAvailableMCPs();
+      const invalidMCPs: string[] = [];
+      
+      for (const replacement of replacements) {
+        const newMCP = availableMCPs.find(mcp => mcp.name === replacement.newMcpName);
+        if (!newMCP) {
+          invalidMCPs.push(replacement.newMcpName);
+        }
+      }
+      
+      if (invalidMCPs.length > 0) {
+        return { 
+          success: false, 
+          message: `Cannot find specified MCPs: ${invalidMCPs.join(', ')}` 
+        };
+      }
+      
+      // 3. 检查所有原MCP是否在当前工作流中
+      const missingOriginalMCPs: string[] = [];
+      
+      for (const replacement of replacements) {
+        const originalMcpExists = task.mcpWorkflow.mcps.some(mcp => mcp.name === replacement.originalMcpName);
+        if (!originalMcpExists) {
+          missingOriginalMCPs.push(replacement.originalMcpName);
+        }
+      }
+      
+      if (missingOriginalMCPs.length > 0) {
+        return { 
+          success: false, 
+          message: `Original MCPs not found in workflow: ${missingOriginalMCPs.join(', ')}` 
+        };
+      }
+      
+      // 4. 构建新的MCP列表（批量替换）
+      let newMcpList = [...task.mcpWorkflow.mcps];
+      
+      for (const replacement of replacements) {
+        const newMCP = availableMCPs.find(mcp => mcp.name === replacement.newMcpName)!;
+        
+        newMcpList = newMcpList.map(mcp => {
+          if (mcp.name === replacement.originalMcpName) {
+            return {
+              name: newMCP.name,
+              description: newMCP.description,
+              authRequired: newMCP.authRequired,
+              authVerified: !newMCP.authRequired,
+              category: newMCP.category,
+              imageUrl: newMCP.imageUrl,
+              githubUrl: newMCP.githubUrl,
+              authParams: newMCP.authParams
+            };
+          }
+          return mcp;
+        });
+      }
+      
+      // 5. 使用智能分析重新构建工作流
+      const newWorkflow = await this.regenerateBatchWorkflowWithNewMCPs(
+        task.content,
+        newMcpList,
+        replacements
+      );
+      
+      // 6. 构建完整的mcpWorkflow结构，与原始任务分析格式一致
+      const updatedMcpWorkflow = {
+        mcps: newMcpList.map(mcp => ({
+          name: mcp.name,
+          description: mcp.description,
+          authRequired: mcp.authRequired,
+          authVerified: mcp.authVerified || false,
+          category: mcp.category,
+          imageUrl: mcp.imageUrl,
+          githubUrl: mcp.githubUrl,
+          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
+        })),
+        workflow: newWorkflow
+      };
+      
+      // 7. 更新任务
+      const updateSuccess = await this.taskService.updateTask(taskId, {
+        mcpWorkflow: updatedMcpWorkflow,
+        status: 'analyzed'
+      });
+      
+      if (!updateSuccess) {
+        return { success: false, message: 'Failed to update task workflow' };
+      }
+      
+      // 8. 记录批量替换操作
+      const replacementSummary = replacements.map(r => `${r.originalMcpName} -> ${r.newMcpName}`).join(', ');
+      await mcpAlternativeDao.saveAlternativeRecommendation(
+        taskId,
+        'batch_replacement',
+        replacements.map(r => r.newMcpName),
+        `批量MCP替换操作：${replacementSummary}`
+      ).catch(err => logger.error('记录批量MCP替换操作失败', err));
+      
+      // 9. 构建元数据信息，与原始任务分析格式一致
+      const metadata = {
+        totalSteps: newWorkflow.length,
+        requiresAuth: newMcpList.some(mcp => mcp.authRequired),
+        mcpsRequiringAuth: newMcpList
+          .filter(mcp => mcp.authRequired)
+          .map(mcp => mcp.name)
+      };
+      
+      logger.info(`✅ 批量MCP替换和重新分析完成 [任务: ${taskId}, 替换数量: ${replacements.length}]`);
+      
+      // 10. 返回与原始任务分析完全一致的格式
+      return {
+        success: true,
+        message: `Successfully replaced ${replacements.length} MCPs and regenerated workflow: ${replacementSummary}`,
+        mcpWorkflow: updatedMcpWorkflow,
+        metadata
+      };
+      
+    } catch (error) {
+      logger.error(`批量替换MCP失败 [任务: ${taskId}]:`, error);
+      return {
+        success: false,
+        message: `Batch replacement failed: ${error instanceof Error ? error.message : String(error)}`
+      };
+    }
+  }
+
+  /**
+   * 批量替换MCP并重新分析任务（流式版本）
+   * @param taskId 任务ID
+   * @param replacements 替换列表
+   * @param stream 流式回调函数
+   * @returns 是否成功
+   */
+  async batchReplaceAndReanalyzeTaskStream(
+    taskId: string,
+    replacements: Array<{ originalMcpName: string; newMcpName: string }>,
+    stream: (data: any) => void
+  ): Promise<boolean> {
+    try {
+      logger.info(`🔄 开始流式批量替换MCP并重新分析 [任务: ${taskId}, 替换数量: ${replacements.length}]`);
+      
+      // 1. 验证阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'batch_validation',
+          stepName: 'Validate Batch Replacement Conditions',
+          stepNumber: 1,
+          totalSteps: 5
+        } 
+      });
+      
+      // 获取任务信息
+      const task = await this.taskService.getTaskById(taskId);
+      if (!task) {
+        stream({ event: 'error', data: { message: 'Task not found' } });
+        return false;
+      }
+      
+      if (!task.mcpWorkflow) {
+        stream({ event: 'error', data: { message: 'Task has no workflow information' } });
+        return false;
+      }
+      
+      // 验证所有新MCP是否存在
+      const availableMCPs = this.getAvailableMCPs();
+      const invalidMCPs: string[] = [];
+      
+      for (const replacement of replacements) {
+        const newMCP = availableMCPs.find(mcp => mcp.name === replacement.newMcpName);
+        if (!newMCP) {
+          invalidMCPs.push(replacement.newMcpName);
+        }
+      }
+      
+      if (invalidMCPs.length > 0) {
+        stream({ 
+          event: 'error', 
+          data: { message: `Cannot find specified MCPs: ${invalidMCPs.join(', ')}` } 
+        });
+        return false;
+      }
+      
+      // 检查所有原MCP是否在当前工作流中
+      const missingOriginalMCPs: string[] = [];
+      
+      for (const replacement of replacements) {
+        const originalMcpExists = task.mcpWorkflow.mcps.some(mcp => mcp.name === replacement.originalMcpName);
+        if (!originalMcpExists) {
+          missingOriginalMCPs.push(replacement.originalMcpName);
+        }
+      }
+      
+      if (missingOriginalMCPs.length > 0) {
+        stream({ 
+          event: 'error', 
+          data: { message: `Original MCPs not found in workflow: ${missingOriginalMCPs.join(', ')}` } 
+        });
+        return false;
+      }
+      
+      const replacementSummary = replacements.map(r => `${r.originalMcpName} -> ${r.newMcpName}`).join(', ');
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'batch_validation',
+          content: `Batch validation passed: Can replace ${replacements.length} MCPs`,
+          reasoning: `All replacement MCPs exist and original MCPs are in current workflow`,
+          replacements: replacementSummary
+        } 
+      });
+      
+      // 2. 构建新MCP列表阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'batch_mcp_replacement',
+          stepName: 'Build New MCP List with Batch Replacements',
+          stepNumber: 2,
+          totalSteps: 5
+        } 
+      });
+      
+      let newMcpList = [...task.mcpWorkflow.mcps];
+      
+      for (const replacement of replacements) {
+        const newMCP = availableMCPs.find(mcp => mcp.name === replacement.newMcpName)!;
+        
+        newMcpList = newMcpList.map(mcp => {
+          if (mcp.name === replacement.originalMcpName) {
+            return {
+              name: newMCP.name,
+              description: newMCP.description,
+              authRequired: newMCP.authRequired,
+              authVerified: !newMCP.authRequired,
+              category: newMCP.category,
+              imageUrl: newMCP.imageUrl,
+              githubUrl: newMCP.githubUrl,
+              authParams: newMCP.authParams
+            };
+          }
+          return mcp;
+        });
+      }
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'batch_mcp_replacement',
+          content: `Built new MCP list with ${newMcpList.length} tools after ${replacements.length} replacements`,
+          reasoning: `Successfully replaced MCPs: ${replacementSummary}`,
+          mcps: newMcpList.map(mcp => ({
+            name: mcp.name,
+            description: mcp.description,
+            authRequired: mcp.authRequired,
+            authVerified: mcp.authVerified
+          }))
+        } 
+      });
+      
+      // 3. 重新生成工作流阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'batch_workflow_regeneration',
+          stepName: 'Regenerate Workflow with New MCPs',
+          stepNumber: 3,
+          totalSteps: 5
+        } 
+      });
+      
+      const newWorkflow = await this.regenerateBatchWorkflowWithNewMCPs(
+        task.content,
+        newMcpList,
+        replacements
+      );
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'batch_workflow_regeneration',
+          content: `Regenerated workflow with ${newWorkflow.length} steps`,
+          reasoning: `Reanalyzed task based on new MCP combination after batch replacement`,
+          workflow: newWorkflow
+        } 
+      });
+      
+      // 4. 更新任务阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'batch_task_update',
+          stepName: 'Update Task Information',
+          stepNumber: 4,
+          totalSteps: 5
+        } 
+      });
+      
+      const updatedMcpWorkflow = {
+        mcps: newMcpList.map(mcp => ({
+          name: mcp.name,
+          description: mcp.description,
+          authRequired: mcp.authRequired,
+          authVerified: mcp.authVerified || false,
+          category: mcp.category,
+          imageUrl: mcp.imageUrl,
+          githubUrl: mcp.githubUrl,
+          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
+        })),
+        workflow: newWorkflow
+      };
+      
+      const updateSuccess = await this.taskService.updateTask(taskId, {
+        mcpWorkflow: updatedMcpWorkflow,
+        status: 'analyzed'
+      });
+      
+      if (!updateSuccess) {
+        stream({ event: 'error', data: { message: 'Failed to update task workflow' } });
+        return false;
+      }
+      
+      stream({ 
+        event: 'step_complete', 
+        data: { 
+          stepType: 'batch_task_update',
+          content: 'Task information updated successfully',
+          reasoning: 'Workflow saved to database, task status updated to analyzed'
+        } 
+      });
+      
+      // 5. 完成阶段
+      stream({ 
+        event: 'step_start', 
+        data: { 
+          stepType: 'batch_completion',
+          stepName: 'Complete Batch Replacement Operation',
+          stepNumber: 5,
+          totalSteps: 5
+        } 
+      });
+      
+      // 记录批量替换操作
+      await mcpAlternativeDao.saveAlternativeRecommendation(
+        taskId,
+        'batch_replacement',
+        replacements.map(r => r.newMcpName),
+        `批量MCP替换操作：${replacementSummary}`
+      ).catch(err => logger.error('记录批量MCP替换操作失败', err));
+      
+      // 构建元数据信息
+      const metadata = {
+        totalSteps: newWorkflow.length,
+        requiresAuth: newMcpList.some(mcp => mcp.authRequired),
+        mcpsRequiringAuth: newMcpList
+          .filter(mcp => mcp.authRequired)
+          .map(mcp => mcp.name)
+      };
+      
+      // 发送最终完成信息
+      stream({ 
+        event: 'batch_replacement_complete', 
+        data: { 
+          taskId,
+          message: `Successfully replaced ${replacements.length} MCPs and regenerated workflow`,
+          mcpWorkflow: updatedMcpWorkflow,
+          metadata,
+          replacementInfo: {
+            replacements,
+            replacementSummary,
+            timestamp: new Date().toISOString(),
+            totalReplacements: replacements.length
+          }
+        } 
+      });
+      
+      logger.info(`✅ 流式批量MCP替换和重新分析完成 [任务: ${taskId}, 替换数量: ${replacements.length}]`);
+      return true;
+      
+    } catch (error) {
+      logger.error(`流式批量替换MCP失败 [任务: ${taskId}]:`, error);
+      stream({ 
+        event: 'error', 
+        data: { 
+          message: `Batch replacement failed: ${error instanceof Error ? error.message : String(error)}`,
+          details: error instanceof Error ? error.stack : undefined
+        } 
+      });
+      return false;
+    }
+  }
+  
+  /**
+   * 使用新MCP批量重新生成工作流
+   */
+  private async regenerateBatchWorkflowWithNewMCPs(
+    taskContent: string,
+    newMcpList: any[],
+    replacements: Array<{ originalMcpName: string; newMcpName: string }>
+  ): Promise<any[]> {
+    try {
+      // 将MCP列表转换为MCPInfo格式
+      const mcpInfoList: MCPInfo[] = newMcpList.map(mcp => ({
+        name: mcp.name,
+        description: mcp.description,
+        authRequired: mcp.authRequired,
+        category: mcp.category,
+        imageUrl: mcp.imageUrl,
+        githubUrl: mcp.githubUrl,
+        authParams: mcp.authParams
+      }));
+      
+      const replacementSummary = replacements.map(r => `${r.originalMcpName} -> ${r.newMcpName}`).join(', ');
+      
+      // 使用TaskAnalysisService重新构建工作流
+      const workflowResult = await this.taskAnalysisService.buildMCPWorkflow(
+        taskContent,
+        `Task reanalysis after batch MCP replacement: ${replacementSummary}`,
+        mcpInfoList,
+        true,
+        [`Complete task using updated MCPs after batch replacement: ${replacementSummary}`]
+      );
+      
+      return workflowResult.workflow;
+    } catch (error) {
+      logger.error('重新生成批量工作流失败:', error);
+      // 返回一个基本的工作流作为后备
+      const newMcpNames = replacements.map(r => r.newMcpName);
+      return newMcpNames.map((mcpName, index) => ({
+        step: index + 1,
+        mcp: mcpName,
+        action: `Complete task using ${mcpName}`,
+        input: {}
+      }));
     }
   }
 } 
