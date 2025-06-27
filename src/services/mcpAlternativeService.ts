@@ -2,33 +2,25 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { logger } from '../utils/logger.js';
 import { MCPInfo } from '../models/mcp.js';
-import { mcpAlternativeDao } from '../dao/mcpAlternativeDao.js';
 import { getAllPredefinedMCPs } from './predefinedMCPs.js';
+import { mcpAlternativeDao } from '../dao/mcpAlternativeDao.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import { getTaskService } from './taskService.js';
+import { TaskAnalysisService } from './llmTasks/taskAnalysisService.js';
+
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
+
 /**
- * MCP替代选项服务
- * 负责提供MCP的替代选项推荐
+ * MCP替代服务
+ * 负责智能推荐和替换MCP工具
  */
 export class MCPAlternativeService {
   private llm: ChatOpenAI;
+  private taskService = getTaskService();
+  private taskAnalysisService = new TaskAnalysisService();
   
-  // 替代MCP映射关系
-  private alternativeMap: Record<string, string[]> = {
-    'GitHubTool': ['FileSystemTool', 'WebBrowserTool'],
-    'GoogleSearchTool': ['WebBrowserTool'],
-    'FileSystemTool': ['WebBrowserTool'],
-    'WebBrowserTool': ['GoogleSearchTool'],
-    'DatabaseQueryTool': ['FileSystemTool'],
-    'ImageAnalysisTool': ['WebBrowserTool', 'TextAnalysisTool'],
-    'TextAnalysisTool': ['WebBrowserTool'],
-    'WeatherTool': ['WebBrowserTool'],
-    'playwright-mcp-service': ['brave-search-mcp', 'WebBrowserTool'],
-    'playwright': ['brave-search-mcp', 'WebBrowserTool']
-  };
-  
-  // 可用的MCP列表
+  // 移除硬编码的alternativeMap，改为智能推荐
   private availableMCPs: MCPInfo[];
   
   constructor() {
@@ -40,7 +32,7 @@ export class MCPAlternativeService {
       openAIApiKey: process.env.OPENAI_API_KEY,
       modelName: process.env.MCP_ALTERNATIVE_MODEL || 'gpt-4o',
       temperature: 0.3,
-      timeout: 10000,
+      timeout: 15000, // 增加超时时间
       maxRetries: 2
     };
     
@@ -71,7 +63,6 @@ export class MCPAlternativeService {
     return mcpServices.map(service => ({
       name: service.name,
       description: service.description,
-      capabilities: [], // MCPService中没有capabilities字段，使用空数组
       authRequired: service.authParams ? Object.keys(service.authParams).length > 0 : false,
       authFields: service.authParams ? Object.keys(service.authParams) : undefined,
       category: service.category,
@@ -83,70 +74,60 @@ export class MCPAlternativeService {
   
   /**
    * 获取最新的MCP列表
-   * 确保每次都使用最新的MCP信息
    */
   private getAvailableMCPs(): MCPInfo[] {
     return this.convertMCPServicesToMCPInfos(getAllPredefinedMCPs());
   }
   
   /**
-   * 获取MCP的替代选项
+   * 智能获取MCP的替代选项
    * @param mcpName 当前MCP名称
    * @param taskContent 任务内容
+   * @param currentWorkflow 当前完整的工作流，用于上下文分析
    * @returns 替代的MCP列表
    */
-  async getAlternativeMCPs(mcpName: string, taskContent: string): Promise<MCPInfo[]> {
+  async getAlternativeMCPs(
+    mcpName: string, 
+    taskContent: string,
+    currentWorkflow?: any
+  ): Promise<MCPInfo[]> {
     try {
-      logger.info(`获取MCP替代选项 [MCP: ${mcpName}]`);
+      logger.info(`智能获取MCP替代选项 [MCP: ${mcpName}]`);
       
       // 获取最新的MCP列表
       const availableMCPs = this.getAvailableMCPs();
       
-      // 使用LLM推荐替代选项
-      logger.info(`使用LLM推荐替代选项 [MCP: ${mcpName}], 可用MCP数量: ${availableMCPs.length}`);
-      const llmRecommendations = await this.recommendAlternatives(mcpName, taskContent);
+      // 使用LLM智能推荐替代选项
+      const llmRecommendations = await this.recommendAlternativesWithContext(
+        mcpName, 
+        taskContent, 
+        currentWorkflow
+      );
       
       if (llmRecommendations.length > 0) {
-        logger.info(`LLM推荐的替代选项: ${llmRecommendations.map(m => m.name).join(', ')}`);
-        // 对LLM推荐的结果进行排序
-        const rankedAlternatives = await this.rankAlternatives(mcpName, llmRecommendations, taskContent);
-        return rankedAlternatives;
+        logger.info(`智能推荐的替代选项: ${llmRecommendations.map(m => m.name).join(', ')}`);
+        return llmRecommendations;
       }
       
-      // 如果LLM推荐失败，尝试使用预定义映射作为后备
-      logger.warn(`LLM推荐失败，返回了${llmRecommendations.length}个选项，尝试使用预定义映射作为后备`);
-      const predefinedAlternatives = this.alternativeMap[mcpName] || [];
+      // 如果智能推荐失败，使用基于类别的后备推荐
+      logger.warn(`智能推荐失败，使用基于类别的后备推荐`);
+      const categoryBasedAlternatives = this.getCategoryBasedAlternatives(mcpName);
       
-      if (predefinedAlternatives.length > 0) {
-      const alternativeMCPs = availableMCPs.filter(mcp => 
-        predefinedAlternatives.includes(mcp.name)
-      );
-        if (alternativeMCPs.length > 0) {
-          logger.info(`找到预定义替代选项: ${alternativeMCPs.map(m => m.name).join(', ')}`);
-          return alternativeMCPs;
-        }
-      }
-      
-      // 最后的后备选项：返回一些通用的替代工具
-      logger.info(`没有找到任何替代选项，返回通用替代工具`);
-      const fallbackAlternatives = availableMCPs
-        .filter(mcp => mcp.name !== mcpName)
-        .slice(0, 3);
-      
-      return fallbackAlternatives;
+      return categoryBasedAlternatives;
     } catch (error) {
       logger.error(`获取MCP替代选项失败 [MCP: ${mcpName}]:`, error);
-      // 返回空替代项
       return [];
     }
   }
   
   /**
-   * 使用LLM推荐替代MCP
-   * @param mcpName 当前MCP名称
-   * @param taskContent 任务内容
+   * 使用LLM智能推荐替代MCP（带上下文分析）
    */
-  private async recommendAlternatives(mcpName: string, taskContent: string): Promise<MCPInfo[]> {
+  private async recommendAlternativesWithContext(
+    mcpName: string, 
+    taskContent: string,
+    currentWorkflow?: any
+  ): Promise<MCPInfo[]> {
     try {
       const availableMCPs = this.getAvailableMCPs();
       const mcpToReplace = availableMCPs.find(mcp => mcp.name === mcpName);
@@ -155,7 +136,7 @@ export class MCPAlternativeService {
         return [];
       }
       
-      // 按类别分组显示可用MCP，便于LLM理解
+      // 按类别分组显示可用MCP
       const mcpsByCategory = availableMCPs
         .filter(mcp => mcp.name !== mcpName)
         .reduce((acc, mcp) => {
@@ -166,61 +147,62 @@ export class MCPAlternativeService {
           acc[category].push({
             name: mcp.name,
             description: mcp.description,
+            authRequired: mcp.authRequired
           });
           return acc;
         }, {} as Record<string, any[]>);
       
+      // 构建上下文信息
+      const contextInfo = currentWorkflow ? 
+        `\n\n当前完整工作流上下文：\n${JSON.stringify(currentWorkflow, null, 2)}` : 
+        '';
+      
       const response = await this.llm.invoke([
-        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for recommending the most suitable alternative tools based on user task requirements.
+        new SystemMessage(`你是一个MCP工具专家，负责智能推荐最合适的替代工具。
 
-The user currently cannot use the "${mcpName}" tool and needs to find other MCP tools that can replace its functionality.
+**当前情况**：
+- 用户无法使用 "${mcpName}" 工具
+- 需要找到其他MCP工具来替代其功能
+- 必须考虑与其他工具的协作关系
 
-Current unavailable tool functionality:
+**需要替代的工具信息**：
 ${JSON.stringify(mcpToReplace, null, 2)}
 
-Available alternative MCP tools (grouped by category):
-${JSON.stringify(mcpsByCategory, null, 2)}
+**可用的替代MCP工具（按类别分组）**：
+${JSON.stringify(mcpsByCategory, null, 2)}${contextInfo}
 
-Please carefully analyze the user's task content and recommend up to 3 most suitable alternative tools based on the following criteria:
-1. Functionality match: Whether the tool's capabilities can meet the task requirements
-2. Category relevance: Tools from the same or related categories should be prioritized
-3. Usability: Whether the tool is easy to use and stable
+**推荐标准**：
+1. **功能匹配度**：工具能力是否能满足任务需求
+2. **类别相关性**：优先推荐同类别或相关类别的工具
+3. **协作兼容性**：与现有工作流中其他工具的配合程度
+4. **认证复杂度**：优先推荐认证简单的工具
+5. **稳定性**：工具的可靠性和成熟度
 
-CRITICAL: You MUST respond with ONLY a valid JSON object, no additional text, no markdown formatting, no code blocks.
+**重要提示**：
+- 必须返回纯JSON格式，不要使用markdown代码块
+- 最多推荐3个最合适的替代工具
+- 工具名称必须与可用工具列表中的name字段完全匹配
 
-Output format (exactly this structure):
+返回格式：
 {
-  "alternatives": ["Tool1Name", "Tool2Name", "Tool3Name"],
-  "explanation": "Detailed explanation of why these tools are recommended and how they meet the user's task requirements"
-}
-
-Important: 
-- Make sure the returned tool names exactly match the name field in the available tools list
-- Do NOT use markdown code blocks or any other formatting
-- Return ONLY the JSON object`),
-        new HumanMessage(`User task: ${taskContent}`)
+  "alternatives": ["工具1名称", "工具2名称", "工具3名称"],
+  "explanation": "详细说明为什么推荐这些工具，以及它们如何满足用户的任务需求和与其他工具协作",
+  "compatibility_analysis": "分析这些替代工具与现有工作流的兼容性"
+}`),
+        new HumanMessage(`用户任务：${taskContent}`)
       ]);
       
       // 解析返回的JSON
       const responseText = response.content.toString();
       try {
-        // 清理可能的Markdown格式
         let cleanedText = responseText.trim();
         
-        // 移除可能的Markdown代码块标记
+        // 清理可能的Markdown格式
         cleanedText = cleanedText
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .replace(/^```/g, '')
-          .replace(/```$/g, '');
-        
-        // 如果不是以{开头，尝试提取JSON部分
-        if (!cleanedText.startsWith('{')) {
-          const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            cleanedText = jsonMatch[0];
-          }
-        }
+          .trim();
         
         logger.info(`[MCP Alternative] Cleaned response text: ${cleanedText.substring(0, 200)}...`);
         
@@ -232,14 +214,10 @@ Important:
           alternativeNames.includes(mcp.name)
         );
         
-        // 可选：记录推荐的替代方案
+        // 记录推荐结果
         if (alternatives.length > 0) {
-          await mcpAlternativeDao.saveAlternativeRecommendation(
-            "task_id_placeholder", // 实际应用中应传入任务ID
-            mcpName,
-            alternativeNames,
-            taskContent
-          ).catch(err => logger.error('记录替代方案推荐失败', err));
+          logger.info(`[MCP Alternative] 成功推荐 ${alternatives.length} 个替代选项: ${alternatives.map(a => a.name).join(', ')}`);
+          logger.info(`[MCP Alternative] 推荐理由: ${parsedResponse.explanation}`);
         }
         
         return alternatives;
@@ -247,178 +225,322 @@ Important:
         logger.error('解析LLM推荐的替代MCP失败:', parseError);
         logger.error('原始响应文本:', responseText);
         
-        // 尝试从文本中提取工具名称 - 更宽松的匹配
-        const extractedNames: string[] = [];
-        
-        // 尝试多种模式匹配
-        const patterns = [
-          /["']alternatives["']\s*:\s*\[(.*?)\]/s,
-          /alternatives["\']?\s*:\s*\[(.*?)\]/s,
-          /\[(.*?)\]/s // 最宽松的匹配，任何数组
-        ];
-        
-        for (const pattern of patterns) {
-          const match = responseText.match(pattern);
-          if (match && match[1]) {
-            const namesText = match[1];
-            // 提取引号内的文本
-            const nameMatches = namesText.match(/["']([^"']+)["']/g);
-            if (nameMatches) {
-              nameMatches.forEach(nameMatch => {
-                const name = nameMatch.replace(/["']/g, '');
-                if (availableMCPs.some(mcp => mcp.name === name)) {
-                  extractedNames.push(name);
-                }
-              });
-            }
-            
-            if (extractedNames.length > 0) {
-              logger.info(`[MCP Alternative] Successfully extracted names via pattern: ${extractedNames.join(', ')}`);
-              break;
-            }
-          }
-        }
-        
-        if (extractedNames.length > 0) {
-          return availableMCPs.filter(mcp => extractedNames.includes(mcp.name));
-        }
-        
-        // 如果无法提取，使用基于类别的智能推荐
-        logger.info(`[MCP Alternative] Using category-based fallback for ${mcpName}`);
-        const mcpToReplace = availableMCPs.find(mcp => mcp.name === mcpName);
-        if (mcpToReplace && mcpToReplace.category) {
-          const sameCategoryMCPs = availableMCPs.filter(mcp => 
-            mcp.category === mcpToReplace.category && mcp.name !== mcpName
-          );
-          
-          if (sameCategoryMCPs.length > 0) {
-            logger.info(`[MCP Alternative] Found ${sameCategoryMCPs.length} alternatives in same category: ${mcpToReplace.category}`);
-            return sameCategoryMCPs.slice(0, 3);
-          }
-        }
-        
-        // 最后的备选：返回一些通用工具
-        return availableMCPs
-          .filter(mcp => mcp.name !== mcpName)
-          .sort(() => Math.random() - 0.5)
-          .slice(0, 3);
+        // 尝试从文本中提取工具名称
+        return this.extractAlternativesFromText(responseText, availableMCPs, mcpName);
       }
     } catch (error) {
-      logger.error(`推荐替代MCP失败 [MCP: ${mcpName}]:`, error);
-      if (error instanceof Error) {
-        logger.error(`错误详情:`, {
-          message: error.message,
-          stack: error.stack,
-          name: error.name
-        });
-      }
+      logger.error(`智能推荐替代MCP失败 [MCP: ${mcpName}]:`, error);
       return [];
     }
   }
   
   /**
-   * 根据任务内容对替代项进行排序
-   * @param mcpName 当前MCP名称
-   * @param alternatives 替代MCP列表
-   * @param taskContent 任务内容
+   * 从文本中提取替代工具名称（容错处理）
    */
-  private async rankAlternatives(
-    mcpName: string,
-    alternatives: MCPInfo[],
-    taskContent: string
-  ): Promise<MCPInfo[]> {
-    if (alternatives.length <= 1) {
-      return alternatives;
-    }
+  private extractAlternativesFromText(
+    responseText: string, 
+    availableMCPs: MCPInfo[], 
+    mcpName: string
+  ): MCPInfo[] {
+    const extractedNames: string[] = [];
     
-    try {
-      const response = await this.llm.invoke([
-        new SystemMessage(`You are an MCP (Model Context Protocol) expert responsible for ranking alternative tools.
-The user currently cannot use the ${mcpName} tool and needs to select the most suitable from the following alternatives:
-
-${JSON.stringify(alternatives, null, 2)}
-
-Please rank these alternative tools based on the user's task content, from most suitable to least suitable.
-
-Output format:
-{
-  "ranked_alternatives": ["Tool1Name", "Tool2Name", "Tool3Name"],
-  "explanation": "Ranking rationale"
-}
-
-Please base your ranking on factors such as tool functionality match with the task, feature completeness, and ease of use.`),
-        new HumanMessage(taskContent)
-      ]);
-      
-      // 解析返回的JSON
-      const responseText = response.content.toString();
-      try {
-        const parsedResponse = JSON.parse(responseText);
-        const rankedNames: string[] = parsedResponse.ranked_alternatives || [];
-        
-        // 根据排序返回替代项
-        const rankedAlternatives: MCPInfo[] = [];
-        for (const name of rankedNames) {
-          const mcp = alternatives.find(m => m.name === name);
-          if (mcp) {
-            rankedAlternatives.push(mcp);
-          }
+    // 尝试多种模式匹配
+    const patterns = [
+      /["']alternatives["']\s*:\s*\[(.*?)\]/s,
+      /alternatives["\']?\s*:\s*\[(.*?)\]/s,
+      /\[(.*?)\]/s
+    ];
+    
+    for (const pattern of patterns) {
+      const match = responseText.match(pattern);
+      if (match && match[1]) {
+        const namesText = match[1];
+        const nameMatches = namesText.match(/["']([^"']+)["']/g);
+        if (nameMatches) {
+          nameMatches.forEach(nameMatch => {
+            const name = nameMatch.replace(/["']/g, '');
+            if (availableMCPs.some(mcp => mcp.name === name)) {
+              extractedNames.push(name);
+            }
+          });
         }
         
-        // 添加任何未在排序中出现的原始替代项
-        const remainingAlternatives = alternatives.filter(
-          mcp => !rankedAlternatives.some(r => r.name === mcp.name)
-        );
-        
-        return [...rankedAlternatives, ...remainingAlternatives];
-      } catch (parseError) {
-        logger.error('解析LLM排序的替代MCP失败:', parseError);
-        return alternatives;
+        if (extractedNames.length > 0) {
+          logger.info(`[MCP Alternative] 通过模式匹配提取到工具名称: ${extractedNames.join(', ')}`);
+          break;
+        }
       }
+    }
+    
+    if (extractedNames.length > 0) {
+      return availableMCPs.filter(mcp => extractedNames.includes(mcp.name));
+    }
+    
+    // 如果无法提取，使用基于类别的智能推荐
+    return this.getCategoryBasedAlternatives(mcpName);
+  }
+  
+  /**
+   * 基于类别的后备推荐
+   */
+  private getCategoryBasedAlternatives(mcpName: string): MCPInfo[] {
+    const availableMCPs = this.getAvailableMCPs();
+    const mcpToReplace = availableMCPs.find(mcp => mcp.name === mcpName);
+    
+    if (mcpToReplace && mcpToReplace.category) {
+      const sameCategoryMCPs = availableMCPs.filter(mcp => 
+        mcp.category === mcpToReplace.category && mcp.name !== mcpName
+      );
+      
+      if (sameCategoryMCPs.length > 0) {
+        logger.info(`[MCP Alternative] 找到 ${sameCategoryMCPs.length} 个同类别替代选项: ${mcpToReplace.category}`);
+        return sameCategoryMCPs.slice(0, 3);
+      }
+    }
+    
+    // 最后的备选：返回一些通用工具
+    return availableMCPs
+      .filter(mcp => mcp.name !== mcpName)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+  }
+  
+  /**
+   * 智能替换任务中的MCP并重新分析
+   * @param taskId 任务ID
+   * @param originalMcpName 原始MCP名称
+   * @param newMcpName 新MCP名称
+   * @returns 替换结果
+   */
+  async replaceAndReanalyzeTask(
+    taskId: string,
+    originalMcpName: string,
+    newMcpName: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    newWorkflow?: any;
+  }> {
+    try {
+      logger.info(`开始智能替换MCP并重新分析任务 [任务: ${taskId}, 原MCP: ${originalMcpName}, 新MCP: ${newMcpName}]`);
+      
+      // 1. 获取任务信息
+      const task = await this.taskService.getTaskById(taskId);
+      if (!task) {
+        return { success: false, message: '任务不存在' };
+      }
+      
+      if (!task.mcpWorkflow) {
+        return { success: false, message: '任务没有工作流信息' };
+      }
+      
+      // 2. 验证新MCP是否存在
+      const newMCP = this.getAvailableMCPs().find(mcp => mcp.name === newMcpName);
+      if (!newMCP) {
+        return { success: false, message: `找不到指定的新MCP: ${newMcpName}` };
+      }
+      
+      // 3. 检查原MCP是否在当前工作流中
+      const originalMcpExists = task.mcpWorkflow.mcps.some(mcp => mcp.name === originalMcpName);
+      if (!originalMcpExists) {
+        return { success: false, message: `原MCP ${originalMcpName} 不在当前工作流中` };
+      }
+      
+      // 4. 构建新的MCP列表（替换指定的MCP）
+      const newMcpList = task.mcpWorkflow.mcps.map(mcp => {
+        if (mcp.name === originalMcpName) {
+          return {
+            name: newMCP.name,
+            description: newMCP.description,
+            authRequired: newMCP.authRequired,
+            authVerified: !newMCP.authRequired,
+            category: newMCP.category,
+            imageUrl: newMCP.imageUrl,
+            githubUrl: newMCP.githubUrl,
+            authParams: newMCP.authParams
+          };
+        }
+        return mcp;
+      });
+      
+      // 5. 使用智能分析重新构建工作流
+      const newWorkflow = await this.regenerateWorkflowWithNewMCP(
+        task.content,
+        newMcpList,
+        originalMcpName,
+        newMcpName
+      );
+      
+      // 6. 更新任务的工作流
+      const updatedMcpWorkflow = {
+        mcps: newMcpList,
+        workflow: newWorkflow
+      };
+      
+      const updateSuccess = await this.taskService.updateTask(taskId, {
+        mcpWorkflow: updatedMcpWorkflow,
+        status: 'analyzed' // 重新分析后的状态
+      });
+      
+      if (!updateSuccess) {
+        return { success: false, message: '更新任务工作流失败' };
+      }
+      
+      // 7. 记录替换操作
+      await mcpAlternativeDao.saveAlternativeRecommendation(
+        taskId,
+        originalMcpName,
+        [newMcpName],
+        `MCP替换操作：${originalMcpName} -> ${newMcpName}`
+      ).catch(err => logger.error('记录MCP替换操作失败', err));
+      
+      logger.info(`✅ MCP替换和重新分析完成 [任务: ${taskId}]`);
+      
+      return {
+        success: true,
+        message: `成功将 ${originalMcpName} 替换为 ${newMcpName} 并重新生成了工作流`,
+        newWorkflow: updatedMcpWorkflow
+      };
+      
     } catch (error) {
-      logger.error(`排序替代MCP失败 [MCP: ${mcpName}]:`, error);
-      return alternatives;
+      logger.error(`智能替换MCP失败 [任务: ${taskId}]:`, error);
+      return {
+        success: false,
+        message: `替换失败: ${error instanceof Error ? error.message : String(error)}`
+      };
     }
   }
   
   /**
-   * 替换任务中的MCP
-   * @param taskId 任务ID
-   * @param originalMcpName 原始MCP名称
-   * @param newMcpName 新MCP名称
+   * 使用新MCP重新生成工作流
    */
-  async replaceMCPInWorkflow(
-    taskId: string,
+  private async regenerateWorkflowWithNewMCP(
+    taskContent: string,
+    newMcpList: any[],
     originalMcpName: string,
     newMcpName: string
-  ): Promise<boolean> {
+  ): Promise<any[]> {
     try {
-      logger.info(`替换任务工作流中的MCP [任务: ${taskId}, 原MCP: ${originalMcpName}, 新MCP: ${newMcpName}]`);
+      // 将MCP列表转换为MCPInfo格式
+      const mcpInfoList: MCPInfo[] = newMcpList.map(mcp => ({
+        name: mcp.name,
+        description: mcp.description,
+        authRequired: mcp.authRequired,
+        category: mcp.category,
+        imageUrl: mcp.imageUrl,
+        githubUrl: mcp.githubUrl,
+        authParams: mcp.authParams
+      }));
       
-      // 获取新MCP的详细信息
-      const newMCP = this.getAvailableMCPs().find(mcp => mcp.name === newMcpName);
-      if (!newMCP) {
-        logger.error(`替换失败：找不到指定的新MCP [${newMcpName}]`);
-        return false;
+      // 使用TaskAnalysisService重新构建工作流
+      const workflowResult = await this.taskAnalysisService.buildMCPWorkflow(
+        taskContent,
+        `任务重新分析：将 ${originalMcpName} 替换为 ${newMcpName}`,
+        mcpInfoList,
+        true, // 假设可以完成
+        [`使用 ${newMcpName} 替代 ${originalMcpName} 完成任务`]
+      );
+      
+      return workflowResult.workflow;
+    } catch (error) {
+      logger.error('重新生成工作流失败:', error);
+      // 返回一个基本的工作流作为后备
+      return [{
+        step: 1,
+        mcp: newMcpName,
+        action: `使用 ${newMcpName} 完成任务`,
+        input: {}
+      }];
+    }
+  }
+
+  /**
+   * 验证MCP替换的合理性
+   * @param originalMcpName 原始MCP名称
+   * @param newMcpName 新MCP名称
+   * @param taskContent 任务内容
+   * @returns 验证结果
+   */
+  async validateMCPReplacement(
+    originalMcpName: string,
+    newMcpName: string,
+    taskContent: string
+  ): Promise<{
+    isValid: boolean;
+    confidence: number;
+    reasons: string[];
+    warnings: string[];
+  }> {
+    try {
+      const availableMCPs = this.getAvailableMCPs();
+      const originalMcp = availableMCPs.find(mcp => mcp.name === originalMcpName);
+      const newMcp = availableMCPs.find(mcp => mcp.name === newMcpName);
+      
+      if (!originalMcp || !newMcp) {
+        return {
+          isValid: false,
+          confidence: 0,
+          reasons: ['找不到指定的MCP'],
+          warnings: []
+        };
       }
       
-      // 调用DAO层替换MCP
-      return await mcpAlternativeDao.replaceMCPInWorkflow(
-        taskId,
-        originalMcpName,
-        newMcpName,
-        newMCP.description,
-        newMCP.authRequired,
-        {
-          category: newMCP.category,
-          imageUrl: newMCP.imageUrl,
-          githubUrl: newMCP.githubUrl,
-          authParams: newMCP.authParams
-        }
-      );
+      const response = await this.llm.invoke([
+        new SystemMessage(`你是一个MCP工具专家，负责验证MCP替换的合理性。
+
+**原始工具**：
+${JSON.stringify(originalMcp, null, 2)}
+
+**新工具**：
+${JSON.stringify(newMcp, null, 2)}
+
+请分析将原始工具替换为新工具的合理性，考虑以下因素：
+1. 功能匹配度
+2. 类别相关性
+3. 认证要求变化
+4. 任务完成能力
+
+返回格式（纯JSON）：
+{
+  "isValid": true/false,
+  "confidence": 0-100,
+  "reasons": ["支持替换的理由"],
+  "warnings": ["需要注意的问题"]
+}`),
+        new HumanMessage(`任务内容：${taskContent}`)
+      ]);
+      
+      const responseText = response.content.toString();
+      try {
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        
+        const result = JSON.parse(cleanedText);
+        return {
+          isValid: result.isValid || false,
+          confidence: result.confidence || 0,
+          reasons: result.reasons || [],
+          warnings: result.warnings || []
+        };
+      } catch (parseError) {
+        logger.error('解析MCP替换验证结果失败:', parseError);
+        return {
+          isValid: false,
+          confidence: 0,
+          reasons: ['验证失败'],
+          warnings: ['无法解析验证结果']
+        };
+      }
     } catch (error) {
-      logger.error(`替换任务工作流中的MCP失败 [任务: ${taskId}]:`, error);
-      return false;
+      logger.error('验证MCP替换失败:', error);
+      return {
+        isValid: false,
+        confidence: 0,
+        reasons: ['验证过程出错'],
+        warnings: ['系统错误']
+      };
     }
   }
 } 
