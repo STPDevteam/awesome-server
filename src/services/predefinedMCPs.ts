@@ -78,7 +78,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coinmarket.png',
         githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
         authRequired: false,
         authParams: {}
@@ -342,7 +342,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Trading',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-uniswap-100.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/uniswap.jpeg',
         githubUrl: 'https://github.com/kukapay/uniswap-trader-mcp',
         authRequired: false,
         authParams: {}
@@ -355,7 +355,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Trading',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.jpego',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.png',
         githubUrl: 'https://github.com/mektigboy/server-hyperliquid',
         authRequired: false,
         authParams: {}
