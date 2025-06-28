@@ -183,16 +183,31 @@ export const predefinedMCPs: MCPService[] = [
     // Development Tools 服务
     {
         name: 'github-mcp',
-        description: 'GitHub repository management and operations',
-        command: 'npx',
-        args: ['-y', 'github-mcp-server'],
+        description: 'GitHub repository management and operations with comprehensive API access including repos, issues, PRs, actions, and code security',
+        command: 'docker',
+        args: [
+            'run',
+            '-i',
+            '--rm',
+            '-e',
+            'GITHUB_PERSONAL_ACCESS_TOKEN',
+            '-e',
+            'GITHUB_TOOLSETS',
+            '-e',
+            'GITHUB_READ_ONLY',
+            'ghcr.io/github/github-mcp-server'
+        ],
         env: {},
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
         githubUrl: 'https://github.com/github/github-mcp-server',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            GITHUB_PERSONAL_ACCESS_TOKEN: "GITHUB_PERSONAL_ACCESS_TOKEN",
+            GITHUB_TOOLSETS: "repos,issues,pull_requests",
+            GITHUB_READ_ONLY: "GITHUB_READ_ONLY"
+        }
     },
     {
         name: 'langchain-mcp',
