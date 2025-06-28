@@ -1054,63 +1054,7 @@ router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response)
   }
 });
 
-/**
- * 获取MCP替代选项（增强版）
- * 获取MCP替代选项
- * GET /api/task/:id/mcp-alternatives/:mcpName
- */
-router.get('/:id/mcp-alternatives/:mcpName', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const taskId = req.params.id;
-    const mcpName = req.params.mcpName;
-    
-    const task = await taskService.getTaskById(taskId);
-    
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: 'Task not found'
-      });
-    }
-    
-    // 从请求体获取userId或使用req.user.id
-    const userId = req.user?.id || req.query.userId as string;
-    
-    // 确保用户只能为自己的任务获取替代选项
-    if (userId && task.userId !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'No permission to get alternatives for this task'
-      });
-    }
-    
-    // 使用智能推荐获取替代选项，传入当前工作流上下文
-    const alternatives = await mcpAlternativeService.getAlternativeMCPs(
-      mcpName, 
-      task.content,
-      task.mcpWorkflow // 传入当前工作流作为上下文
-    );
-    
-    res.json({
-      success: true,
-      data: {
-        originalMcp: mcpName,
-        alternatives,
-        taskContent: task.content,
-        currentWorkflow: task.mcpWorkflow
-      }
-    });
-  } catch (error) {
-    logger.error(`获取MCP替代选项错误 [任务ID: ${req.params.id}, MCP: ${req.params.mcpName}]:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: '服务器内部错误'
-    });
-  }
-});
+
 
 /**
  * 验证MCP替换的合理性

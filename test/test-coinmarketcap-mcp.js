@@ -1,5 +1,9 @@
 // 测试CoinMarketCap MCP认证流程
 import fetch from 'node-fetch';
+import jwt from 'jsonwebtoken';
+import { config } from 'dotenv';
+
+config();
 
 const BASE_URL = 'http://localhost:3001';
 const TEST_USER_ID = 'test-user-001';
@@ -8,32 +12,26 @@ const CMC_API_KEY = 'CG-mCYvBLbwmzQfi1Cwao6xhrMj';
 // 全局变量存储访问令牌
 let accessToken = null;
 
-// 创建用户并获取访问令牌
-async function createUserAndLogin() {
+// 为现有用户生成访问令牌
+function generateTestToken() {
   try {
-    const response = await fetch(`${BASE_URL}/api/auth/createUser`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        userId: TEST_USER_ID,
-        publicKey: '0x1234567890abcdef'
-      })
-    });
+    const payload = {
+      userId: TEST_USER_ID,
+      walletAddress: '0x1234567890123456789012345678901234567890'
+    };
     
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(`用户创建失败: ${JSON.stringify(result)}`);
+    const secret = process.env.JWT_ACCESS_SECRET;
+    if (!secret) {
+      throw new Error('JWT_ACCESS_SECRET not found in environment variables');
     }
     
-    accessToken = result.data.token;
-    console.log(`✅ 用户创建成功: ${result.data.user.id}`);
-    console.log(`🔑 获取访问令牌: ${accessToken.substring(0, 20)}...`);
+    accessToken = jwt.sign(payload, secret, { expiresIn: '1h' });
+    console.log(`✅ 为用户 ${TEST_USER_ID} 生成访问令牌`);
+    console.log(`🔑 访问令牌: ${accessToken.substring(0, 20)}...`);
     
-    return result.data;
+    return accessToken;
   } catch (error) {
-    console.error('创建用户失败:', error);
+    console.error('生成访问令牌失败:', error);
     throw error;
   }
 }
@@ -374,9 +372,9 @@ async function testCoinMarketCapMCP() {
   try {
     console.log('🚀 开始测试代币行情获取与推文发布流程...\n');
     
-    // 步骤0: 创建用户并登录
-    console.log('🔑 步骤0: 创建用户并登录');
-    await createUserAndLogin();
+    // 步骤0: 为现有用户生成访问令牌
+    console.log('🔑 步骤0: 为现有用户生成访问令牌');
+    generateTestToken();
     console.log('');
     
     // 步骤1: 清理用户认证状态
