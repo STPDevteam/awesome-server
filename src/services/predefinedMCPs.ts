@@ -197,7 +197,9 @@ export const predefinedMCPs: MCPService[] = [
             'GITHUB_READ_ONLY',
             'ghcr.io/github/github-mcp-server'
         ],
-        env: {},
+        env: {
+            GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || '',
+        },
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/GitHub-Mark.png',
