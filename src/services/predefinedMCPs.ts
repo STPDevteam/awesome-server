@@ -25,7 +25,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'base-mcp',
         description: 'Base Chain RPC integration for blockchain operations (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}base-mcp/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/base-mcp/build/index.js`],
         env: {
             COINBASE_API_KEY_NAME: process.env.COINBASE_API_KEY_NAME || '',
             COINBASE_API_PRIVATE_KEY: process.env.COINBASE_API_PRIVATE_KEY || '',
@@ -69,7 +69,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'coingecko-mcp',
         description: 'CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}mcp-coingecko-server/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js`],
         env: {
             COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || ''
         },
@@ -118,7 +118,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'dune-mcp',
         description: 'Dune Analytics blockchain data queries and dashboards',
         command: 'bun',
-        args: [`${process.env.MCP_TOOLS_PATH}dune-mcp-server/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/dune-mcp-server/build/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
@@ -343,7 +343,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'binance-mcp',
         description: 'Binance cryptocurrency exchange trading (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}binance-mcp/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/binance-mcp/build/index.js`],
         env: {
             BINANCE_API_KEY: process.env.BINANCE_API_KEY || '',
             BINANCE_API_SECRET: process.env.BINANCE_API_SECRET || ''
@@ -362,7 +362,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'uniswap-mcp',
         description: 'Uniswap DEX trading and liquidity management (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}uniswap-trader-mcp/index.js`],
+        args: [`/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js`],
         env: {
             INFURA_KEY: process.env.UNISWAP_INFURA_KEY || '',
             WALLET_PRIVATE_KEY: process.env.UNISWAP_WALLET_PRIVATE_KEY || ''
@@ -394,7 +394,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'pumpfun-mcp',
         description: 'Pump.fun meme token trading platform (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}pumpfun-mcp-server/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js`],
         env: {
             HELIUS_RPC_URL: process.env.HELIUS_RPC_URL || ''
         },
@@ -414,7 +414,7 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Discord social platform integration',
         command: 'uv',
         args: ["--directory",
-            `${process.env.MCP_TOOLS_PATH}mcp-discord`,
+            `/home/ubuntu/mcp-tools/mcp-discord`,
             "run",
             "mcp-discord"],
         env: {
@@ -446,7 +446,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'x-mcp',
         description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}x-mcp-server/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/x-mcp-server/build/index.js`],
         env: {
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
@@ -482,7 +482,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'dexscreener-mcp',
         description: 'DexScreener real-time DEX pair data, token information, and market statistics across multiple blockchains (LOCAL BUILD)',
         command: 'node',
-        args: [`${process.env.MCP_TOOLS_PATH}dexscreener-mcp-server/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/dexscreener-mcp-server/build/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
