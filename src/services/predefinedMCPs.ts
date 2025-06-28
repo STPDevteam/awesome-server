@@ -56,13 +56,11 @@ export const predefinedMCPs: MCPService[] = [
         command: 'npx',
         args: ['-y', '@mcpdotdirect/evm-mcp-server'],
         env: {
-            WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || '',
-            RPC_PROVIDER_URL: process.env.RPC_PROVIDER_URL || 'https://eth-mainnet.g.alchemy.com/v2/demo'
         },
         connected: false,
         category: 'Chain RPC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
-        githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
+        githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-serverr',
         authRequired: false,
         authParams: {}
     },
