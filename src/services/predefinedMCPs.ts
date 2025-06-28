@@ -100,7 +100,7 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/shinzo-labs/coinmarketcap-mcp',
         authRequired: true,
         authParams: {
-            COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY
+            COINMARKETCAP_API_KEY: "COINMARKETCAP_API_KEY"
         }
     },
     {

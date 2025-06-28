@@ -5,6 +5,39 @@ const BASE_URL = 'http://localhost:3001';
 const TEST_USER_ID = 'test-user-001';
 const CMC_API_KEY = 'CG-mCYvBLbwmzQfi1Cwao6xhrMj';
 
+// 全局变量存储访问令牌
+let accessToken = null;
+
+// 创建用户并获取访问令牌
+async function createUserAndLogin() {
+  try {
+    const response = await fetch(`${BASE_URL}/api/auth/createUser`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: TEST_USER_ID,
+        publicKey: '0x1234567890abcdef'
+      })
+    });
+    
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(`用户创建失败: ${JSON.stringify(result)}`);
+    }
+    
+    accessToken = result.data.token;
+    console.log(`✅ 用户创建成功: ${result.data.user.id}`);
+    console.log(`🔑 获取访问令牌: ${accessToken.substring(0, 20)}...`);
+    
+    return result.data;
+  } catch (error) {
+    console.error('创建用户失败:', error);
+    throw error;
+  }
+}
+
 // 清理用户认证状态
 async function clearUserAuth() {
   try {
@@ -28,11 +61,11 @@ async function createTask(content) {
   const response = await fetch(`${BASE_URL}/api/task`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`
     },
     body: JSON.stringify({
-      content,
-      userId: TEST_USER_ID
+      content
     })
   });
   
@@ -50,11 +83,9 @@ async function analyzeTask(taskId) {
     fetch(`${BASE_URL}/api/task/${taskId}/analyze/stream`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        userId: TEST_USER_ID
-      })
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      }
     }).then(async (res) => {
       if (!res.ok) {
         const errorText = await res.text();
@@ -167,12 +198,12 @@ async function verifyAuth(taskId, mcpName, authData) {
   const response = await fetch(`${BASE_URL}/api/task/${taskId}/verify-auth`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`
     },
     body: JSON.stringify({
       mcpName,
-      authData,
-      userId: TEST_USER_ID
+      authData
     })
   });
   
@@ -186,11 +217,9 @@ async function executeTask(taskId) {
     fetch(`${BASE_URL}/api/task/${taskId}/execute/stream`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        userId: TEST_USER_ID
-      })
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      }
     }).then(async (res) => {
       if (!res.ok) {
         const errorText = await res.text();
@@ -345,14 +374,19 @@ async function testCoinMarketCapMCP() {
   try {
     console.log('🚀 开始测试代币行情获取与推文发布流程...\n');
     
-    // 步骤0: 清理用户认证状态
-    console.log('🧹 步骤0: 清理用户认证状态');
+    // 步骤0: 创建用户并登录
+    console.log('🔑 步骤0: 创建用户并登录');
+    await createUserAndLogin();
+    console.log('');
+    
+    // 步骤1: 清理用户认证状态
+    console.log('🧹 步骤1: 清理用户认证状态');
     await clearUserAuth();
     console.log('');
     
-    // 步骤1: 创建需要认证的任务
-    console.log('📝 步骤1: 创建任务');
-    const task = await createTask('使用dexscreener获取最新被推荐的代币并总结300字符内的英文发布一条推文');
+    // 步骤2: 创建需要认证的任务
+    console.log('📝 步骤2: 创建任务');
+    const task = await createTask('查询最近的推文');
     console.log(`✅ 任务创建成功，ID: ${task.id}\n`);
 
     const fullAuthResult = await verifyAuth(task.id, 'x-mcp', {
@@ -365,16 +399,23 @@ async function testCoinMarketCapMCP() {
     
     
     
-    // 步骤6: 认证后重新分析任务以更新工作流
-    console.log('\n🔄 步骤6: 认证后重新分析任务');
+    // 步骤3: 分析任务
+    console.log('\n🔍 步骤3: 分析任务');
+    console.log('  > 分析任务以生成工作流...');
+    const analysisResult = await analyzeTask(task.id);
+    console.log('  > 分析完成');
+    console.log('  > 分析结果:', JSON.stringify(analysisResult, null, 2));
+    
+    // 步骤4: 认证后重新分析任务以更新工作流
+    console.log('\n🔄 步骤4: 认证后重新分析任务');
     // if (authResult.success) {
       console.log('  > 重新分析任务以更新工作流...');
       const reAnalysis = await analyzeTask(task.id);
       console.log('  > 重新分析完成');
       console.log('  > 重新分析结果:', JSON.stringify(reAnalysis, null, 2));
       
-      // 步骤7: 执行任务
-      console.log('\n📊 步骤7: 执行任务（已认证）- 获取代币行情并发布推文');
+      // 步骤5: 执行任务
+      console.log('\n📊 步骤5: 执行任务（已认证）- 获取代币行情并发布推文');
       const executeResult2 = await executeTask(task.id);
       console.log(`  > 结果: ${executeResult2.success ? '执行成功' : '执行失败'}`);
       console.log(`  > 完整执行结果: ${JSON.stringify(executeResult2, null, 2)}`);
