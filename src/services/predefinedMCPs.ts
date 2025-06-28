@@ -304,7 +304,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'convex-mcp',
         description: 'Convex backend development platform',
         command: 'npx',
-        args: ['-y', 'convex-mcp'],
+        args: ["-y", "convex@latest", "mcp", "start"],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -317,7 +317,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'cloudflare-mcp',
         description: 'Cloudflare edge computing and CDN services',
         command: 'npx',
-        args: ['-y', 'mcp-server-cloudflare'],
+        args: ["mcp-remote", "https://docs.mcp.cloudflare.com/sse"],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -330,14 +330,19 @@ export const predefinedMCPs: MCPService[] = [
         name: 'supabase-mcp',
         description: 'Supabase backend-as-a-service integration',
         command: 'npx',
-        args: ['-y', 'supabase-mcp'],
+        args: ["-y",
+            "@supabase/mcp-server-supabase@latest",
+            "--access-token",
+            process.env.SUPABASE_ACCESS_TOKEN || ''],
         env: {},
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-supabase-100.png',
         githubUrl: 'https://github.com/supabase-community/supabase-mcp',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            SUPABASE_ACCESS_TOKEN: "SUPABASE_ACCESS_TOKEN"
+        }
     },
 
     // Trading 服务
@@ -383,7 +388,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'hyperliquid-mcp',
         description: 'Hyperliquid decentralized perpetuals trading',
         command: 'npx',
-        args: ['-y', 'server-hyperliquid'],
+        args: ['-y', '@mektigboy/server-hyperliquid'],
         env: {},
         connected: false,
         category: 'Trading',
@@ -472,13 +477,15 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Notion workspace and documentation integration',
         command: 'npx',
         args: ['-y', '@notionhq/notion-mcp-server'],
-        env: {},
+        env: {"OPENAPI_MCP_HEADERS": `{\"Authorization\": \"Bearer ${process.env.OPENAPI_MCP_HEADERS}\", \"Notion-Version\": \"2022-06-28\" }`},
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
         githubUrl: 'https://github.com/makenotion/notion-mcp-server',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            OPENAPI_MCP_HEADERS: "OPENAPI_MCP_HEADERS"
+        }
     },
     {
         name: 'dexscreener-mcp',
