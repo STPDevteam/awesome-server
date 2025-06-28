@@ -546,7 +546,7 @@ Please analyze the user intent and return the result in JSON format:
       // 2. Create assistant message reply
       const response = await messageDao.createMessage({
         conversationId,
-        content: `Task created: ${task.title}\nTask ID: ${task.id}\n.`,
+        content: `Task created: ${task.title}\n`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
@@ -785,7 +785,7 @@ Please analyze the user intent and return the result in JSON format:
       // Create an assistant message reply
       const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: `Task created: ${task.title}\nTask ID: ${task.id}\n.`,
+        content: `Task created: ${task.title}\n`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id

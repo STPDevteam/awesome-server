@@ -17,6 +17,31 @@ export enum MessageIntent {
   UNKNOWN = 'unknown' // Undetermined intent
 }
 
+// 新增：消息步骤类型
+export enum MessageStepType {
+  ANALYSIS = 'analysis',           // 需求分析
+  MCP_SELECTION = 'mcp_selection', // MCP选择
+  DELIVERABLES = 'deliverables',   // 可交付确认
+  WORKFLOW = 'workflow',           // 工作流构建
+  EXECUTION = 'execution',         // 任务执行
+  TASK_CREATION = 'task_creation', // 任务创建
+  SUMMARY = 'summary'              // 结果摘要
+}
+
+// 新增：消息元数据接口
+export interface MessageMetadata {
+  stepType?: MessageStepType;
+  stepNumber?: number;
+  stepName?: string;
+  totalSteps?: number;
+  isStreaming?: boolean;
+  isComplete?: boolean;
+  // 任务相关
+  taskPhase?: 'analysis' | 'execution';
+  // 其他扩展字段
+  [key: string]: any;
+}
+
 // Message
 export interface Message {
   id: string;
@@ -25,7 +50,7 @@ export interface Message {
   type: MessageType;
   intent?: MessageIntent;
   taskId?: string;    // If message is task-related, link to task ID
-  metadata?: any;     // Additional metadata
+  metadata?: MessageMetadata;     // 使用强类型的元数据接口
   createdAt: Date;
 }
 

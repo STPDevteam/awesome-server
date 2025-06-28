@@ -648,6 +648,46 @@ data: [DONE]
 
 会话系统提供了一种整合对话和任务的方式，允许用户在自然对话中触发任务执行，并在同一个界面中查看结果。
 
+#### 消息存储机制
+
+从v2.0开始，系统会将任务分析和执行的每个步骤作为消息存储到会话中，支持完整的任务处理过程记录：
+
+**消息类型**:
+- `user`: 用户消息
+- `assistant`: AI助手消息
+
+**消息意图**:
+- `chat`: 普通聊天
+- `task`: 任务相关
+
+**消息步骤类型** (`metadata.stepType`):
+- `ANALYSIS`: 需求分析
+- `MCP_SELECTION`: MCP工具选择
+- `DELIVERABLES`: 可交付确认
+- `WORKFLOW`: 工作流构建
+- `EXECUTION`: 任务执行
+- `TASK_CREATION`: 任务创建
+- `SUMMARY`: 结果摘要
+
+**消息元数据** (`metadata`):
+```json
+{
+  "stepType": "ANALYSIS",
+  "stepNumber": 1,
+  "stepName": "Analyze Task Requirements", 
+  "totalSteps": 4,
+  "taskPhase": "analysis",
+  "isStreaming": false,
+  "isComplete": true
+}
+```
+
+**重要特性**:
+- **原始内容存储**: 消息内容保持分析和执行接口的原始输出，不包含额外的格式化装饰
+- **字段区分**: 通过 `metadata` 字段区分不同步骤和状态，方便前端灵活展示
+- **流式支持**: 支持流式消息更新，提供实时的任务处理反馈
+- **完整记录**: 从任务创建到分析到执行的每个步骤都有对应的消息记录
+
 #### 1. 创建新会话
 
 **端点**: `POST /api/conversation`
@@ -762,20 +802,93 @@ data: [DONE]
       {
         "id": "msg_1",
         "conversationId": "conv_123456",
-        "content": "你好，我想搜索一下MCP协议",
+        "content": "帮我获取比特币当前价格并分析趋势",
         "type": "user",
-        "intent": "chat",
+        "intent": "task",
+        "taskId": "task_123456",
         "createdAt": "2023-06-20T08:05:00.000Z"
       },
       {
         "id": "msg_2",
         "conversationId": "conv_123456",
-        "content": "您好！我很乐意帮您搜索MCP协议相关信息。请告诉我您具体想了解哪方面的内容？",
+        "content": "Task created: 帮我获取比特币当前价格并分析趋势",
         "type": "assistant",
-        "intent": "chat",
+        "intent": "task",
+        "taskId": "task_123456",
+        "metadata": {
+          "stepType": "TASK_CREATION",
+          "stepName": "Task Creation",
+          "taskPhase": "analysis",
+          "isComplete": true
+        },
+        "createdAt": "2023-06-20T08:05:05.000Z"
+      },
+      {
+        "id": "msg_3",
+        "conversationId": "conv_123456",
+        "content": "Based on your request to get Bitcoin's current price and analyze trends, I need to understand what specific information you're looking for and how detailed the analysis should be.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_123456",
+        "metadata": {
+          "stepType": "ANALYSIS",
+          "stepNumber": 1,
+          "stepName": "Analyze Task Requirements",
+          "totalSteps": 4,
+          "taskPhase": "analysis",
+          "isComplete": true
+        },
         "createdAt": "2023-06-20T08:05:10.000Z"
       },
-      // 更多消息...
+      {
+        "id": "msg_4",
+        "conversationId": "conv_123456",
+        "content": "For this task, I recommend using CoinGecko MCP server which provides comprehensive cryptocurrency market data including current prices, historical data, and market analytics.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_123456",
+        "metadata": {
+          "stepType": "MCP_SELECTION",
+          "stepNumber": 2,
+          "stepName": "Identify Relevant MCP Tools",
+          "totalSteps": 4,
+          "taskPhase": "analysis",
+          "isComplete": true
+        },
+        "createdAt": "2023-06-20T08:05:15.000Z"
+      },
+      {
+        "id": "msg_5",
+        "conversationId": "conv_123456",
+        "content": "Bitcoin price: $45,230.50 USD (+2.3% in 24h). Market cap: $890.2B. Trading volume: $28.5B. Technical analysis shows bullish momentum with RSI at 65.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_123456",
+        "metadata": {
+          "stepType": "EXECUTION",
+          "stepNumber": 1,
+          "stepName": "Get Bitcoin current price and market data",
+          "totalSteps": 1,
+          "taskPhase": "execution",
+          "isComplete": true
+        },
+        "createdAt": "2023-06-20T08:05:25.000Z"
+      },
+      {
+        "id": "msg_6",
+        "conversationId": "conv_123456",
+        "content": "Task execution completed successfully. Retrieved Bitcoin's current price ($45,230.50) with comprehensive market analysis including price trends, market cap, and technical indicators.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_123456",
+        "metadata": {
+          "stepType": "SUMMARY",
+          "stepName": "Execution Summary",
+          "taskPhase": "execution",
+          "isComplete": true
+        },
+        "createdAt": "2023-06-20T08:05:30.000Z"
+      }
     ]
   }
 }
@@ -883,7 +996,7 @@ data: {"event":"processing_complete","data":{"messageId":"msg_5","responseId":"m
 data: [DONE]
 ```
 
-对于任务意图，事件流将包含任务处理状态：
+对于任务意图，事件流将包含任务处理状态和消息存储：
 ```
 data: {"event":"processing_start","data":{"messageId":"msg_7"}}
 
@@ -891,16 +1004,31 @@ data: {"event":"intent_detection","data":{"status":"completed","intent":"task","
 
 data: {"event":"task_processing","data":{"status":"creating_task"}}
 
+data: {"event":"message_stored","data":{"messageId":"msg_8","stepType":"TASK_CREATION","content":"Task created: 使用Playwright访问百度"}}
+
 data: {"event":"task_processing","data":{"status":"task_created","taskId":"task_456","title":"使用Playwright访问百度"}}
+
+data: {"event":"task_processing","data":{"status":"analyzing_task"}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_9","stepType":"ANALYSIS","stepNumber":1,"content":"Based on your request to use Playwright to access Baidu..."}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_10","stepType":"MCP_SELECTION","stepNumber":2,"content":"For this task, I recommend using Playwright MCP server..."}}
 
 data: {"event":"task_processing","data":{"status":"executing_task"}}
 
-data: {"event":"task_processing","data":{"step":1,"status":"success","action":"browser_navigate"}}
+data: {"event":"message_stored","data":{"messageId":"msg_11","stepType":"EXECUTION","stepNumber":1,"content":"Successfully navigated to Baidu homepage..."}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_12","stepType":"SUMMARY","content":"Task execution completed successfully..."}}
 
 data: {"event":"processing_complete","data":{"messageId":"msg_7","responseId":"msg_8","intent":"task","taskId":"task_456"}}
 
 data: [DONE]
 ```
+
+**新增事件类型**:
+- `message_stored`: 当任务步骤消息被存储时触发，包含消息ID、步骤类型和内容
+- 每个事件包含 `stepType`、`stepNumber`（如适用）和原始内容
+- 前端可以实时更新会话界面，显示任务处理的每个步骤
 
 **错误响应**:
 - 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
@@ -1159,20 +1287,44 @@ data: [DONE]
 **响应**: Server-Sent Events (SSE) 流
 
 ```
-data: {"event":"analysis_start","data":{"step":"开始分析任务需求"}}
+data: {"event":"analysis_start","data":{"taskId":"task_123456","conversationId":"conv_123456"}}
 
-data: {"event":"step_complete","data":{"step":1,"title":"分析任务需求","status":"completed"}}
+data: {"event":"step_start","data":{"step":1,"title":"Analyzing task requirements"}}
 
-data: {"event":"step_complete","data":{"step":2,"title":"识别相关MCP工具","status":"completed"}}
+data: {"event":"message_stored","data":{"messageId":"msg_101","stepType":"ANALYSIS","stepNumber":1,"content":"Based on your request to get Bitcoin's current price and analyze trends, I need to understand what specific information you're looking for..."}}
 
-data: {"event":"step_complete","data":{"step":3,"title":"确认可交付内容","status":"completed"}}
+data: {"event":"step_complete","data":{"step":1,"title":"Analyze Task Requirements","status":"completed"}}
 
-data: {"event":"step_complete","data":{"step":4,"title":"构建MCP工作流","status":"completed"}}
+data: {"event":"step_start","data":{"step":2,"title":"Identifying relevant MCP tools"}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_102","stepType":"MCP_SELECTION","stepNumber":2,"content":"For this task, I recommend using CoinGecko MCP server which provides comprehensive cryptocurrency market data..."}}
+
+data: {"event":"step_complete","data":{"step":2,"title":"Identify Relevant MCP Tools","status":"completed"}}
+
+data: {"event":"step_start","data":{"step":3,"title":"Confirming deliverables"}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_103","stepType":"DELIVERABLES","stepNumber":3,"content":"I can deliver the following for your Bitcoin price analysis request: Current price in USD, 24-hour price change..."}}
+
+data: {"event":"step_complete","data":{"step":3,"title":"Confirm Deliverables","status":"completed"}}
+
+data: {"event":"step_start","data":{"step":4,"title":"Building MCP workflow"}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_104","stepType":"WORKFLOW","stepNumber":4,"content":"I will create a workflow that uses the CoinGecko MCP server to retrieve Bitcoin's current price and market data..."}}
+
+data: {"event":"step_complete","data":{"step":4,"title":"Build MCP Workflow","status":"completed"}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_105","stepType":"SUMMARY","content":"Task analysis completed. Identified 1 relevant tools and built 1 execution steps."}}
 
 data: {"event":"analysis_complete","data":{"mcpWorkflow":{"mcps":[...],"workflow":[...]}}}
 
 data: [DONE]
 ```
+
+**消息存储特性**:
+- 每个分析步骤都会创建对应的消息记录
+- 消息内容为分析接口的原始输出，不包含额外的格式化装饰
+- 通过 `stepType` 和 `stepNumber` 区分不同的分析阶段
+- 前端可以实时显示分析进度和结果
 
 **重要更新**: 从v2.0开始，每个推荐的MCP都会包含备选MCP列表，格式如下：
 
@@ -1253,16 +1405,26 @@ data: [DONE]
 **响应**: Server-Sent Events (SSE) 流
 
 ```
-data: {"event":"execution_start","data":{"taskId":"task_123456"}}
+data: {"event":"execution_start","data":{"taskId":"task_123456","conversationId":"conv_123456"}}
 
-data: {"event":"step_start","data":{"step":1,"mcp":"coingecko-server","action":"获取比特币价格"}}
+data: {"event":"step_start","data":{"step":1,"mcp":"coingecko-server","action":"Get Bitcoin current price and market data"}}
 
-data: {"event":"step_complete","data":{"step":1,"status":"success","result":"BTC价格：$45,000"}}
+data: {"event":"message_stored","data":{"messageId":"msg_201","stepType":"EXECUTION","stepNumber":1,"content":"Bitcoin price: $45,230.50 USD (+2.3% in 24h). Market cap: $890.2B. Trading volume: $28.5B. Technical analysis shows bullish momentum with RSI at 65."}}
 
-data: {"event":"execution_complete","data":{"summary":"任务执行完成，成功获取比特币价格信息"}}
+data: {"event":"step_complete","data":{"step":1,"status":"success","result":"Bitcoin price: $45,230.50 USD (+2.3% in 24h)..."}}
+
+data: {"event":"message_stored","data":{"messageId":"msg_202","stepType":"SUMMARY","content":"Task execution completed successfully. Retrieved Bitcoin's current price ($45,230.50) with comprehensive market analysis including price trends, market cap, and technical indicators."}}
+
+data: {"event":"execution_complete","data":{"summary":"Task execution completed successfully. Retrieved Bitcoin's current price with comprehensive market analysis."}}
 
 data: [DONE]
 ```
+
+**执行消息存储特性**:
+- 每个执行步骤都会创建对应的消息记录
+- 消息内容为执行结果的原始输出，保持工具返回的原始格式
+- 执行完成后会创建总结消息
+- 支持错误状态的消息存储（如执行失败时）
 
 **错误响应**:
 - 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
@@ -2120,6 +2282,127 @@ curl -X GET http://localhost:3001/api/tasks/task_123456 \
 - 移除硬编码的替代映射
 - 基于类别、功能和任务内容的智能推荐
 - 考虑认证复杂度和工具稳定性
+
+## 消息存储机制详解
+
+### 概述
+
+从v2.0开始，MCP LangChain 服务引入了完整的消息存储机制，将任务分析和执行的每个步骤都作为消息存储到会话中。这使得前端可以展示完整的任务处理过程，提供更好的用户体验。
+
+### 核心特性
+
+#### 1. 原始内容存储
+- **无额外装饰**: 消息内容直接存储分析和执行接口的原始输出
+- **保持格式**: 不添加额外的中文格式化内容（如表情符号、标题装饰等）
+- **纯净数据**: 前端可以根据需要自行格式化展示
+
+#### 2. 字段驱动区分
+- **stepType**: 通过枚举值区分不同的处理步骤
+- **taskPhase**: 区分分析阶段（analysis）和执行阶段（execution）
+- **stepNumber**: 标识步骤在当前阶段中的顺序
+- **metadata**: 包含完整的步骤元信息
+
+#### 3. 流式支持
+- **实时更新**: 支持流式消息创建和更新
+- **占位消息**: 创建占位消息后实时更新内容
+- **完成标记**: 通过 `isComplete` 标识消息是否完成
+
+### 消息类型和步骤
+
+#### 任务分析阶段消息
+```json
+{
+  "stepType": "ANALYSIS",
+  "stepNumber": 1,
+  "stepName": "Analyze Task Requirements",
+  "taskPhase": "analysis",
+  "content": "Based on your request to get Bitcoin's current price..."
+}
+```
+
+#### 任务执行阶段消息
+```json
+{
+  "stepType": "EXECUTION", 
+  "stepNumber": 1,
+  "stepName": "Get Bitcoin current price and market data",
+  "taskPhase": "execution",
+  "content": "Bitcoin price: $45,230.50 USD (+2.3% in 24h)..."
+}
+```
+
+### 前端展示建议
+
+#### 1. 步骤分组
+```javascript
+// 按 taskPhase 分组
+const analysisMessages = messages.filter(m => 
+  m.metadata?.taskPhase === 'analysis'
+);
+const executionMessages = messages.filter(m => 
+  m.metadata?.taskPhase === 'execution'
+);
+```
+
+#### 2. 步骤排序
+```javascript
+// 按 stepNumber 排序
+const sortedSteps = messages
+  .filter(m => m.metadata?.stepNumber)
+  .sort((a, b) => a.metadata.stepNumber - b.metadata.stepNumber);
+```
+
+#### 3. 状态显示
+```javascript
+// 根据 stepType 显示不同图标
+const getStepIcon = (stepType) => {
+  switch(stepType) {
+    case 'ANALYSIS': return '🔍';
+    case 'MCP_SELECTION': return '🔧';
+    case 'DELIVERABLES': return '📦';
+    case 'WORKFLOW': return '⚙️';
+    case 'EXECUTION': return '🚀';
+    case 'SUMMARY': return '📋';
+    default: return '💬';
+  }
+};
+```
+
+### 实现优势
+
+#### 1. 完整追踪
+- 用户可以看到任务从创建到完成的每个步骤
+- 便于调试和问题排查
+- 提供透明的处理过程
+
+#### 2. 灵活展示
+- 前端可以根据 stepType 自定义展示样式
+- 支持折叠/展开不同阶段的详情
+- 可以实现进度条或时间线视图
+
+#### 3. 向后兼容
+- 不影响原有的聊天消息功能
+- 现有的消息结构保持不变
+- 新功能通过 metadata 字段扩展
+
+### 最佳实践
+
+#### 1. 消息展示
+- 使用 stepType 区分消息类型并应用不同样式
+- 对于长内容，考虑提供展开/折叠功能
+- 显示步骤进度（如 "步骤 2/4"）
+
+#### 2. 错误处理
+- 监听流式响应中的错误事件
+- 对于失败的步骤，显示错误信息
+- 提供重试机制
+
+#### 3. 性能优化
+- 对于大量消息，考虑虚拟滚动
+- 懒加载历史消息
+- 缓存消息内容以避免重复渲染
+
+---
 
 ## 注意事项
 
