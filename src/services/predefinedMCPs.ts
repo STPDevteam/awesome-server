@@ -205,8 +205,6 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             GITHUB_PERSONAL_ACCESS_TOKEN: "GITHUB_PERSONAL_ACCESS_TOKEN",
-            GITHUB_TOOLSETS: "repos,issues,pull_requests",
-            GITHUB_READ_ONLY: "GITHUB_READ_ONLY"
         }
     },
     {
