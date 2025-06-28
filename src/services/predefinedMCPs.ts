@@ -210,19 +210,6 @@ export const predefinedMCPs: MCPService[] = [
         }
     },
     {
-        name: 'langchain-mcp',
-        description: 'LangChain framework integration for AI applications',
-        command: 'npx',
-        args: ['-y', 'langchain-mcp'],
-        env: {},
-        connected: false,
-        category: 'Dev Tool',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/langchain.png',
-        githubUrl: 'https://github.com/langchain-ai/langchain',
-        authRequired: false,
-        authParams: {}
-    },
-    {
         name: 'mindsdb-mcp',
         description: 'MindsDB machine learning database integration',
         command: 'npx',
