@@ -34,7 +34,7 @@ router.post('/wallet/nonce', loginRateLimit, async (req: express.Request, res: e
 
     const nonce = walletAuthService.generateLoginNonce(address);
     const domain = req.headers.host || 'localhost:3001';
-    const uri = `${req.protocol}://${domain}`;
+    const uri = domain;
     console.log("uri", uri);
 
     const message = walletAuthService.createSiweMessage({
