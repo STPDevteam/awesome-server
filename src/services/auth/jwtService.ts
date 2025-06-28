@@ -34,9 +34,38 @@ class JWTService {
   }
 
   /**
-   * 生成访问令牌和刷新令牌
+   * 生成访问令牌和刷新令牌（带重试机制）
    */
-  async generateTokenPair(user: User): Promise<TokenPair> {
+  async generateTokenPair(user: User, revokeOldTokens: boolean = false): Promise<TokenPair> {
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let retryCount = 0; retryCount < maxRetries; retryCount++) {
+      try {
+        return await this.generateTokenPairInternal(user, revokeOldTokens);
+      } catch (error) {
+        lastError = error as Error;
+        if (error instanceof Error && error.message === 'TOKEN_COLLISION' && retryCount < maxRetries - 1) {
+          console.warn(`令牌生成冲突，重试第 ${retryCount + 1} 次`);
+          // 短暂延迟后重试
+          await new Promise(resolve => setTimeout(resolve, 50 + retryCount * 25));
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError || new Error('令牌生成失败');
+  }
+
+  /**
+   * 内部生成访问令牌和刷新令牌的方法
+   */
+  private async generateTokenPairInternal(user: User, revokeOldTokens: boolean = false): Promise<TokenPair> {
+    // 如果需要，先撤销用户的所有旧令牌
+    if (revokeOldTokens) {
+      await this.revokeAllUserTokens(user.id);
+    }
     const payload = {
       userId: user.id,
       walletAddress: user.walletAddress,
@@ -47,7 +76,14 @@ class JWTService {
       expiresIn: this.accessTokenExpiry
     } as jwt.SignOptions);
 
-    const refreshToken = jwt.sign({ userId: user.id }, this.refreshTokenSecret, {
+    // 为刷新令牌添加随机性，避免重复
+    const refreshTokenPayload = {
+      userId: user.id,
+      jti: crypto.randomUUID(), // 添加唯一标识符
+      nonce: crypto.randomBytes(16).toString('hex') // 添加随机数
+    };
+
+    const refreshToken = jwt.sign(refreshTokenPayload, this.refreshTokenSecret, {
       expiresIn: this.refreshTokenExpiry
     } as jwt.SignOptions);
 
@@ -227,11 +263,30 @@ class JWTService {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // 7天后过期
       
+      // 使用 ON CONFLICT DO NOTHING 避免重复键错误
+      // 如果token hash已存在，则忽略插入操作
       await db.query(`
         INSERT INTO refresh_tokens (token_hash, user_id, expires_at)
         VALUES ($1, $2, $3)
+        ON CONFLICT (token_hash) DO NOTHING
       `, [tokenHash, userId, expiresAt]);
+      
+      // 如果令牌已存在但属于不同用户，这可能是一个问题
+      // 检查是否成功插入或已存在
+      const checkResult = await db.query(`
+        SELECT user_id FROM refresh_tokens WHERE token_hash = $1
+      `, [tokenHash]);
+      
+      if (checkResult.rows.length > 0 && checkResult.rows[0].user_id !== userId) {
+        // 令牌冲突 - 重新生成
+        console.warn('令牌哈希冲突，重新生成令牌');
+        throw new Error('TOKEN_COLLISION');
+      }
     } catch (error) {
+      if (error instanceof Error && error.message === 'TOKEN_COLLISION') {
+        // 如果是令牌冲突，让调用者重试
+        throw error;
+      }
       console.error('存储刷新令牌失败:', error);
       throw error;
     }

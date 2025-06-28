@@ -140,7 +140,7 @@ router.post('/wallet/login', loginRateLimit, async (req: express.Request, res: e
     // 更新最后登录时间
     await userService.updateUserLastLogin(user.id);
 
-    // 生成JWT令牌
+    // 生成JWT令牌（内置重试机制）
     const tokenPair = await jwtService.generateTokenPair(user);
 
     res.json({
