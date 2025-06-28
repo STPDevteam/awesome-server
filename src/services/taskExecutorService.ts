@@ -758,6 +758,70 @@ For cryptocurrency queries:
   }
   
   /**
+   * 使用LLM将原始结果格式化为易读的Markdown格式
+   * @param rawResult 原始结果
+   * @param mcpName MCP名称
+   * @param actionName 动作名称
+   * @returns 格式化后的Markdown内容
+   */
+  private async formatResultWithLLM(rawResult: any, mcpName: string, actionName: string): Promise<string> {
+    try {
+      logger.info(`🤖 Using LLM to format result for ${mcpName}/${actionName}`);
+      
+      // 提取实际内容
+      let actualContent = rawResult;
+      if (rawResult && typeof rawResult === 'object' && rawResult.content) {
+        if (Array.isArray(rawResult.content) && rawResult.content.length > 0) {
+          actualContent = rawResult.content[0].text || rawResult.content[0];
+        } else if (rawResult.content.text) {
+          actualContent = rawResult.content.text;
+        } else {
+          actualContent = rawResult.content;
+        }
+      }
+      
+      // 构建格式化提示词
+      const formatPrompt = `You are a professional data presentation specialist. Your task is to extract useful information from raw API/tool responses and present it in a clean, readable Markdown format.
+
+MCP Tool: ${mcpName}
+Action: ${actionName}
+Raw Result:
+${typeof actualContent === 'string' ? actualContent : JSON.stringify(actualContent, null, 2)}
+
+FORMATTING RULES:
+1. Extract ONLY the meaningful and valuable information
+2. Use proper Markdown formatting (headers, lists, tables, etc.)
+3. Highlight important numbers, dates, and key information
+4. Remove technical details, error codes, and unnecessary metadata
+5. If the result contains financial data, format numbers properly (e.g., $1,234.56)
+6. If the result contains lists or arrays, present them as bullet points or tables
+7. Use emojis where appropriate to make the content more engaging
+8. Keep the formatting clean and professional
+9. If the result indicates an error or no data, explain it clearly
+
+OUTPUT FORMAT:
+- Start with a brief summary of what was retrieved
+- Present the main data in an organized manner
+- End with any relevant notes or observations
+
+IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary.`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(formatPrompt)
+      ]);
+      
+      const formattedResult = response.content.toString().trim();
+      logger.info(`✅ Result formatted successfully`);
+      
+      return formattedResult;
+    } catch (error) {
+      logger.error(`Failed to format result with LLM:`, error);
+      // 降级处理：返回基本格式化的结果
+      return `### ${actionName} 结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+    }
+  }
+  
+  /**
    * 格式化API响应数据，使其更易读
    */
   private formatApiResponse(rawText: string): string {
@@ -818,8 +882,11 @@ For cryptocurrency queries:
       // 准备步骤结果详情
       const stepDetails = stepResults.map(step => {
         if (step.success) {
-          return `步骤${step.step}: 成功执行 - ${typeof step.result === 'string' && step.result.length > 100 ? 
-            step.result.substring(0, 100) + '...' : step.result}`;
+          // 如果结果已经是Markdown格式，直接使用前100个字符
+          const resultPreview = typeof step.result === 'string' ? 
+            step.result.replace(/\n/g, ' ').substring(0, 100) : 
+            JSON.stringify(step.result).substring(0, 100);
+          return `步骤${step.step}: 成功执行 - ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`;
         } else {
           return `步骤${step.step}: 执行失败 - ${step.error}`;
         }
@@ -919,23 +986,28 @@ Based on the above task execution information, please generate a complete execut
             // 处理结果
             const processedResult = this.processToolResult(stepResult);
             
-            // 保存步骤结果
-            await taskExecutorDao.saveStepResult(taskId, stepNumber, true, processedResult);
+            // 使用LLM格式化结果为Markdown
+            const formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
             
-            // 发送步骤完成信息
+            // 保存步骤结果（保存格式化后的结果）
+            await taskExecutorDao.saveStepResult(taskId, stepNumber, true, formattedResult);
+            
+            // 发送步骤完成信息（发送格式化后的结果）
             stream({ 
               event: 'step_complete', 
               data: { 
                 step: stepNumber,
                 success: true,
-                result: processedResult
+                result: formattedResult,
+                rawResult: processedResult // 也保留原始结果供调试
               } 
             });
             
             return {
               step: stepNumber,
               success: true,
-              result: processedResult,
+              result: formattedResult,
+              rawResult: processedResult,
               parsedData: this.parseResultData(processedResult) // 解析结构化数据供下一步使用
             };
           } catch (error) {
@@ -993,8 +1065,8 @@ Based on the above task execution information, please generate a complete execut
         return {};
       }
 
-      // 获取原始结果数据
-      let rawResult = prevResult.result;
+      // 获取原始结果数据 - 优先使用rawResult（未格式化的原始数据）
+      let rawResult = prevResult.rawResult || prevResult.result;
       
       // 处理MCP响应格式 - 提取实际内容
       if (rawResult && typeof rawResult === 'object' && rawResult.content) {
@@ -1324,8 +1396,11 @@ Example transformations:
       // 准备步骤结果详情
       const stepDetails = stepResults.map(step => {
         if (step.success) {
-          return `步骤${step.step}: 成功执行 - ${typeof step.result === 'string' && step.result.length > 100 ? 
-            step.result.substring(0, 100) + '...' : step.result}`;
+          // 如果结果已经是Markdown格式，直接使用前100个字符
+          const resultPreview = typeof step.result === 'string' ? 
+            step.result.replace(/\n/g, ' ').substring(0, 100) : 
+            JSON.stringify(step.result).substring(0, 100);
+          return `步骤${step.step}: 成功执行 - ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`;
         } else {
           return `步骤${step.step}: 执行失败 - ${step.error}`;
         }
