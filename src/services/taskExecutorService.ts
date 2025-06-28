@@ -585,10 +585,14 @@ For cryptocurrency queries:
     // 动态注入用户认证信息
     const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId);
     
-    // 使用动态环境变量创建MCP配置
+    // 处理args中的环境变量替换
+    const dynamicArgs = await this.injectArgsAuthentication(mcpConfig.args || [], dynamicEnv, taskId);
+    
+    // 使用动态环境变量和args创建MCP配置
     const dynamicMcpConfig = {
       ...mcpConfig,
-      env: dynamicEnv
+      env: dynamicEnv,
+      args: dynamicArgs
     };
     
     // 尝试连接MCP
@@ -720,6 +724,67 @@ For cryptocurrency queries:
     
     console.log(`Final Dynamic Env: ${JSON.stringify(dynamicEnv, null, 2)}`);
     return dynamicEnv;
+  }
+  
+  /**
+   * 动态注入args中的认证信息
+   */
+  private async injectArgsAuthentication(originalArgs: string[], dynamicEnv: Record<string, string>, taskId?: string): Promise<string[]> {
+    if (!originalArgs || originalArgs.length === 0) {
+      return originalArgs;
+    }
+    
+    console.log(`\n==== Args Authentication Injection Debug ====`);
+    console.log(`Time: ${new Date().toISOString()}`);
+    console.log(`Task ID: ${taskId}`);
+    console.log(`Original Args: ${JSON.stringify(originalArgs, null, 2)}`);
+    console.log(`Dynamic Env: ${JSON.stringify(dynamicEnv, null, 2)}`);
+    
+    // 创建args的副本进行处理
+    const dynamicArgs = [...originalArgs];
+    
+    // 遍历每个arg，查找并替换环境变量引用
+    for (let i = 0; i < dynamicArgs.length; i++) {
+      const arg = dynamicArgs[i];
+      
+      // 查找包含 process.env.* 的参数
+      if (typeof arg === 'string' && arg.includes('process.env.')) {
+        console.log(`Processing arg ${i}: "${arg}"`);
+        
+        // 使用正则表达式查找所有的 process.env.VARIABLE_NAME 引用
+        const envVarRegex = /process\.env\.([A-Z_][A-Z0-9_]*)/g;
+        let modifiedArg = arg;
+        let match;
+        
+        while ((match = envVarRegex.exec(arg)) !== null) {
+          const envVarName = match[1]; // 环境变量名
+          const fullMatch = match[0]; // 完整匹配的字符串
+          
+          console.log(`Found env var reference: ${fullMatch} (variable: ${envVarName})`);
+          
+          // 先检查dynamicEnv中是否有值
+          if (dynamicEnv[envVarName]) {
+            const newValue = dynamicEnv[envVarName];
+            modifiedArg = modifiedArg.replace(fullMatch, newValue);
+            console.log(`✅ Replaced ${fullMatch} with "${newValue}"`);
+          } else {
+            // 如果dynamicEnv中没有，尝试从process.env获取
+            const processEnvValue = process.env[envVarName] || '';
+            modifiedArg = modifiedArg.replace(fullMatch, processEnvValue);
+            console.log(`⚠️ Used process.env value for ${envVarName}: "${processEnvValue}"`);
+          }
+        }
+        
+        // 如果参数被修改了，更新它
+        if (modifiedArg !== arg) {
+          dynamicArgs[i] = modifiedArg;
+          console.log(`Updated arg ${i}: "${arg}" -> "${modifiedArg}"`);
+        }
+      }
+    }
+    
+    console.log(`Final Dynamic Args: ${JSON.stringify(dynamicArgs, null, 2)}`);
+    return dynamicArgs;
   }
   
   /**

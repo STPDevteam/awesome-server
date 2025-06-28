@@ -224,7 +224,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'playwright-mcp',
         description: 'Playwright browser automation and testing',
         command: 'npx',
-        args: ['-y', 'playwright-mcp'],
+        args: ['-y', '@playwright/mcp@latest'],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -276,14 +276,16 @@ export const predefinedMCPs: MCPService[] = [
         name: 'figma-mcp',
         description: 'Figma design tool integration and context',
         command: 'npx',
-        args: ['-y', 'figma-context-mcp'],
+        args: ['-y', 'figma-developer-mcp',`--figma-api-key=${process.env.FIGMA_API_KEY || ''}`, "--stdio"],
         env: {},
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-figma-96.png',
         githubUrl: 'https://github.com/GLips/Figma-Context-MCP',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            FIGMA_API_KEY: "FIGMA_API_KEY"
+        }
     },
     {
         name: 'aws-mcp',
