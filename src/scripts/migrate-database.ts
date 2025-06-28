@@ -573,6 +573,108 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS awe_price_locks CASCADE');
         console.log('✅ Dropped awe_price_locks table');
       }
+    },
+    {
+      version: 14,
+      name: 'optimize_messages_for_task_steps',
+      up: async () => {
+        // 为任务步骤消息优化索引
+        // 添加元数据字段的GIN索引，支持高效的JSONB查询
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_metadata_gin 
+          ON messages USING GIN (metadata)
+        `);
+
+        // 为步骤类型创建表达式索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_step_type 
+          ON messages ((metadata->>'stepType'))
+          WHERE metadata->>'stepType' IS NOT NULL
+        `);
+
+        // 为任务阶段创建表达式索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_task_phase 
+          ON messages ((metadata->>'taskPhase'))
+          WHERE metadata->>'taskPhase' IS NOT NULL
+        `);
+
+        // 为步骤编号创建表达式索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_step_number 
+          ON messages (((metadata->>'stepNumber')::INTEGER))
+          WHERE metadata->>'stepNumber' IS NOT NULL
+        `);
+
+        // 为完成状态创建表达式索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_is_complete 
+          ON messages (((metadata->>'isComplete')::BOOLEAN))
+          WHERE metadata->>'isComplete' IS NOT NULL
+        `);
+
+        // 为流式状态创建表达式索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_is_streaming 
+          ON messages (((metadata->>'isStreaming')::BOOLEAN))
+          WHERE metadata->>'isStreaming' IS NOT NULL
+        `);
+
+        // 复合索引：对话ID + 任务ID + 步骤类型（用于快速查询特定任务的步骤消息）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_conversation_task_step 
+          ON messages (conversation_id, task_id, (metadata->>'stepType'))
+          WHERE task_id IS NOT NULL AND metadata->>'stepType' IS NOT NULL
+        `);
+
+        // 复合索引：对话ID + 任务阶段 + 步骤编号（用于按阶段和顺序查询）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_conversation_phase_step_number 
+          ON messages (conversation_id, (metadata->>'taskPhase'), ((metadata->>'stepNumber')::INTEGER))
+          WHERE metadata->>'taskPhase' IS NOT NULL AND metadata->>'stepNumber' IS NOT NULL
+        `);
+
+        console.log('✅ Optimized messages table for task step storage');
+      },
+      down: async () => {
+        // 删除为任务步骤添加的索引
+        await db.query('DROP INDEX IF EXISTS idx_messages_metadata_gin');
+        await db.query('DROP INDEX IF EXISTS idx_messages_step_type');
+        await db.query('DROP INDEX IF EXISTS idx_messages_task_phase');
+        await db.query('DROP INDEX IF EXISTS idx_messages_step_number');
+        await db.query('DROP INDEX IF EXISTS idx_messages_is_complete');
+        await db.query('DROP INDEX IF EXISTS idx_messages_is_streaming');
+        await db.query('DROP INDEX IF EXISTS idx_messages_conversation_task_step');
+        await db.query('DROP INDEX IF EXISTS idx_messages_conversation_phase_step_number');
+        console.log('✅ Removed task step optimization indexes from messages table');
+      }
+    },
+    {
+      version: 15,
+      name: 'add_updated_at_to_messages',
+      up: async () => {
+        // 向消息表添加updated_at字段
+        await db.query(`
+          ALTER TABLE messages
+          ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_updated_at 
+          ON messages(updated_at)
+        `);
+
+        console.log('✅ Added updated_at column to messages table');
+      },
+      down: async () => {
+        // 删除updated_at字段
+        await db.query(`
+          ALTER TABLE messages
+          DROP COLUMN IF EXISTS updated_at
+        `);
+        console.log('✅ Dropped updated_at column from messages table');
+      }
     }
   ];
 
