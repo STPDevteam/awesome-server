@@ -16,7 +16,7 @@ const s3AvatarService = getS3AvatarService();
  */
 router.post('/wallet/nonce', loginRateLimit, async (req: express.Request, res: express.Response) => {
   try {
-    const { address } = req.body;
+    const { address, origin } = req.body;
 
     if (!address) {
       return res.status(400).json({
@@ -32,10 +32,19 @@ router.post('/wallet/nonce', loginRateLimit, async (req: express.Request, res: e
       });
     }
 
+    // 优先使用前端传递的 origin，否则使用后端域名作为默认值
+    const frontendOrigin = origin || `https://${req.headers.host || 'localhost:3001'}`;
+    
+    // 从 origin 解析出 domain
+    const originUrl = new URL(frontendOrigin);
+    const domain = originUrl.host;
+    const uri = frontendOrigin;
+    
+    console.log("使用的 origin:", frontendOrigin);
+    console.log("解析的 domain:", domain);
+    console.log("uri:", uri);
+
     const nonce = walletAuthService.generateLoginNonce(address);
-    const domain = req.headers.host || 'localhost:3001';
-    const uri = "https://" + domain;
-    console.log("uri", uri);
 
     const message = walletAuthService.createSiweMessage({
       address,
