@@ -14,6 +14,9 @@ import { MCPInfo } from '../../models/mcp.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getAllPredefinedMCPs } from '../predefinedMCPs.js';
 import { MCPService } from '../mcpManager.js';
+import { messageDao } from '../../dao/messageDao.js';
+import { MessageType, MessageIntent, MessageStepType } from '../../models/conversation.js';
+import { conversationDao } from '../../dao/conversationDao.js';
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
 // 获取taskService实例
@@ -81,6 +84,12 @@ export class TaskAnalysisService {
       await taskService.updateTask(taskId, { status: 'in_progress' });
       stream({ event: 'status_update', data: { status: 'in_progress' } });
       
+      // 获取会话ID用于存储消息
+      const conversationId = task.conversationId;
+      if (!conversationId) {
+        logger.warn(`Task ${taskId} has no associated conversation, messages will not be stored`);
+      }
+      
       // 步骤1: 分析任务需求
       stream({ 
         event: 'step_start', 
@@ -92,9 +101,37 @@ export class TaskAnalysisService {
         } 
       });
       
+      // 创建步骤1的流式消息
+      let step1MessageId: string | undefined;
+      if (conversationId) {
+        const step1Message = await messageDao.createStreamingMessage({
+          conversationId,
+          content: 'Analyzing task requirements...',
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.ANALYSIS,
+            stepNumber: 1,
+            stepName: 'Analyze Task Requirements',
+            totalSteps: 4,
+            taskPhase: 'analysis'
+          }
+        });
+        step1MessageId = step1Message.id;
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+      
       // 这里使用常规的analyzeRequirements方法，而不是流式方法
       // 因为我们需要确保后续步骤能正常使用结构化的结果
       const requirementsResult = await this.analyzeRequirements(task.content);
+      
+      // 完成步骤1消息
+      if (step1MessageId) {
+        await messageDao.completeStreamingMessage(step1MessageId, requirementsResult.content);
+      }
       
       // 向前端发送分析结果
       stream({ 
@@ -128,11 +165,39 @@ export class TaskAnalysisService {
         } 
       });
       
+      // 创建步骤2的流式消息
+      let step2MessageId: string | undefined;
+      if (conversationId) {
+        const step2Message = await messageDao.createStreamingMessage({
+          conversationId,
+          content: 'Identifying relevant MCP tools...',
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.MCP_SELECTION,
+            stepNumber: 2,
+            stepName: 'Identify Relevant MCP Tools',
+            totalSteps: 4,
+            taskPhase: 'analysis'
+          }
+        });
+        step2MessageId = step2Message.id;
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+      
       // 常规处理，不是流式方法
       const mcpResult = await this.identifyRelevantMCPs(
         task.content, 
         requirementsResult.content
       );
+      
+      // 完成步骤2消息
+      if (step2MessageId) {
+        await messageDao.completeStreamingMessage(step2MessageId, mcpResult.content);
+      }
       
       // 向前端发送结果
       stream({ 
@@ -170,12 +235,40 @@ export class TaskAnalysisService {
         } 
       });
       
+      // 创建步骤3的流式消息
+      let step3MessageId: string | undefined;
+      if (conversationId) {
+        const step3Message = await messageDao.createStreamingMessage({
+          conversationId,
+          content: 'Confirming deliverables...',
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.DELIVERABLES,
+            stepNumber: 3,
+            stepName: 'Confirm Deliverables',
+            totalSteps: 4,
+            taskPhase: 'analysis'
+          }
+        });
+        step3MessageId = step3Message.id;
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+      
       // 常规处理，不是流式方法
       const deliverablesResult = await this.confirmDeliverables(
         task.content,
         requirementsResult.content,
         mcpResult.recommendedMCPs
       );
+      
+      // 完成步骤3消息
+      if (step3MessageId) {
+        await messageDao.completeStreamingMessage(step3MessageId, deliverablesResult.content);
+      }
       
       // 向前端发送结果
       stream({ 
@@ -211,6 +304,29 @@ export class TaskAnalysisService {
         } 
       });
       
+      // 创建步骤4的流式消息
+      let step4MessageId: string | undefined;
+      if (conversationId) {
+        const step4Message = await messageDao.createStreamingMessage({
+          conversationId,
+          content: 'Building MCP workflow...',
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.WORKFLOW,
+            stepNumber: 4,
+            stepName: 'Build MCP Workflow',
+            totalSteps: 4,
+            taskPhase: 'analysis'
+          }
+        });
+        step4MessageId = step4Message.id;
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+      
       // 常规处理，不是流式方法
       const workflowResult = await this.buildMCPWorkflow(
         task.content,
@@ -219,6 +335,11 @@ export class TaskAnalysisService {
         deliverablesResult.canBeFulfilled,
         deliverablesResult.deliverables
       );
+      
+      // 完成步骤4消息
+      if (step4MessageId) {
+        await messageDao.completeStreamingMessage(step4MessageId, workflowResult.content);
+      }
       
       // 向前端发送结果
       stream({ 
@@ -307,6 +428,26 @@ export class TaskAnalysisService {
         mcpWorkflow,
         status: 'completed'
       });
+      
+      // 创建分析完成的总结消息
+      if (conversationId) {
+        const summaryMessage = await messageDao.createMessage({
+          conversationId,
+          content: `Task analysis completed. Identified ${mcpResult.recommendedMCPs.length} relevant tools and built ${workflowResult.workflow.length} execution steps.`,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.SUMMARY,
+            stepName: 'Analysis Complete',
+            taskPhase: 'analysis',
+            isComplete: true
+          }
+        });
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
       
       // 发送分析完成信息
       stream({ 
@@ -575,7 +716,7 @@ Analyze the task and respond with valid JSON in this exact structure:
               // New format with alternatives
               primaryMcpName = mcpSelection.name;
               alternatives = mcpSelection.alternatives || [];
-            } else {
+          } else {
               logger.warn(`[MCP Debug] Invalid MCP selection format: ${JSON.stringify(mcpSelection)}`);
               continue;
             }

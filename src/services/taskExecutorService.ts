@@ -9,6 +9,9 @@ import { taskExecutorDao } from '../dao/taskExecutorDao.js';
 import { TaskStepResult, TaskExecutionResult, WorkflowExecutionStatus } from '../models/taskExecution.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { MCPManager } from './mcpManager.js';
+import { messageDao } from '../dao/messageDao.js';
+import { MessageType, MessageIntent, MessageStepType } from '../models/conversation.js';
+import { conversationDao } from '../dao/conversationDao.js';
 
 import { MCPInfo } from '../models/mcp.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
@@ -62,11 +65,11 @@ export class TaskExecutorService {
   private async ensureClientConnection(mcpName: string): Promise<any> {
     const connectedMCPs = this.mcpManager.getConnectedMCPs();
     const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
-    
+        
     if (!isConnected) {
       throw new Error(`MCP ${mcpName} not connected, please ensure MCP service is available`);
-    }
-    
+      }
+
     // 验证客户端连接状态
     const client = this.mcpManager.getClient(mcpName);
     if (!client) {
@@ -92,7 +95,7 @@ export class TaskExecutorService {
         // 尝试重新连接
         await this.mcpManager.disconnect(mcpName);
         await this.mcpManager.connect(mcpName, mcpConfig.command, mcpConfig.args, mcpConfig.env);
-        
+          
         // 验证重连后的连接
         const reconnectedClient = this.mcpManager.getClient(mcpName);
         if (!reconnectedClient) {
@@ -167,13 +170,13 @@ export class TaskExecutorService {
       
       // 只有在没有有效数据且包含真正的错误关键词时才抛出错误
       if (!hasValidData) {
-        const hasError = errorKeywords.some(keyword => 
-          resultText.toLowerCase().includes(keyword.toLowerCase())
-        );
-        
+      const hasError = errorKeywords.some(keyword => 
+        resultText.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
         if (hasError) {
-          throw new Error(`Operation failed: ${resultText}`);
-        }
+        throw new Error(`Operation failed: ${resultText}`);
+      }
       }
       
       // 对于明确的错误状态码或错误消息
@@ -737,7 +740,7 @@ For cryptocurrency queries:
         if (firstContent && firstContent.text) {
           processedResult = this.formatApiResponse(firstContent.text);
         } else {
-          processedResult = JSON.stringify(rawResult.content, null, 2);
+        processedResult = JSON.stringify(rawResult.content, null, 2);
         }
       } else if (typeof rawResult.content === 'object') {
         // 如果是对象，检查是否有 text 字段
@@ -925,19 +928,21 @@ Based on the above task execution information, please generate a complete execut
   }
 
   /**
-   * 构建LangChain链式工作流
+   * 构建LangChain链式工作流（带消息存储功能）
    * @param workflow 工作流配置
    * @param taskId 任务ID
+   * @param conversationId 会话ID
    * @param stream 流式输出回调
    * @returns LangChain的RunnableSequence
    */
-  private async buildLangChainWorkflowChain(
+  private async buildLangChainWorkflowChainWithMessages(
     workflow: Array<{ step: number; mcp: string; action: string; input?: any }>,
     taskId: string,
+    conversationId: string | undefined,
     stream: (data: any) => void
   ): Promise<RunnableSequence> {
-    logger.info(`🔗 Building LangChain workflow chain with ${workflow.length} steps`);
-
+    logger.info(`🔗 Building LangChain workflow chain with message storage for ${workflow.length} steps`);
+      
     // 创建工作流步骤的Runnable数组
     const runnables = workflow.map((step) => {
       return RunnablePassthrough.assign({
@@ -954,55 +959,83 @@ Based on the above task execution information, please generate a complete execut
             const prevResult = previousResults[`step${stepNumber - 1}`];
             // 智能提取前一步结果中的有用数据
             input = await this.extractUsefulDataFromResult(prevResult, actionName);
-          }
-          
+      }
+      
           // 确保输入格式正确
           input = this.processStepInput(input || {});
           
           logger.info(`📍 LangChain Step ${stepNumber}: ${mcpName} - ${actionName}`);
           logger.info(`📥 Step input: ${JSON.stringify(input, null, 2)}`);
           
-          // 发送步骤开始信息
-          stream({ 
-            event: 'step_start', 
-            data: { 
-              step: stepNumber,
-              mcpName,
-              actionName,
-              input: typeof input === 'object' ? JSON.stringify(input) : input
-            } 
-          });
-          
-          try {
-            // 标准化MCP名称
-            const actualMcpName = this.normalizeMCPName(mcpName);
+          // 创建步骤消息（流式）
+          let stepMessageId: string | undefined;
+          if (conversationId) {
+            const stepMessage = await messageDao.createStreamingMessage({
+              conversationId,
+              content: `Executing step ${stepNumber}: ${actionName}...`,
+              type: MessageType.ASSISTANT,
+              intent: MessageIntent.TASK,
+              taskId,
+              metadata: {
+                stepType: MessageStepType.EXECUTION,
+                stepNumber,
+                stepName: actionName,
+                totalSteps: workflow.length,
+                taskPhase: 'execution'
+              }
+            });
+            stepMessageId = stepMessage.id;
+        
+            // 增量会话消息计数
+            await conversationDao.incrementMessageCount(conversationId);
+          }
+        
+        // 发送步骤开始信息
+        stream({ 
+          event: 'step_start', 
+          data: { 
+            step: stepNumber,
+            mcpName,
+            actionName,
+            input: typeof input === 'object' ? JSON.stringify(input) : input
+          } 
+        });
+        
+        try {
+          // 标准化MCP名称
+          const actualMcpName = this.normalizeMCPName(mcpName);
             
             // 调用MCP工具
             const stepResult = await this.callMCPTool(actualMcpName, actionName, input, taskId);
             
             // 验证结果
-            this.validateStepResult(actualMcpName, actionName, stepResult);
-            
+          this.validateStepResult(actualMcpName, actionName, stepResult);
+          
             // 处理结果
-            const processedResult = this.processToolResult(stepResult);
-            
+          const processedResult = this.processToolResult(stepResult);
+          
             // 使用LLM格式化结果为Markdown
             const formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
             
+            // 完成步骤消息
+            if (stepMessageId) {
+              await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
+            }
+            
             // 保存步骤结果（保存格式化后的结果）
             await taskExecutorDao.saveStepResult(taskId, stepNumber, true, formattedResult);
-            
+          
             // 发送步骤完成信息（发送格式化后的结果）
-            stream({ 
-              event: 'step_complete', 
-              data: { 
-                step: stepNumber,
-                success: true,
+          stream({ 
+            event: 'step_complete', 
+            data: { 
+              step: stepNumber,
+              success: true,
                 result: formattedResult,
                 rawResult: processedResult // 也保留原始结果供调试
-              } 
-            });
-            
+            } 
+          });
+          
             return {
               step: stepNumber,
               success: true,
@@ -1010,21 +1043,26 @@ Based on the above task execution information, please generate a complete execut
               rawResult: processedResult,
               parsedData: this.parseResultData(processedResult) // 解析结构化数据供下一步使用
             };
-          } catch (error) {
+        } catch (error) {
             logger.error(`❌ LangChain Step ${stepNumber} failed:`, error);
-            const errorMsg = error instanceof Error ? error.message : String(error);
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          
+            // 完成步骤消息（错误状态）
+            if (stepMessageId) {
+              await messageDao.completeStreamingMessage(stepMessageId, `执行失败: ${errorMsg}`);
+            }
             
             // 保存错误结果
-            await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
-            
-            // 发送步骤错误信息
-            stream({ 
-              event: 'step_error', 
-              data: { 
-                step: stepNumber,
-                error: errorMsg
-              } 
-            });
+          await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
+          
+          // 发送步骤错误信息
+          stream({ 
+            event: 'step_error', 
+            data: { 
+              step: stepNumber,
+              error: errorMsg
+            } 
+          });
             
             return {
               step: stepNumber,
@@ -1033,9 +1071,9 @@ Based on the above task execution information, please generate a complete execut
             };
           }
         }
+        });
       });
-    });
-
+      
     // 使用pipe方法创建链式调用
     if (runnables.length === 0) {
       throw new Error('Workflow must have at least one step');
@@ -1050,6 +1088,113 @@ Based on the above task execution information, please generate a complete execut
     }, runnables[0] as any);
     
     return chain as RunnableSequence;
+  }
+  
+  /**
+   * 流式生成结果摘要（带消息更新功能）
+   * @param taskContent 任务内容
+   * @param stepResults 步骤结果
+   * @param streamCallback 流式回调函数
+   * @param summaryMessageId 摘要消息ID（用于更新消息内容）
+   */
+  private async generateResultSummaryStreamWithMessage(
+    taskContent: string, 
+    stepResults: any[], 
+    streamCallback: (chunk: string) => void,
+    summaryMessageId?: string
+  ): Promise<void> {
+    try {
+      logger.info('Streaming generation of task result summary with message update');
+      
+      // 计算成功和失败步骤数
+      const successSteps = stepResults.filter(step => step.success).length;
+      const failedSteps = stepResults.length - successSteps;
+      
+      // 准备步骤结果详情
+      const stepDetails = stepResults.map(step => {
+        if (step.success) {
+          // 如果结果已经是Markdown格式，直接使用前100个字符
+          const resultPreview = typeof step.result === 'string' ? 
+            step.result.replace(/\n/g, ' ').substring(0, 100) : 
+            JSON.stringify(step.result).substring(0, 100);
+          return `步骤${step.step}: 成功执行 - ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`;
+        } else {
+          return `步骤${step.step}: 执行失败 - ${step.error}`;
+        }
+      }).join('\n');
+      
+      // 创建流式LLM实例
+      const streamingLlm = new ChatOpenAI({
+        modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
+        temperature: 0.7,
+        openAIApiKey: process.env.OPENAI_API_KEY,
+        streaming: true
+      });
+      
+      // 创建消息
+      const messages = [
+        new SystemMessage(`You are a professional task summary specialist responsible for summarizing complex workflow execution results into detailed yet easy-to-understand reports.
+Please generate a comprehensive report based on the original task requirements and execution results, including the following:
+
+1. Task execution overview - total steps, successful steps, failed steps
+2. Successfully completed operations and results achieved
+3. If any steps failed, detailed explanation of the failure reasons and impacts
+4. Overall task outcomes and value
+5. Recommendations for the user (if applicable)
+
+Please note that this summary will be presented directly to the user and should use friendly language and formatting to ensure the user understands the complete process and results of the task execution.
+Avoid technical jargon while maintaining professionalism and accuracy. Please especially emphasize the value and outcomes the task has delivered to the user.`),
+        new HumanMessage(`Task content: ${taskContent}
+
+Execution statistics:
+- Total steps: ${stepResults.length}
+- Successful steps: ${successSteps}
+- Failed steps: ${failedSteps}
+
+Step details:
+${stepDetails}
+
+Based on the above task execution information, please generate a complete execution report, focusing on what this task has done for the user and what specific outcomes have been achieved.`)
+      ];
+      
+      // 获取流
+      const stream = await streamingLlm.stream(messages);
+      
+      // 累积完整的摘要内容
+      let fullSummary = '';
+      
+      // 处理流的内容
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          // 修复类型错误，确保内容为字符串
+          const chunkText = typeof chunk.content === 'string' 
+            ? chunk.content 
+            : JSON.stringify(chunk.content);
+          
+          fullSummary += chunkText;
+          streamCallback(chunkText);
+        }
+      }
+      
+      // 完成摘要消息
+      if (summaryMessageId) {
+        await messageDao.completeStreamingMessage(summaryMessageId, `## 📊 任务执行摘要
+
+${fullSummary}`);
+      }
+    } catch (error) {
+      logger.error('Streaming generation of result summary failed:', error);
+      const fallbackSummary = `Task execution completed, executed ${stepResults.length} steps in total, ${stepResults.filter(s => s.success).length} successful, ${stepResults.filter(s => !s.success).length} failed. Please check detailed step results for more information.`;
+      
+      streamCallback(fallbackSummary);
+      
+      // 完成摘要消息（降级处理）
+      if (summaryMessageId) {
+        await messageDao.completeStreamingMessage(summaryMessageId, `## 📊 任务执行摘要
+
+${fallbackSummary}`);
+      }
+    }
   }
 
   /**
@@ -1222,6 +1367,12 @@ Example transformations:
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
       stream({ event: 'status_update', data: { status: 'in_progress' } });
       
+      // 获取会话ID用于存储消息
+      const conversationId = task.conversationId;
+      if (!conversationId) {
+        logger.warn(`Task ${taskId} has no associated conversation, execution messages will not be stored`);
+      }
+      
       // 获取任务的工作流
       const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
         ? JSON.parse(task.mcpWorkflow) 
@@ -1265,12 +1416,34 @@ Example transformations:
         return false;
       }
       
+      // 创建执行开始的消息
+      if (conversationId) {
+        const executionStartMessage = await messageDao.createMessage({
+          conversationId,
+          content: `Executing task "${task.title}" with ${mcpWorkflow.workflow.length} steps...`,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.EXECUTION,
+            stepName: 'Execution Start',
+            taskPhase: 'execution',
+            totalSteps: mcpWorkflow.workflow.length,
+            isComplete: true
+          }
+        });
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+      
       try {
-        // 使用LangChain构建链式工作流
+        // 使用LangChain构建链式工作流，但添加消息存储功能
         logger.info(`🔗 Building LangChain workflow chain for ${mcpWorkflow.workflow.length} steps`);
-        const workflowChain = await this.buildLangChainWorkflowChain(
+        const workflowChain = await this.buildLangChainWorkflowChainWithMessages(
           mcpWorkflow.workflow,
           taskId,
+          conversationId,
           stream
         );
         
@@ -1300,12 +1473,40 @@ Example transformations:
         
         // 生成结果摘要，使用流式生成
         stream({ event: 'generating_summary', data: { message: 'Generating result summary...' } });
-        await this.generateResultSummaryStream(task.content, workflowResults, (summaryChunk) => {
-          stream({ 
-            event: 'summary_chunk', 
-            data: { content: summaryChunk } 
+        
+        // 创建摘要消息（流式更新）
+        let summaryMessageId: string | undefined;
+        if (conversationId) {
+          const summaryMessage = await messageDao.createStreamingMessage({
+            conversationId,
+            content: 'Generating execution summary...',
+            type: MessageType.ASSISTANT,
+            intent: MessageIntent.TASK,
+            taskId,
+            metadata: {
+              stepType: MessageStepType.SUMMARY,
+              stepName: 'Execution Summary',
+              taskPhase: 'execution',
+              isComplete: false
+            }
           });
-        });
+          summaryMessageId = summaryMessage.id;
+          
+          // 增量会话消息计数
+          await conversationDao.incrementMessageCount(conversationId);
+        }
+        
+        await this.generateResultSummaryStreamWithMessage(
+          task.content, 
+          workflowResults, 
+          (summaryChunk) => {
+            stream({ 
+              event: 'summary_chunk', 
+              data: { content: summaryChunk } 
+            });
+          },
+          summaryMessageId
+        );
         
         // 判断整体执行是否成功
         const overallSuccess = workflowResults.every(result => result.success);
@@ -1374,91 +1575,6 @@ Example transformations:
       return false;
     }
   }
-  
-  /**
-   * 流式生成结果摘要
-   * @param taskContent 任务内容
-   * @param stepResults 步骤结果
-   * @param streamCallback 流式回调函数
-   */
-  private async generateResultSummaryStream(
-    taskContent: string, 
-    stepResults: any[], 
-    streamCallback: (chunk: string) => void
-  ): Promise<void> {
-    try {
-      logger.info('Streaming generation of task result summary');
-      
-      // 计算成功和失败步骤数
-      const successSteps = stepResults.filter(step => step.success).length;
-      const failedSteps = stepResults.length - successSteps;
-      
-      // 准备步骤结果详情
-      const stepDetails = stepResults.map(step => {
-        if (step.success) {
-          // 如果结果已经是Markdown格式，直接使用前100个字符
-          const resultPreview = typeof step.result === 'string' ? 
-            step.result.replace(/\n/g, ' ').substring(0, 100) : 
-            JSON.stringify(step.result).substring(0, 100);
-          return `步骤${step.step}: 成功执行 - ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`;
-        } else {
-          return `步骤${step.step}: 执行失败 - ${step.error}`;
-        }
-      }).join('\n');
-      
-      // 创建流式LLM实例
-      const streamingLlm = new ChatOpenAI({
-        modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
-        temperature: 0.7,
-        openAIApiKey: process.env.OPENAI_API_KEY,
-        streaming: true
-      });
-      
-      // 创建消息
-      const messages = [
-        new SystemMessage(`You are a professional task summary specialist responsible for summarizing complex workflow execution results into detailed yet easy-to-understand reports.
-Please generate a comprehensive report based on the original task requirements and execution results, including the following:
-
-1. Task execution overview - total steps, successful steps, failed steps
-2. Successfully completed operations and results achieved
-3. If any steps failed, detailed explanation of the failure reasons and impacts
-4. Overall task outcomes and value
-5. Recommendations for the user (if applicable)
-
-Please note that this summary will be presented directly to the user and should use friendly language and formatting to ensure the user understands the complete process and results of the task execution.
-Avoid technical jargon while maintaining professionalism and accuracy. Please especially emphasize the value and outcomes the task has delivered to the user.`),
-        new HumanMessage(`Task content: ${taskContent}
-
-Execution statistics:
-- Total steps: ${stepResults.length}
-- Successful steps: ${successSteps}
-- Failed steps: ${failedSteps}
-
-Step details:
-${stepDetails}
-
-Based on the above task execution information, please generate a complete execution report, focusing on what this task has done for the user and what specific outcomes have been achieved.`)
-      ];
-      
-      // 获取流
-      const stream = await streamingLlm.stream(messages);
-      
-      // 处理流的内容
-      for await (const chunk of stream) {
-        if (chunk.content) {
-          // 修复类型错误，确保内容为字符串
-          const chunkText = typeof chunk.content === 'string' 
-            ? chunk.content 
-            : JSON.stringify(chunk.content);
-          
-          streamCallback(chunkText);
-        }
-      }
-    } catch (error) {
-      logger.error('Streaming generation of result summary failed:', error);
-      streamCallback(`Task execution completed, executed ${stepResults.length} steps in total, ${stepResults.filter(s => s.success).length} successful, ${stepResults.filter(s => !s.success).length} failed. Please check detailed step results for more information.`);
-    }
-  }
 
   /**
    * 映射MCP名称，确保名称一致性
@@ -1492,4 +1608,4 @@ Based on the above task execution information, please generate a complete execut
     
     return mcpNameMapping[mcpName] || mcpName;
   }
-}
+} 
