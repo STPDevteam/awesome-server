@@ -365,7 +365,7 @@ ${JSON.stringify(newMcp, null, 2)}
       
       const updateSuccess = await this.taskService.updateTask(taskId, {
         mcpWorkflow: updatedMcpWorkflow,
-        status: 'analyzed'
+        status: 'completed'
       });
       
       if (!updateSuccess) {
@@ -373,14 +373,14 @@ ${JSON.stringify(newMcp, null, 2)}
         return false;
       }
       
-      stream({ 
-        event: 'step_complete', 
-        data: { 
-          stepType: 'batch_task_update',
-          content: 'Task information updated successfully',
-          reasoning: 'Workflow saved to database, task status updated to analyzed'
-        } 
-      });
+              stream({ 
+          event: 'step_complete', 
+          data: { 
+            stepType: 'batch_task_update',
+            content: 'Task information updated successfully',
+            reasoning: 'Workflow saved to database, task status updated to completed'
+          } 
+        });
       
       // 5. 完成阶段
       stream({ 
