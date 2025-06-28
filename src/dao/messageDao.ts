@@ -13,6 +13,7 @@ export interface MessageDbRow {
   task_id?: string;
   metadata?: any;
   created_at: string;
+  updated_at?: string;
 }
 
 /**

@@ -648,6 +648,33 @@ class MigrationService {
         await db.query('DROP INDEX IF EXISTS idx_messages_conversation_phase_step_number');
         console.log('✅ Removed task step optimization indexes from messages table');
       }
+    },
+    {
+      version: 15,
+      name: 'add_updated_at_to_messages',
+      up: async () => {
+        // 向消息表添加updated_at字段
+        await db.query(`
+          ALTER TABLE messages
+          ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_updated_at 
+          ON messages(updated_at)
+        `);
+
+        console.log('✅ Added updated_at column to messages table');
+      },
+      down: async () => {
+        // 删除updated_at字段
+        await db.query(`
+          ALTER TABLE messages
+          DROP COLUMN IF EXISTS updated_at
+        `);
+        console.log('✅ Dropped updated_at column from messages table');
+      }
     }
   ];
 
