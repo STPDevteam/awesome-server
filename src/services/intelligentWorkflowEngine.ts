@@ -5,6 +5,7 @@ import { BaseMessage } from '@langchain/core/messages';
 import { logger } from '../utils/logger.js';
 import { MCPManager } from './mcpManager.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
+import { MCPAuthService } from './mcpAuthService.js';
 import { getAllPredefinedMCPs, getPredefinedMCP } from './predefinedMCPs.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { z } from 'zod';
@@ -115,7 +116,7 @@ export class IntelligentWorkflowEngine {
   private mcpToolAdapter: MCPToolAdapter;
   private graph: StateGraph<any>;
   private taskService: any;
-  private mcpAuthService: any;
+  private mcpAuthService: MCPAuthService;
 
   constructor() {
     this.llm = new ChatOpenAI({
@@ -129,24 +130,11 @@ export class IntelligentWorkflowEngine {
     this.mcpManager = new MCPManager();
     this.mcpToolAdapter = new MCPToolAdapter(this.mcpManager);
     this.taskService = getTaskService();
-    this.initializeMCPAuthService();
+    
+    // 直接同步初始化 MCPAuthService，就像传统执行器一样
+    this.mcpAuthService = new MCPAuthService();
+    
     this.graph = this.buildWorkflowGraph();
-  }
-
-  /**
-   * 初始化 MCPAuthService
-   */
-  private async initializeMCPAuthService() {
-    try {
-      // 动态导入 MCPAuthService
-      const { MCPAuthService } = await import('./mcpAuthService.js');
-      this.mcpAuthService = new MCPAuthService();
-      logger.info('✅ MCPAuthService 初始化成功');
-    } catch (error) {
-      logger.error('❌ MCPAuthService 初始化失败:', error);
-      // 设置为 null，后续会在使用时再次尝试初始化
-      this.mcpAuthService = null;
-    }
   }
 
   /**
@@ -879,11 +867,7 @@ ${content}
             
             // 确保 MCPAuthService 已初始化
             if (!this.mcpAuthService) {
-              await this.initializeMCPAuthService();
-            }
-            
-            if (!this.mcpAuthService) {
-              throw new Error('MCPAuthService 初始化失败');
+              throw new Error('MCPAuthService 未初始化');
             }
             
             const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpConfig.name);
