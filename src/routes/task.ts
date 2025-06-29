@@ -1164,7 +1164,7 @@ router.post('/:id/analyze/stream', requireAuth, async (req: Request, res: Respon
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
     
-    // 执行流式任务分析
+    // 执行流式任务分析（智能工作流由全局开关控制）
     const analysisStarted = taskAnalysisService.analyzeTaskStream(taskId, streamHandler);
     
     // 分析结束后发送完成标记

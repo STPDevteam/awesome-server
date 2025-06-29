@@ -16,6 +16,10 @@ import { conversationDao } from '../dao/conversationDao.js';
 import { MCPInfo } from '../models/mcp.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { mcpNameMapping } from './predefinedMCPs.js';
+import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
+
+// 🎛️ 智能工作流全局开关 - 设置为false可快速回退到原有流程
+const ENABLE_INTELLIGENT_WORKFLOW = true;
 
 // 添加LangChain链式调用支持
 import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
@@ -38,6 +42,7 @@ export class TaskExecutorService {
   private httpAdapter: HTTPMCPAdapter;
   private mcpManager: MCPManager;
   private mcpToolAdapter: MCPToolAdapter;
+  private intelligentWorkflowEngine: IntelligentWorkflowEngine;
   
   constructor(httpAdapter: HTTPMCPAdapter, mcpAuthService: MCPAuthService, mcpManager: MCPManager) {
     this.httpAdapter = httpAdapter;
@@ -46,6 +51,9 @@ export class TaskExecutorService {
     
     // 初始化MCPToolAdapter
     this.mcpToolAdapter = new MCPToolAdapter(this.mcpManager);
+    
+    // 初始化智能工作流引擎
+    this.intelligentWorkflowEngine = new IntelligentWorkflowEngine();
     
     // 初始化ChatOpenAI
     this.llm = new ChatOpenAI({
@@ -1445,7 +1453,13 @@ Example transformations:
       
       logger.info(`📋 Workflow structure: ${JSON.stringify(mcpWorkflow, null, 2)}`);
       
+      // 🎛️ 根据全局开关检查是否需要使用智能工作流引擎
       if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
+        // 如果没有预定义工作流，检查是否可以使用智能工作流引擎
+        if (ENABLE_INTELLIGENT_WORKFLOW && this.shouldUseIntelligentExecution(task.content)) {
+          logger.info(`🧠 没有预定义工作流，使用智能工作流引擎执行任务 [任务: ${taskId}]`);
+          return await this.executeWithIntelligentWorkflow(taskId, task, stream, conversationId);
+        } else {
         logger.error(`❌ Task execution failed: No valid workflow [Task ID: ${taskId}]`);
         
         stream({ 
@@ -1461,6 +1475,7 @@ Example transformations:
         });
         
         return false;
+        }
       }
       
       // 检查 mcpManager 是否已初始化
@@ -1528,8 +1543,8 @@ Example transformations:
           const stepResult = chainResult[`step${i}`];
           if (stepResult) {
             workflowResults.push(stepResult);
-            
-            // 最后一步的结果作为最终结果
+          
+          // 最后一步的结果作为最终结果
             if (i === mcpWorkflow.workflow.length && stepResult.success) {
               finalResult = stepResult.result;
             }
@@ -1565,21 +1580,21 @@ Example transformations:
           task.content, 
           workflowResults, 
           (summaryChunk) => {
-            stream({ 
-              event: 'summary_chunk', 
-              data: { content: summaryChunk } 
-            });
+        stream({ 
+          event: 'summary_chunk', 
+          data: { content: summaryChunk } 
+        });
           },
           summaryMessageId
         );
         
         // 判断整体执行是否成功
         const overallSuccess = workflowResults.every(result => result.success);
-        
-        // 工作流完成
-        stream({ 
-          event: 'workflow_complete', 
-          data: { 
+      
+      // 工作流完成
+      stream({ 
+        event: 'workflow_complete', 
+        data: { 
             success: overallSuccess,
             message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors'
           }
@@ -1591,12 +1606,12 @@ Example transformations:
           overallSuccess ? 'completed' : 'partial_failure',
           {
             summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
-            steps: workflowResults,
-            finalResult
+        steps: workflowResults,
+        finalResult
           }
         );
-        
-        // 发送任务完成信息
+      
+      // 发送任务完成信息
         stream({ event: 'task_complete', data: { taskId, success: overallSuccess } });
         
         logger.info(`✅ Task execution completed [Task ID: ${taskId}, Success: ${overallSuccess}]`);
@@ -1637,6 +1652,256 @@ Example transformations:
         } 
       });
       
+      return false;
+    }
+  }
+  
+  /**
+   * 判断是否应该使用智能工作流引擎执行
+   * @param taskContent 任务内容
+   * @returns 是否使用智能工作流引擎
+   */
+  private shouldUseIntelligentExecution(taskContent: string): boolean {
+    // 检查任务是否包含需要复杂推理或多步骤处理的关键词
+    const complexTaskKeywords = [
+      '分析', '比较', '对比', '评估', '研究', '调研', 
+      '总结', '整理', '归纳', '综合', '深入', '详细',
+      'analyze', 'compare', 'evaluate', 'research', 
+      'summarize', 'comprehensive', 'detailed', 'investigate'
+    ];
+    
+    const taskLower = taskContent.toLowerCase();
+    const hasComplexKeywords = complexTaskKeywords.some(keyword => 
+      taskLower.includes(keyword.toLowerCase())
+    );
+    
+    // 检查任务长度和复杂度
+    const isComplexTask = taskContent.length > 50 || 
+                         taskContent.split(/[，。,.]/).length > 2;
+    
+    return hasComplexKeywords || isComplexTask;
+  }
+
+  /**
+   * 使用智能工作流引擎执行任务
+   * @param taskId 任务ID
+   * @param task 任务对象
+   * @param stream 流式回调
+   * @param conversationId 会话ID
+   * @returns 执行是否成功
+   */
+  private async executeWithIntelligentWorkflow(
+    taskId: string, 
+    task: any, 
+    stream: (data: any) => void,
+    conversationId?: string
+  ): Promise<boolean> {
+    try {
+      // 构建智能执行查询
+      const executionQuery = `请执行以下任务：
+
+任务内容：${task.content}
+
+执行要求：
+1. 理解任务目标和具体需求
+2. 根据需要选择合适的工具（MCP工具或LLM分析能力）
+3. 逐步执行任务，确保每一步都有明确的输出
+4. 如果需要外部数据，使用MCP工具获取
+5. 如果需要分析处理，使用LLM能力
+6. 最终提供完整的任务执行结果
+
+请开始执行任务并提供详细的执行过程和结果。`;
+
+      // 发送智能执行开始事件
+      stream({
+        event: 'intelligent_execution_start',
+        data: { message: '开始使用智能工作流引擎执行任务...' }
+      });
+
+      // 创建执行开始的消息
+      if (conversationId) {
+        const executionStartMessage = await messageDao.createMessage({
+          conversationId,
+          content: `智能执行任务 "${task.title}"...`,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.EXECUTION,
+            stepName: 'Intelligent Execution Start',
+            taskPhase: 'execution',
+            isComplete: true
+          }
+        });
+        
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+
+      // 使用智能工作流引擎执行任务
+      const workflowGenerator = this.intelligentWorkflowEngine.executeWorkflowStream(
+        taskId,
+        executionQuery,
+        10 // 智能执行允许更多迭代
+      );
+
+      let executionResults: any[] = [];
+      let stepCounter = 1;
+      let finalResult = '';
+
+      for await (const workflowStep of workflowGenerator) {
+        // 转发智能工作流事件（保持原有事件结构）
+        switch (workflowStep.event) {
+          case 'step_start':
+            stream({
+              event: 'step_start',
+              data: {
+                step: stepCounter,
+                action: `智能执行步骤 ${stepCounter}`,
+                message: '执行中...'
+              }
+            });
+            break;
+
+          case 'step_complete':
+            const stepResult = workflowStep.data.result;
+            const success = workflowStep.data.success;
+            
+            // 记录执行结果
+            executionResults.push({
+              step: stepCounter,
+              success: success,
+              result: stepResult,
+              tool: workflowStep.data.plan?.tool || 'intelligent_workflow'
+            });
+
+            // 发送步骤完成事件
+            stream({
+              event: 'step_complete',
+              data: {
+                step: stepCounter,
+                success: success,
+                result: stepResult,
+                tool: workflowStep.data.plan?.tool || 'intelligent_workflow'
+              }
+            });
+
+            if (success && stepResult) {
+              finalResult = stepResult;
+            }
+            
+            stepCounter++;
+            break;
+
+          case 'workflow_complete':
+            const finalState = workflowStep.data.finalState;
+            if (finalState?.blackboard?.lastResult) {
+              finalResult = finalState.blackboard.lastResult;
+            }
+            break;
+
+          case 'workflow_error':
+            logger.error('智能工作流执行出错:', workflowStep.data.error);
+            
+            stream({
+              event: 'execution_error',
+              data: {
+                message: '智能执行出错',
+                details: workflowStep.data.error
+              }
+            });
+
+            // 更新任务状态为失败
+            await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+              error: `智能工作流执行失败: ${workflowStep.data.error}`,
+              steps: executionResults
+            });
+
+            return false;
+        }
+      }
+
+      // 生成结果摘要
+      stream({ event: 'generating_summary', data: { message: 'Generating result summary...' } });
+      
+      let summaryMessageId: string | undefined;
+      if (conversationId) {
+        const summaryMessage = await messageDao.createStreamingMessage({
+          conversationId,
+          content: 'Generating execution summary...',
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.SUMMARY,
+            stepName: 'Intelligent Execution Summary',
+            taskPhase: 'execution',
+            isComplete: false
+          }
+        });
+        summaryMessageId = summaryMessage.id;
+        
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+
+      await this.generateResultSummaryStreamWithMessage(
+        task.content, 
+        executionResults, 
+        (summaryChunk) => {
+          stream({ 
+            event: 'summary_chunk', 
+            data: { content: summaryChunk } 
+          });
+        },
+        summaryMessageId
+      );
+
+      // 判断整体执行是否成功
+      const overallSuccess = executionResults.length > 0 && 
+                            executionResults.some(result => result.success);
+      
+      // 工作流完成
+      stream({ 
+        event: 'workflow_complete', 
+        data: { 
+          success: overallSuccess,
+          message: overallSuccess ? 'Intelligent task execution completed successfully' : 'Intelligent task execution completed with errors'
+        }
+      });
+      
+      // 更新任务状态
+      await taskExecutorDao.updateTaskResult(
+        taskId, 
+        overallSuccess ? 'completed' : 'partial_failure',
+        {
+          summary: overallSuccess ? 'Intelligent task execution completed successfully' : 'Intelligent task execution completed with some failures',
+          steps: executionResults,
+          finalResult,
+          intelligentExecution: true
+        }
+      );
+      
+      // 发送任务完成信息
+      stream({ event: 'task_complete', data: { taskId, success: overallSuccess } });
+      
+      logger.info(`✅ 智能任务执行完成 [任务: ${taskId}, 成功: ${overallSuccess}]`);
+      return overallSuccess;
+
+    } catch (error) {
+      logger.error('智能工作流执行失败:', error);
+      
+      stream({
+        event: 'error',
+        data: {
+          message: '智能执行失败',
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+
+      // 更新任务状态为失败
+      await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+        error: `智能工作流执行失败: ${error instanceof Error ? error.message : String(error)}`
+      });
+
       return false;
     }
   }
