@@ -121,7 +121,7 @@ export class IntelligentWorkflowEngine {
   constructor() {
     this.llm = new ChatOpenAI({
       openAIApiKey: process.env.OPENAI_API_KEY,
-      modelName: 'gpt-4',
+      modelName: 'gpt-4o',
       temperature: 0.1,
     //   httpAgent: agent,
     //   httpsAgent: agent,
