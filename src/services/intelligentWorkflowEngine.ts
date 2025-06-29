@@ -520,13 +520,28 @@ ${availableMCPs.map(mcp => `
 3. 如果 MCP 工具失败，可以回退到 LLM 能力
 4. 优先使用最直接有效的工具
 
+## 重要格式说明
+- 对于 LLM 工具：tool 应该是 "llm.analyze"、"llm.compare" 等，toolType 是 "llm"，不需要 mcpName
+- 对于 MCP 工具：tool 应该是具体的工具名称（如 "get_repository"），toolType 是 "mcp"，mcpName 是 MCP 服务名称（如 "github-mcp"）
+
 请分析当前状态，制定下一步执行计划。返回格式：
+
+对于 LLM 工具：
 {
-  "tool": "工具名称",
-  "toolType": "llm|mcp",
-  "mcpName": "MCP名称(如果是MCP工具)",
-  "args": {"参数": "值"},
+  "tool": "llm.analyze",
+  "toolType": "llm", 
+  "args": {"content": "要分析的内容"},
   "expectedOutput": "期望的输出描述",
+  "reasoning": "选择此工具的原因"
+}
+
+对于 MCP 工具：
+{
+  "tool": "get_repository",
+  "toolType": "mcp",
+  "mcpName": "github-mcp",
+  "args": {"owner": "repo_owner", "name": "repo_name"},
+  "expectedOutput": "期望的输出描述", 
   "reasoning": "选择此工具的原因"
 }`;
   }
@@ -631,7 +646,7 @@ ${JSON.stringify(state.blackboard, null, 2)}
       throw new Error('MCP 工具需要指定 mcpName');
     }
 
-    logger.info(`🔧 调用 MCP 工具: ${plan.mcpName}.${plan.tool}`);
+    logger.info(`�� 调用 MCP 工具: ${plan.tool} (来自 ${plan.mcpName})`);
     
     // 检查 MCP 是否已连接，如果没有则自动连接
     const connectedMCPs = this.mcpManager.getConnectedMCPs();
