@@ -570,20 +570,42 @@ ${mcp.tools.map((tool: any) => `  - ${tool.name}: ${tool.description}${tool.para
 - 当前目标: ${state.currentObjective}
 - 已执行步骤: ${state.executionHistory.length}
 
+## 执行历史
+${state.executionHistory.map(step => `
+步骤 ${step.stepNumber}: ${step.plan.tool} (${step.plan.toolType})
+- 执行状态: ${step.success ? '成功' : '失败'}
+- 计划: ${step.plan.reasoning}
+- 结果类型: ${step.success ? typeof step.result : '失败'}
+`).join('\n')}
+
 ## 最新执行结果
 ${lastStep ? `
 步骤 ${lastStep.stepNumber}: ${lastStep.plan.tool}
 - 执行状态: ${lastStep.success ? '成功' : '失败'}
 - 计划: ${lastStep.plan.reasoning}
-- 结果: ${lastStep.success ? JSON.stringify(lastStep.result) : lastStep.error}
+- 结果: ${lastStep.success ? JSON.stringify(lastStep.result).substring(0, 1000) + '...' : lastStep.error}
 ` : '暂无执行历史'}
 
 ## 黑板数据
 ${JSON.stringify(state.blackboard, null, 2)}
 
-请分析当前状态，判断任务是否完成。返回格式：
+## 判断标准
+请仔细分析当前状态，判断任务是否真正完成：
+
+1. **数据获取类任务**：如果只是获取了原始数据（如 issue 列表、文件内容等），但用户要求的是"分析"，那么还需要 LLM 进行分析
+2. **分析类任务**：如果用户要求分析、比较、总结等，需要确保已经有 LLM 分析步骤
+3. **多步骤任务**：检查是否所有必要步骤都已完成
+4. **结果完整性**：检查结果是否回答了用户的原始问题
+
+特别注意：
+- 如果用户问的是"分析xxx"，仅仅获取数据是不够的，还需要 LLM 分析
+- 如果用户问的是"比较xxx"，需要获取多个对象的数据并进行比较分析
+- 如果用户问的是"总结xxx"，需要获取内容并进行总结
+
+请返回格式：
 {
   "isComplete": true/false,
+  "reasoning": "判断的详细理由",
   "nextObjective": "下一步目标(如果未完成)",
   "finalAnswer": "最终答案(如果已完成)"
 }`;
@@ -630,6 +652,12 @@ ${JSON.stringify(state.blackboard, null, 2)}
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const observation = JSON.parse(jsonMatch[0]);
+        
+        // 记录 Observer 的推理过程
+        if (observation.reasoning) {
+          logger.info(`🤔 Observer 推理: ${observation.reasoning}`);
+        }
+        
         return {
           isComplete: observation.isComplete || false,
           nextObjective: observation.nextObjective,
@@ -637,15 +665,49 @@ ${JSON.stringify(state.blackboard, null, 2)}
         };
       }
     } catch (error) {
-      logger.warn('解析观察结果失败，使用默认判断', error);
+      logger.warn('解析观察结果失败，使用智能判断', error);
     }
 
-    // 默认判断：如果内容包含完成相关词汇
-    const isComplete = /完成|成功|结束|done|complete|finished/i.test(content);
+    // 更智能的默认判断逻辑
+    return this.intelligentCompletionCheck(content);
+  }
+
+  /**
+   * 智能完成状态检查
+   */
+  private intelligentCompletionCheck(content: string): { isComplete: boolean; nextObjective?: string; finalAnswer?: string } {
+    // 检查是否包含明确的完成信号
+    const explicitComplete = /任务完成|分析完成|执行完成|已完成|task complete|analysis complete/i.test(content);
+    
+    // 检查是否包含明确的继续信号
+    const explicitContinue = /需要继续|继续分析|下一步|need to continue|next step/i.test(content);
+    
+    if (explicitComplete) {
+      return {
+        isComplete: true,
+        finalAnswer: content
+      };
+    }
+    
+    if (explicitContinue) {
+      return {
+        isComplete: false,
+        nextObjective: content
+      };
+    }
+    
+    // 默认：如果内容很短或只是简单确认，可能需要继续
+    if (content.length < 100) {
+      return {
+        isComplete: false,
+        nextObjective: '需要更详细的分析或处理'
+      };
+    }
+    
+    // 默认：内容较长，可能是完整的分析结果
     return {
-      isComplete,
-      nextObjective: isComplete ? undefined : '继续执行任务',
-      finalAnswer: isComplete ? content : undefined
+      isComplete: true,
+      finalAnswer: content
     };
   }
 
@@ -1265,4 +1327,4 @@ ${content}
       throw error;
     }
   }
-} 
+}
