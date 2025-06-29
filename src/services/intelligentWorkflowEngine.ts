@@ -360,58 +360,6 @@ export class IntelligentWorkflowEngine {
   }
 
   /**
-   * 确保预选的MCP已连接
-   */
-  private async ensurePreselectedMCPsConnected(taskId: string): Promise<any[]> {
-    const preselectedMCPs = await this.getPreselectedMCPs(taskId);
-    const capabilities: any[] = [];
-
-    if (preselectedMCPs.length === 0) {
-      logger.info('🧠 没有预选的MCP，使用纯LLM模式');
-      return [];
-    }
-
-    for (const mcpInfo of preselectedMCPs) {
-      try {
-        const mcpName = mcpInfo.name;
-        
-        // 检查是否已连接
-        const connectedMCPs = this.mcpManager.getConnectedMCPs();
-        const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
-
-        if (!isConnected) {
-          logger.info(`🔗 连接预选的MCP: ${mcpName}`);
-          await this.autoConnectMCP(mcpName, taskId);
-        } else {
-          logger.info(`✅ MCP已连接: ${mcpName}`);
-        }
-
-        // 获取工具信息
-        const tools = await this.mcpToolAdapter.getAvailableTools(mcpName);
-        
-        capabilities.push({
-          mcpName: mcpName,
-          description: mcpInfo.description || `MCP Service: ${mcpName}`,
-          authRequired: mcpInfo.authRequired || false,
-          tools: tools.map(tool => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.inputSchema
-          }))
-        });
-
-        logger.info(`✅ 预选MCP可用: ${mcpName} (${tools.length} 个工具)`);
-
-      } catch (error) {
-        logger.warn(`预选MCP连接失败: ${mcpInfo.name}`, error);
-        // 继续处理其他MCP，不中断整个流程
-      }
-    }
-
-    return capabilities;
-  }
-
-  /**
    * 获取可用的 MCP 能力 - 基于任务分析结果
    */
   private async getAvailableMCPCapabilities(taskId?: string): Promise<any[]> {
@@ -439,6 +387,60 @@ export class IntelligentWorkflowEngine {
   }
 
   /**
+   * 确保预选的MCP已连接，并获取实际工具列表
+   */
+  private async ensurePreselectedMCPsConnected(taskId: string): Promise<any[]> {
+    const preselectedMCPs = await this.getPreselectedMCPs(taskId);
+    const capabilities: any[] = [];
+
+    if (preselectedMCPs.length === 0) {
+      logger.info('🧠 没有预选的MCP，使用纯LLM模式');
+      return [];
+    }
+
+    for (const mcpInfo of preselectedMCPs) {
+      try {
+        const mcpName = mcpInfo.name;
+        
+        // 检查是否已连接
+        const connectedMCPs = this.mcpManager.getConnectedMCPs();
+        const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
+
+        if (!isConnected) {
+          logger.info(`🔗 连接预选的MCP: ${mcpName}`);
+          await this.autoConnectMCP(mcpName, taskId);
+        } else {
+          logger.info(`✅ MCP已连接: ${mcpName}`);
+        }
+
+        // 🔧 关键修复：获取MCP的实际工具列表
+        const actualTools = await this.mcpManager.getTools(mcpName);
+        logger.info(`📋 ${mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
+        
+        capabilities.push({
+          mcpName: mcpName,
+          description: mcpInfo.description || `MCP Service: ${mcpName}`,
+          authRequired: mcpInfo.authRequired || false,
+          // 🔧 使用实际工具列表，而不是预定义的工具信息
+          tools: actualTools.map(tool => ({
+            name: tool.name,
+            description: tool.description || 'No description',
+            parameters: tool.inputSchema
+          }))
+        });
+
+        logger.info(`✅ 预选MCP可用: ${mcpName} (${actualTools.length} 个工具)`);
+
+      } catch (error) {
+        logger.warn(`预选MCP连接失败: ${mcpInfo.name}`, error);
+        // 继续处理其他MCP，不中断整个流程
+      }
+    }
+
+    return capabilities;
+  }
+
+  /**
    * 获取已连接的MCP能力（回退方案）
    */
   private async getConnectedMCPCapabilities(): Promise<any[]> {
@@ -455,20 +457,22 @@ export class IntelligentWorkflowEngine {
     // 只处理已连接的 MCP
     for (const mcp of connectedMCPs) {
       try {
-        // 获取工具信息
-        const tools = await this.mcpToolAdapter.getAvailableTools(mcp.name);
+        // 🔧 关键修复：获取MCP的实际工具列表
+        const actualTools = await this.mcpManager.getTools(mcp.name);
+        logger.info(`📋 ${mcp.name} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
         
         capabilities.push({
           mcpName: mcp.name,
           description: mcp.description || `MCP Service: ${mcp.name}`,
-          tools: tools.map(tool => ({
+          // 🔧 使用实际工具列表
+          tools: actualTools.map(tool => ({
             name: tool.name,
-            description: tool.description,
+            description: tool.description || 'No description',
             parameters: tool.inputSchema
           }))
         });
 
-        logger.info(`✅ 发现已连接的 MCP: ${mcp.name} (${tools.length} 个工具)`);
+        logger.info(`✅ 发现已连接的 MCP: ${mcp.name} (${actualTools.length} 个工具)`);
 
       } catch (error) {
         logger.warn(`获取 MCP 能力失败: ${mcp.name}`, error);
@@ -511,7 +515,8 @@ ${state.executionHistory.map(step => `
 ### MCP 工具能力
 ${availableMCPs.map(mcp => `
 **${mcp.mcpName}**: ${mcp.description}
-工具: ${mcp.tools.map((tool: any) => `${tool.name} - ${tool.description}`).join(', ')}
+可用工具:
+${mcp.tools.map((tool: any) => `  - ${tool.name}: ${tool.description}${tool.parameters ? '\n    参数: ' + JSON.stringify(tool.parameters, null, 4) : ''}`).join('\n')}
 `).join('\n')}
 
 ## 决策规则
@@ -519,10 +524,16 @@ ${availableMCPs.map(mcp => `
 2. 需要分析、比较、总结等认知任务时，选择 LLM 能力
 3. 如果 MCP 工具失败，可以回退到 LLM 能力
 4. 优先使用最直接有效的工具
+5. **重要：只能使用上面列出的确切工具名称**
 
 ## 重要格式说明
 - 对于 LLM 工具：tool 应该是 "llm.analyze"、"llm.compare" 等，toolType 是 "llm"，不需要 mcpName
-- 对于 MCP 工具：tool 应该是具体的工具名称（如 "get_repository"），toolType 是 "mcp"，mcpName 是 MCP 服务名称（如 "github-mcp"）
+- 对于 MCP 工具：tool 应该是**确切的工具名称**（从上面可用工具列表中选择），toolType 是 "mcp"，mcpName 是 MCP 服务名称
+
+**重要提醒**：
+- MCP工具名称必须从上面的可用工具列表中**精确选择**
+- 不要猜测或编造工具名称
+- 如果不确定工具名称，优先选择 LLM 能力
 
 请分析当前状态，制定下一步执行计划。返回格式：
 
@@ -537,10 +548,10 @@ ${availableMCPs.map(mcp => `
 
 对于 MCP 工具：
 {
-  "tool": "get_repository",
+  "tool": "确切的工具名称（从可用工具列表选择）",
   "toolType": "mcp",
-  "mcpName": "github-mcp",
-  "args": {"owner": "repo_owner", "name": "repo_name"},
+  "mcpName": "MCP服务名称",
+  "args": {"参数名": "参数值"},
   "expectedOutput": "期望的输出描述", 
   "reasoning": "选择此工具的原因"
 }`;
@@ -646,7 +657,7 @@ ${JSON.stringify(state.blackboard, null, 2)}
       throw new Error('MCP 工具需要指定 mcpName');
     }
 
-    logger.info(`�� 调用 MCP 工具: ${plan.tool} (来自 ${plan.mcpName})`);
+    logger.info(`⚡ 调用 MCP 工具: ${plan.tool} (来自 ${plan.mcpName})`);
     
     // 检查 MCP 是否已连接，如果没有则自动连接
     const connectedMCPs = this.mcpManager.getConnectedMCPs();
@@ -657,13 +668,135 @@ ${JSON.stringify(state.blackboard, null, 2)}
       await this.autoConnectMCP(plan.mcpName, state.taskId);
     }
     
+    // 🔧 关键修复：获取MCP的实际工具列表
+    const actualTools = await this.mcpManager.getTools(plan.mcpName);
+    logger.info(`📋 ${plan.mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
+    
+    // 🔧 验证工具是否存在，如果不存在则让LLM重新选择
+    let selectedTool = actualTools.find(t => t.name === plan.tool);
+    let finalToolName = plan.tool;
+    let finalArgs = plan.args;
+    
+    if (!selectedTool) {
+      logger.warn(`工具 ${plan.tool} 在 ${plan.mcpName} 中不存在，使用LLM重新选择...`);
+      
+      // 尝试模糊匹配
+      const fuzzyMatch = actualTools.find(t => 
+        t.name.toLowerCase().includes(plan.tool.toLowerCase()) ||
+        plan.tool.toLowerCase().includes(t.name.toLowerCase())
+      );
+      
+      if (fuzzyMatch) {
+        logger.info(`找到模糊匹配: ${fuzzyMatch.name}`);
+        selectedTool = fuzzyMatch;
+        finalToolName = fuzzyMatch.name;
+      } else {
+        // 使用LLM重新选择工具
+        logger.info(`使用LLM重新选择合适的工具...`);
+        const toolSelectionResult = await this.selectCorrectTool(
+          plan.tool, 
+          plan.args, 
+          actualTools, 
+          state.currentObjective
+        );
+        
+        selectedTool = actualTools.find(t => t.name === toolSelectionResult.toolName);
+        if (selectedTool) {
+          finalToolName = toolSelectionResult.toolName;
+          finalArgs = toolSelectionResult.inputParams;
+          logger.info(`LLM重新选择的工具: ${finalToolName}`);
+        } else {
+          throw new Error(`无法在 ${plan.mcpName} 中找到合适的工具执行任务: ${plan.tool}`);
+        }
+      }
+    }
+    
+    logger.info(`🔧 最终调用工具: ${finalToolName} (参数: ${JSON.stringify(finalArgs)})`);
+    
     const result = await this.mcpToolAdapter.callTool(
       plan.mcpName,
-      plan.tool,
-      plan.args
+      finalToolName,
+      finalArgs
     );
 
     return result;
+  }
+
+  /**
+   * 使用LLM选择正确的工具（参考传统执行器的做法）
+   */
+  private async selectCorrectTool(
+    originalTool: string,
+    originalArgs: any,
+    availableTools: any[],
+    objective: string
+  ): Promise<{ toolName: string; inputParams: any; reasoning: string }> {
+    try {
+      const toolSelectionPrompt = `你是一个AI助手，负责从可用工具中选择最合适的工具并生成正确的输入参数。
+
+原始工具名: ${originalTool}
+原始参数: ${JSON.stringify(originalArgs)}
+任务目标: ${objective}
+
+可用工具:
+${availableTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}${tool.inputSchema ? '\n  输入模式: ' + JSON.stringify(tool.inputSchema) : ''}`).join('\n')}
+
+请选择最合适的工具并生成正确的参数，以JSON格式回复:
+{
+  "toolName": "确切的工具名称",
+  "inputParams": { /* 基于工具模式转换的参数 */ },
+  "reasoning": "选择原因的简要说明"
+}
+
+对于加密货币查询:
+- 使用 "bitcoin" 作为比特币ID，"ethereum" 作为以太坊ID等
+- 使用 "usd" 作为vs_currency表示美元价格
+- 包含相关参数如 include_market_cap, include_24hr_change 等`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(toolSelectionPrompt)
+      ]);
+
+      let toolSelection;
+      try {
+        const responseText = response.content.toString().trim();
+        // 清理可能的markdown格式
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        toolSelection = JSON.parse(cleanedText);
+      } catch (parseError) {
+        logger.error(`解析工具选择响应失败: ${response.content}`);
+        // 回退到简单选择
+        const fallbackPrompt = `可用工具: ${availableTools.map(t => t.name).join(', ')}\n目标: ${objective}\n只选择确切的工具名称:`;
+        const fallbackResponse = await this.llm.invoke([new SystemMessage(fallbackPrompt)]);
+        const fallbackToolName = fallbackResponse.content.toString().trim();
+        toolSelection = {
+          toolName: fallbackToolName,
+          inputParams: originalArgs,
+          reasoning: "由于解析错误使用回退选择"
+        };
+      }
+
+      return {
+        toolName: toolSelection.toolName || originalTool,
+        inputParams: toolSelection.inputParams || originalArgs,
+        reasoning: toolSelection.reasoning || "无推理说明"
+      };
+
+    } catch (error) {
+      logger.error(`LLM工具选择失败:`, error);
+      // 最终回退：使用第一个可用工具
+      if (availableTools.length > 0) {
+        return {
+          toolName: availableTools[0].name,
+          inputParams: originalArgs,
+          reasoning: `由于LLM选择失败，使用第一个可用工具: ${availableTools[0].name}`
+        };
+      }
+      throw new Error('无可用工具且LLM选择失败');
+    }
   }
 
   /**
