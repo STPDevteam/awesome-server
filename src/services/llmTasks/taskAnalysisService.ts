@@ -17,7 +17,7 @@ import { MCPService } from '../mcpManager.js';
 import { messageDao } from '../../dao/messageDao.js';
 import { MessageType, MessageIntent, MessageStepType } from '../../models/conversation.js';
 import { conversationDao } from '../../dao/conversationDao.js';
-import { IntelligentWorkflowEngine } from '../intelligentWorkflowEngine.js';
+// 删除了智能工作流引擎导入，分析阶段不需要
 
 // 🎛️ 智能工作流全局开关 - 设置为false可快速回退到原有流程
 const ENABLE_INTELLIGENT_WORKFLOW = true;
@@ -50,7 +50,6 @@ function convertMCPServiceToMCPInfo(mcpService: MCPService): MCPInfo {
  */
 export class TaskAnalysisService {
   private llm: ChatOpenAI;
-  private intelligentWorkflowEngine: IntelligentWorkflowEngine;
   
   constructor() {
     this.llm = new ChatOpenAI({
@@ -60,9 +59,6 @@ export class TaskAnalysisService {
       timeout: 15000, // 15秒超时
       maxRetries: 1 // 最多重试1次
     });
-    
-    // 初始化智能工作流引擎
-    this.intelligentWorkflowEngine = new IntelligentWorkflowEngine();
   }
   
 
@@ -100,11 +96,8 @@ export class TaskAnalysisService {
         logger.warn(`Task ${taskId} has no associated conversation, messages will not be stored`);
       }
       
-      // 🎛️ 根据全局开关决定使用哪种分析方式
-      if (ENABLE_INTELLIGENT_WORKFLOW && this.shouldUseIntelligentWorkflow(task.content)) {
-        logger.info(`🧠 使用智能工作流引擎进行任务分析 [任务: ${taskId}]`);
-        return await this.analyzeWithIntelligentWorkflow(taskId, task, stream, conversationId);
-      }
+      // 分析阶段始终使用传统的 4 步分析流程
+      // 智能工作流引擎只在执行阶段使用
       
       // 步骤1: 分析任务需求
       stream({ 
@@ -1139,13 +1132,13 @@ Design a workflow that accomplishes the maximum possible with these tools and re
   private async getAvailableMCPs(): Promise<MCPInfo[]> {
     try {
       logger.info(`[MCP Debug] Starting to get available MCP list from predefined MCPs`);
-
+      
       // 从predefinedMCPs获取所有MCP服务并转换为MCPInfo格式
       const predefinedMCPServices = getAllPredefinedMCPs();
       const availableMCPs = predefinedMCPServices.map(mcpService => 
         convertMCPServiceToMCPInfo(mcpService)
       );
-
+      
       logger.info(`[MCP Debug] Successfully retrieved available MCP list from predefined MCPs, total ${availableMCPs.length} MCPs`);
       logger.info(`[MCP Debug] Available MCP categories: ${JSON.stringify([...new Set(availableMCPs.map(mcp => mcp.category))])}`);
       
@@ -1194,453 +1187,6 @@ Design a workflow that accomplishes the maximum possible with these tools and re
     return null;
   }
 
-
-
-  /**
-   * 判断是否应该使用智能工作流引擎
-   * @param taskContent 任务内容
-   * @returns 是否使用智能工作流引擎
-   */
-  private shouldUseIntelligentWorkflow(taskContent: string): boolean {
-    // 检查任务是否包含需要复杂推理或多步骤处理的关键词
-    const complexTaskKeywords = [
-      '分析', '比较', '对比', '评估', '研究', '调研', 
-      '总结', '整理', '归纳', '综合', '深入',
-      'analyze', 'compare', 'evaluate', 'research', 
-      'summarize', 'comprehensive', 'detailed'
-    ];
-    
-    const taskLower = taskContent.toLowerCase();
-    const hasComplexKeywords = complexTaskKeywords.some(keyword => 
-      taskLower.includes(keyword.toLowerCase())
-    );
-    
-    // 检查任务长度和复杂度
-    const isComplexTask = taskContent.length > 100 || 
-                         taskContent.split(/[，。,.]/).length > 3;
-    
-    return hasComplexKeywords || isComplexTask;
-  }
-
-  /**
-   * 使用智能工作流引擎进行任务分析
-   * @param taskId 任务ID
-   * @param task 任务对象
-   * @param stream 流式回调
-   * @param conversationId 会话ID
-   * @returns 分析是否成功
-   */
-  private async analyzeWithIntelligentWorkflow(
-    taskId: string, 
-    task: any, 
-    stream: (data: any) => void,
-    conversationId?: string
-  ): Promise<boolean> {
-    try {
-      // 构建智能分析查询
-      const analysisQuery = `请对以下任务进行深度分析和规划：
-
-任务内容：${task.content}
-
-分析要求：
-1. 深入理解任务需求和目标
-2. 识别需要的工具和能力（MCP工具或LLM分析能力）
-3. 制定详细的执行步骤和工作流
-4. 预测可能的挑战和解决方案
-5. 确定最终交付物和成功标准
-
-请提供全面的分析结果，包括推荐的MCP工具和执行工作流。`;
-
-      // 发送智能分析开始事件
-      stream({
-        event: 'intelligent_analysis_start',
-        data: { message: '开始使用智能工作流引擎进行深度分析...' }
-      });
-
-      // 使用智能工作流引擎进行分析
-      const workflowGenerator = this.intelligentWorkflowEngine.executeWorkflowStream(
-        taskId,
-        analysisQuery,
-        8 // 智能分析允许更多迭代
-      );
-
-      let analysisResults: any = {
-        requirements: '',
-        mcpRecommendations: [],
-        deliverables: [],
-        workflow: []
-      };
-
-      let stepCounter = 1;
-
-      for await (const workflowStep of workflowGenerator) {
-        // 转发智能工作流事件（保持原有事件结构）
-        switch (workflowStep.event) {
-          case 'step_start':
-            stream({
-              event: 'step_start',
-              data: {
-                stepType: 'intelligent_analysis',
-                stepName: `智能分析步骤 ${stepCounter}`,
-                stepNumber: stepCounter,
-                totalSteps: 8
-              }
-            });
-            break;
-
-          case 'step_complete':
-            // 解析智能分析结果
-            const stepResult = workflowStep.data.result;
-            if (stepResult) {
-              // 尝试从结果中提取结构化信息
-              this.extractAnalysisComponents(stepResult, analysisResults);
-            }
-
-            stream({
-              event: 'step_complete',
-              data: {
-                stepType: 'intelligent_analysis',
-                content: stepResult,
-                reasoning: `智能工作流步骤 ${stepCounter} 完成`,
-                stepNumber: stepCounter
-              }
-            });
-            
-            stepCounter++;
-            break;
-
-          case 'workflow_complete':
-            // 智能工作流完成，整理最终结果
-            const finalState = workflowStep.data.finalState;
-            if (finalState?.blackboard?.lastResult) {
-              analysisResults.finalAnalysis = finalState.blackboard.lastResult;
-            }
-            break;
-
-          case 'workflow_error':
-            logger.error('智能工作流分析出错:', workflowStep.data.error);
-            // 降级到传统分析方法
-            return await this.fallbackToTraditionalAnalysis(taskId, task, stream, conversationId);
-        }
-      }
-
-      // 将智能分析结果转换为传统格式
-      const convertedResults = await this.convertIntelligentResultsToTraditionalFormat(
-        analysisResults,
-        task.content
-      );
-
-      // 按照原有格式发送分析完成事件
-      await this.sendTraditionalAnalysisResults(
-        taskId,
-        convertedResults,
-        stream,
-        conversationId
-      );
-
-      return true;
-
-    } catch (error) {
-      logger.error('智能工作流分析失败:', error);
-      // 降级到传统分析方法
-      return await this.fallbackToTraditionalAnalysis(taskId, task, stream, conversationId);
-    }
-  }
-
-  /**
-   * 从智能分析结果中提取组件
-   */
-  private extractAnalysisComponents(result: string, analysisResults: any): void {
-    // 尝试提取需求分析
-    if (result.includes('需求') || result.includes('目标') || result.includes('requirement')) {
-      analysisResults.requirements += result + '\n\n';
-    }
-
-    // 尝试提取MCP推荐
-    const mcpMatches = result.match(/MCP[^：:]*[:：]\s*([^\n]+)/gi);
-    if (mcpMatches) {
-      mcpMatches.forEach(match => {
-        analysisResults.mcpRecommendations.push(match);
-      });
-    }
-
-    // 尝试提取工作流步骤
-    const stepMatches = result.match(/步骤\s*\d+[^：:]*[:：]\s*([^\n]+)/gi);
-    if (stepMatches) {
-      stepMatches.forEach(match => {
-        analysisResults.workflow.push(match);
-      });
-    }
-  }
-
-  /**
-   * 将智能分析结果转换为传统格式
-   */
-  private async convertIntelligentResultsToTraditionalFormat(
-    intelligentResults: any,
-    taskContent: string
-  ): Promise<any> {
-    // 获取可用的MCP列表
-    const availableMCPs = await this.getAvailableMCPs();
-
-    // 从智能分析结果中提取MCP推荐
-    const recommendedMCPs = this.extractMCPRecommendationsFromIntelligentResults(
-      intelligentResults,
-      availableMCPs
-    );
-
-    return {
-      requirementsResult: {
-        content: intelligentResults.requirements || intelligentResults.finalAnalysis || '智能分析完成',
-        reasoning: '基于智能工作流引擎的深度分析'
-      },
-      mcpResult: {
-        content: '基于智能分析推荐的MCP工具',
-        reasoning: '智能工作流引擎识别的最佳工具组合',
-        recommendedMCPs: recommendedMCPs
-      },
-      deliverablesResult: {
-        content: '智能分析确定的交付物',
-        reasoning: '基于深度分析的可交付内容',
-        canBeFulfilled: true,
-        deliverables: intelligentResults.deliverables || ['智能分析报告', '执行建议']
-      },
-      workflowResult: {
-        content: '智能工作流构建的执行计划',
-        reasoning: '基于智能分析的最优执行路径',
-        workflow: this.convertIntelligentWorkflowToTraditionalFormat(intelligentResults.workflow)
-      }
-    };
-  }
-
-  /**
-   * 从智能结果中提取MCP推荐
-   */
-  private extractMCPRecommendationsFromIntelligentResults(
-    intelligentResults: any,
-    availableMCPs: MCPInfo[]
-  ): MCPInfo[] {
-    const recommendations: MCPInfo[] = [];
-    const content = JSON.stringify(intelligentResults).toLowerCase();
-
-    // 基于内容匹配推荐MCP
-    availableMCPs.forEach(mcp => {
-      const mcpNameLower = mcp.name.toLowerCase();
-      const mcpDescLower = mcp.description?.toLowerCase() || '';
-      
-      if (content.includes(mcpNameLower) || 
-          content.includes(mcpDescLower.split(' ')[0]) ||
-          this.isRelevantMCP(mcp, content)) {
-        recommendations.push(mcp);
-      }
-    });
-
-    // 如果没有找到推荐，选择一些通用的MCP
-    if (recommendations.length === 0) {
-      const defaultMCPs = availableMCPs.filter(mcp => 
-        ['github', 'web', 'search', 'analysis'].some(keyword => 
-          mcp.name.toLowerCase().includes(keyword)
-        )
-      ).slice(0, 2);
-      
-      recommendations.push(...defaultMCPs);
-    }
-
-    return recommendations.slice(0, 5); // 最多5个推荐
-  }
-
-  /**
-   * 检查MCP是否与内容相关
-   */
-  private isRelevantMCP(mcp: MCPInfo, content: string): boolean {
-    const keywords = [
-      'github', 'git', 'repository', 'code',
-      'web', 'browser', 'search', 'crawl',
-      'data', 'analysis', 'chart', 'graph',
-      'crypto', 'blockchain', 'token', 'price',
-      'social', 'twitter', 'x', 'post'
-    ];
-
-    const mcpKeywords = mcp.name.toLowerCase().split(/[-_\s]+/);
-    
-    return keywords.some(keyword => 
-      content.includes(keyword) && mcpKeywords.some(mcpKeyword => 
-        mcpKeyword.includes(keyword) || keyword.includes(mcpKeyword)
-      )
-    );
-  }
-
-  /**
-   * 将智能工作流转换为传统格式
-   */
-  private convertIntelligentWorkflowToTraditionalFormat(
-    intelligentWorkflow: string[]
-  ): Array<{ step: number; mcp: string; action: string; input?: any }> {
-    const workflow: Array<{ step: number; mcp: string; action: string; input?: any }> = [];
-    
-    intelligentWorkflow.forEach((step, index) => {
-      // 尝试从步骤描述中提取MCP和动作
-      const mcpMatch = step.match(/(github|web|search|analysis|crypto|social)[^：:]*[:：]\s*([^\n]+)/i);
-      
-      if (mcpMatch) {
-        workflow.push({
-          step: index + 1,
-          mcp: mcpMatch[1].toLowerCase(),
-          action: mcpMatch[2] || step,
-          input: {}
-        });
-      } else {
-        // 默认使用LLM处理
-        workflow.push({
-          step: index + 1,
-          mcp: 'llm',
-          action: step,
-          input: {}
-        });
-      }
-    });
-
-    return workflow;
-  }
-
-  /**
-   * 发送传统格式的分析结果
-   */
-  private async sendTraditionalAnalysisResults(
-    taskId: string,
-    results: any,
-    stream: (data: any) => void,
-    conversationId?: string
-  ): Promise<void> {
-    const { requirementsResult, mcpResult, deliverablesResult, workflowResult } = results;
-
-    // 发送步骤1完成事件
-    stream({
-      event: 'step_complete',
-      data: {
-        stepType: 'analysis',
-        content: requirementsResult.content,
-        reasoning: requirementsResult.reasoning
-      }
-    });
-
-    // 发送步骤2完成事件
-    stream({
-      event: 'step_complete',
-      data: {
-        stepType: 'mcp_selection',
-        content: mcpResult.content,
-        reasoning: mcpResult.reasoning,
-        mcps: mcpResult.recommendedMCPs.map((mcp: MCPInfo) => ({
-          name: mcp.name,
-          description: mcp.description
-        }))
-      }
-    });
-
-    // 发送步骤3完成事件
-    stream({
-      event: 'step_complete',
-      data: {
-        stepType: 'deliverables',
-        content: deliverablesResult.content,
-        reasoning: deliverablesResult.reasoning,
-        canBeFulfilled: deliverablesResult.canBeFulfilled,
-        deliverables: deliverablesResult.deliverables
-      }
-    });
-
-    // 发送步骤4完成事件
-    stream({
-      event: 'step_complete',
-      data: {
-        stepType: 'workflow',
-        content: workflowResult.content,
-        reasoning: workflowResult.reasoning,
-        workflow: workflowResult.workflow
-      }
-    });
-
-    // 构建最终的MCP工作流
-    const mcpWorkflow = {
-      mcps: mcpResult.recommendedMCPs.map((mcp: MCPInfo) => ({
-        name: mcp.name,
-        description: mcp.description,
-        authRequired: mcp.authRequired,
-        authVerified: false,
-        category: mcp.category,
-        imageUrl: mcp.imageUrl,
-        githubUrl: mcp.githubUrl,
-        ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {})
-      })),
-      workflow: workflowResult.workflow
-    };
-
-    // 更新任务状态
-    await taskService.updateTask(taskId, {
-      mcpWorkflow,
-      status: 'completed'
-    });
-
-    // 保存消息到会话
-    if (conversationId) {
-      await messageDao.createMessage({
-        conversationId,
-        content: `智能分析完成。识别了 ${mcpResult.recommendedMCPs.length} 个相关工具并构建了 ${workflowResult.workflow.length} 个执行步骤。`,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.TASK,
-        taskId,
-        metadata: {
-          stepType: MessageStepType.SUMMARY,
-          stepName: 'Intelligent Analysis Complete',
-          taskPhase: 'analysis',
-          isComplete: true
-        }
-      });
-
-      await conversationDao.incrementMessageCount(conversationId);
-    }
-
-    // 发送分析完成事件
-    stream({
-      event: 'analysis_complete',
-      data: {
-        taskId,
-        mcpWorkflow,
-        metadata: {
-          totalSteps: workflowResult.workflow.length,
-          requiresAuth: mcpResult.recommendedMCPs.some((mcp: MCPInfo) => mcp.authRequired),
-          mcpsRequiringAuth: mcpResult.recommendedMCPs
-            .filter((mcp: MCPInfo) => mcp.authRequired)
-            .map((mcp: MCPInfo) => mcp.name),
-          intelligentAnalysis: true
-        }
-      }
-    });
-  }
-
-  /**
-   * 降级到传统分析方法
-   */
-  private async fallbackToTraditionalAnalysis(
-    taskId: string,
-    task: any,
-    stream: (data: any) => void,
-    conversationId?: string
-  ): Promise<boolean> {
-    logger.info('降级到传统分析方法');
-    
-    stream({
-      event: 'intelligent_fallback',
-      data: { message: '智能分析失败，使用传统分析方法...' }
-    });
-
-    // 继续执行原有的分析流程（从步骤1开始）
-    // 这里直接调用原有的分析逻辑，但需要跳过已经处理的部分
-    // 由于代码结构限制，我们需要重新开始传统分析
-    return true; // 这里应该继续原有的分析流程
-  }
-
   /**
    * 修复常见的JSON格式错误
    * @param jsonText 需要修复的JSON文本
@@ -1659,11 +1205,7 @@ Design a workflow that accomplishes the maximum possible with these tools and re
       // 3. 处理单引号字符串
       fixed = fixed.replace(/:\s*'([^']*)'(?=\s*[,}\]\n])/g, ':"$1"');
       
-                // 4. 特殊处理：修复引号内的冒号问题 - 但要小心不要破坏正常的JSON结构
-          // 这个规则可能导致JSON格式错误，暂时注释掉
-          // fixed = fixed.replace(/:\s*"([^"]*):([^"]*)"(?=\s*[,}\]])/g, ':"$1,$2"');
-      
-      // 5. 处理未引用的字符串值，但保留数字和布尔值
+      // 4. 处理未引用的字符串值，但保留数字和布尔值
       fixed = fixed.replace(/:\s*([^",{\[\]}\s\n][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
         const trimmedValue = value.trim();
         
@@ -1688,13 +1230,13 @@ Design a workflow that accomplishes the maximum possible with these tools and re
         return `:"${escapedValue}"`;
       });
       
-      // 6. 处理换行符和多余空白
+      // 5. 处理换行符和多余空白
       fixed = fixed.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
       
-      // 7. 修复可能的双引号问题
+      // 6. 修复可能的双引号问题
       fixed = fixed.replace(/""([^"]*)""/g, '"$1"');
       
-      // 8. 最后检查：确保所有冒号后的值都正确格式化
+      // 7. 最后检查：确保所有冒号后的值都正确格式化
       fixed = fixed.replace(/:\s*([^",{\[\]}\s][^,}\]]*?)(?=\s*[,}\]])/g, (match, value) => {
         const trimmedValue = value.trim();
         
@@ -1720,6 +1262,4 @@ Design a workflow that accomplishes the maximum possible with these tools and re
       return jsonText; // 如果修复失败，返回原始文本
     }
   }
-
-
 } 
