@@ -211,4 +211,33 @@ export class MCPToolAdapter {
     console.log(`Total tools prepared: ${tools.length}`);
     return tools;
   }
+
+  /**
+   * 获取指定 MCP 的可用工具信息
+   */
+  async getAvailableTools(mcpName: string): Promise<any[]> {
+    try {
+      const mcpTools = await this.mcpManager.getTools(mcpName);
+      return mcpTools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      }));
+    } catch (error) {
+      console.error(`Failed to get tools from ${mcpName}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * 调用指定 MCP 的工具
+   */
+  async callTool(mcpName: string, toolName: string, args: Record<string, any>): Promise<any> {
+    try {
+      return await this.mcpManager.callTool(mcpName, toolName, args);
+    } catch (error) {
+      console.error(`Failed to call tool ${toolName} from ${mcpName}:`, error);
+      throw error;
+    }
+  }
 } 
