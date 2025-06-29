@@ -217,33 +217,58 @@ export class IntelligentWorkflowEngine {
     logger.info(`⚡ Executor: 执行计划 ${state.currentPlan.tool}`);
 
     try {
+      // 🔗 关键修复：添加链式调用逻辑（参考传统执行器）
+      // 如果有前一步的结果，智能地将其作为当前步骤的输入
+      let enhancedPlan = { ...state.currentPlan };
+      
+      if (state.executionHistory.length > 0 && state.blackboard.lastResult) {
+        logger.info(`🔗 检测到前一步结果，开始链式调用转换`);
+        
+        // 使用类似传统执行器的逻辑，智能提取前一步结果中的有用数据
+        const enhancedInput = await this.extractUsefulDataFromResult(
+          { result: state.blackboard.lastResult }, // 模拟传统执行器的结果格式
+          state.currentPlan.tool // 下一步的动作
+        );
+        
+        // 合并原有参数和提取的数据
+        enhancedPlan.args = {
+          ...state.currentPlan.args,
+          ...enhancedInput
+        };
+        
+        logger.info(`🔗 链式调用：已将前一步结果融入当前计划`);
+        logger.info(`📥 增强后的参数: ${JSON.stringify(enhancedPlan.args, null, 2)}`);
+      }
+
       let result: any;
       
-      if (state.currentPlan.toolType === 'mcp') {
+      if (enhancedPlan.toolType === 'mcp') {
         // 调用 MCP 工具
-        result = await this.executeMCPTool(state.currentPlan, state);
+        result = await this.executeMCPTool(enhancedPlan, state);
       } else {
         // 调用 LLM 能力
-        result = await this.executeLLMTool(state.currentPlan, state);
+        result = await this.executeLLMTool(enhancedPlan, state);
       }
 
       // 记录执行步骤
       const step: ExecutionStep = {
         stepNumber: state.executionHistory.length + 1,
-        plan: state.currentPlan,
+        plan: enhancedPlan, // 使用增强后的计划
         result,
         success: true,
         timestamp: new Date()
       };
 
-      logger.info(`✅ 执行成功: ${state.currentPlan.tool}`);
+      logger.info(`✅ 执行成功: ${enhancedPlan.tool}`);
 
       return {
         executionHistory: [...state.executionHistory, step],
         blackboard: {
           ...state.blackboard,
           [`step${step.stepNumber}`]: result,
-          lastResult: result
+          lastResult: result,
+          // 🔗 添加解析后的数据，供下一步使用（参考传统执行器）
+          parsedData: this.parseResultData(result)
         }
       };
 
@@ -1190,6 +1215,136 @@ ${content}
     
     console.log(`最终动态Args: ${JSON.stringify(dynamicArgs, null, 2)}`);
     return dynamicArgs;
+  }
+
+  /**
+   * 从前一步结果中智能提取有用数据（移植自传统执行器）
+   * @param prevResult 前一步的结果
+   * @param nextAction 下一步的动作
+   * @returns 提取的输入数据
+   */
+  private async extractUsefulDataFromResult(prevResult: any, nextAction: string): Promise<any> {
+    try {
+      if (!prevResult || !prevResult.result) {
+        logger.info('No previous result to extract from');
+        return {};
+      }
+
+      // 获取原始结果数据 - 优先使用rawResult（未格式化的原始数据）
+      let rawResult = prevResult.rawResult || prevResult.result;
+      
+      // 处理MCP响应格式 - 提取实际内容
+      if (rawResult && typeof rawResult === 'object' && rawResult.content) {
+        if (Array.isArray(rawResult.content) && rawResult.content.length > 0) {
+          const firstContent = rawResult.content[0];
+          if (firstContent.text) {
+            rawResult = firstContent.text;
+          }
+        }
+      }
+
+      logger.info(`🤖 Using LLM to transform data for next action: ${nextAction}`);
+      
+      // 构建智能转换提示词
+      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+
+PREVIOUS STEP OUTPUT:
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+
+NEXT STEP ACTION: ${nextAction}
+
+TRANSFORMATION RULES:
+1. Analyze what type of input the next action expects based on its name
+2. Extract and transform relevant data from the previous output
+3. Return the data in the exact format expected by the next tool
+
+SPECIAL HANDLING:
+- For social media posts (tweet, post, etc.): Return ONLY the text content as a plain string, no JSON wrapper
+- For API calls: Return properly structured JSON with required fields
+- For data analysis: Include all relevant data from previous step
+- Keep social media posts under 280 characters
+- Make content engaging and contextual
+
+IMPORTANT:
+- Do NOT include explanations or metadata
+- Return ONLY the transformed data
+- If the next action expects a string, return a string
+- If the next action expects JSON, return valid JSON
+
+Example transformations:
+- DEXScreener data → Tweet: "🚀 Trending token alert! $SYMBOL is up X% today!"
+- Price data → Analysis: {"symbol": "BTC", "price": 50000, "change": 5.2}
+- Analysis → Tweet: "Market insight: Bitcoin shows strong momentum..."`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(conversionPrompt)
+      ]);
+
+      let transformedData = response.content.toString().trim();
+      
+      // 清理可能的markdown代码块标记
+      if (transformedData.startsWith('```') && transformedData.endsWith('```')) {
+        transformedData = transformedData.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      }
+      
+      logger.info(`📊 LLM Data Transformation Result:`);
+      logger.info(`   Original: ${JSON.stringify(rawResult).substring(0, 200)}...`);
+      logger.info(`   Transformed: ${transformedData.substring(0, 200)}${transformedData.length > 200 ? '...' : ''}`);
+
+      // 尝试解析为JSON，如果失败则返回原始字符串
+      try {
+        const parsed = JSON.parse(transformedData);
+        logger.info(`   Type: JSON object`);
+        return parsed;
+      } catch {
+        // 不是JSON，返回字符串（适用于推文等纯文本场景）
+        logger.info(`   Type: Plain text string`);
+        return transformedData;
+      }
+
+    } catch (error) {
+      logger.error(`❌ Failed to transform data using LLM: ${error}`);
+      
+      // 降级处理：尝试简单提取
+      if (prevResult.result) {
+        const resultStr = JSON.stringify(prevResult.result);
+        // 如果是推文相关，尝试生成简单内容
+        if (nextAction.toLowerCase().includes('tweet') || nextAction.toLowerCase().includes('post')) {
+          return '🚀 Check out the latest crypto market updates! #Crypto #DeFi';
+        }
+        // 否则返回解析的数据或原始结果
+        return prevResult.parsedData || prevResult.result;
+      }
+      
+      return {};
+    }
+  }
+
+  /**
+   * 解析结果数据为结构化格式（移植自传统执行器）
+   * @param result 原始结果
+   * @returns 解析后的结构化数据
+   */
+  private parseResultData(result: any): any {
+    try {
+      if (typeof result === 'string') {
+        // 尝试解析JSON
+        const parsed = JSON.parse(result);
+        
+        // 提取关键数据
+        if (parsed.data) {
+          return parsed.data;
+        } else if (parsed.summary) {
+          return parsed.summary;
+        } else {
+          return parsed;
+        }
+      }
+      return result;
+    } catch (error) {
+      // 如果不是JSON，返回原始数据
+      return { rawData: result };
+    }
   }
 
   /**
