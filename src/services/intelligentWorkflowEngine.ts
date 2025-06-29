@@ -916,16 +916,137 @@ ${availableTools.map(tool => `- ${tool.name}: ${tool.description || 'No descript
   private async llmAnalyze(args: any, state: WorkflowState): Promise<string> {
     const content = args.content || state.blackboard.lastResult || state.currentObjective;
     
-    const prompt = `请分析以下内容：
-
-${content}
-
-分析要求：${args.requirement || '进行全面分析'}
-
-请提供详细的分析结果。`;
+    // 构建智能分析提示词
+    const prompt = this.buildIntelligentAnalysisPrompt(content, args, state);
 
     const response = await this.llm.invoke([new HumanMessage(prompt)]);
     return response.content as string;
+  }
+
+  /**
+   * 构建智能分析提示词 - 通用方法
+   */
+  private buildIntelligentAnalysisPrompt(content: any, args: any, state: WorkflowState): string {
+    // 检测内容类型
+    const contentType = this.detectContentType(content);
+    const hasStructuredData = this.hasStructuredData(content);
+    const originalQuery = state.originalQuery;
+    
+    // 基础提示词模板
+    let prompt = `你是一位专业的数据分析师。请对以下内容进行深入分析：
+
+## 用户的原始需求
+${originalQuery}
+
+## 待分析的数据
+${typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
+
+## 分析指导原则
+`;
+
+    // 根据内容类型和结构化程度调整分析策略
+    if (hasStructuredData) {
+      prompt += `
+**重要提醒：您面前的是具体的结构化数据，请直接对这些数据进行分析，而不是提供分析框架或方法论。**
+
+### 分析要求：
+1. **数据概览**：总结数据的基本情况（数量、类型、时间范围等）
+2. **关键发现**：从数据中提取最重要的信息和模式
+3. **深度分析**：基于数据内容进行详细分析
+4. **实用洞察**：提供基于数据的具体见解和建议
+
+### 分析重点：
+- 直接分析提供的数据内容
+- 提供具体的数字、统计和实例
+- 识别数据中的模式、趋势或异常
+- 回答用户的具体问题
+`;
+    } else {
+      prompt += `
+### 分析要求：
+1. **内容理解**：深入理解内容的核心信息
+2. **关键要点**：提取最重要的信息点
+3. **逻辑分析**：分析内容的逻辑结构和关联性
+4. **价值评估**：评估内容的价值和意义
+
+### 分析重点：
+- 基于提供的具体内容进行分析
+- 避免空泛的理论或方法论
+- 提供实用的见解和结论
+`;
+    }
+
+    // 添加特定要求
+    if (args.requirement) {
+      prompt += `\n### 特定要求：
+${args.requirement}`;
+    }
+
+    // 添加输出格式要求
+    prompt += `
+
+### 输出要求：
+- 直接针对提供的数据/内容进行分析
+- 提供具体、实用的分析结果
+- 使用清晰的结构化格式
+- 避免提供抽象的分析框架或方法论
+- 确保分析结果直接回答用户的问题
+
+请开始分析：`;
+
+    return prompt;
+  }
+
+  /**
+   * 检测内容类型 - 通用方法
+   */
+  private detectContentType(content: any): string {
+    if (typeof content === 'string') {
+      if (content.includes('{') && content.includes('}')) {
+        return 'json_string';
+      } else if (content.includes('\n') && content.length > 200) {
+        return 'long_text';
+      } else {
+        return 'short_text';
+      }
+    } else if (Array.isArray(content)) {
+      return 'array_data';
+    } else if (typeof content === 'object') {
+      return 'object_data';
+    } else {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * 检测是否包含结构化数据 - 通用方法
+   */
+  private hasStructuredData(content: any): boolean {
+    // 检查是否是数组或对象
+    if (Array.isArray(content) || (typeof content === 'object' && content !== null)) {
+      return true;
+    }
+    
+    // 检查字符串是否包含JSON数据
+    if (typeof content === 'string') {
+      try {
+        const parsed = JSON.parse(content);
+        return Array.isArray(parsed) || (typeof parsed === 'object' && parsed !== null);
+      } catch {
+        // 检查是否包含明显的结构化数据特征
+        const structuredPatterns = [
+          /\[\s*\{.*\}\s*\]/s,  // JSON数组
+          /\{.*".*":.*\}/s,      // JSON对象
+          /^\s*\|.*\|.*\|/m,     // 表格格式
+          /^\s*\d+\.\s+/m,       // 编号列表
+          /^\s*[-*+]\s+/m        // 无序列表
+        ];
+        
+        return structuredPatterns.some(pattern => pattern.test(content));
+      }
+    }
+    
+    return false;
   }
 
   /**
