@@ -313,6 +313,33 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       throw error;
     }
   }
+
+  /**
+   * Soft delete conversation and related data
+   */
+  async softDeleteConversation(conversationId: string): Promise<boolean> {
+    try {
+      logger.info(`Starting soft delete for conversation [ID: ${conversationId}]`);
+      
+      // Use DAO method to perform soft delete
+      const success = await conversationDao.softDeleteConversation(conversationId);
+      
+      if (success) {
+        // Clear conversation memory if it exists
+        if (this.conversationMemories.has(conversationId)) {
+          this.conversationMemories.delete(conversationId);
+          logger.info(`Cleared conversation memory for [ID: ${conversationId}]`);
+        }
+        
+        logger.info(`Conversation soft deleted successfully [ID: ${conversationId}]`);
+      }
+      
+      return success;
+    } catch (error) {
+      logger.error(`Error soft deleting conversation [ID: ${conversationId}]:`, error);
+      throw error;
+    }
+  }
   
   /**
    * Process user message - Core functionality

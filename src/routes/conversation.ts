@@ -562,4 +562,73 @@ router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * 软删除对话
+ * DELETE /api/conversation/:id
+ */
+router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const conversationId = req.params.id;
+    
+    // 获取用户ID
+    const userId = req.user?.id || req.body.userId;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID, please provide userId parameter or use a valid authentication token'
+      });
+    }
+
+    // 获取对话服务
+    const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
+    
+    // 检查对话是否存在和权限
+    const conversation = await conversationService.getConversation(conversationId);
+    
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Conversation not found'
+      });
+    }
+    
+    if (conversation.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to delete this conversation'
+      });
+    }
+    
+    // 执行软删除
+    const success = await conversationService.softDeleteConversation(conversationId);
+    
+    if (success) {
+      res.json({
+        success: true,
+        data: {
+          conversationId,
+          message: 'Conversation and related data have been deleted successfully'
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Conversation not found or already deleted'
+      });
+    }
+  } catch (error) {
+    logger.error(`Error deleting conversation [Conversation ID: ${req.params.id}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
 export default router; 

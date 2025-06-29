@@ -675,6 +675,153 @@ class MigrationService {
         `);
         console.log('✅ Dropped updated_at column from messages table');
       }
+    },
+    {
+      version: 16,
+      name: 'add_soft_delete_columns',
+      up: async () => {
+        // 为 conversations 表添加软删除字段
+        await db.query(`
+          ALTER TABLE conversations
+          ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE,
+          ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+        `);
+
+        // 为 messages 表添加软删除字段
+        await db.query(`
+          ALTER TABLE messages
+          ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE,
+          ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+        `);
+
+        // 为 tasks 表添加软删除字段
+        await db.query(`
+          ALTER TABLE tasks
+          ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE,
+          ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+        `);
+
+        // 为 task_steps 表添加软删除字段
+        await db.query(`
+          ALTER TABLE task_steps
+          ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE,
+          ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+        `);
+
+        // 创建软删除相关索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_conversations_is_deleted 
+          ON conversations(is_deleted)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at 
+          ON conversations(deleted_at) 
+          WHERE deleted_at IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_is_deleted 
+          ON messages(is_deleted)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_deleted_at 
+          ON messages(deleted_at) 
+          WHERE deleted_at IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_is_deleted 
+          ON tasks(is_deleted)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at 
+          ON tasks(deleted_at) 
+          WHERE deleted_at IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_task_steps_is_deleted 
+          ON task_steps(is_deleted)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_task_steps_deleted_at 
+          ON task_steps(deleted_at) 
+          WHERE deleted_at IS NOT NULL
+        `);
+
+        // 创建复合索引优化软删除查询
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_conversations_user_not_deleted 
+          ON conversations(user_id, is_deleted) 
+          WHERE is_deleted = FALSE
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_messages_conversation_not_deleted 
+          ON messages(conversation_id, is_deleted) 
+          WHERE is_deleted = FALSE
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_tasks_user_not_deleted 
+          ON tasks(user_id, is_deleted) 
+          WHERE is_deleted = FALSE
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_task_steps_task_not_deleted 
+          ON task_steps(task_id, is_deleted) 
+          WHERE is_deleted = FALSE
+        `);
+
+        console.log('✅ Added soft delete columns and indexes to all tables');
+      },
+      down: async () => {
+        // 删除索引
+        await db.query('DROP INDEX IF EXISTS idx_conversations_is_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_conversations_deleted_at');
+        await db.query('DROP INDEX IF EXISTS idx_messages_is_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_messages_deleted_at');
+        await db.query('DROP INDEX IF EXISTS idx_tasks_is_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_tasks_deleted_at');
+        await db.query('DROP INDEX IF EXISTS idx_task_steps_is_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_task_steps_deleted_at');
+        await db.query('DROP INDEX IF EXISTS idx_conversations_user_not_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_messages_conversation_not_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_tasks_user_not_deleted');
+        await db.query('DROP INDEX IF EXISTS idx_task_steps_task_not_deleted');
+
+        // 删除软删除字段
+        await db.query(`
+          ALTER TABLE conversations
+          DROP COLUMN IF EXISTS deleted_at,
+          DROP COLUMN IF EXISTS is_deleted
+        `);
+
+        await db.query(`
+          ALTER TABLE messages
+          DROP COLUMN IF EXISTS deleted_at,
+          DROP COLUMN IF EXISTS is_deleted
+        `);
+
+        await db.query(`
+          ALTER TABLE tasks
+          DROP COLUMN IF EXISTS deleted_at,
+          DROP COLUMN IF EXISTS is_deleted
+        `);
+
+        await db.query(`
+          ALTER TABLE task_steps
+          DROP COLUMN IF EXISTS deleted_at,
+          DROP COLUMN IF EXISTS is_deleted
+        `);
+
+        console.log('✅ Removed soft delete columns and indexes from all tables');
+      }
     }
   ];
 

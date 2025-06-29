@@ -14,6 +14,8 @@ export interface ConversationDbRow {
   message_count: number;
   created_at: string;
   updated_at: string;
+  deleted_at?: string;
+  is_deleted: boolean;
 }
 
 /**
@@ -33,11 +35,11 @@ export class ConversationDao {
       
       const result = await db.query<ConversationDbRow>(
         `
-        INSERT INTO conversations (id, user_id, title, task_count, message_count, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO conversations (id, user_id, title, task_count, message_count, created_at, updated_at, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *
         `,
-        [conversationId, data.userId, data.title, 0, 0, now, now]
+        [conversationId, data.userId, data.title, 0, 0, now, now, false]
       );
 
       logger.info(`Conversation record created successfully: ${conversationId}`);
@@ -56,7 +58,7 @@ export class ConversationDao {
       const result = await db.query<ConversationDbRow>(
         `
         SELECT * FROM conversations
-        WHERE id = $1
+        WHERE id = $1 AND is_deleted = FALSE
         `,
         [conversationId]
       );
@@ -88,7 +90,7 @@ export class ConversationDao {
         `
         SELECT COUNT(*) as total
         FROM conversations
-        WHERE user_id = $1
+        WHERE user_id = $1 AND is_deleted = FALSE
         `,
         [userId]
       );
@@ -100,7 +102,7 @@ export class ConversationDao {
         `
         SELECT *
         FROM conversations
-        WHERE user_id = $1
+        WHERE user_id = $1 AND is_deleted = FALSE
         ORDER BY ${sortField} ${sortDirection}
         LIMIT ${limit} OFFSET ${offset}
         `,
@@ -205,7 +207,7 @@ export class ConversationDao {
         `
         UPDATE conversations
         SET task_count = task_count + 1, updated_at = $1
-        WHERE id = $2
+        WHERE id = $2 AND is_deleted = FALSE
         `,
         [new Date(), conversationId]
       );
@@ -226,7 +228,7 @@ export class ConversationDao {
         `
         UPDATE conversations
         SET message_count = message_count + 1, updated_at = $1
-        WHERE id = $2
+        WHERE id = $2 AND is_deleted = FALSE
         `,
         [new Date(), conversationId]
       );
@@ -239,7 +241,75 @@ export class ConversationDao {
   }
 
   /**
-   * Delete conversation
+   * Soft delete conversation and related data
+   */
+  async softDeleteConversation(conversationId: string): Promise<boolean> {
+    try {
+      const now = new Date();
+      
+      // Start transaction to ensure data consistency
+      const queries = [
+        // Soft delete related messages
+        {
+          text: `
+            UPDATE messages
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE conversation_id = $2 AND is_deleted = FALSE
+          `,
+          params: [now, conversationId]
+        },
+        // Soft delete related tasks
+        {
+          text: `
+            UPDATE tasks
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE conversation_id = $2 AND is_deleted = FALSE
+          `,
+          params: [now, conversationId]
+        },
+        // Soft delete related task steps
+        {
+          text: `
+            UPDATE task_steps
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE task_id IN (
+              SELECT id FROM tasks WHERE conversation_id = $2
+            ) AND is_deleted = FALSE
+          `,
+          params: [now, conversationId]
+        },
+        // Soft delete the conversation
+        {
+          text: `
+            UPDATE conversations
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE id = $2 AND is_deleted = FALSE
+            RETURNING id
+          `,
+          params: [now, conversationId]
+        }
+      ];
+
+      const results = await db.transaction(queries);
+      const conversationResult = results[results.length - 1];
+      
+      const success = conversationResult.rowCount !== null && conversationResult.rowCount > 0;
+      if (success) {
+        logger.info(`Conversation soft deleted successfully [ID: ${conversationId}]`);
+      } else {
+        logger.warn(`Conversation not found for soft deletion [ID: ${conversationId}]`);
+      }
+      
+      return success;
+    } catch (error) {
+      logger.error(`Failed to soft delete conversation [ID: ${conversationId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Hard delete conversation (permanently remove from database)
+   * This method is kept for admin/cleanup purposes
    */
   async deleteConversation(conversationId: string): Promise<boolean> {
     try {
@@ -247,6 +317,26 @@ export class ConversationDao {
       await db.query(
         `
         DELETE FROM messages
+        WHERE conversation_id = $1
+        `,
+        [conversationId]
+      );
+      
+      // Delete related task steps
+      await db.query(
+        `
+        DELETE FROM task_steps
+        WHERE task_id IN (
+          SELECT id FROM tasks WHERE conversation_id = $1
+        )
+        `,
+        [conversationId]
+      );
+      
+      // Delete related tasks
+      await db.query(
+        `
+        DELETE FROM tasks
         WHERE conversation_id = $1
         `,
         [conversationId]
@@ -264,14 +354,14 @@ export class ConversationDao {
       
       const success = result.rowCount !== null && result.rowCount > 0;
       if (success) {
-        logger.info(`Conversation deleted successfully [ID: ${conversationId}]`);
+        logger.info(`Conversation permanently deleted successfully [ID: ${conversationId}]`);
       } else {
-        logger.warn(`Conversation not found for deletion [ID: ${conversationId}]`);
+        logger.warn(`Conversation not found for permanent deletion [ID: ${conversationId}]`);
       }
       
       return success;
     } catch (error) {
-      logger.error(`Failed to delete conversation [ID: ${conversationId}]:`, error);
+      logger.error(`Failed to permanently delete conversation [ID: ${conversationId}]:`, error);
       throw error;
     }
   }
@@ -289,7 +379,9 @@ export class ConversationDao {
       taskCount: row.task_count,
       messageCount: row.message_count,
       createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      updatedAt: new Date(row.updated_at),
+      deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+      isDeleted: row.is_deleted || false
     };
   }
 }

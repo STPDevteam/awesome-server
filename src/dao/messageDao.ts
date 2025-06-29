@@ -14,6 +14,8 @@ export interface MessageDbRow {
   metadata?: any;
   created_at: string;
   updated_at?: string;
+  deleted_at?: string;
+  is_deleted: boolean;
 }
 
 /**
@@ -39,8 +41,8 @@ export class MessageDao {
       
       const result = await this.db.query<MessageDbRow>(
         `
-        INSERT INTO messages (id, conversation_id, content, type, intent, task_id, metadata, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO messages (id, conversation_id, content, type, intent, task_id, metadata, created_at, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         `,
         [
@@ -51,7 +53,8 @@ export class MessageDao {
           data.intent || null,
           data.taskId || null, 
           data.metadata ? JSON.stringify(data.metadata) : null, 
-          now
+          now,
+          false
         ]
       );
 
@@ -62,7 +65,7 @@ export class MessageDao {
         `
         UPDATE conversations
         SET last_message_content = $1, last_message_at = $2, updated_at = $2
-        WHERE id = $3
+        WHERE id = $3 AND is_deleted = FALSE
         `,
         [data.content, now, data.conversationId]
       );
@@ -82,7 +85,7 @@ export class MessageDao {
       const result = await this.db.query<MessageDbRow>(
         `
         SELECT * FROM messages
-        WHERE conversation_id = $1
+        WHERE conversation_id = $1 AND is_deleted = FALSE
         ORDER BY created_at ASC
         `,
         [conversationId]
@@ -103,7 +106,7 @@ export class MessageDao {
       const result = await this.db.query<MessageDbRow>(
         `
         SELECT * FROM messages
-        WHERE task_id = $1
+        WHERE task_id = $1 AND is_deleted = FALSE
         ORDER BY created_at ASC
         `,
         [taskId]
@@ -124,7 +127,7 @@ export class MessageDao {
       const result = await this.db.query<MessageDbRow>(
         `
         SELECT * FROM messages
-        WHERE id = $1
+        WHERE id = $1 AND is_deleted = FALSE
         `,
         [messageId]
       );
@@ -202,7 +205,7 @@ export class MessageDao {
       const result = await this.db.query<MessageDbRow>(
         `
         SELECT * FROM messages
-        WHERE conversation_id = $1
+        WHERE conversation_id = $1 AND is_deleted = FALSE
         ORDER BY created_at DESC
         LIMIT $2
         `,
@@ -394,7 +397,9 @@ export class MessageDao {
       intent: row.intent as MessageIntent | undefined,
       taskId: row.task_id,
       metadata: row.metadata,
-      createdAt: new Date(row.created_at)
+      createdAt: new Date(row.created_at),
+      deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+      isDeleted: row.is_deleted || false
     };
   }
 }

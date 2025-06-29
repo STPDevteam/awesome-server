@@ -52,6 +52,8 @@ export interface Message {
   taskId?: string;    // If message is task-related, link to task ID
   metadata?: MessageMetadata;     // 使用强类型的元数据接口
   createdAt: Date;
+  deletedAt?: Date;
+  isDeleted: boolean;
 }
 
 // Conversation
@@ -65,6 +67,8 @@ export interface Conversation {
   messageCount: number;
   createdAt: Date;
   updatedAt: Date;
+  deletedAt?: Date;
+  isDeleted: boolean;
 }
 
 // Conversation search options

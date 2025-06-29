@@ -49,6 +49,8 @@ export interface Task {
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
+  deletedAt?: Date;
+  isDeleted: boolean;
 }
 
 // 任务步骤类型
@@ -65,4 +67,6 @@ export interface TaskStep {
   orderIndex: number;
   createdAt: Date;
   updatedAt: Date;
+  deletedAt?: Date;
+  isDeleted: boolean;
 }

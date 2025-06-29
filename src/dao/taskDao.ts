@@ -16,6 +16,8 @@ export interface TaskDbRow {
   created_at: string;
   updated_at: string;
   completed_at?: string;
+  deleted_at?: string;
+  is_deleted: boolean;
 }
 
 export interface TaskStepDbRow {
@@ -29,6 +31,8 @@ export interface TaskStepDbRow {
   order_index: number;
   created_at: string;
   updated_at: string;
+  deleted_at?: string;
+  is_deleted: boolean;
 }
 
 /**
@@ -48,11 +52,11 @@ export class TaskDao {
       const taskId = uuidv4();
       const result = await db.query<TaskDbRow>(
         `
-        INSERT INTO tasks (id, user_id, title, content, status, conversation_id)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO tasks (id, user_id, title, content, status, conversation_id, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         `,
-        [taskId, data.userId, data.title, data.content, 'created', data.conversationId || null]
+        [taskId, data.userId, data.title, data.content, 'created', data.conversationId || null, false]
       );
 
       logger.info(`任务记录创建成功: ${taskId}`);
@@ -71,7 +75,7 @@ export class TaskDao {
       const result = await db.query<TaskDbRow>(
         `
         SELECT * FROM tasks
-        WHERE id = $1
+        WHERE id = $1 AND is_deleted = FALSE
         `,
         [taskId]
       );
@@ -203,7 +207,7 @@ export class TaskDao {
   }): Promise<{ rows: TaskDbRow[]; total: number }> {
     try {
       // 构建查询条件
-      const conditions = ['user_id = $1'];
+      const conditions = ['user_id = $1', 'is_deleted = FALSE'];
       const values = [userId];
       let paramIndex = 2;
 
@@ -263,7 +267,7 @@ export class TaskDao {
         `
         SELECT *
         FROM tasks
-        WHERE conversation_id = $1
+        WHERE conversation_id = $1 AND is_deleted = FALSE
         ORDER BY created_at DESC
         `,
         [conversationId]
@@ -292,8 +296,8 @@ export class TaskDao {
       const stepId = uuidv4();
       const result = await db.query<TaskStepDbRow>(
         `
-        INSERT INTO task_steps (id, task_id, step_type, title, content, reasoning, reasoning_time, order_index)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO task_steps (id, task_id, step_type, title, content, reasoning, reasoning_time, order_index, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         `,
         [
@@ -304,7 +308,8 @@ export class TaskDao {
           data.content || null,
           data.reasoning || null,
           data.reasoningTime || null,
-          data.orderIndex
+          data.orderIndex,
+          false
         ]
       );
 
@@ -325,7 +330,7 @@ export class TaskDao {
         `
         SELECT *
         FROM task_steps
-        WHERE task_id = $1
+        WHERE task_id = $1 AND is_deleted = FALSE
         ORDER BY order_index ASC
         `,
         [taskId]
@@ -334,6 +339,92 @@ export class TaskDao {
       return result.rows;
     } catch (error) {
       logger.error(`获取任务步骤记录失败 [任务ID: ${taskId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 软删除任务及其相关步骤
+   */
+  async softDeleteTask(taskId: string): Promise<boolean> {
+    try {
+      const now = new Date();
+      
+      // 使用事务确保数据一致性
+      const queries = [
+        // 软删除任务步骤
+        {
+          text: `
+            UPDATE task_steps
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE task_id = $2 AND is_deleted = FALSE
+          `,
+          params: [now, taskId]
+        },
+        // 软删除任务
+        {
+          text: `
+            UPDATE tasks
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE id = $2 AND is_deleted = FALSE
+            RETURNING id
+          `,
+          params: [now, taskId]
+        }
+      ];
+
+      const results = await db.transaction(queries);
+      const taskResult = results[results.length - 1];
+      
+      const success = taskResult.rowCount !== null && taskResult.rowCount > 0;
+      if (success) {
+        logger.info(`任务软删除成功 [ID: ${taskId}]`);
+      } else {
+        logger.warn(`任务未找到或已删除 [ID: ${taskId}]`);
+      }
+      
+      return success;
+    } catch (error) {
+      logger.error(`任务软删除失败 [ID: ${taskId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 硬删除任务（永久删除）
+   * 此方法保留用于管理员/清理目的
+   */
+  async deleteTask(taskId: string): Promise<boolean> {
+    try {
+      // 先删除任务步骤
+      await db.query(
+        `
+        DELETE FROM task_steps
+        WHERE task_id = $1
+        `,
+        [taskId]
+      );
+      
+      // 然后删除任务
+      const result = await db.query(
+        `
+        DELETE FROM tasks
+        WHERE id = $1
+        RETURNING id
+        `,
+        [taskId]
+      );
+      
+      const success = result.rowCount !== null && result.rowCount > 0;
+      if (success) {
+        logger.info(`任务永久删除成功 [ID: ${taskId}]`);
+      } else {
+        logger.warn(`任务未找到 [ID: ${taskId}]`);
+      }
+      
+      return success;
+    } catch (error) {
+      logger.error(`任务永久删除失败 [ID: ${taskId}]:`, error);
       throw error;
     }
   }

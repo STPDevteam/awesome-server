@@ -166,7 +166,9 @@ export class TaskService {
       conversationId: row.conversation_id || undefined,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
-      completedAt: row.completed_at ? new Date(row.completed_at) : undefined
+      completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
+      deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+      isDeleted: row.is_deleted || false
     };
   }
 
@@ -225,7 +227,9 @@ export class TaskService {
       reasoningTime: row.reasoning_time || undefined,
       orderIndex: row.order_index,
       createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at)
+      updatedAt: new Date(row.updated_at),
+      deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+      isDeleted: row.is_deleted || false
     };
   }
 }

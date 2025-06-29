@@ -3168,3 +3168,186 @@ data: [DONE]
 - `403 Forbidden`: 无权限访问此对话
 - `404 Not Found`: 对话不存在
 - `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 8. 删除对话（软删除）
+
+**端点**: `DELETE /api/conversation/:id`
+
+**描述**: 软删除指定的对话。删除对话时，会同时软删除关联的所有消息、任务和任务步骤。软删除的数据不会在正常查询中出现，但数据仍保留在数据库中。
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 对话ID
+
+**查询参数**:
+- `userId`: 用户ID（当未使用访问令牌时必需）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "conv_123456",
+    "message": "对话已成功删除",
+    "deletedAt": "2023-06-20T09:00:00.000Z",
+    "cascadeDeleted": {
+      "messages": 15,
+      "tasks": 2,
+      "taskSteps": 8
+    }
+  }
+}
+```
+
+**字段说明**:
+- `conversationId`: 被删除的对话ID
+- `message`: 删除成功消息
+- `deletedAt`: 删除时间戳
+- `cascadeDeleted`: 级联删除的相关数据统计
+  - `messages`: 被软删除的消息数量
+  - `tasks`: 被软删除的任务数量
+  - `taskSteps`: 被软删除的任务步骤数量
+
+**软删除特性**:
+- **级联删除**: 删除对话时自动软删除所有关联的消息、任务和任务步骤
+- **数据保留**: 数据仍保存在数据库中，只是标记为已删除
+- **查询过滤**: 软删除的数据不会在正常的列表和详情查询中出现
+- **内存清理**: 删除对话时会清理相关的内存缓存
+- **事务安全**: 使用数据库事务确保删除操作的原子性
+
+**错误响应**:
+- `400 Bad Request`: 参数错误或缺少用户ID
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权限删除此对话（只能删除自己的对话）
+- `404 Not Found`: 对话不存在或已被删除
+- `500 Internal Server Error`: 服务器内部错误
+
+**使用示例**:
+```bash
+# 使用访问令牌删除对话
+curl -X DELETE http://localhost:3001/api/conversation/conv_123456 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 使用userId参数删除对话
+curl -X DELETE "http://localhost:3001/api/conversation/conv_123456?userId=user_123"
+```
+
+**注意事项**:
+1. **不可恢复**: 目前不提供恢复已删除对话的接口
+2. **权限验证**: 用户只能删除自己创建的对话
+3. **关联数据**: 删除对话会影响所有关联的消息和任务
+4. **缓存清理**: 删除操作会清理相关的内存缓存，可能影响正在进行的任务执行
+
+---
+
+## 软删除系统说明
+
+### 概述
+
+从v2.1开始，MCP LangChain 服务引入了完整的软删除系统，支持对会话、消息、任务和任务步骤进行软删除操作。软删除的数据不会在正常查询中出现，但仍保留在数据库中以便必要时进行数据恢复或审计。
+
+### 软删除特性
+
+#### 1. 级联软删除
+- **会话删除**: 删除会话时自动软删除所有关联的消息、任务和任务步骤
+- **任务删除**: 删除任务时自动软删除所有关联的任务步骤
+- **原子操作**: 使用数据库事务确保级联删除的原子性
+
+#### 2. 查询过滤
+- **自动过滤**: 所有查询接口自动过滤已软删除的数据
+- **性能优化**: 通过数据库索引优化软删除查询性能
+- **一致性保证**: 确保软删除数据不会在任何正常查询中出现
+
+#### 3. 数据保留
+- **完整保留**: 软删除的数据完整保留在数据库中
+- **删除标记**: 通过 `is_deleted` 字段标记删除状态
+- **删除时间**: 通过 `deleted_at` 字段记录删除时间
+
+#### 4. 内存管理
+- **缓存清理**: 删除操作会清理相关的内存缓存
+- **状态同步**: 确保内存状态与数据库状态保持一致
+
+### 数据库结构
+
+软删除系统在以下表中添加了相关字段：
+
+```sql
+-- 所有支持软删除的表都包含以下字段
+ALTER TABLE conversations ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE conversations ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE messages ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE messages ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE tasks ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE tasks ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE task_steps ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE task_steps ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+### 索引优化
+
+为了提高软删除查询的性能，系统创建了以下索引：
+
+```sql
+-- 基础软删除索引
+CREATE INDEX idx_conversations_is_deleted ON conversations(is_deleted);
+CREATE INDEX idx_messages_is_deleted ON messages(is_deleted);
+CREATE INDEX idx_tasks_is_deleted ON tasks(is_deleted);
+CREATE INDEX idx_task_steps_is_deleted ON task_steps(is_deleted);
+
+-- 复合索引优化查询
+CREATE INDEX idx_conversations_user_not_deleted ON conversations(user_id, is_deleted) WHERE is_deleted = FALSE;
+CREATE INDEX idx_messages_conversation_not_deleted ON messages(conversation_id, is_deleted) WHERE is_deleted = FALSE;
+CREATE INDEX idx_tasks_user_not_deleted ON tasks(user_id, is_deleted) WHERE is_deleted = FALSE;
+CREATE INDEX idx_task_steps_task_not_deleted ON task_steps(task_id, is_deleted) WHERE is_deleted = FALSE;
+```
+
+### API响应格式
+
+软删除相关的API响应都遵循统一格式：
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "被删除的资源ID",
+    "message": "删除成功消息",
+    "deletedAt": "删除时间戳",
+    "cascadeDeleted": {
+      "relatedResource1": "删除数量",
+      "relatedResource2": "删除数量"
+    }
+  }
+}
+```
+
+### 最佳实践
+
+#### 1. 前端处理
+- **确认对话框**: 删除操作前显示确认对话框
+- **级联提示**: 告知用户删除会话会同时删除相关数据
+- **状态更新**: 删除成功后及时更新前端状态
+
+#### 2. 错误处理
+- **权限检查**: 确保用户只能删除自己的数据
+- **存在验证**: 检查资源是否存在且未被删除
+- **事务回滚**: 删除失败时自动回滚所有相关操作
+
+#### 3. 性能考虑
+- **批量操作**: 对于大量数据的删除，考虑分批处理
+- **索引利用**: 充分利用软删除相关的数据库索引
+- **缓存清理**: 及时清理相关的内存缓存
+
+### 未来扩展
+
+软删除系统为未来的功能扩展预留了空间：
+
+1. **数据恢复**: 可以添加恢复已删除数据的接口
+2. **定期清理**: 可以实现定期清理长期软删除数据的机制
+3. **审计日志**: 可以基于软删除记录实现完整的操作审计
+4. **用户管理**: 管理员可以查看和管理所有用户的软删除数据
