@@ -1141,20 +1141,20 @@ ${content}
   ): Promise<WorkflowState> {
     logger.info(`🚀 启动智能工作流 [任务: ${taskId}]`);
 
-    // 初始化状态 - 使用默认值
-    const initialState = {
+    // 初始化状态 - 使用正确的类型
+    const initialState: WorkflowState = {
       taskId,
       originalQuery: query,
       currentObjective: query,
-      messages: [],
-      executionHistory: [],
-      blackboard: {},
-      currentPlan: null,
+      messages: [] as BaseMessage[],
+      executionHistory: [] as ExecutionStep[],
+      blackboard: {} as Record<string, any>,
+      currentPlan: null as ExecutionPlan | null,
       isComplete: false,
       maxIterations,
       currentIteration: 0,
-      errors: [],
-      lastError: null
+      errors: [] as string[],
+      lastError: null as string | null
     };
 
     try {
@@ -1181,21 +1181,23 @@ ${content}
   ): AsyncGenerator<{ event: string; data: any }, WorkflowState, unknown> {
     logger.info(`🚀 启动流式智能工作流 [任务: ${taskId}]`);
 
-    // 初始化状态
-    const initialState = {
+    // 初始化状态 - 使用正确的类型
+    const initialState: WorkflowState = {
       taskId,
       originalQuery: query,
       currentObjective: query,
-      messages: [],
-      executionHistory: [],
-      blackboard: {},
-      currentPlan: null,
+      messages: [] as BaseMessage[],
+      executionHistory: [] as ExecutionStep[],
+      blackboard: {} as Record<string, any>,
+      currentPlan: null as ExecutionPlan | null,
       isComplete: false,
       maxIterations,
       currentIteration: 0,
-      errors: [],
-      lastError: null
+      errors: [] as string[],
+      lastError: null as string | null
     };
+
+    let finalState = initialState; // 保存最终状态
 
     try {
       // 编译图
@@ -1205,6 +1207,9 @@ ${content}
       const stream = await compiledGraph.stream(initialState);
       for await (const step of stream) {
         const [nodeName, nodeResult] = Object.entries(step)[0];
+        
+        // 更新最终状态
+        finalState = nodeResult as WorkflowState;
         
         yield {
           event: 'node_complete',
@@ -1245,7 +1250,7 @@ ${content}
         }
       }
 
-      return initialState; // 返回最终状态
+      return finalState; // 返回真正的最终状态
 
     } catch (error) {
       logger.error(`❌ 流式智能工作流执行失败:`, error);

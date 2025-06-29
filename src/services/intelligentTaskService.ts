@@ -182,7 +182,7 @@ export class IntelligentTaskService {
 
       // 生成最终结果
       let finalResult = '';
-      if (finalState && finalState.blackboard.lastResult) {
+      if (finalState && finalState.blackboard && finalState.blackboard.lastResult) {
         finalResult = finalState.blackboard.lastResult;
       } else {
         // 从执行步骤中提取结果
