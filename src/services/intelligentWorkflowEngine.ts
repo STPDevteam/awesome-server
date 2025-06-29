@@ -115,6 +115,7 @@ export class IntelligentWorkflowEngine {
   private mcpToolAdapter: MCPToolAdapter;
   private graph: StateGraph<any>;
   private taskService: any;
+  private mcpAuthService: any;
 
   constructor() {
     this.llm = new ChatOpenAI({
@@ -128,7 +129,24 @@ export class IntelligentWorkflowEngine {
     this.mcpManager = new MCPManager();
     this.mcpToolAdapter = new MCPToolAdapter(this.mcpManager);
     this.taskService = getTaskService();
+    this.initializeMCPAuthService();
     this.graph = this.buildWorkflowGraph();
+  }
+
+  /**
+   * 初始化 MCPAuthService
+   */
+  private async initializeMCPAuthService() {
+    try {
+      // 动态导入 MCPAuthService
+      const { MCPAuthService } = await import('./mcpAuthService.js');
+      this.mcpAuthService = new MCPAuthService();
+      logger.info('✅ MCPAuthService 初始化成功');
+    } catch (error) {
+      logger.error('❌ MCPAuthService 初始化失败:', error);
+      // 设置为 null，后续会在使用时再次尝试初始化
+      this.mcpAuthService = null;
+    }
   }
 
   /**
@@ -215,7 +233,7 @@ export class IntelligentWorkflowEngine {
       
       if (state.currentPlan.toolType === 'mcp') {
         // 调用 MCP 工具
-        result = await this.executeMCPTool(state.currentPlan);
+        result = await this.executeMCPTool(state.currentPlan, state);
       } else {
         // 调用 LLM 能力
         result = await this.executeLLMTool(state.currentPlan, state);
@@ -375,7 +393,7 @@ export class IntelligentWorkflowEngine {
 
         if (!isConnected) {
           logger.info(`🔗 连接预选的MCP: ${mcpName}`);
-          await this.autoConnectMCP(mcpName);
+          await this.autoConnectMCP(mcpName, taskId);
         } else {
           logger.info(`✅ MCP已连接: ${mcpName}`);
         }
@@ -620,12 +638,21 @@ ${JSON.stringify(state.blackboard, null, 2)}
   /**
    * 执行 MCP 工具
    */
-  private async executeMCPTool(plan: ExecutionPlan): Promise<any> {
+  private async executeMCPTool(plan: ExecutionPlan, state: WorkflowState): Promise<any> {
     if (!plan.mcpName) {
       throw new Error('MCP 工具需要指定 mcpName');
     }
 
     logger.info(`🔧 调用 MCP 工具: ${plan.mcpName}.${plan.tool}`);
+    
+    // 检查 MCP 是否已连接，如果没有则自动连接
+    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+    const isConnected = connectedMCPs.some(mcp => mcp.name === plan.mcpName);
+    
+    if (!isConnected) {
+      logger.info(`🔗 MCP ${plan.mcpName} 未连接，尝试自动连接...`);
+      await this.autoConnectMCP(plan.mcpName, state.taskId);
+    }
     
     const result = await this.mcpToolAdapter.callTool(
       plan.mcpName,
@@ -780,9 +807,9 @@ ${content}
   }
 
   /**
-   * 自动连接 MCP
+   * 自动连接 MCP（带用户认证信息注入）
    */
-  private async autoConnectMCP(mcpName: string): Promise<void> {
+  private async autoConnectMCP(mcpName: string, taskId?: string): Promise<void> {
     const mcpConfig = getPredefinedMCP(mcpName);
     if (!mcpConfig) {
       throw new Error(`未找到 MCP 配置: ${mcpName}`);
@@ -791,11 +818,17 @@ ${content}
     logger.info(`🔗 自动连接 MCP: ${mcpName}`);
     
     try {
+      // 动态注入用户认证信息
+      const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId);
+      
+      // 处理args中的环境变量替换
+      const dynamicArgs = await this.injectArgsAuthentication(mcpConfig.args || [], dynamicEnv, taskId);
+      
       await this.mcpManager.connect(
         mcpConfig.name,
         mcpConfig.command,
-        mcpConfig.args,
-        mcpConfig.env
+        dynamicArgs,
+        dynamicEnv
       );
       
       // 等待连接稳定
@@ -806,6 +839,163 @@ ${content}
       logger.error(`❌ MCP 连接失败: ${mcpName}`, error);
       throw error;
     }
+  }
+
+  /**
+   * 动态注入用户认证信息
+   */
+  private async injectUserAuthentication(mcpConfig: any, taskId?: string): Promise<Record<string, string>> {
+    let dynamicEnv = { ...mcpConfig.env };
+    
+    console.log(`\n==== 智能工作流引擎 - 认证信息注入调试 ====`);
+    console.log(`时间: ${new Date().toISOString()}`);
+    console.log(`MCP名称: ${mcpConfig.name}`);
+    console.log(`任务ID: ${taskId}`);
+    console.log(`原始环境变量: ${JSON.stringify(mcpConfig.env, null, 2)}`);
+    
+    // 检查是否需要认证
+    if (mcpConfig.env) {
+      const missingEnvVars: string[] = [];
+      
+      // 检查每个环境变量是否缺失
+      for (const [key, value] of Object.entries(mcpConfig.env)) {
+        if (!value || value === '') {
+          missingEnvVars.push(key);
+        }
+      }
+      
+      console.log(`缺失的环境变量: ${JSON.stringify(missingEnvVars)}`);
+      
+      // 如果有缺失的环境变量，尝试从数据库获取用户认证信息
+      if (missingEnvVars.length > 0 && taskId) {
+        logger.info(`MCP需要认证，尝试从数据库获取用户认证数据...`);
+        
+        try {
+          const currentTask = await this.taskService.getTaskById(taskId);
+          if (currentTask) {
+            const userId = currentTask.userId;
+            logger.info(`从任务上下文获取用户ID: ${userId}`);
+            console.log(`用户ID: ${userId}`);
+            
+            // 确保 MCPAuthService 已初始化
+            if (!this.mcpAuthService) {
+              await this.initializeMCPAuthService();
+            }
+            
+            if (!this.mcpAuthService) {
+              throw new Error('MCPAuthService 初始化失败');
+            }
+            
+            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpConfig.name);
+            console.log(`用户认证结果:`, {
+              hasUserAuth: !!userAuth,
+              isVerified: userAuth?.isVerified,
+              hasAuthData: !!userAuth?.authData
+            });
+            
+            if (userAuth && userAuth.isVerified && userAuth.authData) {
+              logger.info(`找到用户 ${userId} 的 ${mcpConfig.name} 认证信息，注入环境变量...`);
+              console.log(`用户认证数据: ${JSON.stringify(userAuth.authData, null, 2)}`);
+              
+              // 动态注入认证信息到环境变量
+              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                console.log(`检查环境变量: ${envKey} = "${envValue}"`);
+                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  console.log(`✅ 注入 ${envKey} = "${userAuth.authData[envKey]}"`);
+                  logger.info(`注入环境变量 ${envKey}`);
+                } else {
+                  console.log(`❌ 不注入 ${envKey}: envValue="${envValue}", 认证数据有此键: ${!!userAuth.authData[envKey]}`);
+                }
+              }
+              
+              const stillMissingVars = missingEnvVars.filter(key => !dynamicEnv[key] || dynamicEnv[key] === '');
+              if (stillMissingVars.length === 0) {
+                logger.info(`✅ 成功注入 ${mcpConfig.name} 的所有必需认证信息`);
+                console.log(`✅ 所有必需认证信息注入成功`);
+              } else {
+                console.log(`❌ 仍然缺失变量: ${JSON.stringify(stillMissingVars)}`);
+              }
+            } else {
+              console.log(`❌ 未找到有效用户认证:`, {
+                hasUserAuth: !!userAuth,
+                isVerified: userAuth?.isVerified,
+                hasAuthData: !!userAuth?.authData
+              });
+            }
+          } else {
+            console.log(`❌ 任务未找到: ${taskId}`);
+          }
+        } catch (error) {
+          logger.error(`获取用户认证信息失败:`, error);
+          console.log(`❌ 获取用户认证错误:`, error);
+        }
+      }
+    }
+    
+    console.log(`最终动态环境变量: ${JSON.stringify(dynamicEnv, null, 2)}`);
+    return dynamicEnv;
+  }
+  
+  /**
+   * 动态注入args中的认证信息
+   */
+  private async injectArgsAuthentication(originalArgs: string[], dynamicEnv: Record<string, string>, taskId?: string): Promise<string[]> {
+    if (!originalArgs || originalArgs.length === 0) {
+      return originalArgs;
+    }
+    
+    console.log(`\n==== 智能工作流引擎 - Args认证注入调试 ====`);
+    console.log(`时间: ${new Date().toISOString()}`);
+    console.log(`任务ID: ${taskId}`);
+    console.log(`原始Args: ${JSON.stringify(originalArgs, null, 2)}`);
+    console.log(`动态环境变量: ${JSON.stringify(dynamicEnv, null, 2)}`);
+    
+    // 创建args的副本进行处理
+    const dynamicArgs = [...originalArgs];
+    
+    // 遍历每个arg，查找并替换环境变量引用
+    for (let i = 0; i < dynamicArgs.length; i++) {
+      const arg = dynamicArgs[i];
+      
+      // 查找包含 process.env.* 的参数
+      if (typeof arg === 'string' && arg.includes('process.env.')) {
+        console.log(`处理参数 ${i}: "${arg}"`);
+        
+        // 使用正则表达式查找所有的 process.env.VARIABLE_NAME 引用
+        const envVarRegex = /process\.env\.([A-Z_][A-Z0-9_]*)/g;
+        let modifiedArg = arg;
+        let match;
+        
+        while ((match = envVarRegex.exec(arg)) !== null) {
+          const envVarName = match[1]; // 环境变量名
+          const fullMatch = match[0]; // 完整匹配的字符串
+          
+          console.log(`找到环境变量引用: ${fullMatch} (变量: ${envVarName})`);
+          
+          // 先检查dynamicEnv中是否有值
+          if (dynamicEnv[envVarName]) {
+            const newValue = dynamicEnv[envVarName];
+            modifiedArg = modifiedArg.replace(fullMatch, newValue);
+            console.log(`✅ 替换 ${fullMatch} 为 "${newValue}"`);
+          } else {
+            // 如果dynamicEnv中没有，尝试从process.env获取
+            const processEnvValue = process.env[envVarName] || '';
+            modifiedArg = modifiedArg.replace(fullMatch, processEnvValue);
+            console.log(`⚠️ 使用process.env值 ${envVarName}: "${processEnvValue}"`);
+          }
+        }
+        
+        // 如果参数被修改了，更新它
+        if (modifiedArg !== arg) {
+          dynamicArgs[i] = modifiedArg;
+          console.log(`更新参数 ${i}: "${arg}" -> "${modifiedArg}"`);
+        }
+      }
+    }
+    
+    console.log(`最终动态Args: ${JSON.stringify(dynamicArgs, null, 2)}`);
+    return dynamicArgs;
   }
 
   /**
