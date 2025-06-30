@@ -22,7 +22,7 @@ interface InternalCreateUserParams extends CreateUserParams {
 interface LoginMethodRow {
   id: number;
   user_id: string;
-  method_type: 'wallet' | 'google' | 'github';
+  method_type: 'wallet' | 'google' | 'github' | 'test';
   method_data: any;
   verified: boolean;
   created_at: Date;
@@ -89,6 +89,13 @@ class UserService {
           methodData = {
             githubId,
             username: githubUsername
+          };
+          break;
+
+        case 'test':
+          // For test users, no specific data is needed
+          methodData = {
+            testId: params.id || userId
           };
           break;
       }
@@ -432,6 +439,22 @@ class UserService {
 
   private generateUserId(): string {
     return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  }
+
+  async findOrCreateUserById(userId: string): Promise<User> {
+    const existingUser = await this.getUserById(userId);
+    if (existingUser) {
+      return existingUser;
+    }
+
+    // If user does not exist, create one.
+    const newUser = await this.createUser({
+      id: userId,
+      username: userId,
+      loginMethod: 'test',
+      loginData: {} // Not needed for test
+    });
+    return newUser;
   }
 }
 
