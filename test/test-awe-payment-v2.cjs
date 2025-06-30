@@ -20,7 +20,7 @@ function createTestToken(userId = 'test-user-1750416355521') {
   };
   
   // 使用正确的JWT_ACCESS_SECRET
-  const secret = 'snP4E5RY1uzK4LUft7iWKlZ1Zhrv+obKiCkgXoUg9KeQUVfNJDXhrLoRahekbpHsbQpC0/PvIkSrJEbaSVqkGQ==';
+  const secret = '123';
   if (!secret) {
     console.error('❌ JWT_ACCESS_SECRET not found in environment variables');
     process.exit(1);
