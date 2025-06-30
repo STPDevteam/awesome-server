@@ -262,26 +262,41 @@ export class MCPAuthService {
       try {
         const encryptionService = getEncryptionService();
         
-        // 数据库中存储的是加密后的Base64字符串
+        // 解析存储的数据
+        let parsedData = row.auth_data;
         if (typeof row.auth_data === 'string') {
-          // 尝试解密数据
+          parsedData = JSON.parse(row.auth_data);
+        }
+        
+        // 检查是否为新的加密格式
+        if (parsedData && typeof parsedData === 'object' && parsedData.encrypted && parsedData.version) {
+          // 新格式：解密加密的数据
           try {
-            authData = encryptionService.decryptObject(row.auth_data);
-            logger.info(`成功解密认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
+            authData = encryptionService.decryptObject(parsedData.encrypted);
+            logger.info(`成功解密新格式认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
           } catch (decryptError) {
-            // 如果解密失败，可能是旧数据（未加密），尝试直接解析JSON
+            logger.error(`解密新格式数据失败 [用户: ${row.user_id}, MCP: ${row.mcp_name}]:`, decryptError);
+            authData = {};
+          }
+        } else if (typeof parsedData === 'string') {
+          // 可能是旧的加密格式（直接的Base64字符串）
+          try {
+            authData = encryptionService.decryptObject(parsedData);
+            logger.info(`成功解密旧格式认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
+          } catch (decryptError) {
+            // 如果解密失败，可能是未加密的JSON字符串
             logger.warn(`解密失败，尝试直接解析JSON [用户: ${row.user_id}, MCP: ${row.mcp_name}]:`, decryptError);
             try {
-              authData = JSON.parse(row.auth_data);
-              logger.info(`成功解析未加密的认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
+              authData = JSON.parse(parsedData);
+              logger.info(`成功解析未加密的JSON字符串 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
             } catch (parseError) {
               logger.error(`无法解析认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]:`, parseError);
               authData = {};
             }
           }
         } else {
-          // 如果是对象格式，说明是旧数据，直接使用
-          authData = row.auth_data;
+          // 旧格式：直接使用对象数据（未加密）
+          authData = parsedData;
           logger.info(`使用未加密的对象格式认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
         }
       } catch (error) {

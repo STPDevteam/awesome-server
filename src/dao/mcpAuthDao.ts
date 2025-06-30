@@ -30,9 +30,15 @@ export class MCPAuthDao {
     isVerified: boolean = false
   ): Promise<MCPAuthDbRow> {
     try {
-      // 加密认证数据
+      // 加密认证数据并包装成JSON对象
       const encryptionService = getEncryptionService();
-      const encryptedAuthData = encryptionService.encryptObject(authData);
+      const encryptedData = encryptionService.encryptObject(authData);
+      
+      // 将加密字符串包装成JSON对象以符合JSONB字段要求
+      const encryptedAuthData = {
+        encrypted: encryptedData,
+        version: 1 // 版本号，用于未来兼容性
+      };
       
       logger.info(`加密认证数据 [用户: ${userId}, MCP: ${mcpName}]`);
       
@@ -48,7 +54,7 @@ export class MCPAuthDao {
           WHERE id = $3
           RETURNING *
           `,
-          [encryptedAuthData, isVerified, existingAuth.id]
+          [JSON.stringify(encryptedAuthData), isVerified, existingAuth.id]
         );
         
         logger.info(`更新MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
@@ -62,7 +68,7 @@ export class MCPAuthDao {
           VALUES ($1, $2, $3, $4, $5)
           RETURNING *
           `,
-          [authId, userId, mcpName, encryptedAuthData, isVerified]
+          [authId, userId, mcpName, JSON.stringify(encryptedAuthData), isVerified]
         );
         
         logger.info(`创建MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
