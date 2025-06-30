@@ -698,8 +698,46 @@ For cryptocurrency queries:
               for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
                 console.log(`Checking env var: ${envKey} = "${envValue}"`);
                 if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                  dynamicEnv[envKey] = userAuth.authData[envKey];
-                  console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                  // 🔧 特殊处理Notion MCP的OPENAPI_MCP_HEADERS
+                  if (envKey === 'OPENAPI_MCP_HEADERS' && mcpConfig.name === 'notion-mcp') {
+                    const authValue = userAuth.authData[envKey];
+                    console.log(`🔧 处理Notion MCP的OPENAPI_MCP_HEADERS: "${authValue}"`);
+                    
+                    // 检查用户填写的是否已经是完整的JSON字符串
+                    if (authValue.startsWith('{') && authValue.endsWith('}')) {
+                      // 用户填写的是完整JSON，直接使用
+                      dynamicEnv[envKey] = authValue;
+                      console.log(`✅ 使用完整JSON格式: ${authValue}`);
+                    } else if (authValue.startsWith('ntn_') || authValue.startsWith('secret_')) {
+                      // 用户只填写了token，构建完整的JSON字符串
+                      const jsonHeaders = JSON.stringify({
+                        "Authorization": `Bearer ${authValue}`,
+                        "Notion-Version": "2022-06-28"
+                      });
+                      dynamicEnv[envKey] = jsonHeaders;
+                      console.log(`✅ 自动构建JSON格式: ${jsonHeaders}`);
+                      logger.info(`自动构建Notion认证JSON: ${jsonHeaders}`);
+                    } else {
+                      // 尝试解析为JSON，如果失败则当作token处理
+                      try {
+                        JSON.parse(authValue);
+                        dynamicEnv[envKey] = authValue;
+                        console.log(`✅ 验证JSON格式有效: ${authValue}`);
+                      } catch {
+                        // 当作token处理
+                        const jsonHeaders = JSON.stringify({
+                          "Authorization": `Bearer ${authValue}`,
+                          "Notion-Version": "2022-06-28"
+                        });
+                        dynamicEnv[envKey] = jsonHeaders;
+                        console.log(`✅ 解析失败，当作token处理: ${jsonHeaders}`);
+                      }
+                    }
+                  } else {
+                    // 其他MCP的正常处理
+                    dynamicEnv[envKey] = userAuth.authData[envKey];
+                    console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                  }
                   logger.info(`Injected environment variable ${envKey}`);
                 } else {
                   console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authData has key: ${!!userAuth.authData[envKey]}`);
