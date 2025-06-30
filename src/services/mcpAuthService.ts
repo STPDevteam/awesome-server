@@ -4,6 +4,7 @@ import { mcpAuthDao, MCPAuthDbRow } from '../dao/mcpAuthDao.js';
 import { MCPAuthData, AuthVerificationResult } from '../models/mcpAuth.js';
 import { getPredefinedMCP, mcpNameMapping } from './predefinedMCPs.js';
 import { taskDao } from '../dao/taskDao.js';
+import { getEncryptionService } from '../utils/encryption.js';
 
 /**
  * MCP授权管理服务
@@ -251,22 +252,41 @@ export class MCPAuthService {
   }
   
   /**
-   * 从数据库行记录映射到应用层实体
+   * 从数据库行记录映射到应用层实体（解密认证数据）
    */
   private mapAuthFromDb(row: MCPAuthDbRow): MCPAuthData {
     let authData = {};
     
-    // 处理authData的不同格式：可能是字符串或对象
+    // 处理并解密authData
     if (row.auth_data) {
-      if (typeof row.auth_data === 'string') {
-        try {
-          authData = JSON.parse(row.auth_data);
-        } catch (error) {
-          logger.warn(`Failed to parse auth_data for user ${row.user_id}, MCP ${row.mcp_name}:`, error);
-          authData = {};
+      try {
+        const encryptionService = getEncryptionService();
+        
+        // 数据库中存储的是加密后的Base64字符串
+        if (typeof row.auth_data === 'string') {
+          // 尝试解密数据
+          try {
+            authData = encryptionService.decryptObject(row.auth_data);
+            logger.info(`成功解密认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
+          } catch (decryptError) {
+            // 如果解密失败，可能是旧数据（未加密），尝试直接解析JSON
+            logger.warn(`解密失败，尝试直接解析JSON [用户: ${row.user_id}, MCP: ${row.mcp_name}]:`, decryptError);
+            try {
+              authData = JSON.parse(row.auth_data);
+              logger.info(`成功解析未加密的认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
+            } catch (parseError) {
+              logger.error(`无法解析认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]:`, parseError);
+              authData = {};
+            }
+          }
+        } else {
+          // 如果是对象格式，说明是旧数据，直接使用
+          authData = row.auth_data;
+          logger.info(`使用未加密的对象格式认证数据 [用户: ${row.user_id}, MCP: ${row.mcp_name}]`);
         }
-      } else {
-        authData = row.auth_data;
+      } catch (error) {
+        logger.error(`处理认证数据失败 [用户: ${row.user_id}, MCP: ${row.mcp_name}]:`, error);
+        authData = {};
       }
     }
     

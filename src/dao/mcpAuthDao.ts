@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
+import { getEncryptionService } from '../utils/encryption.js';
 
 /**
  * 数据库行记录接口
@@ -20,7 +21,7 @@ export interface MCPAuthDbRow {
  */
 export class MCPAuthDao {
   /**
-   * 保存MCP授权信息到数据库
+   * 保存MCP授权信息到数据库（加密存储）
    */
   async saveAuthData(
     userId: string,
@@ -29,6 +30,12 @@ export class MCPAuthDao {
     isVerified: boolean = false
   ): Promise<MCPAuthDbRow> {
     try {
+      // 加密认证数据
+      const encryptionService = getEncryptionService();
+      const encryptedAuthData = encryptionService.encryptObject(authData);
+      
+      logger.info(`加密认证数据 [用户: ${userId}, MCP: ${mcpName}]`);
+      
       // 检查是否已存在授权记录
       const existingAuth = await this.getUserMCPAuth(userId, mcpName);
       
@@ -41,7 +48,7 @@ export class MCPAuthDao {
           WHERE id = $3
           RETURNING *
           `,
-          [JSON.stringify(authData), isVerified, existingAuth.id]
+          [encryptedAuthData, isVerified, existingAuth.id]
         );
         
         logger.info(`更新MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
@@ -55,7 +62,7 @@ export class MCPAuthDao {
           VALUES ($1, $2, $3, $4, $5)
           RETURNING *
           `,
-          [authId, userId, mcpName, JSON.stringify(authData), isVerified]
+          [authId, userId, mcpName, encryptedAuthData, isVerified]
         );
         
         logger.info(`创建MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
