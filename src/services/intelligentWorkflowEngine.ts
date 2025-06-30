@@ -423,23 +423,28 @@ export class IntelligentWorkflowEngine {
       return [];
     }
 
+    // 获取任务的用户ID
+    let userId: string | undefined;
+    const task = await this.taskService.getTaskById(taskId);
+    userId = task?.userId;
+
     for (const mcpInfo of preselectedMCPs) {
       try {
         const mcpName = mcpInfo.name;
         
         // 检查是否已连接
-        const connectedMCPs = this.mcpManager.getConnectedMCPs();
+        const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
         const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
 
         if (!isConnected) {
           logger.info(`🔗 连接预选的MCP: ${mcpName}`);
-          await this.autoConnectMCP(mcpName, taskId);
+          await this.autoConnectMCP(mcpName, taskId, userId);
         } else {
           logger.info(`✅ MCP已连接: ${mcpName}`);
         }
 
         // 🔧 关键修复：获取MCP的实际工具列表
-        const actualTools = await this.mcpManager.getTools(mcpName);
+        const actualTools = await this.mcpManager.getTools(mcpName, userId);
         logger.info(`📋 ${mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
         
         capabilities.push({
@@ -760,17 +765,24 @@ ${JSON.stringify(state.blackboard, null, 2)}
 
     logger.info(`⚡ 调用 MCP 工具: ${plan.tool} (来自 ${plan.mcpName})`);
     
+    // 获取用户ID
+    let userId: string | undefined;
+    if (state.taskId) {
+      const task = await this.taskService.getTaskById(state.taskId);
+      userId = task?.userId;
+    }
+    
     // 检查 MCP 是否已连接，如果没有则自动连接
-    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+    const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
     const isConnected = connectedMCPs.some(mcp => mcp.name === plan.mcpName);
     
     if (!isConnected) {
       logger.info(`🔗 MCP ${plan.mcpName} 未连接，尝试自动连接...`);
-      await this.autoConnectMCP(plan.mcpName, state.taskId);
+      await this.autoConnectMCP(plan.mcpName, state.taskId, userId);
     }
     
     // 🔧 关键修复：获取MCP的实际工具列表
-    const actualTools = await this.mcpManager.getTools(plan.mcpName);
+    const actualTools = await this.mcpManager.getTools(plan.mcpName, userId);
     logger.info(`📋 ${plan.mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
     
     // 🔧 验证工具是否存在，如果不存在则让LLM重新选择
@@ -817,7 +829,8 @@ ${JSON.stringify(state.blackboard, null, 2)}
     const result = await this.mcpToolAdapter.callTool(
       plan.mcpName,
       finalToolName,
-      finalArgs
+      finalArgs,
+      userId
     );
 
     return result;
@@ -1167,34 +1180,37 @@ ${content}
   /**
    * 自动连接 MCP（带用户认证信息注入）
    */
-  private async autoConnectMCP(mcpName: string, taskId?: string): Promise<void> {
+  private async autoConnectMCP(mcpName: string, taskId?: string, userId?: string): Promise<void> {
     const mcpConfig = getPredefinedMCP(mcpName);
     if (!mcpConfig) {
       throw new Error(`未找到 MCP 配置: ${mcpName}`);
     }
 
-    logger.info(`🔗 自动连接 MCP: ${mcpName}`);
+    logger.info(`🔗 自动连接 MCP: ${mcpName} (用户: ${userId || 'default'})`);
     
     try {
       // 动态注入用户认证信息
-      const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId);
+      const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId, userId);
       
       // 处理args中的环境变量替换
       const dynamicArgs = await this.injectArgsAuthentication(mcpConfig.args || [], dynamicEnv, taskId);
       
-      await this.mcpManager.connect(
-        mcpConfig.name,
-        mcpConfig.command,
-        dynamicArgs,
-        dynamicEnv
-      );
+      // 使用动态环境变量和args创建MCP配置
+      const dynamicMcpConfig = {
+        ...mcpConfig,
+        env: dynamicEnv,
+        args: dynamicArgs
+      };
       
-      // 等待连接稳定
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 尝试连接MCP，传递userId
+      const connected = await this.mcpManager.connectPredefined(dynamicMcpConfig, userId);
+      if (!connected) {
+        throw new Error(`Failed to connect to MCP ${mcpName} for user ${userId || 'default'}. Please ensure the MCP server is installed and configured correctly.`);
+      }
       
-      logger.info(`✅ MCP 连接成功: ${mcpName}`);
+      logger.info(`✅ MCP 连接成功: ${mcpName} (用户: ${userId || 'default'})`);
     } catch (error) {
-      logger.error(`❌ MCP 连接失败: ${mcpName}`, error);
+      logger.error(`❌ MCP 连接失败: ${mcpName} (用户: ${userId || 'default'})`, error);
       throw error;
     }
   }
@@ -1202,7 +1218,7 @@ ${content}
   /**
    * 动态注入用户认证信息
    */
-  private async injectUserAuthentication(mcpConfig: any, taskId?: string): Promise<Record<string, string>> {
+  private async injectUserAuthentication(mcpConfig: any, taskId?: string, userId?: string): Promise<Record<string, string>> {
     let dynamicEnv = { ...mcpConfig.env };
     
     console.log(`\n==== 智能工作流引擎 - 认证信息注入调试 ====`);
