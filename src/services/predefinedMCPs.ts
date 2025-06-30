@@ -479,7 +479,7 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Notion workspace and documentation integration',
         command: 'npx',
         args: ['-y', '@notionhq/notion-mcp-server'],
-        env: {"OPENAPI_MCP_HEADERS": `{\"Authorization\": \"Bearer ${process.env.OPENAPI_MCP_HEADERS}\", \"Notion-Version\": \"2022-06-28\" }`},
+        env: {"OPENAPI_MCP_HEADERS": process.env.OPENAPI_MCP_HEADERS || ''},
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-notion-96.png',
