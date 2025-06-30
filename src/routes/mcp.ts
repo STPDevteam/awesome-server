@@ -3,6 +3,8 @@ import { logger } from '../utils/logger.js';
 import { MCPInfo } from '../models/mcp.js';
 import { optionalAuth } from '../middleware/auth.js';
 import { getAllPredefinedMCPs, getMCPsByCategory, getAllMCPCategories, getPredefinedMCP } from '../services/predefinedMCPs.js';
+import { requireAuth } from '../middleware/auth.js';
+import { User } from '../models/User.js';
 
 const router = Router();
 
@@ -72,6 +74,96 @@ router.get('/categories', optionalAuth, async (_req: Request, res: Response) => 
       success: false,
       error: 'Internal Server Error',
       message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * 获取连接池状态
+ * GET /api/mcp/pool-status
+ */
+router.get('/pool-status', requireAuth, async (req: Request & { user?: User }, res: Response) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    // 获取连接池状态
+    const poolStatus = mcpManager.getPoolStatus();
+    
+    // 如果是普通用户，只返回自己的连接信息
+    const userId = req.user?.id;
+    if (userId) {
+      const userConnections = poolStatus.connectionDetails.filter((conn: any) => conn.userId === userId);
+      return res.json({
+        success: true,
+        data: {
+          userConnectionCount: poolStatus.userConnectionCounts[userId] || 0,
+          maxConnectionsPerUser: parseInt(process.env.MAX_CONNECTIONS_PER_USER || '10'),
+          connections: userConnections
+        }
+      });
+    }
+    
+    // 返回所有连接信息（可以根据需要添加权限控制）
+    res.json({
+      success: true,
+      data: {
+        ...poolStatus,
+        config: {
+          maxConnectionsPerUser: parseInt(process.env.MAX_CONNECTIONS_PER_USER || '10'),
+          maxTotalConnections: parseInt(process.env.MAX_TOTAL_CONNECTIONS || '100'),
+          connectionTimeout: parseInt(process.env.CONNECTION_TIMEOUT || '1800000'),
+          cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '300000')
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('获取连接池状态失败:', error);
+    res.status(500).json({ 
+      error: 'Failed to get pool status', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+/**
+ * 手动清理超时连接
+ * POST /api/mcp/cleanup-connections
+ */
+router.post('/cleanup-connections', requireAuth, async (req: Request & { user?: User }, res: Response) => {
+  try {
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+    
+    // 手动触发清理
+    const beforeStatus = mcpManager.getPoolStatus();
+    await mcpManager.cleanupTimeoutConnections();
+    const afterStatus = mcpManager.getPoolStatus();
+    
+    res.json({
+      success: true,
+      data: {
+        message: 'Cleanup completed',
+        before: {
+          totalConnections: beforeStatus.totalConnections,
+          userConnectionCounts: beforeStatus.userConnectionCounts
+        },
+        after: {
+          totalConnections: afterStatus.totalConnections,
+          userConnectionCounts: afterStatus.userConnectionCounts
+        },
+        cleanedConnections: beforeStatus.totalConnections - afterStatus.totalConnections
+      }
+    });
+  } catch (error) {
+    logger.error('手动清理连接失败:', error);
+    res.status(500).json({ 
+      error: 'Failed to cleanup connections', 
+      details: error instanceof Error ? error.message : String(error)
     });
   }
 });

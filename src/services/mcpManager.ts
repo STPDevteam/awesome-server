@@ -4,6 +4,7 @@ import { logger } from '../utils/logger.js';
 import { MCPConnection, MCPTool, MCPCallResult } from '../models/mcp.js';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 import { mcpNameMapping } from './predefinedMCPs.js';
 
@@ -14,6 +15,9 @@ interface MCPClient {
   args: string[];
   env?: Record<string, string>;
   userId?: string;
+  lastUsed: Date;
+  createTime: Date;
+  authHash?: string; // 用于检查认证信息是否变化
 }
 
 export interface MCPService {
@@ -34,15 +38,36 @@ export interface MCPService {
 }
 
 /**
+ * 连接池配置
+ */
+interface ConnectionPoolConfig {
+  maxConnectionsPerUser: number;
+  maxTotalConnections: number;
+  connectionTimeout: number; // 连接超时时间（毫秒）
+  cleanupInterval: number; // 清理间隔（毫秒）
+}
+
+/**
  * MCP Manager
  * Responsible for connecting, disconnecting and managing MCP tools
  */
 export class MCPManager {
   private clients: Map<string, MCPClient> = new Map();
   private connectedMCPs: Map<string, MCPConnection>;
+  private cleanupTimer?: NodeJS.Timeout;
+  
+  // 连接池配置
+  private poolConfig: ConnectionPoolConfig = {
+    maxConnectionsPerUser: parseInt(process.env.MAX_CONNECTIONS_PER_USER || '10'),
+    maxTotalConnections: parseInt(process.env.MAX_TOTAL_CONNECTIONS || '100'),
+    connectionTimeout: parseInt(process.env.CONNECTION_TIMEOUT || '1800000'), // 默认30分钟
+    cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '300000') // 默认5分钟
+  };
 
   constructor() {
     this.connectedMCPs = new Map();
+    // 启动定期清理任务
+    this.startCleanupTask();
   }
 
   /**
@@ -53,6 +78,141 @@ export class MCPManager {
    */
   private getConnectionKey(name: string, userId?: string): string {
     return userId ? `${userId}:${name}` : name;
+  }
+
+  /**
+   * 生成认证信息的哈希值
+   * @param env 环境变量
+   * @returns 哈希值
+   */
+  private generateAuthHash(env?: Record<string, string>): string {
+    if (!env) return '';
+    const sortedEnv = Object.keys(env).sort().reduce((acc, key) => {
+      acc[key] = env[key];
+      return acc;
+    }, {} as Record<string, string>);
+    return crypto.createHash('sha256').update(JSON.stringify(sortedEnv)).digest('hex');
+  }
+
+  /**
+   * 获取用户的连接数
+   * @param userId 用户ID
+   * @returns 连接数
+   */
+  private getUserConnectionCount(userId: string): number {
+    let count = 0;
+    this.clients.forEach((client) => {
+      if (client.userId === userId) {
+        count++;
+      }
+    });
+    return count;
+  }
+
+  /**
+   * 清理用户最旧的连接
+   * @param userId 用户ID
+   * @param count 要清理的连接数
+   */
+  private async cleanupOldestUserConnections(userId: string, count: number = 1): Promise<void> {
+    const userConnections: Array<[string, MCPClient]> = [];
+    
+    // 收集用户的所有连接
+    this.clients.forEach((client, key) => {
+      if (client.userId === userId) {
+        userConnections.push([key, client]);
+      }
+    });
+    
+    // 按最后使用时间排序（最旧的在前）
+    userConnections.sort((a, b) => a[1].lastUsed.getTime() - b[1].lastUsed.getTime());
+    
+    // 清理最旧的连接
+    for (let i = 0; i < Math.min(count, userConnections.length); i++) {
+      const [key, client] = userConnections[i];
+      logger.info(`清理用户 ${userId} 的旧连接: ${client.name}`);
+      await this.disconnect(client.name, userId);
+    }
+  }
+
+  /**
+   * 启动定期清理任务
+   */
+  private startCleanupTask(): void {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupTimeoutConnections();
+    }, this.poolConfig.cleanupInterval);
+    
+    logger.info(`连接池清理任务已启动，清理间隔: ${this.poolConfig.cleanupInterval}ms`);
+  }
+
+  /**
+   * 清理超时的连接
+   */
+  async cleanupTimeoutConnections(): Promise<void> {
+    const now = new Date();
+    const timeoutConnections: Array<[string, MCPClient]> = [];
+    
+    this.clients.forEach((client, key) => {
+      const idleTime = now.getTime() - client.lastUsed.getTime();
+      if (idleTime > this.poolConfig.connectionTimeout) {
+        timeoutConnections.push([key, client]);
+      }
+    });
+    
+    if (timeoutConnections.length > 0) {
+      logger.info(`发现 ${timeoutConnections.length} 个超时连接，开始清理...`);
+      
+      for (const [key, client] of timeoutConnections) {
+        try {
+          await client.client.close();
+          this.clients.delete(key);
+          logger.info(`清理超时连接: ${key} (空闲时间: ${Math.round((now.getTime() - client.lastUsed.getTime()) / 1000 / 60)}分钟)`);
+        } catch (error) {
+          logger.error(`清理超时连接失败 [${key}]:`, error);
+        }
+      }
+    }
+  }
+
+  /**
+   * 获取连接池状态
+   */
+  getPoolStatus(): {
+    totalConnections: number;
+    userConnectionCounts: Record<string, number>;
+    connectionDetails: Array<{
+      key: string;
+      name: string;
+      userId?: string;
+      lastUsed: Date;
+      createTime: Date;
+      idleMinutes: number;
+    }>;
+  } {
+    const userConnectionCounts: Record<string, number> = {};
+    const connectionDetails: Array<any> = [];
+    const now = new Date();
+    
+    this.clients.forEach((client, key) => {
+      const userId = client.userId || 'anonymous';
+      userConnectionCounts[userId] = (userConnectionCounts[userId] || 0) + 1;
+      
+      connectionDetails.push({
+        key,
+        name: client.name,
+        userId: client.userId,
+        lastUsed: client.lastUsed,
+        createTime: client.createTime,
+        idleMinutes: Math.round((now.getTime() - client.lastUsed.getTime()) / 1000 / 60)
+      });
+    });
+    
+    return {
+      totalConnections: this.clients.size,
+      userConnectionCounts,
+      connectionDetails: connectionDetails.sort((a, b) => b.idleMinutes - a.idleMinutes)
+    };
   }
 
   /**
@@ -67,6 +227,22 @@ export class MCPManager {
     logger.info(`【MCP Debug】MCPManager.connect() Starting connection to MCP [MCP: ${name}, Command: ${command}, User: ${userId || 'default'}]`);
     logger.info(`【MCP Debug】Connection parameters: ${JSON.stringify(args)}`);
     logger.info(`【MCP Debug】Environment variables: ${env ? Object.keys(env).join(', ') : 'None'}`);
+    
+    // 检查总连接数是否达到上限
+    if (this.clients.size >= this.poolConfig.maxTotalConnections) {
+      logger.warn(`总连接数达到上限 (${this.poolConfig.maxTotalConnections})，需要清理旧连接`);
+      // 清理最旧的连接
+      await this.cleanupOldestConnections(1);
+    }
+    
+    // 检查用户连接数
+    if (userId) {
+      const userConnectionCount = this.getUserConnectionCount(userId);
+      if (userConnectionCount >= this.poolConfig.maxConnectionsPerUser) {
+        logger.warn(`用户 ${userId} 连接数达到上限 (${this.poolConfig.maxConnectionsPerUser})，清理最旧连接`);
+        await this.cleanupOldestUserConnections(userId, 1);
+      }
+    }
     
     // Check if command exists
     try {
@@ -91,9 +267,19 @@ export class MCPManager {
     
     // Check if already connected (with user isolation)
     const connectionKey = this.getConnectionKey(name, userId);
-    if (this.clients.has(connectionKey)) {
-      logger.info(`【MCP Debug】MCP already connected for user, disconnecting existing connection first [MCP: ${name}, User: ${userId || 'default'}]`);
-      await this.disconnect(name, userId);
+    const existingClient = this.clients.get(connectionKey);
+    
+    if (existingClient) {
+      // 检查认证信息是否变化
+      const newAuthHash = this.generateAuthHash(env);
+      if (existingClient.authHash === newAuthHash) {
+        logger.info(`【MCP Debug】复用现有连接 [MCP: ${name}, User: ${userId || 'default'}]`);
+        existingClient.lastUsed = new Date();
+        return;
+      } else {
+        logger.info(`【MCP Debug】认证信息已变化，断开旧连接 [MCP: ${name}, User: ${userId || 'default'}]`);
+        await this.disconnect(name, userId);
+      }
     }
     
     try {
@@ -126,7 +312,8 @@ export class MCPManager {
       await client.connect(transport);
       logger.info(`【MCP Debug】Client connection successful`);
 
-      // Save client with user isolation
+      // Save client with user isolation and metadata
+      const now = new Date();
       this.clients.set(connectionKey, {
         client,
         name,
@@ -134,12 +321,42 @@ export class MCPManager {
         args,
         env,
         userId,
+        lastUsed: now,
+        createTime: now,
+        authHash: this.generateAuthHash(env)
       });
 
       logger.info(`【MCP Debug】MCP connection successful [MCP: ${name}, User: ${userId || 'default'}]`);
+      
+      // 记录连接池状态
+      const poolStatus = this.getPoolStatus();
+      logger.info(`连接池状态 - 总连接数: ${poolStatus.totalConnections}, 用户连接分布: ${JSON.stringify(poolStatus.userConnectionCounts)}`);
     } catch (error) {
       logger.error(`【MCP Debug】MCP connection failed [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * 清理最旧的连接（全局）
+   * @param count 要清理的连接数
+   */
+  private async cleanupOldestConnections(count: number = 1): Promise<void> {
+    const connections: Array<[string, MCPClient]> = Array.from(this.clients.entries());
+    
+    // 按最后使用时间排序（最旧的在前）
+    connections.sort((a, b) => a[1].lastUsed.getTime() - b[1].lastUsed.getTime());
+    
+    // 清理最旧的连接
+    for (let i = 0; i < Math.min(count, connections.length); i++) {
+      const [key, client] = connections[i];
+      logger.info(`清理全局最旧连接: ${key}`);
+      try {
+        await client.client.close();
+        this.clients.delete(key);
+      } catch (error) {
+        logger.error(`清理连接失败 [${key}]:`, error);
+      }
     }
   }
 
@@ -318,6 +535,9 @@ export class MCPManager {
       throw new Error(`MCP ${name} not connected for user ${userId || 'default'}`);
     }
     
+    // 更新最后使用时间
+    mcpClient.lastUsed = new Date();
+    
     try {
       const toolsResponse = await mcpClient.client.listTools();
       const tools = toolsResponse.tools || [];
@@ -367,6 +587,9 @@ export class MCPManager {
       throw new Error(`MCP ${name} not connected for user ${userId || 'default'}`);
     }
     
+    // 更新最后使用时间
+    mcpClient.lastUsed = new Date();
+    
     try {
       const result = await mcpClient.client.callTool({
         name: actualTool,
@@ -383,6 +606,28 @@ export class MCPManager {
 
   getClient(name: string, userId?: string): Client | undefined {
     const connectionKey = this.getConnectionKey(name, userId);
-    return this.clients.get(connectionKey)?.client;
+    const mcpClient = this.clients.get(connectionKey);
+    if (mcpClient) {
+      // 更新最后使用时间
+      mcpClient.lastUsed = new Date();
+      return mcpClient.client;
+    }
+    return undefined;
+  }
+
+  /**
+   * 销毁管理器，清理所有资源
+   */
+  async destroy(): Promise<void> {
+    // 停止清理定时器
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = undefined;
+    }
+    
+    // 断开所有连接
+    await this.disconnectAll();
+    
+    logger.info('MCPManager已销毁');
   }
 } 
