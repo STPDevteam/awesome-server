@@ -71,9 +71,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
     // Check user conversation creation limit
     const limitInfo = await conversationLimitService.checkConversationLimit(userId);
     if (!limitInfo.canCreate) {
-      const limitMessage = limitInfo.membershipType === 'free' 
-        ? `Free users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Plus for 10 conversations or Pro for unlimited.`
-        : `${limitInfo.membershipType.toUpperCase()} users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Pro for unlimited conversations.`;
+      const limitMessage = 'You\'ve reached the conversation limit for current plan. Please upgrade your plan to unlock more.';
       
       return res.status(429).json({
         success: false,
@@ -171,9 +169,7 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
     // Check user conversation creation limit
     const limitInfo = await conversationLimitService.checkConversationLimit(userId);
     if (!limitInfo.canCreate) {
-      const limitMessage = limitInfo.membershipType === 'free' 
-        ? `Free users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Plus for 10 conversations or Pro for unlimited.`
-        : `${limitInfo.membershipType.toUpperCase()} users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Pro for unlimited conversations.`;
+      const limitMessage = 'You\'ve reached the conversation limit for current plan. Please upgrade your plan to unlock more.';
       
       return res.status(429).json({
         success: false,
