@@ -1658,7 +1658,7 @@ Transform the data now:`;
   async executeWorkflow(
     taskId: string,
     query: string,
-    maxIterations: number = 10,
+    maxIterations: number = 50,
     onProgress?: (step: ExecutionStep) => void
   ): Promise<WorkflowState> {
     logger.info(`🚀 启动智能工作流 [任务: ${taskId}]`);
@@ -1699,7 +1699,7 @@ Transform the data now:`;
   async *executeWorkflowStream(
     taskId: string,
     query: string,
-    maxIterations: number = 10
+    maxIterations: number = 50
   ): AsyncGenerator<{ event: string; data: any }, WorkflowState, unknown> {
     logger.info(`🚀 启动流式智能工作流 [任务: ${taskId}]`);
 
