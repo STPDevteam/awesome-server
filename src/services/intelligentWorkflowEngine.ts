@@ -1835,6 +1835,37 @@ Please return transformed data, in JSON format.`;
     try {
       logger.info(`🧠 开始执行智能工作流 [任务: ${taskId}]`);
       
+      // 🔧 关键修复：正确处理预选的MCP和工作流信息
+      let initialWorkflowPlan: any[] = [];
+      
+      // 从任务分析结果中获取完整的工作流信息
+      try {
+        const task = await this.taskService.getTaskById(taskId);
+        if (task && task.mcpWorkflow) {
+          const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
+            ? JSON.parse(task.mcpWorkflow) 
+            : task.mcpWorkflow;
+          
+          // 🔧 使用分析阶段生成的实际工作流步骤，而不是MCP信息
+          if (mcpWorkflow.workflow && Array.isArray(mcpWorkflow.workflow) && mcpWorkflow.workflow.length > 0) {
+            // 转换传统工作流格式为智能工作流格式
+            initialWorkflowPlan = mcpWorkflow.workflow.map((step: any, index: number) => ({
+              action: step.action || `step_${index + 1}`,
+              mcpName: step.mcp || 'unknown',
+              objective: step.action || `Execute step ${index + 1}`,
+              step: step.step || index + 1
+            }));
+            
+            logger.info(`📋 使用任务分析阶段的工作流计划，包含 ${initialWorkflowPlan.length} 个步骤`);
+            logger.info(`📋 工作流步骤详情: ${JSON.stringify(initialWorkflowPlan, null, 2)}`);
+          } else {
+            logger.info(`📋 任务分析没有生成具体工作流步骤，将由智能引擎动态生成`);
+          }
+        }
+      } catch (error) {
+        logger.warn(`获取任务工作流信息失败: ${error}`);
+      }
+      
       // 初始化状态
       const initialState = {
         taskId,
@@ -1842,15 +1873,19 @@ Please return transformed data, in JSON format.`;
         currentObjective: originalQuery,
         executionHistory: [],
         blackboard: {},
+        messages: [],
         isComplete: false,
         finalAnswer: null,
-        workflowPlan: preselectedMCPs,
+        lastError: null,
+        errors: [],
+        // 🔧 正确设置工作流计划和步骤索引
+        workflowPlan: initialWorkflowPlan, // 使用实际的工作流步骤
         currentStepIndex: 0,
-        error: null,
-        retryCount: 0,
         maxIterations,
         currentIteration: 0
       };
+
+      logger.info(`🚀 智能工作流初始状态: 预定义步骤=${initialWorkflowPlan.length}, 最大迭代=${maxIterations}`);
 
       // 编译并执行工作流图
       const compiledGraph = this.graph.compile();
