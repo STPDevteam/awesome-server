@@ -175,14 +175,14 @@ export class IntelligentWorkflowEngine {
     try {
       logger.info(`🧠 Planner: 分析任务 [迭代: ${state.currentIteration + 1}]`);
       
-      // 获取可用的MCP能力 - 传入taskId
+      // 获取可用的MCP能力
       const availableMCPs = await this.getAvailableMCPCapabilities(state.taskId);
       
       // 构建提示词
       const plannerPrompt = `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
 
 AVAILABLE MCPS AND THEIR CAPABILITIES:
-${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
+${availableMCPs.map(mcp => `- ${mcp.mcpName}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
 
 USER REQUEST: "${state.currentObjective}"
 
@@ -480,35 +480,47 @@ Plan the workflow now:`;
 
         if (!isConnected) {
           logger.info(`🔗 连接预选的MCP: ${mcpName}`);
-          await this.autoConnectMCP(mcpName, taskId, userId);
-        } else {
-          logger.info(`✅ MCP已连接: ${mcpName}`);
+          try {
+            await this.autoConnectMCP(mcpName, taskId, userId);
+            logger.info(`✅ 预选MCP ${mcpName} 连接成功`);
+          } catch (connectError) {
+            logger.error(`❌ 预选MCP ${mcpName} 连接失败:`, connectError);
+            // 跳过这个MCP，继续处理其他的
+            continue;
+          }
         }
 
-        // 🔧 关键修复：获取MCP的实际工具列表
-        const actualTools = await this.mcpManager.getTools(mcpName, userId);
-        logger.info(`📋 ${mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
-        
-        capabilities.push({
-          mcpName: mcpName,
-          description: mcpInfo.description || `MCP Service: ${mcpName}`,
-          authRequired: mcpInfo.authRequired || false,
-          // 🔧 使用实际工具列表，而不是预定义的工具信息
-          tools: actualTools.map(tool => ({
-            name: tool.name,
-            description: tool.description || 'No description',
-            parameters: tool.inputSchema
-          }))
-        });
+        // 再次确认连接状态
+        const connectedAfterAttempt = this.mcpManager.getConnectedMCPs(userId).some(mcp => mcp.name === mcpName);
+        if (!connectedAfterAttempt) {
+          logger.warn(`⚠️ MCP ${mcpName} 在连接尝试后仍未连接，跳过`);
+          continue;
+        }
 
-        logger.info(`✅ 预选MCP可用: ${mcpName} (${actualTools.length} 个工具)`);
+        // 获取工具列表
+        try {
+          const tools = await this.mcpManager.getTools(mcpName, userId);
+          logger.info(`✅ 获取MCP ${mcpName} 工具列表成功，工具数: ${tools.length}`);
+          
+          capabilities.push({
+            mcpName,
+            description: mcpInfo.description || `MCP Service: ${mcpName}`,
+            tools
+          });
+        } catch (toolError) {
+          logger.error(`❌ 获取MCP ${mcpName} 工具列表失败:`, toolError);
+          // 跳过这个MCP
+          continue;
+        }
 
       } catch (error) {
-        logger.warn(`预选MCP连接失败: ${mcpInfo.name}`, error);
-        // 继续处理其他MCP，不中断整个流程
+        logger.error(`处理预选MCP ${mcpInfo.name} 时发生错误:`, error);
+        // 继续处理其他MCP
+        continue;
       }
     }
 
+    logger.info(`📋 成功连接的预选MCP数: ${capabilities.length}/${preselectedMCPs.length}`);
     return capabilities;
   }
 
@@ -561,7 +573,7 @@ Plan the workflow now:`;
     return `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
 
 AVAILABLE MCPS AND THEIR CAPABILITIES:
-${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
+${availableMCPs.map(mcp => `- ${mcp.mcpName}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
 
 USER REQUEST: "${state.currentObjective}"
 
@@ -792,62 +804,79 @@ Please return in format:
     
     if (!isConnected) {
       logger.info(`🔗 MCP ${plan.mcpName} 未连接，尝试自动连接...`);
-      await this.autoConnectMCP(plan.mcpName, state.taskId, userId);
-    }
-    
-    // 🔧 关键修复：获取MCP的实际工具列表
-    const actualTools = await this.mcpManager.getTools(plan.mcpName, userId);
-    logger.info(`📋 ${plan.mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
-    
-    // 🔧 验证工具是否存在，如果不存在则让LLM重新选择
-    let selectedTool = actualTools.find(t => t.name === plan.tool);
-    let finalToolName = plan.tool;
-    let finalArgs = plan.args;
-    
-    if (!selectedTool) {
-      logger.warn(`工具 ${plan.tool} 在 ${plan.mcpName} 中不存在，使用LLM重新选择...`);
-      
-      // 尝试模糊匹配
-      const fuzzyMatch = actualTools.find(t => 
-        t.name.toLowerCase().includes(plan.tool.toLowerCase()) ||
-        plan.tool.toLowerCase().includes(t.name.toLowerCase())
-      );
-      
-      if (fuzzyMatch) {
-        logger.info(`找到模糊匹配: ${fuzzyMatch.name}`);
-        selectedTool = fuzzyMatch;
-        finalToolName = fuzzyMatch.name;
-      } else {
-        // 使用LLM重新选择工具
-        logger.info(`使用LLM重新选择合适的工具...`);
-        const toolSelectionResult = await this.selectCorrectTool(
-          plan.tool, 
-          plan.args, 
-          actualTools, 
-          state.currentObjective
-        );
-        
-        selectedTool = actualTools.find(t => t.name === toolSelectionResult.toolName);
-        if (selectedTool) {
-          finalToolName = toolSelectionResult.toolName;
-          finalArgs = toolSelectionResult.inputParams;
-          logger.info(`LLM重新选择的工具: ${finalToolName}`);
-        } else {
-          throw new Error(`无法在 ${plan.mcpName} 中找到合适的工具执行任务: ${plan.tool}`);
-        }
+      try {
+        await this.autoConnectMCP(plan.mcpName, state.taskId, userId);
+        logger.info(`✅ MCP ${plan.mcpName} 连接成功`);
+      } catch (connectError) {
+        logger.error(`❌ MCP ${plan.mcpName} 连接失败:`, connectError);
+        throw new Error(`Failed to connect to MCP ${plan.mcpName}: ${connectError instanceof Error ? connectError.message : 'Unknown error'}`);
       }
     }
     
-    logger.info(`🔧 最终调用工具: ${finalToolName} (参数: ${JSON.stringify(finalArgs)})`);
+    // 再次确认连接状态
+    const connectedAfterAttempt = this.mcpManager.getConnectedMCPs(userId).some(mcp => mcp.name === plan.mcpName);
+    if (!connectedAfterAttempt) {
+      throw new Error(`MCP ${plan.mcpName} is not connected after connection attempt`);
+    }
     
-    const result = await this.mcpToolAdapter.callTool(
-      plan.mcpName,
-      finalToolName,
-      finalArgs,
-      userId
-    );
+    try {
+      // 🔧 关键修复：获取MCP的实际工具列表
+      const actualTools = await this.mcpManager.getTools(plan.mcpName, userId);
+      logger.info(`📋 ${plan.mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
+      
+      // 🔧 验证工具是否存在，如果不存在则让LLM重新选择
+      let selectedTool = actualTools.find(t => t.name === plan.tool);
+      let finalToolName = plan.tool;
+      let finalArgs = plan.args;
+      
+      if (!selectedTool) {
+        logger.warn(`工具 ${plan.tool} 在 ${plan.mcpName} 中不存在，使用LLM重新选择...`);
+        
+        // 尝试模糊匹配
+        const fuzzyMatch = actualTools.find(t => 
+          t.name.toLowerCase().includes(plan.tool.toLowerCase()) ||
+          plan.tool.toLowerCase().includes(t.name.toLowerCase())
+        );
+        
+        if (fuzzyMatch) {
+          logger.info(`找到模糊匹配: ${fuzzyMatch.name}`);
+          selectedTool = fuzzyMatch;
+          finalToolName = fuzzyMatch.name;
+        } else {
+          // 使用LLM重新选择工具
+          logger.info(`使用LLM重新选择合适的工具...`);
+          const toolSelectionResult = await this.selectCorrectTool(
+            plan.tool, 
+            plan.args, 
+            actualTools, 
+            state.currentObjective
+          );
+          
+          selectedTool = actualTools.find(t => t.name === toolSelectionResult.toolName);
+          if (selectedTool) {
+            finalToolName = toolSelectionResult.toolName;
+            finalArgs = toolSelectionResult.inputParams;
+            logger.info(`LLM重新选择的工具: ${finalToolName}`);
+          } else {
+            throw new Error(`无法在 ${plan.mcpName} 中找到合适的工具执行任务: ${plan.tool}`);
+          }
+        }
+      }
+      
+      logger.info(`🔧 最终调用工具: ${finalToolName} (参数: ${JSON.stringify(finalArgs)})`);
+      
+      const result = await this.mcpToolAdapter.callTool(
+        plan.mcpName,
+        finalToolName,
+        finalArgs,
+        userId
+      );
 
-    return result;
+      return result;
+    } catch (error) {
+      logger.error(`❌ MCP工具调用失败 [${plan.mcpName}]:`, error);
+      throw error;
+    }
   }
 
   /**

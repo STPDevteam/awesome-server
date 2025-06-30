@@ -113,12 +113,13 @@ app.use('/api/conversation', conversationRoutes);
 app.post('/api/chat', requireAuth, async (req, res) => {
   try {
     const { messages, config } = req.body;
+    const userId = req.userId; // 从认证中间件获取用户ID
     
-    console.log('Chat request received with', messages.length, 'messages');
+    console.log('Chat request received with', messages.length, 'messages from user:', userId);
     
-    // 获取所有可用的 MCP 工具
-    const tools = await mcpToolAdapter.getAllTools();
-    console.log('Available tools:', tools.length, 'tools found');
+    // 获取所有可用的 MCP 工具，传递用户ID
+    const tools = await mcpToolAdapter.getAllTools(userId);
+    console.log('Available tools:', tools.length, 'tools found for user:', userId);
     
     // 转换消息格式
     const langchainMessages = convertToLangChainMessages(messages);
@@ -246,14 +247,15 @@ app.post('/api/chat', requireAuth, async (req, res) => {
 app.post('/api/chat/stream', requireAuth, async (req, res) => {
   try {
     const { messages, config } = req.body;
+    const userId = req.userId; // 从认证中间件获取用户ID
     
     // 设置 SSE 响应头
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     
-    // 获取所有可用的 MCP 工具
-    const tools = await mcpToolAdapter.getAllTools();
+    // 获取所有可用的 MCP 工具，传递用户ID
+    const tools = await mcpToolAdapter.getAllTools(userId);
     
     // 转换消息格式
     const langchainMessages = convertToLangChainMessages(messages);
@@ -295,11 +297,12 @@ app.post('/api/chat/stream', requireAuth, async (req, res) => {
 app.post('/api/mcp/connect', requireAuth, async (req, res) => {
   try {
     const { name, command, args, env } = req.body;
+    const userId = req.userId; // 从认证中间件获取用户ID
     
-    // 检查是否已经连接
-    const wasConnected = mcpManager.getConnectedMCPs().some(mcp => mcp.name === name);
+    // 检查是否已经连接，传递用户ID
+    const wasConnected = mcpManager.getConnectedMCPs(userId).some(mcp => mcp.name === name);
     
-    await mcpManager.connect(name, command, args, env);
+    await mcpManager.connect(name, command, args, env, userId);
     
     res.json({ 
       success: true, 
@@ -316,9 +319,10 @@ app.post('/api/mcp/connect', requireAuth, async (req, res) => {
 app.post('/api/mcp/disconnect', requireAuth, async (req, res) => {
   try {
     const { name } = req.body;
+    const userId = req.userId; // 从认证中间件获取用户ID
     
-    // 检查是否已连接
-    const isConnected = mcpManager.getConnectedMCPs().some(mcp => mcp.name === name);
+    // 检查是否已连接，传递用户ID
+    const isConnected = mcpManager.getConnectedMCPs(userId).some(mcp => mcp.name === name);
     
     if (!isConnected) {
       return res.json({ 
@@ -328,7 +332,7 @@ app.post('/api/mcp/disconnect', requireAuth, async (req, res) => {
       });
     }
     
-    await mcpManager.disconnect(name);
+    await mcpManager.disconnect(name, userId);
     res.json({ 
       success: true, 
       message: `Disconnected from MCP: ${name}`,
@@ -343,13 +347,14 @@ app.post('/api/mcp/disconnect', requireAuth, async (req, res) => {
 // 获取 MCP 列表 - 保护端点，需要登录
 app.get('/api/mcp/list', requireAuth, async (req, res) => {
   try {
-    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const userId = req.userId; // 从认证中间件获取用户ID
+    const connectedMCPs = mcpManager.getConnectedMCPs(userId);
     
     // 获取每个 MCP 的详细信息
     const detailedList = await Promise.all(
       connectedMCPs.map(async (mcp) => {
         try {
-          const tools = await mcpManager.getTools(mcp.name);
+          const tools = await mcpManager.getTools(mcp.name, userId);
           return {
             ...mcp,
             toolCount: tools.length,
@@ -377,7 +382,8 @@ app.get('/api/mcp/list', requireAuth, async (req, res) => {
 app.get('/api/mcp/:name/tools', requireAuth, async (req, res) => {
   try {
     const { name } = req.params;
-    const tools = await mcpManager.getTools(name);
+    const userId = req.userId; // 从认证中间件获取用户ID
+    const tools = await mcpManager.getTools(name, userId);
     res.json({ tools });
   } catch (error) {
     console.error('Get MCP tools error:', error);
@@ -389,7 +395,8 @@ app.get('/api/mcp/:name/tools', requireAuth, async (req, res) => {
 app.post('/api/mcp/tool', requireAuth, async (req, res) => {
   try {
     const { mcpName, toolName, arguments: toolArgs } = req.body;
-    const result = await mcpManager.callTool(mcpName, toolName, toolArgs);
+    const userId = req.userId; // 从认证中间件获取用户ID
+    const result = await mcpManager.callTool(mcpName, toolName, toolArgs, userId);
     res.json({ result });
   } catch (error) {
     console.error('MCP tool error:', error);
