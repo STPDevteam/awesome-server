@@ -697,30 +697,169 @@ Please return in format:
    */
   private parsePlan(content: string): ExecutionPlan {
     try {
-      // 尝试提取 JSON
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const plan = JSON.parse(jsonMatch[0]);
+      // 🔧 通用 JSON 解析：支持多种格式
+      const cleanedJson = this.extractAndCleanJson(content);
+      if (!cleanedJson) {
+        throw new Error('No valid JSON structure found in response');
+      }
+      
+      const parsed = JSON.parse(cleanedJson);
+      
+      // 🔧 通用解析：支持多种数据结构
+      return this.normalizeToExecutionPlan(parsed);
+      
+    } catch (error) {
+      logger.warn(`Plan parsing failed: ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn(`Original content: ${content.substring(0, 200)}...`);
+      
+      // 通用回退策略
+      return this.generateIntelligentFallbackPlan(content);
+    }
+  }
+
+  /**
+   * 提取并清理 JSON 内容
+   */
+  private extractAndCleanJson(content: string): string | null {
+    let text = content.trim();
+    
+    // 移除 markdown 代码块
+    text = text.replace(/```json\s*|\s*```/g, '');
+    text = text.replace(/```\s*|\s*```/g, '');
+    
+    // 查找 JSON 结构（数组或对象）
+    const jsonMatch = text.match(/[\[\{][\s\S]*[\]\}]/);
+    if (!jsonMatch) {
+      return null;
+    }
+    
+    // 清理和修复 JSON
+    return this.fixJsonFormat(jsonMatch[0]);
+  }
+
+  /**
+   * 将解析的数据标准化为执行计划
+   */
+  private normalizeToExecutionPlan(parsed: any): ExecutionPlan {
+    // 处理数组格式（工作流步骤列表）
+    if (Array.isArray(parsed)) {
+      const firstStep = parsed[0];
+      if (!firstStep) {
+        throw new Error('Empty array in parsed plan');
+      }
+      return this.convertStepToExecutionPlan(firstStep);
+    }
+    
+    // 处理对象格式
+    if (typeof parsed === 'object' && parsed !== null) {
+      return this.convertStepToExecutionPlan(parsed);
+    }
+    
+    throw new Error('Invalid parsed plan structure');
+  }
+
+  /**
+   * 将步骤对象转换为标准执行计划
+   */
+  private convertStepToExecutionPlan(step: any): ExecutionPlan {
+    // 通用字段映射
+    const tool = step.tool || step.action || step.name || 'llm.analyze';
+    const mcpName = step.mcpName || step.mcp || step.service;
+    const args = step.args || step.parameters || step.params || step.input || {};
+    const output = step.expectedOutput || step.objective || step.goal || step.description || 'Task result';
+    const reasoning = step.reasoning || step.rationale || step.explanation || output;
+    
+    // 确定工具类型
+    let toolType: 'llm' | 'mcp' = 'llm';
+    let finalTool = tool;
+    
+    if (mcpName) {
+      toolType = 'mcp';
+      // 如果工具名不包含 MCP 名称，则组合它们
+      if (!tool.includes(mcpName)) {
+        finalTool = `${mcpName}.${tool}`;
+      }
+    } else if (tool.includes('.') || tool.includes('-mcp')) {
+      toolType = 'mcp';
+      // 尝试从工具名中提取 MCP 名称
+      const parts = tool.split('.');
+      if (parts.length > 1) {
+        // 从 "mcp-name.tool-name" 格式中提取
         return {
-          tool: plan.tool || 'llm.analyze',
-          toolType: plan.toolType || 'llm',
-          mcpName: plan.mcpName,
-          args: plan.args || {},
-          expectedOutput: plan.expectedOutput || '分析结果',
-          reasoning: plan.reasoning || '默认推理'
+          tool: finalTool,
+          toolType,
+          mcpName: parts[0],
+          args,
+          expectedOutput: output,
+          reasoning
         };
       }
-    } catch (error) {
-      logger.warn('解析计划失败，使用默认计划', error);
     }
+    
+    return {
+      tool: finalTool,
+      toolType,
+      mcpName,
+      args,
+      expectedOutput: output,
+      reasoning
+    };
+  }
 
-    // 默认计划
+  /**
+   * 通用 JSON 格式修复
+   */
+  private fixJsonFormat(jsonText: string): string {
+    let fixed = jsonText;
+    
+    // 移除注释（单行和多行）
+    fixed = fixed.replace(/\/\/[^\n\r]*/g, '');
+    fixed = fixed.replace(/\/\*[\s\S]*?\*\//g, '');
+    
+    // 修复尾随逗号
+    fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+    
+    // 修复未引用的属性名（但保留已经正确引用的）
+    fixed = fixed.replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, (match, prefix, prop) => {
+      // 如果属性名已经被引号包围，不要重复处理
+      if (prop.startsWith('"') && prop.endsWith('"')) {
+        return match;
+      }
+      return `${prefix}"${prop}":`;
+    });
+    
+    // 修复单引号为双引号（但要小心字符串内容）
+    fixed = fixed.replace(/'/g, '"');
+    
+    // 修复多余的逗号
+    fixed = fixed.replace(/,+/g, ',');
+    
+    // 修复换行符和特殊字符
+    fixed = fixed.replace(/\n/g, '\\n');
+    fixed = fixed.replace(/\r/g, '\\r');
+    fixed = fixed.replace(/\t/g, '\\t');
+    
+    // 修复未转义的引号（在字符串值中）
+    // 这是一个简化的处理，复杂情况可能需要更精细的解析
+    
+    return fixed.trim();
+  }
+
+  /**
+   * 生成通用智能回退计划
+   */
+  private generateIntelligentFallbackPlan(content: string): ExecutionPlan {
+    // 通用回退策略：始终回退到 LLM 分析
+    // LLM 分析可以处理任何类型的内容，然后在下次迭代中重新规划
     return {
       tool: 'llm.analyze',
       toolType: 'llm',
-      args: { content: content },
-      expectedOutput: '分析结果',
-      reasoning: '解析失败，使用默认LLM分析'
+      args: { 
+        content: content,
+        instruction: 'Analyze the content and determine the next appropriate action based on available tools and workflow context.'
+      },
+      expectedOutput: 'Analysis result with next action recommendation',
+      reasoning: 'JSON parsing failed, using LLM analysis to understand content and determine next steps'
     };
   }
 
@@ -729,14 +868,26 @@ Please return in format:
    */
   private parseObservation(content: string): { isComplete: boolean; nextObjective?: string; finalAnswer?: string } {
     try {
-      // 尝试提取 JSON
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      // 🔧 增强 JSON 解析：使用相同的清理逻辑
+      let jsonText = content.trim();
+      
+      // 移除 markdown 代码块标记
+      jsonText = jsonText.replace(/```json\s*|\s*```/g, '');
+      jsonText = jsonText.replace(/```\s*|\s*```/g, '');
+      
+      // 查找 JSON 内容
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const observation = JSON.parse(jsonMatch[0]);
+        let cleanJson = jsonMatch[0];
+        
+        // 修复常见的 JSON 格式问题
+        cleanJson = this.fixJsonFormat(cleanJson);
+        
+        const observation = JSON.parse(cleanJson);
         
         // 记录 Observer 的推理过程
         if (observation.reasoning) {
-          logger.info(`🤔 Observer 推理: ${observation.reasoning}`);
+          logger.info(`🤔 Observer reasoning: ${observation.reasoning}`);
         }
         
         return {
@@ -746,7 +897,8 @@ Please return in format:
         };
       }
     } catch (error) {
-      logger.warn('解析观察结果失败，使用智能判断', error);
+      logger.warn(`Observation parsing failed: ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn(`Original content: ${content.substring(0, 200)}...`);
     }
 
     // 更智能的默认判断逻辑

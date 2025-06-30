@@ -34,7 +34,7 @@ router.get('/', optionalAuth, async (_req: Request, res: Response) => {
  * 按类别获取MCP
  * GET /api/mcp/category/:category
  */
-router.get('/category/:category', optionalAuth, async (req: Request, res: Response) => {
+router.get('/category/:category', async (req: Request, res: Response) => {
   try {
     const category = req.params.category;
     const mcpsByCategory = getMCPsByCategory(category);
@@ -60,7 +60,7 @@ router.get('/category/:category', optionalAuth, async (req: Request, res: Respon
  * 获取所有可用的MCP类别
  * GET /api/mcp/categories
  */
-router.get('/categories', optionalAuth, async (_req: Request, res: Response) => {
+router.get('/categories', async (_req: Request, res: Response) => {
   try {
     const categories = getAllMCPCategories().map(category => ({ name: category, count: getMCPsByCategory(category).length }));
     
