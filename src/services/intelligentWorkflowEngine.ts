@@ -1556,6 +1556,17 @@ TRANSFORMATION PRINCIPLES:
    - Create descriptive placeholders only when necessary
    - Omit optional fields if not relevant
 
+CRITICAL TWITTER RULES:
+- Twitter has a HARD 280 character limit!
+- Count ALL characters including spaces, emojis, URLs, hashtags
+- If content is too long, you MUST:
+  1. Remove URLs (they're not clickable in tweets anyway)
+  2. Use abbreviations (e.g., "w/" for "with")
+  3. Remove less important details
+  4. Keep only the most essential information
+- For threads: First tweet should be <250 chars to leave room for thread numbering
+- Example of good tweet: "🚀 Top 3 Meme Coins 🧵\n\n1️⃣ Big Papa ($PAPA) - Solana meme coin\n2️⃣ $BEAST - Pulsechain revolution\n3️⃣ Novus Ordo ($NOVO) - Providence themed\n\n#MemeCoins #Crypto" (under 280 chars)
+
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
