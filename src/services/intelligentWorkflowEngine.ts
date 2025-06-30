@@ -718,15 +718,21 @@ Please return in format:
     
     // 获取前序步骤结果（如果有）
     const previousResults = fullWorkflow.slice(0, fullWorkflow.indexOf(step));
-    const args = await this.buildArgsFromStep(step, previousResults);
+    
+    // 🔧 关键修复：使用实际选择的工具名称构建参数
+    const stepForArgs = {
+      ...step,
+      action: toolName // 使用实际选择的工具名称
+    };
+    const args = await this.buildArgsFromStep(stepForArgs, previousResults);
     
     return {
       tool: toolName,
       toolType: toolType,
       mcpName: step.mcpName,
       args: args,
-      expectedOutput: step.objective || '执行结果',
-      reasoning: `执行工作流步骤: ${step.action} (${step.objective})`
+      expectedOutput: step.objective || 'Execution result',
+      reasoning: `Execute workflow step: ${step.action} (${step.objective})`
     };
   }
 
@@ -803,28 +809,56 @@ Selected Tool Name:`;
   }
 
   /**
-   * 通用智能参数构建 - 基于目标、工具schema和上下文，让LLM构建合适的参数
+   * Universal intelligent parameter building - Based on goal, tool schema and context, let LLM build appropriate parameters
    */
   private async buildArgsFromStep(step: any, previousResults?: any[]): Promise<Record<string, any>> {
     try {
-      // 获取工具的schema信息
+      // Get tool schema information
       const availableTools = await this.mcpManager.getTools(step.mcpName);
       const targetTool = availableTools.find((tool: any) => tool.name === step.action);
       
       if (!targetTool) {
-        logger.warn(`工具 ${step.action} 在 ${step.mcpName} 中不存在`);
+        logger.warn(`Tool ${step.action} does not exist in ${step.mcpName}`);
         return { content: step.objective || step.action };
       }
 
-      // 使用LLM基于工具schema和目标构建参数
+      // Smart default parameters for GitHub API
+      let smartDefaults = {};
+      if (step.mcpName === 'github-mcp') {
+        // Extract repository info from objective
+        const repoMatch = step.objective?.match(/github\.com\/([^\/]+\/[^\/\s]+)/i) || 
+                         step.objective?.match(/([^\/\s]+\/[^\/\s]+)\s*(?:project|repository|repo)/i);
+        
+        if (repoMatch) {
+          const [owner, repo] = repoMatch[1].split('/');
+          smartDefaults = { owner, repo };
+          logger.info(`🎯 Extracted GitHub repo info: ${owner}/${repo}`);
+        } else {
+          // Use popular open source project as example
+          smartDefaults = { 
+            owner: 'ai16z', 
+            repo: 'eliza',
+            state: 'open',
+            per_page: 10
+          };
+          logger.info(`🎯 Using default GitHub repo: ai16z/eliza`);
+        }
+      }
+
+      // Use LLM to build parameters based on tool schema and goal
       const paramBuildingPrompt = `You are an API parameter building expert. Based on the tool's schema and user goal, build appropriate call parameters.
 
 User Goal: "${step.objective || step.action}"
 Tool Name: ${step.action}
-Tool Description: ${targetTool.description || '无描述'}
+Tool Description: ${targetTool.description || 'No description'}
 
 Tool Schema:
 ${JSON.stringify(targetTool.inputSchema, null, 2)}
+
+${Object.keys(smartDefaults).length > 0 ? `
+Smart Defaults Available:
+${JSON.stringify(smartDefaults, null, 2)}
+` : ''}
 
 ${previousResults && previousResults.length > 0 ? `
 Previous Step Results (useful information can be extracted):
@@ -833,10 +867,11 @@ ${JSON.stringify(previousResults.slice(-2), null, 2)}  // Only show recent 2 res
 
 Building Rules:
 1. Build parameters strictly according to tool schema requirements
-2. Use reasonable default values and placeholders
+2. Use smart defaults when available (especially for GitHub owner/repo)
 3. If data needs to be extracted from previous results, please smartly extract
 4. For ID type parameters, if not available from context, use descriptive placeholders like "REQUIRED_PAGE_ID"
 5. Ensure all necessary parameters have values
+6. For GitHub APIs, always provide owner and repo parameters
 
 Please return JSON formatted parameter object, no other explanation:`;
 
@@ -851,20 +886,24 @@ Please return JSON formatted parameter object, no other explanation:`;
           .replace(/```\s*$/g, '')
           .trim();
         
-        const builtArgs = JSON.parse(cleanedText);
+        let builtArgs = JSON.parse(cleanedText);
+        
+        // Merge with smart defaults
+        builtArgs = { ...smartDefaults, ...builtArgs };
+        
         logger.info(`🔧 Intelligent Parameter Building: ${JSON.stringify(builtArgs, null, 2)}`);
         return builtArgs;
         
       } catch (parseError) {
         logger.error(`Parsing LLM Built Parameters Failed: ${response.content}`);
-        // 降级处理：返回基本参数
-        return { content: step.objective || step.action };
+        // Fallback: return smart defaults or basic parameters
+        return Object.keys(smartDefaults).length > 0 ? smartDefaults : { content: step.objective || step.action };
       }
 
     } catch (error) {
       logger.error(`Intelligent Parameter Building Failed: ${error}`);
       
-      // 最终降级处理
+      // Final fallback
       return {
         content: step.objective || step.action,
         query: step.objective || step.action
