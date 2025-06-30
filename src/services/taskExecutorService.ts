@@ -773,8 +773,8 @@ Transform the data now:`;
                     }
                   } else {
                     // 其他MCP的正常处理
-                    dynamicEnv[envKey] = userAuth.authData[envKey];
-                    console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
                   }
                   logger.info(`Injected environment variable ${envKey}`);
                 } else {
