@@ -119,6 +119,7 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 - 🔧 [MCP适配器配置](./docs/adapter-configuration.md) - 配置和扩展MCP适配器
 - 🔄 [自动工具调用](./docs/auto-tool-calling.md) - 自动工具调用机制说明
 - 🔌 [MCP连接管理](./docs/mcp-connection-management.md) - MCP连接管理指南
+- 🏊 [连接池配置](./docs/CONNECTION_POOL_CONFIG.md) - MCP连接池优化配置
 - 🛠️ [数据库设置](./docs/DATABASE_SETUP.md) - 数据库配置指南
 - 🔐 [认证设置](./docs/AUTH_SETUP.md) - 认证系统设置指南
 - 🔑 [MCP认证流程](./docs/MCP_AUTH_FLOW_GUIDE.md) - MCP工具认证流程完整指南
@@ -160,7 +161,6 @@ mcp-server/
 - 💳 **[支付 API 文档](./docs/PAYMENT_API.md)** - 支付功能使用指南
 - 🏪 **[Coinbase Commerce 集成](./docs/COINBASE_COMMERCE_INTEGRATION.md)** - 官方接入文档
 - 💰 **[Coinbase Commerce 设置指南](./docs/COINBASE_COMMERCE_SETUP_GUIDE.md)** - 账户配置必读
->>>>>>> main
 
 ## 技术栈
 

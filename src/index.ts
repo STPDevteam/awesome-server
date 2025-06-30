@@ -54,6 +54,9 @@ const llm = new ChatOpenAI({
 // MCP 客户端管理
 const mcpManager = new MCPManager();
 
+// 将 mcpManager 设置到 app 中，供路由使用
+app.set('mcpManager', mcpManager);
+
 // 选择使用官方适配器或自定义适配器
 const USE_OFFICIAL_ADAPTER = process.env.USE_OFFICIAL_MCP_ADAPTER === 'true';
 const mcpToolAdapter = USE_OFFICIAL_ADAPTER 
@@ -535,9 +538,9 @@ process.on('SIGINT', async () => {
   console.log('\n🔄 Shutting down gracefully...');
   
   try {
-    // 断开 MCP 连接
-    console.log('📡 Disconnecting MCP clients...');
-    await mcpManager.disconnectAll();
+    // 销毁 MCP Manager（包括断开连接和清理定时器）
+    console.log('📡 Destroying MCP Manager...');
+    await mcpManager.destroy();
     
     // 关闭数据库连接
     console.log('🔌 Closing database connections...');
@@ -555,7 +558,7 @@ process.on('SIGTERM', async () => {
   console.log('\n🔄 Received SIGTERM, shutting down gracefully...');
   
   try {
-    await mcpManager.disconnectAll();
+    await mcpManager.destroy();
     await db.close();
     console.log('✅ Server shutdown completed');
     process.exit(0);
