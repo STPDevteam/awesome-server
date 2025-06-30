@@ -822,6 +822,40 @@ class MigrationService {
 
         console.log('✅ Removed soft delete columns and indexes from all tables');
       }
+    },
+    {
+      version: 17,
+      name: 'add_test_login_method_type',
+      up: async () => {
+        // 更新 user_login_methods 表的约束，允许 'test' 登录方法类型
+        await db.query(`
+          ALTER TABLE user_login_methods
+          DROP CONSTRAINT IF EXISTS user_login_methods_method_type_check
+        `);
+
+        await db.query(`
+          ALTER TABLE user_login_methods
+          ADD CONSTRAINT user_login_methods_method_type_check
+          CHECK (method_type IN ('wallet', 'google', 'github', 'test'))
+        `);
+
+        console.log('✅ Updated user_login_methods constraint to allow test login method');
+      },
+      down: async () => {
+        // 回滚：移除 'test' 类型的约束
+        await db.query(`
+          ALTER TABLE user_login_methods
+          DROP CONSTRAINT IF EXISTS user_login_methods_method_type_check
+        `);
+
+        await db.query(`
+          ALTER TABLE user_login_methods
+          ADD CONSTRAINT user_login_methods_method_type_check
+          CHECK (method_type IN ('wallet', 'google', 'github'))
+        `);
+
+        console.log('✅ Reverted user_login_methods constraint to original state');
+      }
     }
   ];
 
