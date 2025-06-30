@@ -894,17 +894,28 @@ Please return in format:
 CONTEXT:
 - Previous step output: ${typeof originalArgs === 'string' ? originalArgs : JSON.stringify(originalArgs, null, 2)}
 - Next action: ${objective}
-- Available tools: ${availableTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
+- Available tools with their schemas:
+${availableTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
 
 TRANSFORMATION PRINCIPLES:
 1. **Select the correct tool**: Choose the most appropriate tool from available options
 2. **Transform parameters**: Convert previous output into correct input format for the selected tool
-3. **Handle missing data intelligently**: 
+3. **CRITICAL: Use exact parameter names from the schema**: 
+   - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
+   - Match the exact property names shown in the inputSchema
+4. **Handle missing data intelligently**: 
    - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
    - For optional fields: Omit or use reasonable defaults
    - For required fields: Extract from context or use descriptive placeholders
 
-4. **Format according to tool expectations**:
+5. **Format according to tool expectations**:
    - API tools: Return structured JSON matching the API schema
    - Content tools: Return plain text or formatted content
    - Social media: Return concise, engaging text
@@ -919,15 +930,18 @@ OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
   "toolName": "exact_tool_name_from_available_tools",
-  "inputParams": { /* transformed parameters based on tool requirements */ },
+  "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
   "reasoning": "brief explanation of tool selection and parameter transformation"
 }
 
 EXAMPLE TRANSFORMATIONS:
+- For create_tweet tool with schema {"text": {"type": "string"}}: Use {"text": "your tweet content"} NOT {"tweet": "content"}
 - For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
 - For social media: Extract key insights and format as engaging content
 - For API calls: Structure data according to API schema requirements
 - For content creation: Transform data into readable, formatted text
+
+IMPORTANT: Always check the exact parameter names in the inputSchema and use those exact names in your inputParams.
 
 Transform the data now:`;
 
