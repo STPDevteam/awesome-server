@@ -54,8 +54,8 @@ export interface ExecutionStep {
 /**
  * 工作流状态定义
  */
-const WorkflowStateAnnotation = Annotation.Root({
-  // 基础状态
+export const WorkflowStateAnnotation = Annotation.Root({
+  // Task information
   taskId: Annotation<string>({
     reducer: (x, y) => y ?? x,
     default: () => '',
@@ -68,12 +68,8 @@ const WorkflowStateAnnotation = Annotation.Root({
     reducer: (x, y) => y ?? x,
     default: () => '',
   }),
-  messages: Annotation<BaseMessage[]>({
-    reducer: (x, y) => y ?? x,
-    default: () => [],
-  }),
-  
-  // 执行状态
+
+  // Execution state
   executionHistory: Annotation<ExecutionStep[]>({
     reducer: (x, y) => y ?? x,
     default: () => [],
@@ -82,6 +78,12 @@ const WorkflowStateAnnotation = Annotation.Root({
     reducer: (x, y) => ({ ...x, ...y }),
     default: () => ({}),
   }),
+  messages: Annotation<BaseMessage[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
+  
+  // Completion state
   isComplete: Annotation<boolean>({
     reducer: (x, y) => y ?? x,
     default: () => false,
@@ -91,7 +93,21 @@ const WorkflowStateAnnotation = Annotation.Root({
     default: () => null,
   }),
   
-  // 工作流状态
+  // Error handling
+  lastError: Annotation<string | null>({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
+  }),
+  errors: Annotation<string[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
+  
+  // Workflow control
+  currentPlan: Annotation<ExecutionPlan | null>({
+    reducer: (x, y) => y ?? x,
+    default: () => null,
+  }),
   workflowPlan: Annotation<any[]>({
     reducer: (x, y) => y ?? x,
     default: () => [],
@@ -100,38 +116,14 @@ const WorkflowStateAnnotation = Annotation.Root({
     reducer: (x, y) => y ?? x,
     default: () => 0,
   }),
-  currentPlan: Annotation<ExecutionPlan | null>({
-    reducer: (x, y) => y ?? x,
-    default: () => null,
-  }),
   maxIterations: Annotation<number>({
     reducer: (x, y) => y ?? x,
     default: () => 50,
   }),
-  
-  // 错误处理
-  error: Annotation<string | null>({
-    reducer: (x, y) => y ?? x,
-    default: () => null,
-  }),
-  retryCount: Annotation<number>({
-    reducer: (x, y) => y ?? x,
-    default: () => 0,
-  }),
-  errors: Annotation<string[]>({
-    reducer: (x, y) => y ?? x,
-    default: () => [],
-  }),
-  lastError: Annotation<string | null>({
-    reducer: (x, y) => y ?? x,
-    default: () => null,
-  }),
-  
-  // 兼容字段
   currentIteration: Annotation<number>({
     reducer: (x, y) => y ?? x,
     default: () => 0,
-  }),
+  })
 });
 
 export type WorkflowState = typeof WorkflowStateAnnotation.State;
@@ -198,11 +190,41 @@ export class IntelligentWorkflowEngine {
   }
 
   /**
-   * Planner 节点 - 分析当前状态并制定执行计划
+   * Planner 节点 - 制定或获取下一步执行计划
    */
   private async plannerNode(state: WorkflowState): Promise<Partial<WorkflowState>> {
     try {
       logger.info(`🧠 Planner: 分析任务 [迭代: ${state.currentIteration + 1}]`);
+      
+      // 🔧 关键修复：检查是否已有完整工作流计划
+      if (state.workflowPlan && state.workflowPlan.length > 0) {
+        // 如果已有工作流计划，按步骤执行
+        if (state.currentStepIndex < state.workflowPlan.length) {
+          const currentStep = state.workflowPlan[state.currentStepIndex];
+          logger.info(`📋 执行预定工作流步骤 ${state.currentStepIndex + 1}/${state.workflowPlan.length}: ${currentStep.action}`);
+          
+          // 将工作流步骤转换为执行计划
+          const plan = await this.convertWorkflowStepToExecutionPlan(currentStep, state.workflowPlan);
+          
+          logger.info(`📋 Planner: 制定计划 - ${plan.tool} (${plan.toolType})`);
+          logger.info(`💭 推理: ${plan.reasoning}`);
+          
+          return {
+            currentPlan: plan,
+            currentIteration: state.currentIteration + 1
+          };
+        } else {
+          // 所有步骤都已执行完毕
+          logger.info(`✅ 所有工作流步骤已执行完毕`);
+          return {
+            isComplete: true,
+            currentIteration: state.currentIteration + 1
+          };
+        }
+      }
+      
+      // 🔧 如果没有工作流计划，生成完整的工作流计划
+      logger.info(`🧠 生成完整工作流计划`);
       
       // 获取可用的MCP能力 - 传入taskId
       const availableMCPs = await this.getAvailableMCPCapabilities(state.taskId);
@@ -214,13 +236,26 @@ export class IntelligentWorkflowEngine {
         new SystemMessage(plannerPrompt)
       ]);
 
-      const plan = await this.parsePlan(response.content as string);
+      // 解析完整工作流计划
+      const workflowPlan = await this.parseWorkflowPlan(response.content as string);
+      
+      if (workflowPlan.length === 0) {
+        throw new Error('生成的工作流计划为空');
+      }
+      
+      logger.info(`📋 生成完整工作流计划，包含 ${workflowPlan.length} 个步骤`);
+      
+      // 执行第一步
+      const firstStep = workflowPlan[0];
+      const plan = await this.convertWorkflowStepToExecutionPlan(firstStep, workflowPlan);
       
       logger.info(`📋 Planner: 制定计划 - ${plan.tool} (${plan.toolType})`);
       logger.info(`💭 推理: ${plan.reasoning}`);
       
       return {
         currentPlan: plan,
+        workflowPlan: workflowPlan, // 保存完整计划
+        currentStepIndex: 0, // 从第0步开始
         currentIteration: state.currentIteration + 1
       };
       
@@ -292,8 +327,13 @@ export class IntelligentWorkflowEngine {
 
       logger.info(`✅ 执行成功: ${enhancedPlan.tool}`);
 
+      // 🔧 关键修复：推进步骤索引
+      const nextStepIndex = state.currentStepIndex + 1;
+      logger.info(`📈 步骤推进: ${state.currentStepIndex} -> ${nextStepIndex}`);
+
       return {
         executionHistory: [...state.executionHistory, step],
+        currentStepIndex: nextStepIndex, // 推进到下一步
         blackboard: {
           ...state.blackboard,
           [`step${step.stepNumber}`]: result,
@@ -654,50 +694,30 @@ Please return in format:
   }
 
   /**
-   * 解析计划
+   * 解析完整工作流计划
    */
-  private async parsePlan(content: string): Promise<ExecutionPlan> {
+  private async parseWorkflowPlan(content: string): Promise<any[]> {
     try {
-      // 尝试提取 JSON 数组或对象
-      const jsonMatch = content.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+      // 尝试提取 JSON 数组
+      const jsonMatch = content.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         
-        // 如果是数组，取第一个步骤
-        if (Array.isArray(parsed)) {
-          if (parsed.length === 0) {
-            throw new Error('计划数组为空');
-          }
-          
-          const firstStep = parsed[0];
-          logger.info(`📋 工作流计划包含 ${parsed.length} 个步骤，当前执行第一步: ${firstStep.action}`);
-          
-          // 将数组格式转换为执行计划格式
-          return await this.convertWorkflowStepToExecutionPlan(firstStep, parsed);
-        } else {
-          // 如果是单个对象，直接解析
-          return {
-            tool: parsed.tool || 'llm.analyze',
-            toolType: parsed.toolType || 'llm',
-            mcpName: parsed.mcpName,
-            args: parsed.args || {},
-            expectedOutput: parsed.expectedOutput || '分析结果',
-            reasoning: parsed.reasoning || '默认推理'
-          };
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          logger.info(`📋 解析到完整工作流计划，包含 ${parsed.length} 个步骤`);
+          return parsed;
         }
       }
     } catch (error) {
-      logger.warn('解析计划失败，使用默认计划', error);
+      logger.warn('解析工作流计划失败', error);
     }
 
-    // 默认计划
-    return {
-      tool: 'llm.analyze',
-      toolType: 'llm',
-      args: { content: content },
-      expectedOutput: '分析结果',
-      reasoning: '解析失败，使用默认LLM分析'
-    };
+    // 如果解析失败，返回默认的单步计划
+    return [{
+      action: 'llm_analyze',
+      mcpName: 'llm',
+      objective: 'Analyze the user request using LLM capabilities'
+    }];
   }
 
   /**
