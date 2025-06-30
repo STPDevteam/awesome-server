@@ -30,55 +30,55 @@ export class IntelligentTaskService {
   }
 
   /**
-   * Intelligent task execution - using workflow engine for automatic execution (based on task analysis results)
+   * 智能执行任务 - 使用工作流引擎自动执行（基于任务分析结果）
    */
   async executeTaskIntelligently(
     taskId: string,
     stream: (data: any) => void
   ): Promise<boolean> {
     try {
-      logger.info(`⚡ Starting intelligent task execution [Task: ${taskId}]`);
+      logger.info(`⚡ 开始智能任务执行 [任务: ${taskId}]`);
 
-      // Get task information
+      // 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
       if (!task) {
-        stream({ event: 'error', data: { message: 'Task not found' } });
+        stream({ event: 'error', data: { message: '任务不存在' } });
         return false;
       }
 
-      // Check if task has been analyzed
+      // 检查任务是否已经过分析
       if (!task.mcpWorkflow) {
         stream({ 
           event: 'error', 
           data: { 
-            message: 'Task not analyzed yet',
-            details: 'Please call task analysis API (/api/task/:id/analyze) first'
+            message: '任务尚未分析',
+            details: '请先调用任务分析API (/api/task/:id/analyze) 进行任务分析'
           } 
         });
         return false;
       }
 
-      // Send execution start event
+      // 发送执行开始事件
       stream({ 
         event: 'execution_start', 
         data: { 
           taskId, 
           query: task.content,
           timestamp: new Date().toISOString(),
-          usePreselectedMCPs: true // Indicates using preselected MCPs
+          usePreselectedMCPs: true // 标识使用预选的MCP
         } 
       });
 
-      // Update task status
+      // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
       stream({ event: 'status_update', data: { status: 'in_progress' } });
 
-      // Parse MCP workflow information
+      // 解析MCP工作流信息
       const mcpWorkflow = typeof task.mcpWorkflow === 'string' 
         ? JSON.parse(task.mcpWorkflow) 
         : task.mcpWorkflow;
 
-      // Send preselected MCP information
+      // 发送预选MCP信息
       stream({
         event: 'preselected_mcps',
         data: {
@@ -87,91 +87,120 @@ export class IntelligentTaskService {
         }
       });
 
-      // Use intelligent workflow engine to execute task (will automatically use preselected MCPs)
-      const workflowResult = await this.workflowEngine.executeIntelligentWorkflow(
+      // 使用智能工作流引擎执行任务（会自动使用预选的MCP）
+      const workflowGenerator = this.workflowEngine.executeWorkflowStream(
         taskId,
         task.content,
-        mcpWorkflow.mcps || [], // Pass preselected MCPs
-        100 // Maximum 100 iterations for execution phase - increased to support complex multi-step workflows
+        100 // 执行阶段最多100次迭代 - 增加以支持复杂的多步骤工作流
       );
 
-      // Process workflow execution results
-      const finalState = workflowResult;
-      const executionSteps: ExecutionStep[] = finalState?.executionHistory || [];
+      let finalState: WorkflowState | null = null;
+      let executionSteps: ExecutionStep[] = [];
 
-      // Save each step's results to database
-      for (const step of executionSteps) {
-        await taskExecutorDao.saveStepResult(
-          taskId,
-          step.stepNumber,
-          step.success,
-          step.result
-        );
-
-        // Save step messages to conversation
-        if (task.conversationId) {
-          const stepContent = step.success 
-            ? `Execution successful: ${step.plan?.tool}\n\n${step.result}`
-            : `Execution failed: ${step.plan?.tool}\n\nError: ${step.error}`;
-
-          await messageDao.createMessage({
-            conversationId: task.conversationId,
-            content: stepContent,
-            type: MessageType.ASSISTANT,
-            intent: MessageIntent.TASK,
-            taskId,
-            metadata: {
-              stepType: MessageStepType.EXECUTION,
-              stepNumber: step.stepNumber,
-              stepName: step.plan?.tool || 'Unknown Step',
-              taskPhase: 'execution',
-              isComplete: true
-            }
-          });
-
-          await conversationDao.incrementMessageCount(task.conversationId);
-        }
-
-        // Send step completion event
+      for await (const workflowStep of workflowGenerator) {
+        // 转发工作流事件
         stream({
-          event: 'step_complete',
+          event: 'workflow_step',
           data: {
-            step: step.stepNumber,
-            tool: step.plan?.tool,
-            success: step.success,
-            result: step.result,
-            error: step.error
+            workflowEvent: workflowStep.event,
+            workflowData: workflowStep.data
           }
         });
+
+        // 处理特定事件
+        switch (workflowStep.event) {
+          case 'step_complete':
+            const step = workflowStep.data;
+            executionSteps.push(step);
+
+            // 保存步骤结果到数据库
+            await taskExecutorDao.saveStepResult(
+              taskId,
+              step.step,
+              step.success,
+              step.result
+            );
+
+            // 保存步骤消息到会话
+            if (task.conversationId) {
+              const stepContent = step.success 
+                ? `执行成功: ${step.plan?.tool}\n\n${step.result}`
+                : `执行失败: ${step.plan?.tool}\n\n错误: ${step.error}`;
+
+              await messageDao.createMessage({
+                conversationId: task.conversationId,
+                content: stepContent,
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                metadata: {
+                  stepType: MessageStepType.EXECUTION,
+                  stepNumber: step.step,
+                  stepName: step.plan?.tool || 'Unknown Step',
+                  taskPhase: 'execution',
+                  isComplete: true
+                }
+              });
+
+              await conversationDao.incrementMessageCount(task.conversationId);
+            }
+
+            // 发送步骤完成事件
+            stream({
+              event: 'step_complete',
+              data: {
+                step: step.step,
+                tool: step.plan?.tool,
+                success: step.success,
+                result: step.result,
+                error: step.error
+              }
+            });
+            break;
+
+          case 'workflow_complete':
+            finalState = workflowStep.data.finalState;
+            break;
+
+          case 'workflow_error':
+            stream({
+              event: 'error',
+              data: { message: workflowStep.data.error }
+            });
+            
+            await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+              error: workflowStep.data.error
+            });
+            
+            return false;
+        }
       }
 
-      // Determine overall execution result
+      // 判断整体执行结果
       const successfulSteps = executionSteps.filter(step => step.success).length;
       const overallSuccess = successfulSteps > 0 && executionSteps.length > 0;
 
-      // Generate final result
+      // 生成最终结果
       let finalResult = '';
       if (finalState && finalState.blackboard && finalState.blackboard.lastResult) {
         finalResult = finalState.blackboard.lastResult;
-      } else if (finalState && finalState.finalAnswer) {
-        finalResult = finalState.finalAnswer;
       } else {
-        // Extract results from execution steps
+        // 从执行步骤中提取结果
         const successfulResults = executionSteps
           .filter(step => step.success)
           .map(step => step.result)
           .join('\n\n');
-        finalResult = successfulResults || 'Execution completed, but no clear result obtained';
+        finalResult = successfulResults || '执行完成，但未获得明确结果';
       }
 
-      // Generate execution summary using LLM
+      // 使用LLM生成执行摘要
       const executionSummary = await this.generateExecutionSummary(
         task.content,
         executionSteps,
         finalResult
       );
 
-      // Save summary message to conversation
+      // 保存摘要消息到会话
       if (task.conversationId) {
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -190,7 +219,7 @@ export class IntelligentTaskService {
         await conversationDao.incrementMessageCount(task.conversationId);
       }
 
-      // Update task result
+      // 更新任务结果
       await taskExecutorDao.updateTaskResult(
         taskId,
         overallSuccess ? 'completed' : 'partial_failure',
@@ -199,11 +228,11 @@ export class IntelligentTaskService {
           steps: executionSteps,
           finalResult,
           executionHistory: finalState?.executionHistory || [],
-          usedPreselectedMCPs: true // Indicates preselected MCPs were used
+          usedPreselectedMCPs: true // 标识使用了预选的MCP
         }
       );
 
-      // Send execution completion event
+      // 发送执行完成事件
       stream({
         event: 'execution_complete',
         data: {
@@ -215,16 +244,16 @@ export class IntelligentTaskService {
         }
       });
 
-      logger.info(`✅ Intelligent task execution completed [Task: ${taskId}, Success: ${overallSuccess}]`);
+      logger.info(`✅ 智能任务执行完成 [任务: ${taskId}, 成功: ${overallSuccess}]`);
       return overallSuccess;
 
     } catch (error) {
-      logger.error(`❌ Intelligent task execution failed:`, error);
+      logger.error(`❌ 智能任务执行失败:`, error);
       
       stream({
         event: 'error',
         data: {
-          message: 'Intelligent execution failed',
+          message: '智能执行失败',
           details: error instanceof Error ? error.message : String(error)
         }
       });
@@ -260,7 +289,7 @@ export class IntelligentTaskService {
   }
 
   /**
-   * Generate execution summary in English
+   * 生成执行摘要
    */
   private async generateExecutionSummary(
     taskContent: string,
@@ -268,23 +297,23 @@ export class IntelligentTaskService {
     finalResult: string
   ): Promise<string> {
     const stepsSummary = executionSteps.map(step => 
-      `- Step ${step.stepNumber}: ${step.plan?.tool} - ${step.success ? 'Success' : 'Failed'}`
+      `- 步骤${step.stepNumber}: ${step.plan?.tool} - ${step.success ? '成功' : '失败'}`
     ).join('\n');
 
-    return `## Task Execution Summary
+    return `## 任务执行摘要
 
-**Original Task**: ${taskContent}
+**原始任务**: ${taskContent}
 
-**Execution Steps**:
+**执行步骤**:
 ${stepsSummary}
 
-**Execution Result**:
+**执行结果**:
 ${finalResult}
 
-**Statistics**:
-- Total Steps: ${executionSteps.length}
-- Successful Steps: ${executionSteps.filter(s => s.success).length}
-- Failed Steps: ${executionSteps.filter(s => !s.success).length}`;
+**统计信息**:
+- 总步骤数: ${executionSteps.length}
+- 成功步骤: ${executionSteps.filter(s => s.success).length}
+- 失败步骤: ${executionSteps.filter(s => !s.success).length}`;
   }
 }
 
