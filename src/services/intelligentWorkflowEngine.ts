@@ -921,10 +921,10 @@ TRANSFORMATION PRINCIPLES:
    - Social media: Return concise, engaging text
    - Database tools: Return properly structured data objects
 
-SMART PLACEHOLDER STRATEGY:
-- Instead of fake data, use descriptive placeholders that indicate what's needed
-- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
-- This makes it clear what data is missing and needs to be provided
+SMART DATA HANDLING:
+- Extract and transform actual data from previous outputs
+- Only use placeholders when absolutely necessary
+- Focus on what the specific tool actually needs
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -1521,72 +1521,34 @@ Please return the extracted information in JSON format.`;
       }
       
       // 构建智能转换提示词
-      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+      const conversionPrompt = `You are an intelligent data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+
+CRITICAL: DO NOT use any hardcoded examples or templates. Analyze the actual data and tool requirements to create appropriate parameters.
 
 CONTEXT:
 - Previous step output: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
 - Next action: ${nextAction}
 - Tool information: ${toolInfo ? JSON.stringify(toolInfo, null, 2) : 'Tool information not available'}
 
-CRITICAL NOTION API GUIDELINES:
-When working with Notion API (API-post-page, create_page, etc.):
-
-1. **NEVER use workspace parent** - This is not supported for internal integrations:
-   ❌ {"parent": {"type": "workspace", "workspace": true}}
-
-2. **Always use real page_id or database_id**:
-   ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
-   ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
-
-3. **Strategy for getting real IDs**:
-   - First call API-post-search to find existing pages/databases
-   - Use the first available page as parent
-   - If no pages found, the user needs to create a page in Notion first
-
-4. **Two-step approach**:
-   Step 1: Search for available pages using API-post-search
-   Step 2: Create page under the first available page
-
-5. **Search query format**:
-   {
-     "query": "",
-     "filter": {
-       "value": "page",
-       "property": "object"
-     }
-   }
-
-6. **Page creation format**:
-   {
-     "parent": {"type": "page_id", "page_id": "EXTRACTED_FROM_SEARCH"},
-     "properties": {
-       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
-     },
-     "children": [...]
-   }
-
-7. **Children format**: Must be block objects:
-   ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
-
 TRANSFORMATION PRINCIPLES:
-1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
-2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
-3. **Handle missing data intelligently**: 
-   - For new Notion pages: Use workspace parent
-   - For content: Transform into proper block format
-   - For IDs from previous steps: Extract real IDs from previous results
-   - For optional fields: Omit or use reasonable defaults
+1. **Analyze the tool schema**: If tool information is available, look at the input schema to understand expected parameter format
+2. **Extract relevant data**: From previous output, extract only the data relevant to the next tool
+3. **Smart parameter matching**:
+   - For social media tools (tweet, post): Create engaging content from the data
+   - For API tools: Structure data according to the schema
+   - For search tools: Extract keywords or criteria
+   - For content creation: Transform data into readable format
 
-4. **Format according to tool expectations**:
-   - API tools: Return structured JSON matching the API schema
-   - Content tools: Return plain text or formatted content
-   - Social media: Return concise, engaging text
-   - Database tools: Return properly structured data objects
+4. **Common tool patterns** (use these as guidance, not templates):
+   - create_tweet/post_tweet: Expects {"text": "content up to 280 chars"}
+   - API operations: Follow the exact schema provided in tool information
+   - Search operations: Extract relevant search terms
+   - Content operations: Format data appropriately
 
-SMART CONTENT TRANSFORMATION:
-- If previous output contains analysis/content, transform it into proper Notion blocks
-- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
-- Convert plain text into rich_text format for Notion blocks
+5. **Handle missing data intelligently**:
+   - Use data from previous steps when available
+   - Create descriptive placeholders only when necessary
+   - Omit optional fields if not relevant
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -1594,6 +1556,8 @@ Return a JSON object with exactly this structure:
   "transformedData": { /* the actual parameters for the next tool */ },
   "reasoning": "brief explanation of the transformation logic"
 }
+
+IMPORTANT: Base your transformation on the actual tool requirements and previous data. Each tool has unique needs - analyze carefully.
 
 Transform the data now:`;
 
@@ -1630,7 +1594,9 @@ Transform the data now:`;
         const resultStr = JSON.stringify(prevResult.result);
         // 如果是推文相关，尝试生成简单内容
         if (nextAction.toLowerCase().includes('tweet') || nextAction.toLowerCase().includes('post')) {
-          return '🚀 Check out the latest crypto market updates! #Crypto #DeFi';
+          return {
+            text: '🚀 Check out the latest crypto market updates! #Crypto #DeFi'
+          };
         }
         // 否则返回解析的数据或原始结果
         return prevResult.parsedData || prevResult.result;
