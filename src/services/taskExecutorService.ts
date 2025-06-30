@@ -68,10 +68,11 @@ export class TaskExecutorService {
   /**
    * 验证并确保MCP客户端连接正常
    * @param mcpName MCP名称
+   * @param userId 用户ID
    * @returns 验证过的客户端实例
    */
-  private async ensureClientConnection(mcpName: string): Promise<any> {
-    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+  private async ensureClientConnection(mcpName: string, userId?: string): Promise<any> {
+    const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
     const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
         
     if (!isConnected) {
@@ -79,7 +80,7 @@ export class TaskExecutorService {
       }
 
     // 验证客户端连接状态
-    const client = this.mcpManager.getClient(mcpName);
+    const client = this.mcpManager.getClient(mcpName, userId);
     if (!client) {
       throw new Error(`No client found for MCP: ${mcpName}`);
     }
@@ -101,11 +102,11 @@ export class TaskExecutorService {
       
       try {
         // 尝试重新连接
-        await this.mcpManager.disconnect(mcpName);
-        await this.mcpManager.connect(mcpName, mcpConfig.command, mcpConfig.args, mcpConfig.env);
+        await this.mcpManager.disconnect(mcpName, userId);
+        await this.mcpManager.connect(mcpName, mcpConfig.command, mcpConfig.args, mcpConfig.env, userId);
           
         // 验证重连后的连接
-        const reconnectedClient = this.mcpManager.getClient(mcpName);
+        const reconnectedClient = this.mcpManager.getClient(mcpName, userId);
         if (!reconnectedClient) {
           throw new Error(`Failed to get reconnected client for ${mcpName}`);
         }
@@ -242,15 +243,22 @@ export class TaskExecutorService {
   /**
    * 通过LangChain调用MCP工具
    */
-  private async callMCPToolWithLangChain(mcpName: string, toolName: string, input: any): Promise<any> {
+  private async callMCPToolWithLangChain(mcpName: string, toolName: string, input: any, taskId?: string): Promise<any> {
     try {
       logger.info(`🔍 Calling MCP tool via LangChain [MCP: ${mcpName}, Tool: ${toolName}]`);
       
+      // 获取用户ID
+      let userId: string | undefined;
+      if (taskId) {
+        const task = await taskService.getTaskById(taskId);
+        userId = task?.userId;
+      }
+      
       // 验证并确保客户端连接正常
-      await this.ensureClientConnection(mcpName);
+      await this.ensureClientConnection(mcpName, userId);
       
       // 获取MCP的所有工具
-      const mcpTools = await this.mcpManager.getTools(mcpName);
+      const mcpTools = await this.mcpManager.getTools(mcpName, userId);
       
       // 查找目标工具 - 处理连字符和下划线的兼容性
       const targetTool = mcpTools.find(t => 
@@ -370,12 +378,20 @@ For cryptocurrency tools:
         logger.info(`MCP name mapping: '${mcpName}' mapped to '${actualMcpName}'`);
       }
 
+      // 获取用户ID
+      let userId: string | undefined;
+      if (taskId) {
+        const task = await taskService.getTaskById(taskId);
+        userId = task?.userId;
+      }
+
       // 检查MCP是否已连接
-      const connectedMCPs = this.mcpManager.getConnectedMCPs();
+      const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
       const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
       
       console.log(`\n==== MCP Connection Status Debug ====`);
       console.log(`MCP Name: ${actualMcpName}`);
+      console.log(`User ID: ${userId}`);
       console.log(`Is Connected: ${isConnected}`);
       console.log(`Connected MCPs:`, connectedMCPs.map(mcp => ({
         name: mcp.name,
@@ -404,16 +420,16 @@ For cryptocurrency tools:
       if (!isConnected || needsReconnection) {
         if (needsReconnection) {
           console.log(`Disconnecting MCP ${actualMcpName} to reconnect with proper auth...`);
-          await this.mcpManager.disconnect(actualMcpName);
+          await this.mcpManager.disconnect(actualMcpName, userId);
         }
         console.log(`Calling autoConnectMCP with task ID: ${taskId}...`);
-        await this.autoConnectMCP(actualMcpName, taskId);
+        await this.autoConnectMCP(actualMcpName, taskId, userId);
       } else {
         console.log(`MCP already connected with valid auth, skipping autoConnectMCP`);
       }
 
       // 获取MCP的所有工具
-      const mcpTools = await this.mcpManager.getTools(actualMcpName);
+      const mcpTools = await this.mcpManager.getTools(actualMcpName, userId);
       logger.info(`📋 Available tools in ${actualMcpName}: ${mcpTools.map(t => t.name).join(', ')}`);
 
       // 使用LLM根据目标选择合适的工具，并转换输入参数
@@ -518,7 +534,7 @@ Transform the data now:`;
       console.log(`Original Input: ${JSON.stringify(input, null, 2)}`);
       console.log(`Converted Input Parameters: ${JSON.stringify(convertedInput, null, 2)}`);
       
-      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, convertedInput);
+      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, convertedInput, taskId);
       
       console.log(`\n==== MCP Objective-Based Call Result ====`);
       console.log(`Status: Success`);
@@ -575,7 +591,7 @@ Transform the data now:`;
 
         // 使用LangChain调用MCP工具
         logger.info(`🔗 Using LangChain to call MCP tool...`);
-        const result = await this.callMCPToolWithLangChain(actualMcpName, toolNameOrObjective, input);
+        const result = await this.callMCPToolWithLangChain(actualMcpName, toolNameOrObjective, input, taskId);
 
         console.log(`\n==== MCP Call Result (via LangChain) ====`);
         console.log(`Status: Success`);
@@ -600,7 +616,7 @@ Transform the data now:`;
   /**
    * 自动连接MCP服务
    */
-  private async autoConnectMCP(mcpName: string, taskId?: string): Promise<void> {
+  private async autoConnectMCP(mcpName: string, taskId?: string, userId?: string): Promise<void> {
     logger.info(`MCP ${mcpName} not connected, attempting auto-connection...`);
     
     // 从predefinedMCPs获取MCP配置
@@ -625,8 +641,8 @@ Transform the data now:`;
       args: dynamicArgs
     };
     
-    // 尝试连接MCP
-    const connected = await this.mcpManager.connectPredefined(dynamicMcpConfig);
+    // 尝试连接MCP，传递userId
+    const connected = await this.mcpManager.connectPredefined(dynamicMcpConfig, userId);
     if (!connected) {
       throw new Error(`Failed to connect to MCP ${mcpName}. Please ensure the MCP server is installed and configured correctly.`);
     }
@@ -635,7 +651,7 @@ Transform the data now:`;
     
     // 验证工具是否存在并详细记录
     try {
-      const tools = await this.mcpManager.getTools(mcpName);
+      const tools = await this.mcpManager.getTools(mcpName, userId);
       logger.info(`✅ Available tools after connection [${mcpName}]: ${tools.map(t => t.name).join(', ')}`);
       
       // 详细记录每个工具的信息

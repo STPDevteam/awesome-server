@@ -48,8 +48,11 @@ export class MCPToolAdapter {
 
   /**
    * 将 MCP 工具转换为 LangChain 工具
+   * @param mcpName MCP名称
+   * @param mcpTool MCP工具
+   * @param userId 用户ID（用于多用户隔离）
    */
-  async convertMCPToolToLangChainTool(mcpName: string, mcpTool: any): Promise<DynamicStructuredTool> {
+  async convertMCPToolToLangChainTool(mcpName: string, mcpTool: any, userId?: string): Promise<DynamicStructuredTool> {
     // 构建 Zod schema
     const schema = this.buildZodSchema(mcpTool.inputSchema || {});
     
@@ -64,7 +67,7 @@ export class MCPToolAdapter {
       schema,
       func: async (input) => {
         try {
-          const result = await this.mcpManager.callTool(mcpName, mcpTool.name, input);
+          const result = await this.mcpManager.callTool(mcpName, mcpTool.name, input, userId);
           
           // 处理不同类型的返回结果
           if (result.content) {
@@ -188,19 +191,20 @@ export class MCPToolAdapter {
 
   /**
    * 获取所有已连接 MCP 的所有工具
+   * @param userId 用户ID（用于多用户隔离）
    */
-  async getAllTools(): Promise<DynamicStructuredTool[]> {
+  async getAllTools(userId?: string): Promise<DynamicStructuredTool[]> {
     const tools: DynamicStructuredTool[] = [];
-    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+    const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
     
     for (const mcp of connectedMCPs) {
       try {
-        const mcpTools = await this.mcpManager.getTools(mcp.name);
+        const mcpTools = await this.mcpManager.getTools(mcp.name, userId);
         
         console.log(`Processing ${mcpTools.length} tools from ${mcp.name}`);
         
         for (const mcpTool of mcpTools) {
-          const langchainTool = await this.convertMCPToolToLangChainTool(mcp.name, mcpTool);
+          const langchainTool = await this.convertMCPToolToLangChainTool(mcp.name, mcpTool, userId);
           tools.push(langchainTool);
         }
       } catch (error) {
@@ -214,10 +218,12 @@ export class MCPToolAdapter {
 
   /**
    * 获取指定 MCP 的可用工具信息
+   * @param mcpName MCP名称
+   * @param userId 用户ID（用于多用户隔离）
    */
-  async getAvailableTools(mcpName: string): Promise<any[]> {
+  async getAvailableTools(mcpName: string, userId?: string): Promise<any[]> {
     try {
-      const mcpTools = await this.mcpManager.getTools(mcpName);
+      const mcpTools = await this.mcpManager.getTools(mcpName, userId);
       return mcpTools.map(tool => ({
         name: tool.name,
         description: tool.description,
@@ -231,10 +237,14 @@ export class MCPToolAdapter {
 
   /**
    * 调用指定 MCP 的工具
+   * @param mcpName MCP名称
+   * @param toolName 工具名称
+   * @param args 工具参数
+   * @param userId 用户ID（用于多用户隔离）
    */
-  async callTool(mcpName: string, toolName: string, args: Record<string, any>): Promise<any> {
+  async callTool(mcpName: string, toolName: string, args: Record<string, any>, userId?: string): Promise<any> {
     try {
-      return await this.mcpManager.callTool(mcpName, toolName, args);
+      return await this.mcpManager.callTool(mcpName, toolName, args, userId);
     } catch (error) {
       console.error(`Failed to call tool ${toolName} from ${mcpName}:`, error);
       throw error;

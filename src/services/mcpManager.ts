@@ -13,6 +13,7 @@ interface MCPClient {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  userId?: string;
 }
 
 export interface MCPService {
@@ -45,14 +46,25 @@ export class MCPManager {
   }
 
   /**
+   * 生成包含用户ID的连接键
+   * @param name MCP名称
+   * @param userId 用户ID（可选）
+   * @returns 连接键
+   */
+  private getConnectionKey(name: string, userId?: string): string {
+    return userId ? `${userId}:${name}` : name;
+  }
+
+  /**
    * Connect to MCP service
    * @param name MCP name
    * @param command MCP command
    * @param args Command arguments
    * @param env Environment variables
+   * @param userId User ID for multi-user isolation
    */
-  async connect(name: string, command: string, args: string[] = [], env?: Record<string, string>): Promise<void> {
-    logger.info(`【MCP Debug】MCPManager.connect() Starting connection to MCP [MCP: ${name}, Command: ${command}]`);
+  async connect(name: string, command: string, args: string[] = [], env?: Record<string, string>, userId?: string): Promise<void> {
+    logger.info(`【MCP Debug】MCPManager.connect() Starting connection to MCP [MCP: ${name}, Command: ${command}, User: ${userId || 'default'}]`);
     logger.info(`【MCP Debug】Connection parameters: ${JSON.stringify(args)}`);
     logger.info(`【MCP Debug】Environment variables: ${env ? Object.keys(env).join(', ') : 'None'}`);
     
@@ -77,10 +89,11 @@ export class MCPManager {
       logger.warn(`【MCP Debug】Error checking file: ${error}`);
     }
     
-    // Check if already connected
-    if (this.clients.has(name)) {
-      logger.info(`【MCP Debug】MCP already connected, disconnecting existing connection first [MCP: ${name}]`);
-      await this.disconnect(name);
+    // Check if already connected (with user isolation)
+    const connectionKey = this.getConnectionKey(name, userId);
+    if (this.clients.has(connectionKey)) {
+      logger.info(`【MCP Debug】MCP already connected for user, disconnecting existing connection first [MCP: ${name}, User: ${userId || 'default'}]`);
+      await this.disconnect(name, userId);
     }
     
     try {
@@ -113,18 +126,19 @@ export class MCPManager {
       await client.connect(transport);
       logger.info(`【MCP Debug】Client connection successful`);
 
-      // Save client
-      this.clients.set(name, {
+      // Save client with user isolation
+      this.clients.set(connectionKey, {
         client,
         name,
         command,
         args,
         env,
+        userId,
       });
 
-      logger.info(`【MCP Debug】MCP connection successful [MCP: ${name}]`);
+      logger.info(`【MCP Debug】MCP connection successful [MCP: ${name}, User: ${userId || 'default'}]`);
     } catch (error) {
-      logger.error(`【MCP Debug】MCP connection failed [MCP: ${name}]:`, error);
+      logger.error(`【MCP Debug】MCP connection failed [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       throw error;
     }
   }
@@ -132,9 +146,10 @@ export class MCPManager {
   /**
    * Connect to predefined MCP service
    * @param mcpConfig MCP service configuration
+   * @param userId User ID for multi-user isolation
    * @returns 是否连接成功
    */
-  async connectPredefined(mcpConfig: MCPService): Promise<boolean> {
+  async connectPredefined(mcpConfig: MCPService, userId?: string): Promise<boolean> {
     try {
       // Special handling for evm-mcp
       if (mcpConfig.name === 'evm-mcp') {
@@ -150,7 +165,7 @@ export class MCPManager {
         
         // connect方法返回void，使用try-catch判断是否成功
         try {
-          await this.connect(mcpConfig.name, 'npx', args, env);
+          await this.connect(mcpConfig.name, 'npx', args, env, userId);
           return true; // 如果没有抛出异常，则连接成功
         } catch {
           return false; // 连接失败
@@ -159,13 +174,13 @@ export class MCPManager {
       
       // Normal MCP handling
       try {
-        await this.connect(mcpConfig.name, mcpConfig.command, mcpConfig.args, mcpConfig.env);
+        await this.connect(mcpConfig.name, mcpConfig.command, mcpConfig.args, mcpConfig.env, userId);
         return true; // 如果没有抛出异常，则连接成功
       } catch {
         return false; // 连接失败
       }
     } catch (error) {
-      logger.error(`Failed to connect to predefined MCP [${mcpConfig.name}]:`, error);
+      logger.error(`Failed to connect to predefined MCP [${mcpConfig.name}] for user [${userId || 'default'}]:`, error);
       return false;
     }
   }
@@ -173,66 +188,82 @@ export class MCPManager {
   /**
    * Disconnect MCP
    * @param name MCP name
+   * @param userId User ID for multi-user isolation
    */
-  async disconnect(name: string): Promise<void> {
-    logger.info(`【MCP Debug】MCPManager.disconnect() Starting to disconnect MCP [MCP: ${name}]`);
+  async disconnect(name: string, userId?: string): Promise<void> {
+    logger.info(`【MCP Debug】MCPManager.disconnect() Starting to disconnect MCP [MCP: ${name}, User: ${userId || 'default'}]`);
     
-    const mcpClient = this.clients.get(name);
+    const connectionKey = this.getConnectionKey(name, userId);
+    const mcpClient = this.clients.get(connectionKey);
     if (!mcpClient) {
-      logger.warn(`【MCP Debug】Attempting to disconnect an MCP that is not connected [MCP: ${name}]`);
+      logger.warn(`【MCP Debug】Attempting to disconnect an MCP that is not connected [MCP: ${name}, User: ${userId || 'default'}]`);
       return;
     }
     
     try {
       await mcpClient.client.close();
-      this.clients.delete(name);
-      logger.info(`【MCP Debug】MCP disconnection successful [MCP: ${name}]`);
+      this.clients.delete(connectionKey);
+      logger.info(`【MCP Debug】MCP disconnection successful [MCP: ${name}, User: ${userId || 'default'}]`);
     } catch (error) {
-      logger.error(`【MCP Debug】MCP disconnection failed [MCP: ${name}]:`, error);
+      logger.error(`【MCP Debug】MCP disconnection failed [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       throw error;
     }
   }
 
   /**
-   * Disconnect all MCPs
+   * Disconnect all MCPs for a specific user
+   * @param userId User ID (optional, if not provided, disconnect all)
    */
-  async disconnectAll(): Promise<void> {
-    logger.info(`【MCP Debug】MCPManager.disconnectAll() Starting to disconnect all MCPs`);
+  async disconnectAll(userId?: string): Promise<void> {
+    logger.info(`【MCP Debug】MCPManager.disconnectAll() Starting to disconnect MCPs [User: ${userId || 'all'}]`);
     
-    const names = Array.from(this.clients.keys());
-    for (const name of names) {
-      await this.disconnect(name);
+    const keysToDisconnect = Array.from(this.clients.keys()).filter(key => {
+      if (!userId) return true; // Disconnect all if no userId provided
+      return key.startsWith(`${userId}:`);
+    });
+    
+    for (const key of keysToDisconnect) {
+      const mcpClient = this.clients.get(key);
+      if (mcpClient) {
+        await this.disconnect(mcpClient.name, mcpClient.userId);
+      }
     }
     
-    logger.info(`【MCP Debug】All MCPs disconnected successfully`);
+    logger.info(`【MCP Debug】MCPs disconnected successfully [User: ${userId || 'all'}]`);
   }
 
   /**
-   * Get list of connected MCPs
+   * Get list of connected MCPs for a specific user
+   * @param userId User ID (optional, if not provided, return all)
    */
-  getConnectedMCPs(): Array<MCPService> {
-    logger.info(`【MCP Debug】MCPManager.getConnectedMCPs() Getting list of connected MCPs`);
+  getConnectedMCPs(userId?: string): Array<MCPService> {
+    logger.info(`【MCP Debug】MCPManager.getConnectedMCPs() Getting list of connected MCPs [User: ${userId || 'all'}]`);
     
-    const result = Array.from(this.clients.values()).map(({ name, command, args, env }) => {
-      // Get extra information based on MCP name
-      const extraInfo = this.getMCPExtraInfo(name);
-      
-      return {
-        name,
-        description: extraInfo.description || `MCP Service: ${name}`,
-        command,
-        args,
-        env,
-        connected: true,
-        status: 'connected',
-        category: extraInfo.category,
-        imageUrl: extraInfo.imageUrl,
-        githubUrl: extraInfo.githubUrl,
-        authParams: extraInfo.authParams
-      };
-    });
+    const result = Array.from(this.clients.entries())
+      .filter(([key, client]) => {
+        if (!userId) return true; // Return all if no userId provided
+        return client.userId === userId;
+      })
+      .map(([key, { name, command, args, env }]) => {
+        // Get extra information based on MCP name
+        const extraInfo = this.getMCPExtraInfo(name);
+        
+        return {
+          name,
+          description: extraInfo.description || `MCP Service: ${name}`,
+          command,
+          args,
+          env,
+          connected: true,
+          status: 'connected',
+          category: extraInfo.category,
+          imageUrl: extraInfo.imageUrl,
+          githubUrl: extraInfo.githubUrl,
+          authParams: extraInfo.authParams
+        };
+      });
     
-    logger.info(`【MCP Debug】Connected MCP list: ${JSON.stringify(result)}`);
+    logger.info(`【MCP Debug】Connected MCP list for user [${userId || 'all'}]: ${JSON.stringify(result)}`);
     return result;
   }
 
@@ -268,9 +299,10 @@ export class MCPManager {
   /**
    * Get MCP tool list
    * @param name MCP name
+   * @param userId User ID for multi-user isolation
    */
-  async getTools(name: string): Promise<any[]> {
-    logger.info(`【MCP Debug】MCPManager.getTools() Starting to get MCP tool list [MCP: ${name}]`);
+  async getTools(name: string, userId?: string): Promise<any[]> {
+    logger.info(`【MCP Debug】MCPManager.getTools() Starting to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]`);
     
     // 标准化MCP名称
     const normalizedName = this.normalizeMCPName(name);
@@ -279,19 +311,20 @@ export class MCPManager {
       name = normalizedName;
     }
     
-    const mcpClient = this.clients.get(name);
+    const connectionKey = this.getConnectionKey(name, userId);
+    const mcpClient = this.clients.get(connectionKey);
     if (!mcpClient) {
-      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}]`);
-      throw new Error(`MCP ${name} not connected`);
+      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}, User: ${userId || 'default'}]`);
+      throw new Error(`MCP ${name} not connected for user ${userId || 'default'}`);
     }
     
     try {
       const toolsResponse = await mcpClient.client.listTools();
       const tools = toolsResponse.tools || [];
-      logger.info(`【MCP Debug】Retrieved MCP tool list [MCP: ${name}, Tool count: ${tools.length}]`);
+      logger.info(`【MCP Debug】Retrieved MCP tool list [MCP: ${name}, User: ${userId || 'default'}, Tool count: ${tools.length}]`);
       return tools;
     } catch (error) {
-      logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}]:`, error);
+      logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       throw error;
     }
   }
@@ -311,9 +344,10 @@ export class MCPManager {
    * @param name MCP name
    * @param tool Tool name
    * @param args Tool arguments
+   * @param userId User ID for multi-user isolation
    */
-  async callTool(name: string, tool: string, args: any): Promise<any> {
-    logger.info(`【MCP Debug】MCPManager.callTool() Starting to call MCP tool [MCP: ${name}, Tool: ${tool}]`);
+  async callTool(name: string, tool: string, args: any, userId?: string): Promise<any> {
+    logger.info(`【MCP Debug】MCPManager.callTool() Starting to call MCP tool [MCP: ${name}, Tool: ${tool}, User: ${userId || 'default'}]`);
     logger.info(`【MCP Debug】Call arguments: ${JSON.stringify(args)}`);
     
     // 标准化MCP名称
@@ -326,10 +360,11 @@ export class MCPManager {
     // 处理工具名称 - 处理中文工具名称的情况
     let actualTool = tool;
     
-    const mcpClient = this.clients.get(name);
+    const connectionKey = this.getConnectionKey(name, userId);
+    const mcpClient = this.clients.get(connectionKey);
     if (!mcpClient) {
-      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}]`);
-      throw new Error(`MCP ${name} not connected`);
+      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}, User: ${userId || 'default'}]`);
+      throw new Error(`MCP ${name} not connected for user ${userId || 'default'}`);
     }
     
     try {
@@ -337,16 +372,17 @@ export class MCPManager {
         name: actualTool,
         arguments: args,
       });
-      logger.info(`【MCP Debug】MCP tool call successful [MCP: ${name}, Tool: ${actualTool}]`);
+      logger.info(`【MCP Debug】MCP tool call successful [MCP: ${name}, Tool: ${actualTool}, User: ${userId || 'default'}]`);
       logger.info(`【MCP Debug】Call result: ${JSON.stringify(result)}`);
       return result;
     } catch (error) {
-      logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${actualTool}]:`, error);
+      logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${actualTool}, User: ${userId || 'default'}]:`, error);
       throw error;
     }
   }
 
-  getClient(name: string): Client | undefined {
-    return this.clients.get(name)?.client;
+  getClient(name: string, userId?: string): Client | undefined {
+    const connectionKey = this.getConnectionKey(name, userId);
+    return this.clients.get(connectionKey)?.client;
   }
 } 
