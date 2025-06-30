@@ -481,9 +481,12 @@ Return a JSON object with exactly this structure:
 }
 
 EXAMPLE TRANSFORMATIONS:
-- For create_tweet tool with schema {"text": {"type": "string"}}: Use {"text": "your tweet content"} NOT {"tweet": "content"}
+- For create_tweet tool with schema {"text": {"type": "string"}}: 
+  * Use {"text": "your tweet content"} NOT {"tweet": "content"}
+  * MUST be under 280 characters! Summarize if needed
+  * For threads: Create first tweet mentioning "Thread 1/n 🧵"
 - For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
-- For social media: Extract key insights and format as engaging content
+- For social media: Extract key insights and format as engaging content (respect character limits!)
 - For API calls: Structure data according to API schema requirements
 - For content creation: Transform data into readable, formatted text
 
@@ -1401,11 +1404,15 @@ TRANSFORMATION PRINCIPLES:
 
 4. **Common tool patterns**:
    - create_tweet/post_tweet: Expects {"text": "content up to 280 chars"}
+     CRITICAL: Twitter has a 280 character limit! If content is longer:
+     * For single tweet: Summarize to fit within 280 chars
+     * For thread request: Create first tweet only, mentioning it's part 1 of a thread
    - create_post/publish: Expects {"content": "formatted content"}
    - search operations: Expects {"query": "search terms"}
    - data fetching: Expects specific IDs or parameters
 
 5. **Smart content generation**:
+   - For Twitter: MUST be under 280 characters! Use concise language, abbreviations if needed
    - For cryptocurrency/financial data: Highlight price, changes, trends
    - For analysis results: Summarize key findings concisely
    - For lists/collections: Format as readable bullet points or threads
