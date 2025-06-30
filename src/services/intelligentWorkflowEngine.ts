@@ -854,13 +854,29 @@ CONTEXT:
 - Next action: ${objective}
 - Available tools: ${availableTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
 
+CRITICAL NOTION WORKFLOW LOGIC:
+1. **If objective involves creating Notion pages**: 
+   - First check if we have real page_id from previous steps
+   - If NO real page_id: Use API-post-search to find available pages
+   - If YES real page_id: Use API-post-page to create the page
+
+2. **Tool Selection Priority for Notion**:
+   - If need to find pages: Select "API-post-search"
+   - If have page_id and need to create: Select "API-post-page"
+   - If need to update existing: Select "API-patch-page"
+
+3. **Parameter Detection**:
+   - If parameters contain placeholders like "EXTRACTED_FROM_SEARCH": Force search first
+   - If parameters contain real UUIDs (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx): Proceed with creation
+
 TRANSFORMATION PRINCIPLES:
 1. **Select the correct tool**: Choose the most appropriate tool from available options
 2. **Transform parameters**: Convert previous output into correct input format for the selected tool
 3. **Handle missing data intelligently**: 
-   - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
+   - For Notion: Search first if no real page_id
+   - For content: Transform into proper block format
+   - For IDs from previous steps: Extract real IDs from previous results
    - For optional fields: Omit or use reasonable defaults
-   - For required fields: Extract from context or use descriptive placeholders
 
 4. **Format according to tool expectations**:
    - API tools: Return structured JSON matching the API schema
@@ -868,32 +884,26 @@ TRANSFORMATION PRINCIPLES:
    - Social media: Return concise, engaging text
    - Database tools: Return properly structured data objects
 
-SMART PLACEHOLDER STRATEGY:
-- Instead of fake data, use descriptive placeholders that indicate what's needed
-- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
-- This makes it clear what data is missing and needs to be provided
+SMART CONTENT TRANSFORMATION:
+- If previous output contains analysis/content, transform it into proper Notion blocks
+- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
+- Convert plain text into rich_text format for Notion blocks
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
-  "toolName": "exact_tool_name_from_available_tools",
-  "inputParams": { /* transformed parameters based on tool requirements */ },
-  "reasoning": "brief explanation of tool selection and parameter transformation"
+  "transformedData": { /* the actual parameters for the next tool */ },
+  "selectedTool": "exact_tool_name_from_available_list",
+  "reasoning": "brief explanation of tool selection and transformation logic"
 }
 
-EXAMPLE TRANSFORMATIONS:
-- For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
-- For social media: Extract key insights and format as engaging content
-- For API calls: Structure data according to API schema requirements
-- For content creation: Transform data into readable, formatted text
-
-Transform the data now:`;
+Transform and select the tool now:`;
 
       const response = await this.llm.invoke([
         new SystemMessage(toolSelectionPrompt)
       ]);
 
-      let toolSelection;
+      let result;
       try {
         const responseText = response.content.toString().trim();
         // 清理可能的markdown格式
@@ -901,25 +911,61 @@ Transform the data now:`;
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .trim();
-        toolSelection = JSON.parse(cleanedText);
+        
+        const parsed = JSON.parse(cleanedText);
+        
+        // 🔍 智能工具选择逻辑
+        let selectedTool = parsed.selectedTool;
+        let transformedData = parsed.transformedData || originalArgs;
+        
+        // 检查是否需要强制搜索
+        const dataStr = JSON.stringify(transformedData);
+        if ((objective.includes('创建') || objective.includes('记录') || objective.includes('Notion')) &&
+            (dataStr.includes('EXTRACTED_FROM_SEARCH') || 
+             dataStr.includes('PLACEHOLDER') || 
+             !dataStr.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i))) {
+          
+          logger.info(`🔄 检测到Notion创建任务但缺少真实page_id，强制使用搜索`);
+          
+          // 查找搜索工具
+          const searchTool = availableTools.find(tool => 
+            tool.name.includes('search') || 
+            tool.name.includes('API-post-search')
+          );
+          
+          if (searchTool) {
+            selectedTool = searchTool.name;
+            transformedData = {
+              "query": "",
+              "filter": {
+                "value": "page",
+                "property": "object"
+              }
+            };
+            logger.info(`🔧 自动选择搜索工具: ${selectedTool}`);
+          }
+        }
+        
+        result = {
+          toolName: selectedTool,
+          inputParams: transformedData,
+          reasoning: parsed.reasoning || "Automatic tool selection and parameter transformation"
+        };
+        
+        logger.info(`🎯 工具选择结果: ${selectedTool}`);
+        logger.info(`📋 转换参数: ${JSON.stringify(transformedData, null, 2)}`);
+        
       } catch (parseError) {
-        logger.error(`解析工具选择响应失败: ${response.content}`);
-        // 回退到简单选择
-        const fallbackPrompt = `可用工具: ${availableTools.map(t => t.name).join(', ')}\n目标: ${objective}\n只选择确切的工具名称:`;
-        const fallbackResponse = await this.llm.invoke([new SystemMessage(fallbackPrompt)]);
-        const fallbackToolName = fallbackResponse.content.toString().trim();
-        toolSelection = {
-          toolName: fallbackToolName,
+        logger.error(`解析工具选择结果失败: ${response.content}`);
+        // 回退处理
+        result = {
+          toolName: availableTools[0]?.name || 'unknown',
           inputParams: originalArgs,
-          reasoning: "由于解析错误使用回退选择"
+          reasoning: "Fallback due to parsing error"
         };
       }
 
-      return {
-        toolName: toolSelection.toolName || originalTool,
-        inputParams: toolSelection.inputParams || originalArgs,
-        reasoning: toolSelection.reasoning || "无推理说明"
-      };
+      return result;
 
     } catch (error) {
       logger.error(`LLM工具选择失败:`, error);
@@ -1479,50 +1525,28 @@ When working with Notion API (API-post-page, create_page, etc.):
    ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
    ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
 
-3. **Strategy for getting real IDs**:
-   - First call API-post-search to find existing pages/databases
-   - Use the first available page as parent
-   - If no pages found, the user needs to create a page in Notion first
-
-4. **Two-step approach**:
-   Step 1: Search for available pages using API-post-search
-   Step 2: Create page under the first available page
-
-5. **Search query format**:
+3. **CRITICAL: If you need to create a Notion page but don't have a real page_id**:
+   - DO NOT use placeholders like "EXTRACTED_FROM_SEARCH"
+   - Instead, return a search query to find available pages first
+   - Use API-post-search with this format:
    {
      "query": "",
      "filter": {
-       "value": "page",
+       "value": "page", 
        "property": "object"
      }
    }
 
-6. **Page creation format**:
-   {
-     "parent": {"type": "page_id", "page_id": "EXTRACTED_FROM_SEARCH"},
-     "properties": {
-       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
-     },
-     "children": [...]
-   }
+4. **Only create pages when you have real page_id from previous search results**
 
-7. **Children format**: Must be block objects:
+5. **Children format**: Must be block objects:
    ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
 
-TRANSFORMATION PRINCIPLES:
-1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
-2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
-3. **Handle missing data intelligently**: 
-   - For new Notion pages: Use workspace parent
-   - For content: Transform into proper block format
-   - For IDs from previous steps: Extract real IDs from previous results
-   - For optional fields: Omit or use reasonable defaults
-
-4. **Format according to tool expectations**:
-   - API tools: Return structured JSON matching the API schema
-   - Content tools: Return plain text or formatted content
-   - Social media: Return concise, engaging text
-   - Database tools: Return properly structured data objects
+TRANSFORMATION LOGIC:
+- If nextAction involves Notion page creation AND no real page_id is available: Return search parameters
+- If nextAction involves Notion page creation AND real page_id is available: Return page creation parameters  
+- If nextAction is search: Return search parameters
+- For other actions: Transform according to tool requirements
 
 SMART CONTENT TRANSFORMATION:
 - If previous output contains analysis/content, transform it into proper Notion blocks
@@ -1553,6 +1577,26 @@ Transform the data now:`;
         
         const parsed = JSON.parse(cleanedText);
         transformedData = parsed.transformedData || parsed;
+        
+        // 🔍 检查是否仍然包含占位符
+        const transformedStr = JSON.stringify(transformedData);
+        if (transformedStr.includes('EXTRACTED_FROM_SEARCH') || 
+            transformedStr.includes('PLACEHOLDER') || 
+            transformedStr.includes('REQUIRED_')) {
+          logger.warn(`⚠️ 检测到占位符，回退到搜索策略`);
+          
+          // 如果是Notion页面创建且包含占位符，改为搜索
+          if (nextAction.includes('API-post-page') || nextAction.includes('create') || nextAction.includes('page')) {
+            transformedData = {
+              "query": "",
+              "filter": {
+                "value": "page",
+                "property": "object"
+              }
+            };
+            logger.info(`🔄 自动转换为搜索参数: ${JSON.stringify(transformedData)}`);
+          }
+        }
         
         logger.info(`🤖 LLM数据转换成功: ${JSON.stringify(transformedData, null, 2)}`);
       } catch (parseError) {
