@@ -377,7 +377,7 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       await conversationDao.incrementMessageCount(conversationId);
       
       // 2. Identify user intent
-      const intentResult = await this.identifyUserIntent(conversationId, content);
+      const intentResult = await this.identifyUserIntent(conversationId, content, userId);
       const userIntent = intentResult.intent;
       
       // Update message intent
@@ -421,7 +421,7 @@ If the user asks about performing specific tasks, you can suggest creating a tas
   /**
    * Identify user intent - determine if chat or task
    */
-  private async identifyUserIntent(conversationId: string, content: string): Promise<{
+  private async identifyUserIntent(conversationId: string, content: string, userId?: string): Promise<{
     intent: MessageIntent;
     confidence: number;
     explanation: string;
@@ -441,8 +441,8 @@ If the user asks about performing specific tasks, you can suggest creating a tas
         }).join('\n') + '\n\n';
       }
       
-      // Get available tools list
-      const availableTools = await this.mcpToolAdapter.getAllTools();
+      // Get available tools list, pass userId for multi-user isolation
+      const availableTools = await this.mcpToolAdapter.getAllTools(userId);
       const toolDescriptions = availableTools.map(tool => 
         `Tool name: ${tool.name}\nDescription: ${tool.description}`
       ).join('\n\n');
@@ -646,7 +646,7 @@ Please analyze the user intent and return the result in JSON format:
         data: { status: 'processing' }
       });
       
-      const intentResult = await this.identifyUserIntent(conversationId, content);
+      const intentResult = await this.identifyUserIntent(conversationId, content, userId);
       const userIntent = intentResult.intent;
       
       // Update message intent

@@ -275,7 +275,7 @@ export class TaskExecutorService {
       }
       
       // 将MCP工具转换为LangChain工具
-      const langchainTool = await this.mcpToolAdapter.convertMCPToolToLangChainTool(mcpName, targetTool);
+      const langchainTool = await this.mcpToolAdapter.convertMCPToolToLangChainTool(mcpName, targetTool, userId);
       
       // 调用LangChain工具
       logger.info(`📞 Calling LangChain tool: ${langchainTool.name}`);
@@ -439,40 +439,70 @@ For cryptocurrency tools:
 CONTEXT:
 - Previous step output: ${typeof input === 'string' ? input : JSON.stringify(input, null, 2)}
 - Next action: ${objective}
-- Available tools: ${mcpTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
+- Available tools with their schemas:
+${mcpTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
 
 TRANSFORMATION PRINCIPLES:
-1. **Select the correct tool**: Choose the most appropriate tool from available options
+1. **Select the correct tool**: Choose the most appropriate tool from available options based on the objective
 2. **Transform parameters**: Convert previous output into correct input format for the selected tool
-3. **Handle missing data intelligently**: 
-   - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
-   - For optional fields: Omit or use reasonable defaults
-   - For required fields: Extract from context or use descriptive placeholders
+3. **CRITICAL: Use exact parameter names from the schema**: 
+   - ALWAYS check the inputSchema and use the exact parameter names shown
+   - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
+   - Match the exact property names shown in the inputSchema
+4. **Handle missing data intelligently**: 
+   - For required data not in previous output: Extract from task context or use descriptive placeholders
+   - For optional fields: Omit them if not relevant
+   - DO NOT use hardcoded examples or templates
 
-4. **Format according to tool expectations**:
-   - API tools: Return structured JSON matching the API schema
-   - Content tools: Return plain text or formatted content
-   - Social media: Return concise, engaging text
-   - Database tools: Return properly structured data objects
+5. **Format according to tool expectations**:
+   - Social media tools: Create engaging, concise content from the data
+   - API tools: Return structured JSON exactly matching the API schema
+   - Content tools: Transform data into readable, formatted text
+   - Search tools: Extract relevant keywords or criteria
 
-SMART PLACEHOLDER STRATEGY:
-- Instead of fake data, use descriptive placeholders that indicate what's needed
-- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
-- This makes it clear what data is missing and needs to be provided
+CRITICAL TWITTER RULES:
+- Twitter has a HARD 280 character limit!
+- Count ALL characters including spaces, emojis, URLs, hashtags
+- If content is too long, you MUST:
+  1. Remove URLs (they're not clickable in tweets anyway)
+  2. Use abbreviations (e.g., "w/" for "with")
+  3. Remove less important details
+  4. Keep only the most essential information
+- For threads: First tweet should be <250 chars to leave room for thread numbering
+- Example of good tweet: "🚀 Top 3 Meme Coins 🧵\n\n1️⃣ Big Papa ($PAPA) - Solana meme coin\n2️⃣ $BEAST - Pulsechain revolution\n3️⃣ Novus Ordo ($NOVO) - Providence themed\n\n#MemeCoins #Crypto" (under 280 chars)
+
+IMPORTANT REMINDERS:
+- Base transformations on actual data and tool schemas, not examples
+- Each tool has unique requirements - analyze the schema carefully
+- Focus on the objective and what the tool actually needs
+- VERIFY character count for Twitter - must be under 280!
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
   "toolName": "exact_tool_name_from_available_tools",
-  "inputParams": { /* transformed parameters based on tool requirements */ },
+  "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
   "reasoning": "brief explanation of tool selection and parameter transformation"
 }
 
 EXAMPLE TRANSFORMATIONS:
+- For create_tweet tool with schema {"text": {"type": "string"}}: 
+  * Use {"text": "your tweet content"} NOT {"tweet": "content"}
+  * MUST be under 280 characters! Summarize if needed
+  * For threads: Create first tweet mentioning "Thread 1/n 🧵"
 - For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
-- For social media: Extract key insights and format as engaging content
+- For social media: Extract key insights and format as engaging content (respect character limits!)
 - For API calls: Structure data according to API schema requirements
 - For content creation: Transform data into readable, formatted text
+
+IMPORTANT: Always check the exact parameter names in the inputSchema and use those exact names in your inputParams.
 
 Transform the data now:`;
 
@@ -1348,100 +1378,56 @@ ${fallbackSummary}`);
   }
 
   /**
-   * 从前一步结果中智能提取有用数据 - 使用LLM进行智能数据转换
+   * 从前一步结果中提取有用数据（使用LLM智能转换）
    * @param prevResult 前一步的结果
    * @param nextAction 下一步的动作
-   * @returns 提取的输入数据
+   * @returns 提取的数据
    */
   private async extractUsefulDataFromResult(prevResult: any, nextAction: string): Promise<any> {
     try {
-      if (!prevResult || !prevResult.result) {
-        logger.info('No previous result to extract from');
-        return {};
-      }
-
-      // 获取原始结果数据 - 优先使用rawResult（未格式化的原始数据）
-      let rawResult = prevResult.rawResult || prevResult.result;
+      logger.info(`🔍 Using LLM to extract useful data for next action: ${nextAction}`);
       
-      // 处理MCP响应格式 - 提取实际内容
-      if (rawResult && typeof rawResult === 'object' && rawResult.content) {
-        if (Array.isArray(rawResult.content) && rawResult.content.length > 0) {
-          const firstContent = rawResult.content[0];
-          if (firstContent.text) {
-            rawResult = firstContent.text;
-          }
+      // 准备前一步结果的文本表示
+      let rawResult = prevResult.result;
+      if (typeof rawResult === 'object' && rawResult.content) {
+        if (Array.isArray(rawResult.content) && rawResult.content[0]?.text) {
+          rawResult = rawResult.content[0].text;
+        } else if (rawResult.content.text) {
+          rawResult = rawResult.content.text;
         }
       }
-
-      logger.info(`🤖 Using LLM to transform data for next action: ${nextAction}`);
       
-      // 构建智能转换提示词
-      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+      const conversionPrompt = `You are an intelligent data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+
+CRITICAL: DO NOT use any hardcoded examples or templates. Analyze the actual data and requirements to create appropriate parameters.
 
 CONTEXT:
-- Previous step output: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
-- Next action: ${nextAction}
-- Tool information: Available but not displayed to keep prompt concise
-
-CRITICAL NOTION API GUIDELINES:
-When working with Notion API (API-post-page, create_page, etc.):
-
-1. **NEVER use workspace parent** - This is not supported for internal integrations:
-   ❌ {"parent": {"type": "workspace", "workspace": true}}
-
-2. **Always use real page_id or database_id**:
-   ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
-   ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
-
-3. **Strategy for getting real IDs**:
-   - First call API-post-search to find existing pages/databases
-   - Use the first available page as parent
-   - If no pages found, the user needs to create a page in Notion first
-
-4. **Two-step approach**:
-   Step 1: Search for available pages using API-post-search
-   Step 2: Create page under the first available page
-
-5. **Search query format**:
-   {
-     "query": "",
-     "filter": {
-       "value": "page",
-       "property": "object"
-     }
-   }
-
-6. **Page creation format**:
-   {
-     "parent": {"type": "page_id", "page_id": "EXTRACTED_FROM_SEARCH"},
-     "properties": {
-       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
-     },
-     "children": [...]
-   }
-
-7. **Children format**: Must be block objects:
-   ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
+Previous step output: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+Next action/tool: ${nextAction}
 
 TRANSFORMATION PRINCIPLES:
-1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
-2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
-3. **Handle missing data intelligently**: 
-   - For new Notion pages: Use workspace parent
-   - For content: Transform into proper block format
-   - For IDs from previous steps: Extract real IDs from previous results
-   - For optional fields: Omit or use reasonable defaults
+1. **Analyze the tool name/action**: Understand what the next tool expects based on its name
+2. **Extract relevant data**: From previous output, extract only the data relevant to the next tool
+3. **Format according to tool type**:
+   - For social media tools (tweet, post): Extract key insights and create engaging content
+   - For API tools: Structure data according to common API patterns
+   - For content creation: Transform data into readable text
+   - For database operations: Create properly structured data objects
 
-4. **Format according to tool expectations**:
-   - API tools: Return structured JSON matching the API schema
-   - Content tools: Return plain text or formatted content
-   - Social media: Return concise, engaging text
-   - Database tools: Return properly structured data objects
+4. **Common tool patterns**:
+   - create_tweet/post_tweet: Expects {"text": "content up to 280 chars"}
+     CRITICAL: Twitter has a 280 character limit! If content is longer:
+     * For single tweet: Summarize to fit within 280 chars
+     * For thread request: Create first tweet only, mentioning it's part 1 of a thread
+   - create_post/publish: Expects {"content": "formatted content"}
+   - search operations: Expects {"query": "search terms"}
+   - data fetching: Expects specific IDs or parameters
 
-SMART CONTENT TRANSFORMATION:
-- If previous output contains analysis/content, transform it into proper Notion blocks
-- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
-- Convert plain text into rich_text format for Notion blocks
+5. **Smart content generation**:
+   - For Twitter: MUST be under 280 characters! Use concise language, abbreviations if needed
+   - For cryptocurrency/financial data: Highlight price, changes, trends
+   - For analysis results: Summarize key findings concisely
+   - For lists/collections: Format as readable bullet points or threads
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -1449,6 +1435,8 @@ Return a JSON object with exactly this structure:
   "transformedData": { /* the actual parameters for the next tool */ },
   "reasoning": "brief explanation of the transformation logic"
 }
+
+IMPORTANT: Base your transformation purely on the tool name and previous data. Do not use any pre-defined templates.
 
 Transform the data now:`;
 
@@ -1484,7 +1472,9 @@ Transform the data now:`;
         const resultStr = JSON.stringify(prevResult.result);
         // 如果是推文相关，尝试生成简单内容
         if (nextAction.toLowerCase().includes('tweet') || nextAction.toLowerCase().includes('post')) {
-          return '🚀 Check out the latest crypto market updates! #Crypto #DeFi';
+          return {
+            text: '🚀 Check out the latest crypto market updates! #Crypto #DeFi'
+          };
         }
         // 否则返回解析的数据或原始结果
         return prevResult.parsedData || prevResult.result;
@@ -1732,7 +1722,7 @@ Transform the data now:`;
         // 更新任务状态
         await taskExecutorDao.updateTaskResult(
           taskId, 
-          overallSuccess ? 'completed' : 'partial_failure',
+          overallSuccess ? 'completed' : 'failed',
           {
             summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
         steps: workflowResults,

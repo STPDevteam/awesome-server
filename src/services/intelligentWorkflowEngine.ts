@@ -175,14 +175,14 @@ export class IntelligentWorkflowEngine {
     try {
       logger.info(`🧠 Planner: 分析任务 [迭代: ${state.currentIteration + 1}]`);
       
-      // 获取可用的MCP能力 - 传入taskId
+      // 获取可用的MCP能力
       const availableMCPs = await this.getAvailableMCPCapabilities(state.taskId);
       
       // 构建提示词
       const plannerPrompt = `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
 
 AVAILABLE MCPS AND THEIR CAPABILITIES:
-${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
+${availableMCPs.map(mcp => `- ${mcp.mcpName}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
 
 USER REQUEST: "${state.currentObjective}"
 
@@ -196,8 +196,14 @@ WORKFLOW PLANNING RULES:
 1. Break down complex tasks into logical steps
 2. Each step should have a clear objective and use appropriate MCP tools
 3. Steps should build upon previous results
-4. For analysis tasks: gather data → analyze → record results
-5. For Notion integration: search pages → create page → add content
+4. **CRITICAL: Look for compound tasks with "and" connectors**
+5. Common multi-step patterns:
+   - Data gathering + Analysis: fetch data → analyze → format results
+   - Data + Social media: fetch data → create social content → post to platform
+   - Research + Documentation: gather info → analyze → save to Notion/docs
+   - Analysis + Distribution: analyze → summarize → send/post/save
+6. For Notion integration: search pages → create page → add content
+7. For social media: prepare content → post to platform (ensure under 280 chars for Twitter)
 
 OUTPUT FORMAT:
 Return a JSON array of workflow steps:
@@ -217,6 +223,11 @@ Examples:
     {"action": "分析项目数据", "mcpName": "llm-analysis", "objective": "对收集的数据进行分析总结"},
     {"action": "搜索Notion页面", "mcpName": "notion-mcp", "objective": "查找可用的父页面用于创建新页面"},
     {"action": "创建Notion页面记录分析结果", "mcpName": "notion-mcp", "objective": "在找到的页面下创建新页面并记录分析结果", "dependsOn": [1, 2]}
+  ]
+- For "identify meme coins and post to X account":
+  [
+    {"action": "获取DexScreener数据", "mcpName": "dexscreener-mcp", "objective": "获取最新的meme coins数据"},
+    {"action": "发布到X平台", "mcpName": "x-mcp", "objective": "将数据总结后发布到X账户", "dependsOn": [0]}
   ]
 
 Plan the workflow now:`;
@@ -465,45 +476,62 @@ Plan the workflow now:`;
       return [];
     }
 
+    // 获取任务的用户ID
+    let userId: string | undefined;
+    const task = await this.taskService.getTaskById(taskId);
+    userId = task?.userId;
+
     for (const mcpInfo of preselectedMCPs) {
       try {
         const mcpName = mcpInfo.name;
         
         // 检查是否已连接
-        const connectedMCPs = this.mcpManager.getConnectedMCPs();
+        const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
         const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
 
         if (!isConnected) {
           logger.info(`🔗 连接预选的MCP: ${mcpName}`);
-          await this.autoConnectMCP(mcpName, taskId);
-        } else {
-          logger.info(`✅ MCP已连接: ${mcpName}`);
+          try {
+            await this.autoConnectMCP(mcpName, taskId, userId);
+            logger.info(`✅ 预选MCP ${mcpName} 连接成功`);
+          } catch (connectError) {
+            logger.error(`❌ 预选MCP ${mcpName} 连接失败:`, connectError);
+            // 跳过这个MCP，继续处理其他的
+            continue;
+          }
         }
 
-        // 🔧 关键修复：获取MCP的实际工具列表
-        const actualTools = await this.mcpManager.getTools(mcpName);
-        logger.info(`📋 ${mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
-        
-        capabilities.push({
-          mcpName: mcpName,
-          description: mcpInfo.description || `MCP Service: ${mcpName}`,
-          authRequired: mcpInfo.authRequired || false,
-          // 🔧 使用实际工具列表，而不是预定义的工具信息
-          tools: actualTools.map(tool => ({
-            name: tool.name,
-            description: tool.description || 'No description',
-            parameters: tool.inputSchema
-          }))
-        });
+        // 再次确认连接状态
+        const connectedAfterAttempt = this.mcpManager.getConnectedMCPs(userId).some(mcp => mcp.name === mcpName);
+        if (!connectedAfterAttempt) {
+          logger.warn(`⚠️ MCP ${mcpName} 在连接尝试后仍未连接，跳过`);
+          continue;
+        }
 
-        logger.info(`✅ 预选MCP可用: ${mcpName} (${actualTools.length} 个工具)`);
+        // 获取工具列表
+        try {
+          const tools = await this.mcpManager.getTools(mcpName, userId);
+          logger.info(`✅ 获取MCP ${mcpName} 工具列表成功，工具数: ${tools.length}`);
+          
+          capabilities.push({
+            mcpName,
+            description: mcpInfo.description || `MCP Service: ${mcpName}`,
+            tools
+          });
+        } catch (toolError) {
+          logger.error(`❌ 获取MCP ${mcpName} 工具列表失败:`, toolError);
+          // 跳过这个MCP
+          continue;
+        }
 
       } catch (error) {
-        logger.warn(`预选MCP连接失败: ${mcpInfo.name}`, error);
-        // 继续处理其他MCP，不中断整个流程
+        logger.error(`处理预选MCP ${mcpInfo.name} 时发生错误:`, error);
+        // 继续处理其他MCP
+        continue;
       }
     }
 
+    logger.info(`📋 成功连接的预选MCP数: ${capabilities.length}/${preselectedMCPs.length}`);
     return capabilities;
   }
 
@@ -556,7 +584,7 @@ Plan the workflow now:`;
     return `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
 
 AVAILABLE MCPS AND THEIR CAPABILITIES:
-${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
+${availableMCPs.map(mcp => `- ${mcp.mcpName}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
 
 USER REQUEST: "${state.currentObjective}"
 
@@ -882,10 +910,10 @@ Please return in format:
    */
   private intelligentCompletionCheck(content: string): { isComplete: boolean; nextObjective?: string; finalAnswer?: string } {
     // 检查是否包含明确的完成信号
-    const explicitComplete = /任务完成|分析完成|执行完成|已完成|task complete|analysis complete/i.test(content);
+    const explicitComplete = /任务完成|分析完成|执行完成|已完成|task complete|analysis complete|all steps completed|workflow complete/i.test(content);
     
     // 检查是否包含明确的继续信号
-    const explicitContinue = /需要继续|继续分析|下一步|need to continue|next step/i.test(content);
+    const explicitContinue = /需要继续|继续分析|下一步|need to continue|next step|not complete|missing step|still need to/i.test(content);
     
     if (explicitComplete) {
       return {
@@ -901,18 +929,49 @@ Please return in format:
       };
     }
     
-    // 默认：如果内容很短或只是简单确认，可能需要继续
-    if (content.length < 100) {
+    // 🔧 关键修复：对于复合任务的智能判断
+    // 如果内容包含错误、失败或缺失的信号，说明任务未完成
+    const hasErrors = /error|failed|403|500|failed to|unable to|cannot|could not|missing|not found/i.test(content);
+    if (hasErrors) {
+      return {
+        isComplete: false,
+        nextObjective: '需要处理错误或完成缺失的步骤'
+      };
+    }
+    
+    // 检查是否只是数据获取步骤（通常不是完整任务）
+    const isDataOnly = /fetched|retrieved|got data|obtained|collected|gathered/i.test(content) &&
+                      !/posted|sent|published|created|saved|recorded|analyzed|summarized/i.test(content);
+    
+    if (isDataOnly && content.length < 500) {
+      return {
+        isComplete: false,
+        nextObjective: '数据已获取，需要进行下一步处理（如分析、发布、保存等）'
+      };
+    }
+    
+    // 默认：基于内容复杂度判断，但更保守
+    if (content.length < 50) {
       return {
         isComplete: false,
         nextObjective: '需要更详细的分析或处理'
       };
     }
     
-    // 默认：内容较长，可能是完整的分析结果
+    // 对于较长的内容，仍然需要检查是否有明确的结果
+    const hasActionResults = /posted|sent|published|created|saved|recorded|tweet|message|notification/i.test(content);
+    
+    if (hasActionResults) {
+      return {
+        isComplete: true,
+        finalAnswer: content
+      };
+    }
+    
+    // 如果只是数据描述而没有明确的行动结果，可能需要继续
     return {
-      isComplete: true,
-      finalAnswer: content
+      isComplete: false,
+      nextObjective: '数据已获取，可能需要执行额外的操作（如发布、保存或分析）'
     };
   }
 
@@ -926,67 +985,92 @@ Please return in format:
 
     logger.info(`⚡ 调用 MCP 工具: ${plan.tool} (来自 ${plan.mcpName})`);
     
+    // 获取用户ID
+    let userId: string | undefined;
+    if (state.taskId) {
+      const task = await this.taskService.getTaskById(state.taskId);
+      userId = task?.userId;
+    }
+    
     // 检查 MCP 是否已连接，如果没有则自动连接
-    const connectedMCPs = this.mcpManager.getConnectedMCPs();
+    const connectedMCPs = this.mcpManager.getConnectedMCPs(userId);
     const isConnected = connectedMCPs.some(mcp => mcp.name === plan.mcpName);
     
     if (!isConnected) {
       logger.info(`🔗 MCP ${plan.mcpName} 未连接，尝试自动连接...`);
-      await this.autoConnectMCP(plan.mcpName, state.taskId);
-    }
-    
-    // 🔧 关键修复：获取MCP的实际工具列表
-    const actualTools = await this.mcpManager.getTools(plan.mcpName);
-    logger.info(`📋 ${plan.mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
-    
-    // 🔧 验证工具是否存在，如果不存在则让LLM重新选择
-    let selectedTool = actualTools.find(t => t.name === plan.tool);
-    let finalToolName = plan.tool;
-    let finalArgs = plan.args;
-    
-    if (!selectedTool) {
-      logger.warn(`工具 ${plan.tool} 在 ${plan.mcpName} 中不存在，使用LLM重新选择...`);
-      
-      // 尝试模糊匹配
-      const fuzzyMatch = actualTools.find(t => 
-        t.name.toLowerCase().includes(plan.tool.toLowerCase()) ||
-        plan.tool.toLowerCase().includes(t.name.toLowerCase())
-      );
-      
-      if (fuzzyMatch) {
-        logger.info(`找到模糊匹配: ${fuzzyMatch.name}`);
-        selectedTool = fuzzyMatch;
-        finalToolName = fuzzyMatch.name;
-      } else {
-        // 使用LLM重新选择工具
-        logger.info(`使用LLM重新选择合适的工具...`);
-        const toolSelectionResult = await this.selectCorrectTool(
-          plan.tool, 
-          plan.args, 
-          actualTools, 
-          state.currentObjective
-        );
-        
-        selectedTool = actualTools.find(t => t.name === toolSelectionResult.toolName);
-        if (selectedTool) {
-          finalToolName = toolSelectionResult.toolName;
-          finalArgs = toolSelectionResult.inputParams;
-          logger.info(`LLM重新选择的工具: ${finalToolName}`);
-        } else {
-          throw new Error(`无法在 ${plan.mcpName} 中找到合适的工具执行任务: ${plan.tool}`);
-        }
+      try {
+        await this.autoConnectMCP(plan.mcpName, state.taskId, userId);
+        logger.info(`✅ MCP ${plan.mcpName} 连接成功`);
+      } catch (connectError) {
+        logger.error(`❌ MCP ${plan.mcpName} 连接失败:`, connectError);
+        throw new Error(`Failed to connect to MCP ${plan.mcpName}: ${connectError instanceof Error ? connectError.message : 'Unknown error'}`);
       }
     }
     
-    logger.info(`🔧 最终调用工具: ${finalToolName} (参数: ${JSON.stringify(finalArgs)})`);
+    // 再次确认连接状态
+    const connectedAfterAttempt = this.mcpManager.getConnectedMCPs(userId).some(mcp => mcp.name === plan.mcpName);
+    if (!connectedAfterAttempt) {
+      throw new Error(`MCP ${plan.mcpName} is not connected after connection attempt`);
+    }
     
-    const result = await this.mcpToolAdapter.callTool(
-      plan.mcpName,
-      finalToolName,
-      finalArgs
-    );
+    try {
+      // 🔧 关键修复：获取MCP的实际工具列表
+      const actualTools = await this.mcpManager.getTools(plan.mcpName, userId);
+      logger.info(`📋 ${plan.mcpName} 实际可用工具: ${actualTools.map(t => t.name).join(', ')}`);
+      
+      // 🔧 验证工具是否存在，如果不存在则让LLM重新选择
+      let selectedTool = actualTools.find(t => t.name === plan.tool);
+      let finalToolName = plan.tool;
+      let finalArgs = plan.args;
+      
+      if (!selectedTool) {
+        logger.warn(`工具 ${plan.tool} 在 ${plan.mcpName} 中不存在，使用LLM重新选择...`);
+        
+        // 尝试模糊匹配
+        const fuzzyMatch = actualTools.find(t => 
+          t.name.toLowerCase().includes(plan.tool.toLowerCase()) ||
+          plan.tool.toLowerCase().includes(t.name.toLowerCase())
+        );
+        
+        if (fuzzyMatch) {
+          logger.info(`找到模糊匹配: ${fuzzyMatch.name}`);
+          selectedTool = fuzzyMatch;
+          finalToolName = fuzzyMatch.name;
+        } else {
+          // 使用LLM重新选择工具
+          logger.info(`使用LLM重新选择合适的工具...`);
+          const toolSelectionResult = await this.selectCorrectTool(
+            plan.tool, 
+            plan.args, 
+            actualTools, 
+            state.currentObjective
+          );
+          
+          selectedTool = actualTools.find(t => t.name === toolSelectionResult.toolName);
+          if (selectedTool) {
+            finalToolName = toolSelectionResult.toolName;
+            finalArgs = toolSelectionResult.inputParams;
+            logger.info(`LLM重新选择的工具: ${finalToolName}`);
+          } else {
+            throw new Error(`无法在 ${plan.mcpName} 中找到合适的工具执行任务: ${plan.tool}`);
+          }
+        }
+      }
+      
+      logger.info(`🔧 最终调用工具: ${finalToolName} (参数: ${JSON.stringify(finalArgs)})`);
+      
+      const result = await this.mcpToolAdapter.callTool(
+        plan.mcpName,
+        finalToolName,
+        finalArgs,
+        userId
+      );
 
-    return result;
+      return result;
+    } catch (error) {
+      logger.error(`❌ MCP工具调用失败 [${plan.mcpName}]:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -1004,40 +1088,57 @@ Please return in format:
 CONTEXT:
 - Previous step output: ${typeof originalArgs === 'string' ? originalArgs : JSON.stringify(originalArgs, null, 2)}
 - Next action: ${objective}
-- Available tools: ${availableTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
+- Available tools with their schemas:
+${availableTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
 
 TRANSFORMATION PRINCIPLES:
 1. **Select the correct tool**: Choose the most appropriate tool from available options
 2. **Transform parameters**: Convert previous output into correct input format for the selected tool
-3. **Handle missing data intelligently**: 
+3. **CRITICAL: Use exact parameter names from the schema**: 
+   - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
+   - Match the exact property names shown in the inputSchema
+4. **Handle missing data intelligently**: 
    - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
    - For optional fields: Omit or use reasonable defaults
    - For required fields: Extract from context or use descriptive placeholders
 
-4. **Format according to tool expectations**:
+5. **Format according to tool expectations**:
    - API tools: Return structured JSON matching the API schema
    - Content tools: Return plain text or formatted content
    - Social media: Return concise, engaging text
    - Database tools: Return properly structured data objects
 
-SMART PLACEHOLDER STRATEGY:
-- Instead of fake data, use descriptive placeholders that indicate what's needed
-- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
-- This makes it clear what data is missing and needs to be provided
+SMART DATA HANDLING:
+- Extract and transform actual data from previous outputs
+- Only use placeholders when absolutely necessary
+- Focus on what the specific tool actually needs
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
   "toolName": "exact_tool_name_from_available_tools",
-  "inputParams": { /* transformed parameters based on tool requirements */ },
+  "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
   "reasoning": "brief explanation of tool selection and parameter transformation"
 }
 
 EXAMPLE TRANSFORMATIONS:
+- For create_tweet tool with schema {"text": {"type": "string"}}: 
+  * Use {"text": "your tweet content"} NOT {"tweet": "content"}
+  * MUST be under 280 characters! Summarize if needed
+  * For threads: Create first tweet mentioning "Thread 1/n 🧵"
 - For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
-- For social media: Extract key insights and format as engaging content
+- For social media: Extract key insights and format as engaging content (respect character limits!)
 - For API calls: Structure data according to API schema requirements
 - For content creation: Transform data into readable, formatted text
+
+IMPORTANT: Always check the exact parameter names in the inputSchema and use those exact names in your inputParams.
 
 Transform the data now:`;
 
@@ -1354,34 +1455,37 @@ Please return the extracted information in JSON format.`;
   /**
    * 自动连接 MCP（带用户认证信息注入）
    */
-  private async autoConnectMCP(mcpName: string, taskId?: string): Promise<void> {
+  private async autoConnectMCP(mcpName: string, taskId?: string, userId?: string): Promise<void> {
     const mcpConfig = getPredefinedMCP(mcpName);
     if (!mcpConfig) {
       throw new Error(`未找到 MCP 配置: ${mcpName}`);
     }
 
-    logger.info(`🔗 自动连接 MCP: ${mcpName}`);
+    logger.info(`🔗 自动连接 MCP: ${mcpName} (用户: ${userId || 'default'})`);
     
     try {
       // 动态注入用户认证信息
-      const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId);
+      const dynamicEnv = await this.injectUserAuthentication(mcpConfig, taskId, userId);
       
       // 处理args中的环境变量替换
       const dynamicArgs = await this.injectArgsAuthentication(mcpConfig.args || [], dynamicEnv, taskId);
       
-      await this.mcpManager.connect(
-        mcpConfig.name,
-        mcpConfig.command,
-        dynamicArgs,
-        dynamicEnv
-      );
+      // 使用动态环境变量和args创建MCP配置
+      const dynamicMcpConfig = {
+        ...mcpConfig,
+        env: dynamicEnv,
+        args: dynamicArgs
+      };
       
-      // 等待连接稳定
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 尝试连接MCP，传递userId
+      const connected = await this.mcpManager.connectPredefined(dynamicMcpConfig, userId);
+      if (!connected) {
+        throw new Error(`Failed to connect to MCP ${mcpName} for user ${userId || 'default'}. Please ensure the MCP server is installed and configured correctly.`);
+      }
       
-      logger.info(`✅ MCP 连接成功: ${mcpName}`);
+      logger.info(`✅ MCP 连接成功: ${mcpName} (用户: ${userId || 'default'})`);
     } catch (error) {
-      logger.error(`❌ MCP 连接失败: ${mcpName}`, error);
+      logger.error(`❌ MCP 连接失败: ${mcpName} (用户: ${userId || 'default'})`, error);
       throw error;
     }
   }
@@ -1389,7 +1493,7 @@ Please return the extracted information in JSON format.`;
   /**
    * 动态注入用户认证信息
    */
-  private async injectUserAuthentication(mcpConfig: any, taskId?: string): Promise<Record<string, string>> {
+  private async injectUserAuthentication(mcpConfig: any, taskId?: string, userId?: string): Promise<Record<string, string>> {
     let dynamicEnv = { ...mcpConfig.env };
     
     console.log(`\n==== 智能工作流引擎 - 认证信息注入调试 ====`);
@@ -1614,72 +1718,48 @@ Please return the extracted information in JSON format.`;
       }
       
       // 构建智能转换提示词
-      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+      const conversionPrompt = `You are an intelligent data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
+
+CRITICAL: DO NOT use any hardcoded examples or templates. Analyze the actual data and tool requirements to create appropriate parameters.
 
 CONTEXT:
 - Previous step output: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
 - Next action: ${nextAction}
 - Tool information: ${toolInfo ? JSON.stringify(toolInfo, null, 2) : 'Tool information not available'}
 
-CRITICAL NOTION API GUIDELINES:
-When working with Notion API (API-post-page, create_page, etc.):
-
-1. **NEVER use workspace parent** - This is not supported for internal integrations:
-   ❌ {"parent": {"type": "workspace", "workspace": true}}
-
-2. **Always use real page_id or database_id**:
-   ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
-   ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
-
-3. **Strategy for getting real IDs**:
-   - First call API-post-search to find existing pages/databases
-   - Use the first available page as parent
-   - If no pages found, the user needs to create a page in Notion first
-
-4. **Two-step approach**:
-   Step 1: Search for available pages using API-post-search
-   Step 2: Create page under the first available page
-
-5. **Search query format**:
-   {
-     "query": "",
-     "filter": {
-       "value": "page",
-       "property": "object"
-     }
-   }
-
-6. **Page creation format**:
-   {
-     "parent": {"type": "page_id", "page_id": "EXTRACTED_FROM_SEARCH"},
-     "properties": {
-       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
-     },
-     "children": [...]
-   }
-
-7. **Children format**: Must be block objects:
-   ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
-
 TRANSFORMATION PRINCIPLES:
-1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
-2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
-3. **Handle missing data intelligently**: 
-   - For new Notion pages: Use workspace parent
-   - For content: Transform into proper block format
-   - For IDs from previous steps: Extract real IDs from previous results
-   - For optional fields: Omit or use reasonable defaults
+1. **Analyze the tool schema**: If tool information is available, look at the input schema to understand expected parameter format
+2. **Extract relevant data**: From previous output, extract only the data relevant to the next tool
+3. **Smart parameter matching**:
+   - For social media tools (tweet, post): Create engaging content from the data
+   - For API tools: Structure data according to the schema
+   - For search tools: Extract keywords or criteria
+   - For content creation: Transform data into readable format
 
-4. **Format according to tool expectations**:
-   - API tools: Return structured JSON matching the API schema
-   - Content tools: Return plain text or formatted content
-   - Social media: Return concise, engaging text
-   - Database tools: Return properly structured data objects
+4. **Common tool patterns** (use these as guidance, not templates):
+   - create_tweet/post_tweet: Expects {"text": "content up to 280 chars"}
+     CRITICAL: Twitter has a 280 character limit! If content is longer:
+     * For single tweet: Summarize to fit within 280 chars
+     * For thread request: Create first tweet only, mentioning it's part 1 of a thread
+   - API operations: Follow the exact schema provided in tool information
+   - Search operations: Extract relevant search terms
+   - Content operations: Format data appropriately
 
-SMART CONTENT TRANSFORMATION:
-- If previous output contains analysis/content, transform it into proper Notion blocks
-- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
-- Convert plain text into rich_text format for Notion blocks
+5. **Handle missing data intelligently**:
+   - Use data from previous steps when available
+   - Create descriptive placeholders only when necessary
+   - Omit optional fields if not relevant
+
+CRITICAL TWITTER RULES:
+- Twitter has a HARD 280 character limit!
+- Count ALL characters including spaces, emojis, URLs, hashtags
+- If content is too long, you MUST:
+  1. Remove URLs (they're not clickable in tweets anyway)
+  2. Use abbreviations (e.g., "w/" for "with")
+  3. Remove less important details
+  4. Keep only the most essential information
+- For threads: First tweet should be <250 chars to leave room for thread numbering
+- Example of good tweet: "🚀 Top 3 Meme Coins 🧵\n\n1️⃣ Big Papa ($PAPA) - Solana meme coin\n2️⃣ $BEAST - Pulsechain revolution\n3️⃣ Novus Ordo ($NOVO) - Providence themed\n\n#MemeCoins #Crypto" (under 280 chars)
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -1687,6 +1767,8 @@ Return a JSON object with exactly this structure:
   "transformedData": { /* the actual parameters for the next tool */ },
   "reasoning": "brief explanation of the transformation logic"
 }
+
+IMPORTANT: Base your transformation on the actual tool requirements and previous data. Each tool has unique needs - analyze carefully.
 
 Transform the data now:`;
 
@@ -1723,7 +1805,9 @@ Transform the data now:`;
         const resultStr = JSON.stringify(prevResult.result);
         // 如果是推文相关，尝试生成简单内容
         if (nextAction.toLowerCase().includes('tweet') || nextAction.toLowerCase().includes('post')) {
-          return '🚀 Check out the latest crypto market updates! #Crypto #DeFi';
+          return {
+            text: '🚀 Check out the latest crypto market updates! #Crypto #DeFi'
+          };
         }
         // 否则返回解析的数据或原始结果
         return prevResult.parsedData || prevResult.result;
