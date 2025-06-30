@@ -13,6 +13,7 @@ import { TaskExecutorService } from './taskExecutorService.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { titleGeneratorService } from './llmTasks/titleGenerator.js';
 import { db } from '../config/database.js';
+import { userService } from './auth/userService.js';
 // import { HttpsProxyAgent } from 'https-proxy-agent';
 // const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 // const agent = new HttpsProxyAgent(proxy);
@@ -128,6 +129,9 @@ If the user asks about performing specific tasks, you can suggest creating a tas
    */
   async createConversation(userId: string, title?: string): Promise<Conversation> {
     try {
+      // Ensure user exists before creating conversation
+      await userService.findOrCreateUserById(userId);
+      
       // If no title provided, use default title
       const conversationTitle = title || `Conversation ${new Date().toLocaleString('en-US')}`;
       
@@ -154,6 +158,9 @@ If the user asks about performing specific tasks, you can suggest creating a tas
     generatedTitle: string;
   }> {
     try {
+      // Ensure user exists before creating conversation
+      await userService.findOrCreateUserById(userId);
+      
       logger.info(`Creating conversation with first message for title generation [User ID: ${userId}]`);
       
       // 1. 生成标题（如果没有提供）
@@ -204,6 +211,9 @@ If the user asks about performing specific tasks, you can suggest creating a tas
     generatedTitle: string;
   }> {
     try {
+      // Ensure user exists before creating conversation
+      await userService.findOrCreateUserById(userId);
+
       logger.info(`Creating streaming conversation with first message for title generation [User ID: ${userId}]`);
       
       // 发送开始事件

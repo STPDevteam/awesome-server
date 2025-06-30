@@ -42,7 +42,7 @@ export interface CreateUserParams {
   avatar?: string;
   walletAddress?: string;
   email?: string;
-  loginMethod: 'wallet' | 'google' | 'github';
+  loginMethod: LoginMethod;
   loginData: any;
 }
 
