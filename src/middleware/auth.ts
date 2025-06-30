@@ -3,7 +3,7 @@ import { jwtService } from '../services/auth/jwtService.js';
 import { userService } from '../services/auth/userService.js';
 import { User } from '../models/User.js';
 
-// 扩展Request接口，添加用户信息
+// Extend Request interface to add user information
 declare global {
   namespace Express {
     interface Request {
@@ -14,12 +14,12 @@ declare global {
 }
 
 /**
- * 认证中间件 - 要求用户必须登录
+ * Authentication middleware - requires user to be logged in
  */
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-  // 在测试环境中，可以设置一个环境变量来跳过认证
+  // In test environment, can set environment variable to skip authentication
   if (process.env.MCP_SKIP_AUTH === 'true') {
-    // 模拟一个用户附加到请求上，以便后续中间件或路由处理器使用
+    // Mock a user attached to request for subsequent middleware or route handlers
     req.user = {
       id: 'test-user-id',
       username: 'test-user',
@@ -48,7 +48,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     if (!token) {
       return res.status(401).json({
         error: 'Unauthorized',
-        message: '缺少访问令牌'
+        message: 'Missing access token'
       });
     }
 
@@ -56,7 +56,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     if (!payload) {
       return res.status(401).json({
         error: 'Unauthorized',
-        message: '无效的访问令牌'
+        message: 'Invalid access token'
       });
     }
 
@@ -64,26 +64,26 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     if (!user || !user.isActive) {
       return res.status(401).json({
         error: 'Unauthorized',
-        message: '用户不存在或已禁用'
+        message: 'User does not exist or is disabled'
       });
     }
 
-    // 将用户信息添加到请求对象
+    // Add user info to request object
     req.user = user;
     req.userId = user.id;
     
     next();
   } catch (error) {
-    console.error('认证中间件错误:', error);
+    console.error('Authentication middleware error:', error);
     return res.status(500).json({
       error: 'Internal Server Error',
-      message: '服务器内部错误'
+      message: 'Internal server error'
     });
   }
 };
 
 /**
- * 可选认证中间件 - 如果有令牌则验证，但不强制要求
+ * Optional authentication middleware - validates token if present but not required
  */
 export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -102,62 +102,62 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
     
     next();
   } catch (error) {
-    console.error('可选认证中间件错误:', error);
-    // 不阻止请求继续，即使认证失败
+    console.error('Optional authentication middleware error:', error);
+    // Don't block request from continuing even if authentication fails
     next();
   }
 };
 
 /**
- * 钱包地址验证中间件 - 确保用户拥有钱包地址
+ * Wallet address verification middleware - ensures user has wallet address
  */
 export const requireWallet = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user?.walletAddress) {
     return res.status(403).json({
       error: 'Forbidden',
-      message: '此操作需要连接钱包'
+      message: 'This operation requires a connected wallet'
     });
   }
   next();
 };
 
 /**
- * 管理员权限中间件（预留，用于后续管理功能）
+ * Admin permission middleware (reserved for future management features)
  */
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
-  // 这里可以添加管理员权限验证逻辑
-  // 目前先简单检查用户是否存在
+  // Admin permission verification logic can be added here
+  // For now just check if user exists
   if (!req.user) {
     return res.status(401).json({
       error: 'Unauthorized',
-      message: '需要管理员权限'
+      message: 'Admin privileges required'
     });
   }
   next();
 };
 
 /**
- * 速率限制中间件配置
+ * Rate limit middleware configuration
  */
 import rateLimit from 'express-rate-limit';
 
 export const loginRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15分钟
-  max: 200, // 最多5次尝试
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Max 5 attempts
   message: {
     error: 'Too Many Requests',
-    message: '登录尝试次数过多，请15分钟后再试'
+    message: 'Too many login attempts, please try again in 15 minutes'
   },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 export const generalRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15分钟
-  max: 1000, // 最多100次请求
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Max 100 requests
   message: {
     error: 'Too Many Requests',
-    message: '请求次数过多，请稍后再试'
+    message: 'Too many requests, please try again later'
   },
   standardHeaders: true,
   legacyHeaders: false,
