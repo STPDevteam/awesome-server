@@ -26,7 +26,7 @@ export class IntelligentTaskService {
     taskId: string,
     stream: (data: any) => void
   ): Promise<boolean> {
-    throw new Error('分析阶段应该由 TaskAnalysisService 完成，IntelligentTaskService 只负责执行阶段');
+    throw new Error('Analysis phase should be completed by TaskAnalysisService, IntelligentTaskService is only responsible for execution phase');
   }
 
   /**
@@ -37,12 +37,12 @@ export class IntelligentTaskService {
     stream: (data: any) => void
   ): Promise<boolean> {
     try {
-      logger.info(`⚡ 开始智能任务执行 [任务: ${taskId}]`);
+      logger.info(`⚡ Starting intelligent task execution [Task: ${taskId}]`);
 
       // 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
       if (!task) {
-        stream({ event: 'error', data: { message: '任务不存在' } });
+        stream({ event: 'error', data: { message: 'Task not found' } });
         return false;
       }
 
@@ -51,8 +51,8 @@ export class IntelligentTaskService {
         stream({ 
           event: 'error', 
           data: { 
-            message: '任务尚未分析',
-            details: '请先调用任务分析API (/api/task/:id/analyze) 进行任务分析'
+            message: 'Task not analyzed yet',
+            details: 'Please call task analysis API (/api/task/:id/analyze) first for task analysis'
           } 
         });
         return false;
@@ -124,8 +124,8 @@ export class IntelligentTaskService {
             // 保存步骤消息到会话
             if (task.conversationId) {
               const stepContent = step.success 
-                ? `执行成功: ${step.plan?.tool}\n\n${step.result}`
-                : `执行失败: ${step.plan?.tool}\n\n错误: ${step.error}`;
+                ? `Execution successful: ${step.plan?.tool}\n\n${step.result}`
+                : `Execution failed: ${step.plan?.tool}\n\nError: ${step.error}`;
 
               await messageDao.createMessage({
                 conversationId: task.conversationId,
@@ -190,7 +190,7 @@ export class IntelligentTaskService {
           .filter(step => step.success)
           .map(step => step.result)
           .join('\n\n');
-        finalResult = successfulResults || '执行完成，但未获得明确结果';
+        finalResult = successfulResults || 'Execution completed, but no clear result obtained';
       }
 
       // 使用LLM生成执行摘要
@@ -244,16 +244,16 @@ export class IntelligentTaskService {
         }
       });
 
-      logger.info(`✅ 智能任务执行完成 [任务: ${taskId}, 成功: ${overallSuccess}]`);
+      logger.info(`✅ Intelligent task execution completed [Task: ${taskId}, Success: ${overallSuccess}]`);
       return overallSuccess;
 
     } catch (error) {
-      logger.error(`❌ 智能任务执行失败:`, error);
+      logger.error(`❌ Intelligent task execution failed:`, error);
       
       stream({
         event: 'error',
         data: {
-          message: '智能执行失败',
+          message: 'Intelligent execution failed',
           details: error instanceof Error ? error.message : String(error)
         }
       });
@@ -297,23 +297,23 @@ export class IntelligentTaskService {
     finalResult: string
   ): Promise<string> {
     const stepsSummary = executionSteps.map(step => 
-      `- 步骤${step.stepNumber}: ${step.plan?.tool} - ${step.success ? '成功' : '失败'}`
+      `- Step ${step.stepNumber}: ${step.plan?.tool} - ${step.success ? 'Success' : 'Failed'}`
     ).join('\n');
 
-    return `## 任务执行摘要
+    return `## Task Execution Summary
 
-**原始任务**: ${taskContent}
+**Original Task**: ${taskContent}
 
-**执行步骤**:
+**Execution Steps**:
 ${stepsSummary}
 
-**执行结果**:
+**Execution Result**:
 ${finalResult}
 
-**统计信息**:
-- 总步骤数: ${executionSteps.length}
-- 成功步骤: ${executionSteps.filter(s => s.success).length}
-- 失败步骤: ${executionSteps.filter(s => !s.success).length}`;
+**Statistics**:
+- Total Steps: ${executionSteps.length}
+- Successful Steps: ${executionSteps.filter(s => s.success).length}
+- Failed Steps: ${executionSteps.filter(s => !s.success).length}`;
   }
 }
 

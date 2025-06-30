@@ -179,10 +179,52 @@ export class IntelligentWorkflowEngine {
       const availableMCPs = await this.getAvailableMCPCapabilities(state.taskId);
       
       // 构建提示词
-      const prompt = this.buildPlannerPrompt(state, availableMCPs);
-      
-      // 调用LLM
-      const response = await this.llm.invoke([new SystemMessage(prompt)]);
+      const plannerPrompt = `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
+
+AVAILABLE MCPS AND THEIR CAPABILITIES:
+${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
+
+USER REQUEST: "${state.currentObjective}"
+
+SPECIAL HANDLING FOR NOTION:
+When the task involves creating/writing to Notion:
+1. ALWAYS start with a search step using API-post-search to find available pages
+2. Then create a new page under an existing page using the search results
+3. NEVER try to create pages directly in workspace - this is not supported
+
+WORKFLOW PLANNING RULES:
+1. Break down complex tasks into logical steps
+2. Each step should have a clear objective and use appropriate MCP tools
+3. Steps should build upon previous results
+4. For analysis tasks: gather data → analyze → record results
+5. For Notion integration: search pages → create page → add content
+
+OUTPUT FORMAT:
+Return a JSON array of workflow steps:
+[
+  {
+    "action": "descriptive action name",
+    "mcpName": "exact-mcp-name",
+    "objective": "what this step should accomplish",
+    "dependsOn": ["previous_step_indices"] // optional, for steps that need previous results
+  }
+]
+
+Examples:
+- For "analyze GitHub project and record in Notion":
+  [
+    {"action": "获取GitHub项目信息", "mcpName": "github-mcp", "objective": "获取项目的基本信息、issue列表等"},
+    {"action": "分析项目数据", "mcpName": "llm-analysis", "objective": "对收集的数据进行分析总结"},
+    {"action": "搜索Notion页面", "mcpName": "notion-mcp", "objective": "查找可用的父页面用于创建新页面"},
+    {"action": "创建Notion页面记录分析结果", "mcpName": "notion-mcp", "objective": "在找到的页面下创建新页面并记录分析结果", "dependsOn": [1, 2]}
+  ]
+
+Plan the workflow now:`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(plannerPrompt)
+      ]);
+
       const plan = this.parsePlan(response.content as string);
       
       logger.info(`📋 Planner: 制定计划 - ${plan.tool} (${plan.toolType})`);
@@ -516,142 +558,114 @@ export class IntelligentWorkflowEngine {
    * 构建 Planner 提示词
    */
   private buildPlannerPrompt(state: WorkflowState, availableMCPs: any[]): string {
-    return `你是一个智能任务规划器，负责分析当前任务状态并制定下一步执行计划。
+    return `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
 
-## 当前状态
-- 任务ID: ${state.taskId}
-- 原始查询: ${state.originalQuery}
-- 当前目标: ${state.currentObjective}
-- 已执行步骤: ${state.executionHistory.length}
-- 当前迭代: ${state.currentIteration}
+AVAILABLE MCPS AND THEIR CAPABILITIES:
+${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
 
-## 执行历史
-${state.executionHistory.map(step => `
-步骤 ${step.stepNumber}: ${step.plan.tool} (${step.success ? '成功' : '失败'})
-- 计划: ${step.plan.reasoning}
-- 结果: ${step.success ? '成功' : step.error}
-`).join('\n')}
+USER REQUEST: "${state.currentObjective}"
 
-## 可用能力
+SPECIAL HANDLING FOR NOTION:
+When the task involves creating/writing to Notion:
+1. ALWAYS start with a search step using API-post-search to find available pages
+2. Then create a new page under an existing page using the search results
+3. NEVER try to create pages directly in workspace - this is not supported
 
-### LLM 能力
-- llm.analyze: 分析和推理复杂问题
-- llm.compare: 比较不同选项或内容
-- llm.summarize: 总结和概括信息
-- llm.format: 格式化输出内容
-- llm.translate: 翻译文本
-- llm.extract: 从内容中提取特定信息
+WORKFLOW PLANNING RULES:
+1. Break down complex tasks into logical steps
+2. Each step should have a clear objective and use appropriate MCP tools
+3. Steps should build upon previous results
+4. For analysis tasks: gather data → analyze → record results
+5. For Notion integration: search pages → create page → add content
 
-### MCP 工具能力
-${availableMCPs.map(mcp => `
-**${mcp.mcpName}**: ${mcp.description}
-可用工具:
-${mcp.tools.map((tool: any) => `  - ${tool.name}: ${tool.description}${tool.parameters ? '\n    参数: ' + JSON.stringify(tool.parameters, null, 4) : ''}`).join('\n')}
-`).join('\n')}
+OUTPUT FORMAT:
+Return a JSON array of workflow steps:
+[
+  {
+    "action": "descriptive action name",
+    "mcpName": "exact-mcp-name",
+    "objective": "what this step should accomplish",
+    "dependsOn": ["previous_step_indices"] // optional, for steps that need previous results
+  }
+]
 
-## 决策规则
-1. 需要外部数据或执行具体操作时，选择 MCP 工具
-2. 需要分析、比较、总结等认知任务时，选择 LLM 能力
-3. 如果 MCP 工具失败，可以回退到 LLM 能力
-4. 优先使用最直接有效的工具
-5. **重要：只能使用上面列出的确切工具名称**
+Examples:
+- For "analyze GitHub project and record in Notion":
+  [
+    {"action": "获取GitHub项目信息", "mcpName": "github-mcp", "objective": "获取项目的基本信息、issue列表等"},
+    {"action": "分析项目数据", "mcpName": "llm-analysis", "objective": "对收集的数据进行分析总结"},
+    {"action": "搜索Notion页面", "mcpName": "notion-mcp", "objective": "查找可用的父页面用于创建新页面"},
+    {"action": "创建Notion页面记录分析结果", "mcpName": "notion-mcp", "objective": "在找到的页面下创建新页面并记录分析结果", "dependsOn": [1, 2]}
+  ]
 
-## 重要格式说明
-- 对于 LLM 工具：tool 应该是 "llm.analyze"、"llm.compare" 等，toolType 是 "llm"，不需要 mcpName
-- 对于 MCP 工具：tool 应该是**确切的工具名称**（从上面可用工具列表中选择），toolType 是 "mcp"，mcpName 是 MCP 服务名称
-
-**重要提醒**：
-- MCP工具名称必须从上面的可用工具列表中**精确选择**
-- 不要猜测或编造工具名称
-- 如果不确定工具名称，优先选择 LLM 能力
-
-请分析当前状态，制定下一步执行计划。返回格式：
-
-对于 LLM 工具：
-{
-  "tool": "llm.analyze",
-  "toolType": "llm", 
-  "args": {"content": "要分析的内容"},
-  "expectedOutput": "期望的输出描述",
-  "reasoning": "选择此工具的原因"
-}
-
-对于 MCP 工具：
-{
-  "tool": "确切的工具名称（从可用工具列表选择）",
-  "toolType": "mcp",
-  "mcpName": "MCP服务名称",
-  "args": {"参数名": "参数值"},
-  "expectedOutput": "期望的输出描述", 
-  "reasoning": "选择此工具的原因"
-}`;
+Plan the workflow now:`;
   }
 
   /**
-   * 构建 Observer 提示词
+   * 构建观察者提示词
    */
   private buildObserverPrompt(state: WorkflowState): string {
     const lastStep = state.executionHistory[state.executionHistory.length - 1];
     
-    return `你是一个智能观察器，负责分析任务执行结果并判断是否完成。
+    return `You are an intelligent observer responsible for analyzing task execution results and determining completion status.
 
-## 任务信息
-- 原始查询: ${state.originalQuery}
-- 当前目标: ${state.currentObjective}
-- 已执行步骤: ${state.executionHistory.length}
+## Task Information
+- Original Query: ${state.originalQuery}
+- Current Objective: ${state.currentObjective}
+- Executed Steps: ${state.executionHistory.length}
 
-## 执行历史
+## Execution History
 ${state.executionHistory.map(step => `
-步骤 ${step.stepNumber}: ${step.plan.tool} (${step.plan.toolType})
-- 执行状态: ${step.success ? '成功' : '失败'}
-- 计划: ${step.plan.reasoning}
-- 结果类型: ${step.success ? typeof step.result : '失败'}
+Step ${step.stepNumber}: ${step.plan.tool} (${step.plan.toolType})
+- Execution Status: ${step.success ? 'Success' : 'Failed'}
+- Plan: ${step.plan.reasoning}
+- Result Type: ${step.success ? typeof step.result : 'Failed'}
 `).join('\n')}
 
-## 最新执行结果
+## Latest Execution Result
 ${lastStep ? `
-步骤 ${lastStep.stepNumber}: ${lastStep.plan.tool}
-- 执行状态: ${lastStep.success ? '成功' : '失败'}
-- 计划: ${lastStep.plan.reasoning}
-- 结果: ${lastStep.success ? JSON.stringify(lastStep.result).substring(0, 1000) + '...' : lastStep.error}
-` : '暂无执行历史'}
+Step ${lastStep.stepNumber}: ${lastStep.plan.tool}
+- Execution Status: ${lastStep.success ? 'Success' : 'Failed'}
+- Plan: ${lastStep.plan.reasoning}
+- Result: ${lastStep.success ? JSON.stringify(lastStep.result).substring(0, 1000) + '...' : lastStep.error}
+` : 'No execution history yet'}
 
-## 黑板数据
+## Blackboard Data
 ${JSON.stringify(state.blackboard, null, 2)}
 
-## 判断标准
-请仔细分析当前状态，判断任务是否真正完成：
+## Judgment Criteria
+Please carefully analyze the current state and determine if the task is truly complete:
 
-### 🔍 复合任务识别
-**原始任务**: ${state.originalQuery}
+### 🔍 Compound Task Recognition
+**Original Task**: ${state.originalQuery}
 
-请仔细分析原始任务中的所有要求：
-- 是否包含多个动作（如：分析 + 记录、获取 + 发送、比较 + 总结等）
-- 是否有"并且"、"然后"、"接着"、"同时"等连接词
-- 是否有多个目标平台或工具（如：GitHub + Notion、Twitter + 邮件等）
+Please carefully analyze all requirements in the original task:
+- Does it contain multiple actions (e.g., analyze + record, fetch + send, compare + summarize)?
+- Are there connecting words like "and", "then", "also", "simultaneously"?
+- Are there multiple target platforms or tools (e.g., GitHub + Notion, Twitter + Email)?
 
-### 📋 完成性检查
-1. **数据获取类任务**：如果只是获取了原始数据，但用户要求"分析"，还需要 LLM 分析
-2. **分析类任务**：如果用户要求分析、比较、总结等，需要确保已经有 LLM 分析步骤
-3. **存储/记录类任务**：如果用户要求"记录到xxx"、"保存到xxx"、"发送到xxx"，需要确保已执行相应的存储操作
-4. **多步骤任务**：检查是否所有必要步骤都已完成
-5. **结果完整性**：检查结果是否回答了用户的所有要求
+### 📋 Completeness Check
+1. **Data Fetching Tasks**: If only raw data was obtained but user requested "analysis", LLM analysis is still needed
+2. **Analysis Tasks**: If user requested analysis, comparison, summary, ensure LLM analysis step is completed
+3. **Storage/Recording Tasks**: If user requested "record to xxx", "save to xxx", "send to xxx", ensure storage operation is executed
+4. **Multi-step Tasks**: Check if all necessary steps are completed
+5. **Result Completeness**: Check if results answer all user requirements
 
-### ⚠️ 常见遗漏场景
-- ✅ 已分析GitHub issue → ❌ 但未记录到Notion
-- ✅ 已获取价格数据 → ❌ 但未发送到Twitter
-- ✅ 已比较两个项目 → ❌ 但未生成报告文档
-- ✅ 已分析代码 → ❌ 但未创建GitHub issue
+### ⚠️ Common Missing Scenarios
+- ✅ Analyzed GitHub issues → ❌ But not recorded to Notion
+- ✅ Fetched price data → ❌ But not sent to Twitter
+- ✅ Compared two projects → ❌ But not generated report document
+- ✅ Analyzed code → ❌ But not created GitHub issue
 
-### 🎯 关键判断原则
-**只有当原始任务中的所有要求都已完成时，才能判断任务完成！**
+### 🎯 Key Judgment Principle
+**Only when ALL requirements in the original task are completed can the task be considered complete!**
 
-请返回格式：
+Please return in format:
 {
   "isComplete": true/false,
-  "reasoning": "判断的详细理由",
-  "nextObjective": "下一步目标(如果未完成)",
-  "finalAnswer": "最终答案(如果已完成)"
+  "reasoning": "detailed reasoning for the judgment",
+  "nextObjective": "next objective (if not complete)",
+  "finalAnswer": "final answer (if complete)"
 }`;
   }
 
@@ -846,26 +860,47 @@ ${JSON.stringify(state.blackboard, null, 2)}
     objective: string
   ): Promise<{ toolName: string; inputParams: any; reasoning: string }> {
     try {
-      const toolSelectionPrompt = `你是一个AI助手，负责从可用工具中选择最合适的工具并生成正确的输入参数。
+      const toolSelectionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
 
-原始工具名: ${originalTool}
-原始参数: ${JSON.stringify(originalArgs)}
-任务目标: ${objective}
+CONTEXT:
+- Previous step output: ${typeof originalArgs === 'string' ? originalArgs : JSON.stringify(originalArgs, null, 2)}
+- Next action: ${objective}
+- Available tools: ${availableTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
 
-可用工具:
-${availableTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}${tool.inputSchema ? '\n  输入模式: ' + JSON.stringify(tool.inputSchema) : ''}`).join('\n')}
+TRANSFORMATION PRINCIPLES:
+1. **Select the correct tool**: Choose the most appropriate tool from available options
+2. **Transform parameters**: Convert previous output into correct input format for the selected tool
+3. **Handle missing data intelligently**: 
+   - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
+   - For optional fields: Omit or use reasonable defaults
+   - For required fields: Extract from context or use descriptive placeholders
 
-请选择最合适的工具并生成正确的参数，以JSON格式回复:
+4. **Format according to tool expectations**:
+   - API tools: Return structured JSON matching the API schema
+   - Content tools: Return plain text or formatted content
+   - Social media: Return concise, engaging text
+   - Database tools: Return properly structured data objects
+
+SMART PLACEHOLDER STRATEGY:
+- Instead of fake data, use descriptive placeholders that indicate what's needed
+- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
+- This makes it clear what data is missing and needs to be provided
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
 {
-  "toolName": "确切的工具名称",
-  "inputParams": { /* 基于工具模式转换的参数 */ },
-  "reasoning": "选择原因的简要说明"
+  "toolName": "exact_tool_name_from_available_tools",
+  "inputParams": { /* transformed parameters based on tool requirements */ },
+  "reasoning": "brief explanation of tool selection and parameter transformation"
 }
 
-对于加密货币查询:
-- 使用 "bitcoin" 作为比特币ID，"ethereum" 作为以太坊ID等
-- 使用 "usd" 作为vs_currency表示美元价格
-- 包含相关参数如 include_market_cap, include_24hr_change 等`;
+EXAMPLE TRANSFORMATIONS:
+- For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
+- For social media: Extract key insights and format as engaging content
+- For API calls: Structure data according to API schema requirements
+- For content creation: Transform data into readable, formatted text
+
+Transform the data now:`;
 
       const response = await this.llm.invoke([
         new SystemMessage(toolSelectionPrompt)
@@ -960,66 +995,66 @@ ${availableTools.map(tool => `- ${tool.name}: ${tool.description || 'No descript
     const originalQuery = state.originalQuery;
     
     // 基础提示词模板
-    let prompt = `你是一位专业的数据分析师。请对以下内容进行深入分析：
+    let prompt = `You are a professional data analyst. Please conduct a thorough analysis on the following content:
 
-## 用户的原始需求
+## User's Original Requirement
 ${originalQuery}
 
-## 待分析的数据
+## Data to be Analyzed
 ${typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
 
-## 分析指导原则
+## Analysis Guidelines
 `;
 
     // 根据内容类型和结构化程度调整分析策略
     if (hasStructuredData) {
       prompt += `
-**重要提醒：您面前的是具体的结构化数据，请直接对这些数据进行分析，而不是提供分析框架或方法论。**
+**Important Reminder: You are facing specific structured data. Please analyze the data directly without providing analysis frameworks or methodologies.**
 
-### 分析要求：
-1. **数据概览**：总结数据的基本情况（数量、类型、时间范围等）
-2. **关键发现**：从数据中提取最重要的信息和模式
-3. **深度分析**：基于数据内容进行详细分析
-4. **实用洞察**：提供基于数据的具体见解和建议
+### Analysis Requirements:
+1. **Overview**: Summarize the basic situation of the data (quantity, type, time range, etc.)
+2. **Key Findings**: Extract the most important information and patterns from the data
+3. **Deep Analysis**: Conduct detailed analysis based on the data content
+4. **Practical Insights**: Provide specific insights and suggestions based on the data
 
-### 分析重点：
-- 直接分析提供的数据内容
-- 提供具体的数字、统计和实例
-- 识别数据中的模式、趋势或异常
-- 回答用户的具体问题
+### Analysis Focus:
+- Directly analyze the provided data content
+- Provide specific numbers, statistics, and examples
+- Identify patterns, trends, or anomalies in the data
+- Answer specific questions from the user
 `;
     } else {
       prompt += `
-### 分析要求：
-1. **内容理解**：深入理解内容的核心信息
-2. **关键要点**：提取最重要的信息点
-3. **逻辑分析**：分析内容的逻辑结构和关联性
-4. **价值评估**：评估内容的价值和意义
+### Analysis Requirements:
+1. **Content Understanding**: Deeply understand the core information of the content
+2. **Key Points**: Extract the most important information points
+3. **Logical Analysis**: Analyze the logical structure and association of the content
+4. **Value Assessment**: Assess the value and significance of the content
 
-### 分析重点：
-- 基于提供的具体内容进行分析
-- 避免空泛的理论或方法论
-- 提供实用的见解和结论
+### Analysis Focus:
+- Analyze based on the specific content provided
+- Avoid empty theoretical or methodological discussions
+- Provide practical insights and conclusions
 `;
     }
 
     // 添加特定要求
     if (args.requirement) {
-      prompt += `\n### 特定要求：
+      prompt += `\n### Specific Requirements:
 ${args.requirement}`;
     }
 
     // 添加输出格式要求
     prompt += `
 
-### 输出要求：
-- 直接针对提供的数据/内容进行分析
-- 提供具体、实用的分析结果
-- 使用清晰的结构化格式
-- 避免提供抽象的分析框架或方法论
-- 确保分析结果直接回答用户的问题
+### Output Requirements:
+- Analyze directly based on the provided data/content
+- Provide specific and practical analysis results
+- Use clear structured format
+- Avoid providing abstract analysis frameworks or methodologies
+- Ensure analysis results directly answer user questions
 
-请开始分析：`;
+Please start analyzing:`;
 
     return prompt;
   }
@@ -1083,15 +1118,15 @@ ${args.requirement}`;
     const content1 = args.content1 || args.option1;
     const content2 = args.content2 || args.option2;
     
-    const prompt = `请比较以下两个内容：
+    const prompt = `Please compare the following two contents:
 
-内容A：${content1}
+Content A: ${content1}
 
-内容B：${content2}
+Content B: ${content2}
 
-比较维度：${args.criteria || '全面比较'}
+Comparison Dimension: ${args.criteria || 'Comprehensive Comparison'}
 
-请提供详细的比较分析。`;
+Please provide detailed comparison analysis.`;
 
     const response = await this.llm.invoke([new HumanMessage(prompt)]);
     return response.content as string;
@@ -1103,13 +1138,13 @@ ${args.requirement}`;
   private async llmSummarize(args: any, state: WorkflowState): Promise<string> {
     const content = args.content || state.blackboard.lastResult;
     
-    const prompt = `请总结以下内容：
+    const prompt = `Please summarize the following content:
 
 ${content}
 
-总结要求：${args.requirement || '简洁明了地总结要点'}
+Summary Requirements: ${args.requirement || 'Concisely Summarize Key Points'}
 
-请提供总结结果。`;
+Please provide the summarized result.`;
 
     const response = await this.llm.invoke([new HumanMessage(prompt)]);
     return response.content as string;
@@ -1122,13 +1157,13 @@ ${content}
     const content = args.content || state.blackboard.lastResult;
     const format = args.format || 'markdown';
     
-    const prompt = `请将以下内容格式化为${format}格式：
+    const prompt = `Please format the following content into ${format} format:
 
 ${content}
 
-格式化要求：${args.requirement || '保持内容完整，优化结构'}
+Formatting Requirements: ${args.requirement || 'Maintain Content Integrity and Optimize Structure'}
 
-请提供格式化后的结果。`;
+Please provide the formatted result.`;
 
     const response = await this.llm.invoke([new HumanMessage(prompt)]);
     return response.content as string;
@@ -1138,11 +1173,11 @@ ${content}
    * LLM 翻译能力
    */
   private async llmTranslate(args: any, state: WorkflowState): Promise<string> {
-    const prompt = `请将以下内容翻译为${args.targetLanguage || '中文'}：
+    const prompt = `Please translate the following content into ${args.targetLanguage || 'Chinese'}:
 
 ${args.content || args.text}
 
-请提供翻译结果。`;
+Please provide the translation result.`;
 
     const response = await this.llm.invoke([new HumanMessage(prompt)]);
     return response.content as string;
@@ -1154,13 +1189,13 @@ ${args.content || args.text}
   private async llmExtract(args: any, state: WorkflowState): Promise<any> {
     const content = args.content || state.blackboard.lastResult;
     
-    const prompt = `请从以下内容中提取 ${args.target || '关键信息'}：
+    const prompt = `Please extract ${args.target || 'Key Information'} from the following content:
 
 ${content}
 
-提取要求：${args.requirement || '提取所有相关信息'}
+Extraction Requirements: ${args.requirement || 'Extract All Relevant Information'}
 
-请以JSON格式返回提取的信息。`;
+Please return the extracted information in JSON format.`;
 
     const response = await this.llm.invoke([new HumanMessage(prompt)]);
     
@@ -1407,25 +1442,17 @@ ${content}
   }
 
   /**
-   * 从前一步结果中智能提取有用数据（移植自传统执行器）
-   * @param prevResult 前一步的结果
-   * @param nextAction 下一步的动作
-   * @returns 提取的输入数据
+   * 从上一步结果中提取有用数据用于下一步
    */
   private async extractUsefulDataFromResult(prevResult: any, nextAction: string): Promise<any> {
     try {
-      if (!prevResult || !prevResult.result) {
-        logger.info('No previous result to extract from');
-        return {};
-      }
-
-      // 获取原始结果数据 - 优先使用rawResult（未格式化的原始数据）
-      let rawResult = prevResult.rawResult || prevResult.result;
+      // 获取原始结果
+      let rawResult = prevResult.result;
       
-      // 处理MCP响应格式 - 提取实际内容
-      if (rawResult && typeof rawResult === 'object' && rawResult.content) {
-        if (Array.isArray(rawResult.content) && rawResult.content.length > 0) {
-          const firstContent = rawResult.content[0];
+      // 如果结果是MCP工具调用的响应格式，提取实际内容
+      if (rawResult && rawResult.content && Array.isArray(rawResult.content)) {
+        const firstContent = rawResult.content[0];
+        if (firstContent && firstContent.text) {
           if (firstContent.text) {
             rawResult = firstContent.text;
           }
@@ -1434,62 +1461,123 @@ ${content}
 
       logger.info(`🤖 Using LLM to transform data for next action: ${nextAction}`);
       
+      // 获取当前连接的MCP工具信息
+      let toolInfo = null;
+      try {
+        const connectedMCPs = this.mcpManager.getConnectedMCPs();
+        for (const mcp of connectedMCPs) {
+          const tools = await this.mcpManager.getTools(mcp.name);
+          const targetTool = tools.find((t: any) => t.name === nextAction);
+          if (targetTool) {
+            toolInfo = targetTool;
+            break;
+          }
+        }
+      } catch (error) {
+        logger.warn(`⚠️ Failed to get tool info for ${nextAction}:`, error);
+      }
+      
       // 构建智能转换提示词
       const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
 
-PREVIOUS STEP OUTPUT:
-${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+CONTEXT:
+- Previous step output: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+- Next action: ${nextAction}
+- Tool information: ${toolInfo ? JSON.stringify(toolInfo, null, 2) : 'Tool information not available'}
 
-NEXT STEP ACTION: ${nextAction}
+CRITICAL NOTION API GUIDELINES:
+When working with Notion API (API-post-page, create_page, etc.):
 
-TRANSFORMATION RULES:
-1. Analyze what type of input the next action expects based on its name
-2. Extract and transform relevant data from the previous output
-3. Return the data in the exact format expected by the next tool
+1. **NEVER use workspace parent** - This is not supported for internal integrations:
+   ❌ {"parent": {"type": "workspace", "workspace": true}}
 
-SPECIAL HANDLING:
-- For social media posts (tweet, post, etc.): Return ONLY the text content as a plain string, no JSON wrapper
-- For API calls: Return properly structured JSON with required fields
-- For data analysis: Include all relevant data from previous step
-- Keep social media posts under 280 characters
-- Make content engaging and contextual
+2. **Always use real page_id or database_id**:
+   ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
+   ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
 
-IMPORTANT:
-- Do NOT include explanations or metadata
-- Return ONLY the transformed data
-- If the next action expects a string, return a string
-- If the next action expects JSON, return valid JSON
+3. **Strategy for getting real IDs**:
+   - First call API-post-search to find existing pages/databases
+   - Use the first available page as parent
+   - If no pages found, the user needs to create a page in Notion first
 
-Example transformations:
-- DEXScreener data → Tweet: "🚀 Trending token alert! $SYMBOL is up X% today!"
-- Price data → Analysis: {"symbol": "BTC", "price": 50000, "change": 5.2}
-- Analysis → Tweet: "Market insight: Bitcoin shows strong momentum..."`;
+4. **Two-step approach**:
+   Step 1: Search for available pages using API-post-search
+   Step 2: Create page under the first available page
+
+5. **Search query format**:
+   {
+     "query": "",
+     "filter": {
+       "value": "page",
+       "property": "object"
+     }
+   }
+
+6. **Page creation format**:
+   {
+     "parent": {"type": "page_id", "page_id": "EXTRACTED_FROM_SEARCH"},
+     "properties": {
+       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
+     },
+     "children": [...]
+   }
+
+7. **Children format**: Must be block objects:
+   ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
+
+TRANSFORMATION PRINCIPLES:
+1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
+2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
+3. **Handle missing data intelligently**: 
+   - For new Notion pages: Use workspace parent
+   - For content: Transform into proper block format
+   - For IDs from previous steps: Extract real IDs from previous results
+   - For optional fields: Omit or use reasonable defaults
+
+4. **Format according to tool expectations**:
+   - API tools: Return structured JSON matching the API schema
+   - Content tools: Return plain text or formatted content
+   - Social media: Return concise, engaging text
+   - Database tools: Return properly structured data objects
+
+SMART CONTENT TRANSFORMATION:
+- If previous output contains analysis/content, transform it into proper Notion blocks
+- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
+- Convert plain text into rich_text format for Notion blocks
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "transformedData": { /* the actual parameters for the next tool */ },
+  "reasoning": "brief explanation of the transformation logic"
+}
+
+Transform the data now:`;
 
       const response = await this.llm.invoke([
         new SystemMessage(conversionPrompt)
       ]);
 
-      let transformedData = response.content.toString().trim();
-      
-      // 清理可能的markdown代码块标记
-      if (transformedData.startsWith('```') && transformedData.endsWith('```')) {
-        transformedData = transformedData.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-      }
-      
-      logger.info(`📊 LLM Data Transformation Result:`);
-      logger.info(`   Original: ${JSON.stringify(rawResult).substring(0, 200)}...`);
-      logger.info(`   Transformed: ${transformedData.substring(0, 200)}${transformedData.length > 200 ? '...' : ''}`);
-
-      // 尝试解析为JSON，如果失败则返回原始字符串
+      let transformedData;
       try {
-        const parsed = JSON.parse(transformedData);
-        logger.info(`   Type: JSON object`);
-        return parsed;
-      } catch {
-        // 不是JSON，返回字符串（适用于推文等纯文本场景）
-        logger.info(`   Type: Plain text string`);
-        return transformedData;
+        const responseText = response.content.toString().trim();
+        // 清理可能的markdown格式
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        
+        const parsed = JSON.parse(cleanedText);
+        transformedData = parsed.transformedData || parsed;
+        
+        logger.info(`🤖 LLM数据转换成功: ${JSON.stringify(transformedData, null, 2)}`);
+      } catch (parseError) {
+        logger.error(`解析LLM转换结果失败: ${response.content}`);
+        // 回退处理
+        transformedData = rawResult;
       }
+
+      return transformedData;
 
     } catch (error) {
       logger.error(`❌ Failed to transform data using LLM: ${error}`);

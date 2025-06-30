@@ -19,12 +19,13 @@ import { mcpNameMapping } from './predefinedMCPs.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
 
 // 🎛️ 智能工作流全局开关 - 设置为false可快速回退到原有流程
-const ENABLE_INTELLIGENT_WORKFLOW = true;
+const ENABLE_INTELLIGENT_WORKFLOW = false;
 
 // 添加LangChain链式调用支持
 import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
 import { StructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
+import fa from 'zod/dist/types/v4/locales/fa.js';
 
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
@@ -773,8 +774,8 @@ Transform the data now:`;
                     }
                   } else {
                     // 其他MCP的正常处理
-                    dynamicEnv[envKey] = userAuth.authData[envKey];
-                    console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
                   }
                   logger.info(`Injected environment variable ${envKey}`);
                 } else {

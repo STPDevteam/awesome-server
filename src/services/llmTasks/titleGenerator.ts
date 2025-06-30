@@ -23,17 +23,17 @@ export class TitleGeneratorService {
         maxRetries: 1,
       });
     } else {
-      this.llm = new ChatOpenAI({
-        openAIApiKey: process.env.OPENAI_API_KEY,
-        modelName: 'gpt-3.5-turbo',
-        temperature: 0.3,
-        timeout: 10000, // 10秒超时
-        maxRetries: 1, // 最多重试1次
-        // 如果需要代理，可以取消注释下面的行
-        // configuration: {
-        //   httpAgent: new HttpsProxyAgent(process.env.HTTPS_PROXY || 'http://127.0.0.1:7890'),
-        // },
-      });
+    this.llm = new ChatOpenAI({
+      openAIApiKey: process.env.OPENAI_API_KEY,
+      modelName: 'gpt-3.5-turbo',
+      temperature: 0.3,
+      timeout: 10000, // 10秒超时
+      maxRetries: 1, // 最多重试1次
+      // 如果需要代理，可以取消注释下面的行
+      // configuration: {
+      //   httpAgent: new HttpsProxyAgent(process.env.HTTPS_PROXY || 'http://127.0.0.1:7890'),
+      // },
+    });
     }
   }
 
