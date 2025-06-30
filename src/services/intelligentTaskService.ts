@@ -91,7 +91,7 @@ export class IntelligentTaskService {
       const workflowGenerator = this.workflowEngine.executeWorkflowStream(
         taskId,
         task.content,
-        100 // 执行阶段最多100次迭代 - 增加以支持复杂的多步骤工作流
+        15 // 执行阶段最多15次迭代
       );
 
       let finalState: WorkflowState | null = null;
