@@ -143,7 +143,7 @@ import rateLimit from 'express-rate-limit';
 
 export const loginRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分钟
-  max: 999999, // 最多5次尝试
+  max: 5, // 最多5次尝试
   message: {
     error: 'Too Many Requests',
     message: '登录尝试次数过多，请15分钟后再试'
