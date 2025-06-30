@@ -196,8 +196,14 @@ WORKFLOW PLANNING RULES:
 1. Break down complex tasks into logical steps
 2. Each step should have a clear objective and use appropriate MCP tools
 3. Steps should build upon previous results
-4. For analysis tasks: gather data → analyze → record results
-5. For Notion integration: search pages → create page → add content
+4. **CRITICAL: Look for compound tasks with "and" connectors**
+5. Common multi-step patterns:
+   - Data gathering + Analysis: fetch data → analyze → format results
+   - Data + Social media: fetch data → create social content → post to platform
+   - Research + Documentation: gather info → analyze → save to Notion/docs
+   - Analysis + Distribution: analyze → summarize → send/post/save
+6. For Notion integration: search pages → create page → add content
+7. For social media: prepare content → post to platform (ensure under 280 chars for Twitter)
 
 OUTPUT FORMAT:
 Return a JSON array of workflow steps:
@@ -217,6 +223,11 @@ Examples:
     {"action": "分析项目数据", "mcpName": "llm-analysis", "objective": "对收集的数据进行分析总结"},
     {"action": "搜索Notion页面", "mcpName": "notion-mcp", "objective": "查找可用的父页面用于创建新页面"},
     {"action": "创建Notion页面记录分析结果", "mcpName": "notion-mcp", "objective": "在找到的页面下创建新页面并记录分析结果", "dependsOn": [1, 2]}
+  ]
+- For "identify meme coins and post to X account":
+  [
+    {"action": "获取DexScreener数据", "mcpName": "dexscreener-mcp", "objective": "获取最新的meme coins数据"},
+    {"action": "发布到X平台", "mcpName": "x-mcp", "objective": "将数据总结后发布到X账户", "dependsOn": [0]}
   ]
 
 Plan the workflow now:`;
@@ -747,10 +758,10 @@ Please return in format:
    */
   private intelligentCompletionCheck(content: string): { isComplete: boolean; nextObjective?: string; finalAnswer?: string } {
     // 检查是否包含明确的完成信号
-    const explicitComplete = /任务完成|分析完成|执行完成|已完成|task complete|analysis complete/i.test(content);
+    const explicitComplete = /任务完成|分析完成|执行完成|已完成|task complete|analysis complete|all steps completed|workflow complete/i.test(content);
     
     // 检查是否包含明确的继续信号
-    const explicitContinue = /需要继续|继续分析|下一步|need to continue|next step/i.test(content);
+    const explicitContinue = /需要继续|继续分析|下一步|need to continue|next step|not complete|missing step|still need to/i.test(content);
     
     if (explicitComplete) {
       return {
@@ -766,18 +777,49 @@ Please return in format:
       };
     }
     
-    // 默认：如果内容很短或只是简单确认，可能需要继续
-    if (content.length < 100) {
+    // 🔧 关键修复：对于复合任务的智能判断
+    // 如果内容包含错误、失败或缺失的信号，说明任务未完成
+    const hasErrors = /error|failed|403|500|failed to|unable to|cannot|could not|missing|not found/i.test(content);
+    if (hasErrors) {
+      return {
+        isComplete: false,
+        nextObjective: '需要处理错误或完成缺失的步骤'
+      };
+    }
+    
+    // 检查是否只是数据获取步骤（通常不是完整任务）
+    const isDataOnly = /fetched|retrieved|got data|obtained|collected|gathered/i.test(content) &&
+                      !/posted|sent|published|created|saved|recorded|analyzed|summarized/i.test(content);
+    
+    if (isDataOnly && content.length < 500) {
+      return {
+        isComplete: false,
+        nextObjective: '数据已获取，需要进行下一步处理（如分析、发布、保存等）'
+      };
+    }
+    
+    // 默认：基于内容复杂度判断，但更保守
+    if (content.length < 50) {
       return {
         isComplete: false,
         nextObjective: '需要更详细的分析或处理'
       };
     }
     
-    // 默认：内容较长，可能是完整的分析结果
+    // 对于较长的内容，仍然需要检查是否有明确的结果
+    const hasActionResults = /posted|sent|published|created|saved|recorded|tweet|message|notification/i.test(content);
+    
+    if (hasActionResults) {
+      return {
+        isComplete: true,
+        finalAnswer: content
+      };
+    }
+    
+    // 如果只是数据描述而没有明确的行动结果，可能需要继续
     return {
-      isComplete: true,
-      finalAnswer: content
+      isComplete: false,
+      nextObjective: '数据已获取，可能需要执行额外的操作（如发布、保存或分析）'
     };
   }
 
