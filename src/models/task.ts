@@ -1,5 +1,5 @@
 // 任务状态类型
-export type TaskStatus = 'created' | 'in_progress' | 'completed' | 'failed' | 'analyzed';
+export type TaskStatus = 'created' | 'in_progress' | 'completed' | 'failed';
 
 // 备选MCP信息类型（与主MCP格式完全一致）
 export interface AlternativeMCP {

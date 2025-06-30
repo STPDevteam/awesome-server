@@ -222,7 +222,7 @@ export class IntelligentTaskService {
       // 更新任务结果
       await taskExecutorDao.updateTaskResult(
         taskId,
-        overallSuccess ? 'completed' : 'partial_failure',
+        overallSuccess ? 'completed' : 'failed',
         {
           summary: executionSummary,
           steps: executionSteps,

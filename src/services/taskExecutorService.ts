@@ -1746,7 +1746,7 @@ Transform the data now:`;
         // 更新任务状态
         await taskExecutorDao.updateTaskResult(
           taskId, 
-          overallSuccess ? 'completed' : 'partial_failure',
+          overallSuccess ? 'completed' : 'failed',
           {
             summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
         steps: workflowResults,
