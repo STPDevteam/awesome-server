@@ -8,14 +8,15 @@ import { getConversationService } from '../services/conversationService.js';
 import { MessageIntent, MessageType } from '../models/conversation.js';
 import { getTaskService } from '../services/taskService.js';
 import { messageDao } from '../dao/messageDao.js';
+import { conversationLimitService } from '../services/conversationLimitService.js';
 
 const router = Router();
 
-// 在路由中获取必要的服务
+// Get necessary services in routes
 let mcpToolAdapter: MCPToolAdapter;
 let taskExecutorService: TaskExecutorService;
 
-// 在路由中使用app获取服务实例
+// Use app to get service instances in routes
 router.use((req, res, next) => {
   if (!mcpToolAdapter) {
     mcpToolAdapter = req.app.get('mcpToolAdapter');
@@ -67,10 +68,30 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 
     logger.info(`Creating conversation request [User ID: ${userId}]`);
 
-    // 获取对话服务
+    // Check user conversation creation limit
+    const limitInfo = await conversationLimitService.checkConversationLimit(userId);
+    if (!limitInfo.canCreate) {
+      const limitMessage = limitInfo.membershipType === 'free' 
+        ? `Free users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Plus for 10 conversations or Pro for unlimited.`
+        : `${limitInfo.membershipType.toUpperCase()} users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Pro for unlimited conversations.`;
+      
+      return res.status(429).json({
+        success: false,
+        error: 'Daily Limit Exceeded',
+        message: limitMessage,
+        data: {
+          membershipType: limitInfo.membershipType,
+          dailyLimit: limitInfo.dailyLimit,
+          todayCreated: limitInfo.todayCreated,
+          remainingCount: limitInfo.remainingCount
+        }
+      });
+    }
+
+    // Get conversation service
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
     
-    // 如果提供了第一条消息，创建会话并生成标题（不处理消息）
+    // If first message is provided, create conversation and generate title (without processing message)
     if (firstMessage) {
       const result = await conversationService.createConversationWithFirstMessage(
         userId, 
@@ -87,7 +108,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
         }
       });
     } else {
-      // 如果没有第一条消息，使用原来的创建方式
+      // If no first message, use original creation method
       const conversation = await conversationService.createConversation(userId, title);
       
       res.json({
@@ -108,7 +129,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 创建新对话（流式版本）
+ * Create new conversation (streaming version)
  * POST /api/conversation/stream
  */
 router.post('/stream', requireAuth, async (req: Request, res: Response) => {
@@ -125,7 +146,7 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
 
     const { title, firstMessage } = validationResult.data;
     
-    // 获取用户ID
+    // Get user ID
     const userId = req.user?.id || req.body.userId;
     
     if (!userId) {
@@ -136,7 +157,7 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // 如果没有第一条消息，不支持流式创建
+    // Streaming creation requires first message
     if (!firstMessage) {
       return res.status(400).json({
         success: false,
@@ -147,20 +168,40 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
 
     logger.info(`Creating streaming conversation request [User ID: ${userId}]`);
 
-    // 设置SSE响应头
+    // Check user conversation creation limit
+    const limitInfo = await conversationLimitService.checkConversationLimit(userId);
+    if (!limitInfo.canCreate) {
+      const limitMessage = limitInfo.membershipType === 'free' 
+        ? `Free users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Plus for 10 conversations or Pro for unlimited.`
+        : `${limitInfo.membershipType.toUpperCase()} users can create up to ${limitInfo.dailyLimit} conversations per day. You have created ${limitInfo.todayCreated} today. Upgrade to Pro for unlimited conversations.`;
+      
+      return res.status(429).json({
+        success: false,
+        error: 'Daily Limit Exceeded',
+        message: limitMessage,
+        data: {
+          membershipType: limitInfo.membershipType,
+          dailyLimit: limitInfo.dailyLimit,
+          todayCreated: limitInfo.todayCreated,
+          remainingCount: limitInfo.remainingCount
+        }
+      });
+    }
+
+    // Set SSE response headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     
-    // 流式回调函数
+    // Stream callback function
     const streamHandler = (data: any) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
     
-    // 获取对话服务
+    // Get conversation service
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
     
-    // 流式创建会话并处理第一条消息
+    // Stream create conversation and process first message
     const processingPromise = conversationService.createConversationWithFirstMessageStream(
       userId,
       firstMessage,
@@ -168,7 +209,7 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
       streamHandler
     );
     
-    // 处理完成后发送完成标记
+    // Send completion marker after processing
     processingPromise
       .then((result: {
         conversationId: string;
@@ -200,7 +241,7 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
   } catch (error) {
     logger.error(`Error initializing stream conversation creation:`, error);
     
-    // 对于初始设置错误，使用标准JSON响应
+    // For initial setup errors, use standard JSON response
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
@@ -210,14 +251,12 @@ router.post('/stream', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 获取对话列表
- * GET /api/conversation
+ * Get user conversation creation limit info
+ * GET /api/conversation/limit
  */
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/limit', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { limit, offset, sortBy, sortDir } = req.query;
-    
-    // 获取用户ID
+    // Get user ID
     const userId = req.user?.id || req.query.userId as string;
     
     if (!userId) {
@@ -228,7 +267,43 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // 获取对话服务
+    // Get user conversation limit info
+    const limitInfo = await conversationLimitService.getConversationLimitInfo(userId);
+    
+    res.json({
+      success: true,
+      data: limitInfo
+    });
+  } catch (error) {
+    logger.error(`Error getting conversation limit info [User ID: ${req.user?.id || req.query.userId}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * Get conversation list
+ * GET /api/conversation
+ */
+router.get('/', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { limit, offset, sortBy, sortDir } = req.query;
+    
+    // Get user ID
+    const userId = req.user?.id || req.query.userId as string;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID, please provide userId query parameter or use a valid authentication token'
+      });
+    }
+
+    // Get conversation service
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
     const result = await conversationService.getUserConversations(userId, {
       limit: limit ? parseInt(limit as string) : undefined,
@@ -252,14 +327,14 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 获取特定对话
+ * Get specific conversation
  * GET /api/conversation/:id
  */
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const conversationId = req.params.id;
     
-    // 获取用户ID
+    // Get user ID
     const userId = req.user?.id || req.query.userId as string;
     
     if (!userId) {
@@ -270,10 +345,10 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // 获取对话服务
+    // Get conversation service
     const conversationService = getConversationService(mcpToolAdapter, taskExecutorService);
     
-    // 获取对话信息
+    // Get conversation info
     const conversation = await conversationService.getConversation(conversationId);
     
     if (!conversation) {
@@ -284,7 +359,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       });
     }
     
-    // 检查权限
+    // Check permissions
     if (conversation.userId !== userId) {
       return res.status(403).json({
         success: false,
@@ -293,7 +368,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       });
     }
     
-    // 获取对话消息
+    // Get conversation messages
     const messages = await conversationService.getConversationMessages(conversationId);
     
     res.json({
