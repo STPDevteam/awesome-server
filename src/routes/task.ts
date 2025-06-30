@@ -630,11 +630,11 @@ router.post('/test-notion-mcp', async (req, res) => {
     }
     
     const connectedMCPs = mcpManager.getConnectedMCPs();
-    const notionConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'notion-mcp-server');
+    const notionConnected = connectedMCPs.some((mcp: MCPService) => mcp.name === 'notion-mcp');
     
     if (!notionConnected) {
       logger.info('Notion MCP未连接，尝试连接...');
-      const notionMCP = getPredefinedMCP('notion-mcp-server');
+      const notionMCP = getPredefinedMCP('notion-mcp');
       if (!notionMCP) {
         return res.status(500).json({ error: 'Notion MCP configuration not found' });
       }
@@ -646,7 +646,7 @@ router.post('/test-notion-mcp', async (req, res) => {
       logger.info('Notion MCP连接成功');
     }
     
-    const tools = await mcpManager.getTools('notion-mcp-server');
+    const tools = await mcpManager.getTools('notion-mcp');
     
     res.json({
       success: true,
@@ -657,6 +657,95 @@ router.post('/test-notion-mcp', async (req, res) => {
     logger.error('Notion MCP test failed:', error);
     res.status(500).json({ 
       error: 'Notion MCP test failed', 
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// 添加获取Notion页面列表的接口
+router.post('/get-notion-pages', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({ error: 'MCPManager not available' });
+    }
+
+    // 检查Notion MCP是否已连接
+    const connectedMCPs = mcpManager.getConnectedMCPs();
+    const notionMCP = connectedMCPs.find((mcp: MCPService) => mcp.name === 'notion-mcp');
+    
+    if (!notionMCP) {
+      return res.status(400).json({ 
+        error: 'Notion MCP not connected',
+        suggestion: 'Please connect Notion MCP first by providing authentication'
+      });
+    }
+
+    // 调用Notion搜索API获取页面列表
+    try {
+      const searchResult = await mcpManager.callTool('notion-mcp', 'API-post-search', {
+        query: '',
+        filter: {
+          value: 'page',
+          property: 'object'
+        },
+        page_size: 20
+      });
+
+      logger.info('Notion搜索结果:', JSON.stringify(searchResult, null, 2));
+
+      // 解析结果
+      let pages = [];
+      if (searchResult && searchResult.content) {
+        const content = Array.isArray(searchResult.content) 
+          ? searchResult.content[0] 
+          : searchResult.content;
+        
+        if (content && content.text) {
+          try {
+            const parsed = JSON.parse(content.text);
+            if (parsed.results) {
+              pages = parsed.results.map((page: any) => ({
+                id: page.id,
+                title: page.properties?.title?.title?.[0]?.text?.content || 
+                       page.properties?.Name?.title?.[0]?.text?.content ||
+                       'Untitled',
+                url: page.url,
+                created_time: page.created_time,
+                last_edited_time: page.last_edited_time
+              }));
+            }
+          } catch (parseError) {
+            logger.error('解析Notion搜索结果失败:', parseError);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: `Found ${pages.length} pages`,
+        pages: pages,
+        usage_note: 'Use the "id" field as page_id for creating child pages'
+      });
+
+    } catch (toolError) {
+      logger.error('Notion工具调用失败:', toolError);
+      res.status(500).json({
+        error: 'Failed to search Notion pages',
+        details: toolError instanceof Error ? toolError.message : String(toolError),
+        suggestion: 'Please check your Notion authentication and permissions'
+      });
+    }
+
+  } catch (error) {
+    logger.error('获取Notion页面列表失败:', error);
+    res.status(500).json({ 
+      error: 'Failed to get Notion pages', 
       details: error instanceof Error ? error.message : String(error)
     });
   }

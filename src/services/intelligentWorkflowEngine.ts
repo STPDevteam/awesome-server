@@ -833,26 +833,47 @@ ${JSON.stringify(state.blackboard, null, 2)}
     objective: string
   ): Promise<{ toolName: string; inputParams: any; reasoning: string }> {
     try {
-      const toolSelectionPrompt = `你是一个AI助手，负责从可用工具中选择最合适的工具并生成正确的输入参数。
+      const toolSelectionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
 
-原始工具名: ${originalTool}
-原始参数: ${JSON.stringify(originalArgs)}
-任务目标: ${objective}
+CONTEXT:
+- Previous step output: ${typeof originalArgs === 'string' ? originalArgs : JSON.stringify(originalArgs, null, 2)}
+- Next action: ${objective}
+- Available tools: ${availableTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
 
-可用工具:
-${availableTools.map(tool => `- ${tool.name}: ${tool.description || 'No description'}${tool.inputSchema ? '\n  输入模式: ' + JSON.stringify(tool.inputSchema) : ''}`).join('\n')}
+TRANSFORMATION PRINCIPLES:
+1. **Select the correct tool**: Choose the most appropriate tool from available options
+2. **Transform parameters**: Convert previous output into correct input format for the selected tool
+3. **Handle missing data intelligently**: 
+   - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
+   - For optional fields: Omit or use reasonable defaults
+   - For required fields: Extract from context or use descriptive placeholders
 
-请选择最合适的工具并生成正确的参数，以JSON格式回复:
+4. **Format according to tool expectations**:
+   - API tools: Return structured JSON matching the API schema
+   - Content tools: Return plain text or formatted content
+   - Social media: Return concise, engaging text
+   - Database tools: Return properly structured data objects
+
+SMART PLACEHOLDER STRATEGY:
+- Instead of fake data, use descriptive placeholders that indicate what's needed
+- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
+- This makes it clear what data is missing and needs to be provided
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
 {
-  "toolName": "确切的工具名称",
-  "inputParams": { /* 基于工具模式转换的参数 */ },
-  "reasoning": "选择原因的简要说明"
+  "toolName": "exact_tool_name_from_available_tools",
+  "inputParams": { /* transformed parameters based on tool requirements */ },
+  "reasoning": "brief explanation of tool selection and parameter transformation"
 }
 
-对于加密货币查询:
-- 使用 "bitcoin" 作为比特币ID，"ethereum" 作为以太坊ID等
-- 使用 "usd" 作为vs_currency表示美元价格
-- 包含相关参数如 include_market_cap, include_24hr_change 等`;
+EXAMPLE TRANSFORMATIONS:
+- For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
+- For social media: Extract key insights and format as engaging content
+- For API calls: Structure data according to API schema requirements
+- For content creation: Transform data into readable, formatted text
+
+Transform the data now:`;
 
       const response = await this.llm.invoke([
         new SystemMessage(toolSelectionPrompt)
@@ -1391,25 +1412,17 @@ ${content}
   }
 
   /**
-   * 从前一步结果中智能提取有用数据（移植自传统执行器）
-   * @param prevResult 前一步的结果
-   * @param nextAction 下一步的动作
-   * @returns 提取的输入数据
+   * 从上一步结果中提取有用数据用于下一步
    */
   private async extractUsefulDataFromResult(prevResult: any, nextAction: string): Promise<any> {
     try {
-      if (!prevResult || !prevResult.result) {
-        logger.info('No previous result to extract from');
-        return {};
-      }
-
-      // 获取原始结果数据 - 优先使用rawResult（未格式化的原始数据）
-      let rawResult = prevResult.rawResult || prevResult.result;
+      // 获取原始结果
+      let rawResult = prevResult.result;
       
-      // 处理MCP响应格式 - 提取实际内容
-      if (rawResult && typeof rawResult === 'object' && rawResult.content) {
-        if (Array.isArray(rawResult.content) && rawResult.content.length > 0) {
-          const firstContent = rawResult.content[0];
+      // 如果结果是MCP工具调用的响应格式，提取实际内容
+      if (rawResult && rawResult.content && Array.isArray(rawResult.content)) {
+        const firstContent = rawResult.content[0];
+        if (firstContent && firstContent.text) {
           if (firstContent.text) {
             rawResult = firstContent.text;
           }
@@ -1418,62 +1431,122 @@ ${content}
 
       logger.info(`🤖 Using LLM to transform data for next action: ${nextAction}`);
       
+      // 获取当前连接的MCP工具信息
+      let toolInfo = null;
+      try {
+        const connectedMCPs = this.mcpManager.getConnectedMCPs();
+        for (const mcp of connectedMCPs) {
+          const tools = await this.mcpManager.getTools(mcp.name);
+          const targetTool = tools.find((t: any) => t.name === nextAction);
+          if (targetTool) {
+            toolInfo = targetTool;
+            break;
+          }
+        }
+      } catch (error) {
+        logger.warn(`⚠️ Failed to get tool info for ${nextAction}:`, error);
+      }
+      
       // 构建智能转换提示词
       const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform the output from one tool into the appropriate input for the next tool in a workflow chain.
 
-PREVIOUS STEP OUTPUT:
-${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+CONTEXT:
+- Previous step output: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+- Next action: ${nextAction}
+- Tool information: ${toolInfo ? JSON.stringify(toolInfo, null, 2) : 'Tool information not available'}
 
-NEXT STEP ACTION: ${nextAction}
+CRITICAL NOTION API GUIDELINES:
+When working with Notion API (API-post-page, create_page, etc.):
 
-TRANSFORMATION RULES:
-1. Analyze what type of input the next action expects based on its name
-2. Extract and transform relevant data from the previous output
-3. Return the data in the exact format expected by the next tool
+1. **For creating NEW pages in workspace**: Use this format:
+   {
+     "parent": {"type": "workspace", "workspace": true},
+     "properties": {
+       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
+     },
+     "children": [
+       {
+         "object": "block",
+         "type": "paragraph", 
+         "paragraph": {
+           "rich_text": [{"type": "text", "text": {"content": "Your content here"}}]
+         }
+       }
+     ]
+   }
 
-SPECIAL HANDLING:
-- For social media posts (tweet, post, etc.): Return ONLY the text content as a plain string, no JSON wrapper
-- For API calls: Return properly structured JSON with required fields
-- For data analysis: Include all relevant data from previous step
-- Keep social media posts under 280 characters
-- Make content engaging and contextual
+2. **For creating pages under existing page**: Use real page ID:
+   {
+     "parent": {"type": "page_id", "page_id": "REAL_PAGE_ID_FROM_PREVIOUS_STEP"},
+     "properties": {...},
+     "children": [...]
+   }
 
-IMPORTANT:
-- Do NOT include explanations or metadata
-- Return ONLY the transformed data
-- If the next action expects a string, return a string
-- If the next action expects JSON, return valid JSON
+3. **For creating pages in database**: Use real database ID:
+   {
+     "parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"},
+     "properties": {...}
+   }
 
-Example transformations:
-- DEXScreener data → Tweet: "🚀 Trending token alert! $SYMBOL is up X% today!"
-- Price data → Analysis: {"symbol": "BTC", "price": 50000, "change": 5.2}
-- Analysis → Tweet: "Market insight: Bitcoin shows strong momentum..."`;
+4. **NEVER use fake UUIDs** like "valid-uuid-here" - this will cause validation errors
+
+5. **Children format**: Must be block objects, not simple strings:
+   - ❌ "children": ["simple text"]
+   - ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "simple text"}}]}}]
+
+TRANSFORMATION PRINCIPLES:
+1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
+2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
+3. **Handle missing data intelligently**: 
+   - For new Notion pages: Use workspace parent
+   - For content: Transform into proper block format
+   - For IDs from previous steps: Extract real IDs from previous results
+   - For optional fields: Omit or use reasonable defaults
+
+4. **Format according to tool expectations**:
+   - API tools: Return structured JSON matching the API schema
+   - Content tools: Return plain text or formatted content
+   - Social media: Return concise, engaging text
+   - Database tools: Return properly structured data objects
+
+SMART CONTENT TRANSFORMATION:
+- If previous output contains analysis/content, transform it into proper Notion blocks
+- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
+- Convert plain text into rich_text format for Notion blocks
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "transformedData": { /* the actual parameters for the next tool */ },
+  "reasoning": "brief explanation of the transformation logic"
+}
+
+Transform the data now:`;
 
       const response = await this.llm.invoke([
         new SystemMessage(conversionPrompt)
       ]);
 
-      let transformedData = response.content.toString().trim();
-      
-      // 清理可能的markdown代码块标记
-      if (transformedData.startsWith('```') && transformedData.endsWith('```')) {
-        transformedData = transformedData.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-      }
-      
-      logger.info(`📊 LLM Data Transformation Result:`);
-      logger.info(`   Original: ${JSON.stringify(rawResult).substring(0, 200)}...`);
-      logger.info(`   Transformed: ${transformedData.substring(0, 200)}${transformedData.length > 200 ? '...' : ''}`);
-
-      // 尝试解析为JSON，如果失败则返回原始字符串
+      let transformedData;
       try {
-        const parsed = JSON.parse(transformedData);
-        logger.info(`   Type: JSON object`);
-        return parsed;
-      } catch {
-        // 不是JSON，返回字符串（适用于推文等纯文本场景）
-        logger.info(`   Type: Plain text string`);
-        return transformedData;
+        const responseText = response.content.toString().trim();
+        // 清理可能的markdown格式
+        const cleanedText = responseText
+          .replace(/```json\s*/g, '')
+          .replace(/```\s*$/g, '')
+          .trim();
+        
+        const parsed = JSON.parse(cleanedText);
+        transformedData = parsed.transformedData || parsed;
+        
+        logger.info(`🤖 LLM数据转换成功: ${JSON.stringify(transformedData, null, 2)}`);
+      } catch (parseError) {
+        logger.error(`解析LLM转换结果失败: ${response.content}`);
+        // 回退处理
+        transformedData = rawResult;
       }
+
+      return transformedData;
 
     } catch (error) {
       logger.error(`❌ Failed to transform data using LLM: ${error}`);
