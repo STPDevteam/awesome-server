@@ -179,10 +179,52 @@ export class IntelligentWorkflowEngine {
       const availableMCPs = await this.getAvailableMCPCapabilities(state.taskId);
       
       // 构建提示词
-      const prompt = this.buildPlannerPrompt(state, availableMCPs);
-      
-      // 调用LLM
-      const response = await this.llm.invoke([new SystemMessage(prompt)]);
+      const plannerPrompt = `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
+
+AVAILABLE MCPS AND THEIR CAPABILITIES:
+${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
+
+USER REQUEST: "${state.currentObjective}"
+
+SPECIAL HANDLING FOR NOTION:
+When the task involves creating/writing to Notion:
+1. ALWAYS start with a search step using API-post-search to find available pages
+2. Then create a new page under an existing page using the search results
+3. NEVER try to create pages directly in workspace - this is not supported
+
+WORKFLOW PLANNING RULES:
+1. Break down complex tasks into logical steps
+2. Each step should have a clear objective and use appropriate MCP tools
+3. Steps should build upon previous results
+4. For analysis tasks: gather data → analyze → record results
+5. For Notion integration: search pages → create page → add content
+
+OUTPUT FORMAT:
+Return a JSON array of workflow steps:
+[
+  {
+    "action": "descriptive action name",
+    "mcpName": "exact-mcp-name",
+    "objective": "what this step should accomplish",
+    "dependsOn": ["previous_step_indices"] // optional, for steps that need previous results
+  }
+]
+
+Examples:
+- For "analyze GitHub project and record in Notion":
+  [
+    {"action": "获取GitHub项目信息", "mcpName": "github-mcp", "objective": "获取项目的基本信息、issue列表等"},
+    {"action": "分析项目数据", "mcpName": "llm-analysis", "objective": "对收集的数据进行分析总结"},
+    {"action": "搜索Notion页面", "mcpName": "notion-mcp", "objective": "查找可用的父页面用于创建新页面"},
+    {"action": "创建Notion页面记录分析结果", "mcpName": "notion-mcp", "objective": "在找到的页面下创建新页面并记录分析结果", "dependsOn": [1, 2]}
+  ]
+
+Plan the workflow now:`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(plannerPrompt)
+      ]);
+
       const plan = this.parsePlan(response.content as string);
       
       logger.info(`📋 Planner: 制定计划 - ${plan.tool} (${plan.toolType})`);
@@ -511,75 +553,47 @@ export class IntelligentWorkflowEngine {
    * 构建 Planner 提示词
    */
   private buildPlannerPrompt(state: WorkflowState, availableMCPs: any[]): string {
-    return `你是一个智能任务规划器，负责分析当前任务状态并制定下一步执行计划。
+    return `You are an intelligent workflow planner. Your task is to break down a user request into a series of actionable steps using available MCP tools.
 
-## 当前状态
-- 任务ID: ${state.taskId}
-- 原始查询: ${state.originalQuery}
-- 当前目标: ${state.currentObjective}
-- 已执行步骤: ${state.executionHistory.length}
-- 当前迭代: ${state.currentIteration}
+AVAILABLE MCPS AND THEIR CAPABILITIES:
+${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'General purpose MCP'}`).join('\n')}
 
-## 执行历史
-${state.executionHistory.map(step => `
-步骤 ${step.stepNumber}: ${step.plan.tool} (${step.success ? '成功' : '失败'})
-- 计划: ${step.plan.reasoning}
-- 结果: ${step.success ? '成功' : step.error}
-`).join('\n')}
+USER REQUEST: "${state.currentObjective}"
 
-## 可用能力
+SPECIAL HANDLING FOR NOTION:
+When the task involves creating/writing to Notion:
+1. ALWAYS start with a search step using API-post-search to find available pages
+2. Then create a new page under an existing page using the search results
+3. NEVER try to create pages directly in workspace - this is not supported
 
-### LLM 能力
-- llm.analyze: 分析和推理复杂问题
-- llm.compare: 比较不同选项或内容
-- llm.summarize: 总结和概括信息
-- llm.format: 格式化输出内容
-- llm.translate: 翻译文本
-- llm.extract: 从内容中提取特定信息
+WORKFLOW PLANNING RULES:
+1. Break down complex tasks into logical steps
+2. Each step should have a clear objective and use appropriate MCP tools
+3. Steps should build upon previous results
+4. For analysis tasks: gather data → analyze → record results
+5. For Notion integration: search pages → create page → add content
 
-### MCP 工具能力
-${availableMCPs.map(mcp => `
-**${mcp.mcpName}**: ${mcp.description}
-可用工具:
-${mcp.tools.map((tool: any) => `  - ${tool.name}: ${tool.description}${tool.parameters ? '\n    参数: ' + JSON.stringify(tool.parameters, null, 4) : ''}`).join('\n')}
-`).join('\n')}
+OUTPUT FORMAT:
+Return a JSON array of workflow steps:
+[
+  {
+    "action": "descriptive action name",
+    "mcpName": "exact-mcp-name",
+    "objective": "what this step should accomplish",
+    "dependsOn": ["previous_step_indices"] // optional, for steps that need previous results
+  }
+]
 
-## 决策规则
-1. 需要外部数据或执行具体操作时，选择 MCP 工具
-2. 需要分析、比较、总结等认知任务时，选择 LLM 能力
-3. 如果 MCP 工具失败，可以回退到 LLM 能力
-4. 优先使用最直接有效的工具
-5. **重要：只能使用上面列出的确切工具名称**
+Examples:
+- For "analyze GitHub project and record in Notion":
+  [
+    {"action": "获取GitHub项目信息", "mcpName": "github-mcp", "objective": "获取项目的基本信息、issue列表等"},
+    {"action": "分析项目数据", "mcpName": "llm-analysis", "objective": "对收集的数据进行分析总结"},
+    {"action": "搜索Notion页面", "mcpName": "notion-mcp", "objective": "查找可用的父页面用于创建新页面"},
+    {"action": "创建Notion页面记录分析结果", "mcpName": "notion-mcp", "objective": "在找到的页面下创建新页面并记录分析结果", "dependsOn": [1, 2]}
+  ]
 
-## 重要格式说明
-- 对于 LLM 工具：tool 应该是 "llm.analyze"、"llm.compare" 等，toolType 是 "llm"，不需要 mcpName
-- 对于 MCP 工具：tool 应该是**确切的工具名称**（从上面可用工具列表中选择），toolType 是 "mcp"，mcpName 是 MCP 服务名称
-
-**重要提醒**：
-- MCP工具名称必须从上面的可用工具列表中**精确选择**
-- 不要猜测或编造工具名称
-- 如果不确定工具名称，优先选择 LLM 能力
-
-请分析当前状态，制定下一步执行计划。返回格式：
-
-对于 LLM 工具：
-{
-  "tool": "llm.analyze",
-  "toolType": "llm", 
-  "args": {"content": "要分析的内容"},
-  "expectedOutput": "期望的输出描述",
-  "reasoning": "选择此工具的原因"
-}
-
-对于 MCP 工具：
-{
-  "tool": "确切的工具名称（从可用工具列表选择）",
-  "toolType": "mcp",
-  "mcpName": "MCP服务名称",
-  "args": {"参数名": "参数值"},
-  "expectedOutput": "期望的输出描述", 
-  "reasoning": "选择此工具的原因"
-}`;
+Plan the workflow now:`;
   }
 
   /**
@@ -840,13 +854,29 @@ CONTEXT:
 - Next action: ${objective}
 - Available tools: ${availableTools.map(tool => `${tool.name}: ${tool.description || 'No description'}`).join(', ')}
 
+CRITICAL NOTION WORKFLOW LOGIC:
+1. **If objective involves creating Notion pages**: 
+   - First check if we have real page_id from previous steps
+   - If NO real page_id: Use API-post-search to find available pages
+   - If YES real page_id: Use API-post-page to create the page
+
+2. **Tool Selection Priority for Notion**:
+   - If need to find pages: Select "API-post-search"
+   - If have page_id and need to create: Select "API-post-page"
+   - If need to update existing: Select "API-patch-page"
+
+3. **Parameter Detection**:
+   - If parameters contain placeholders like "EXTRACTED_FROM_SEARCH": Force search first
+   - If parameters contain real UUIDs (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx): Proceed with creation
+
 TRANSFORMATION PRINCIPLES:
 1. **Select the correct tool**: Choose the most appropriate tool from available options
 2. **Transform parameters**: Convert previous output into correct input format for the selected tool
 3. **Handle missing data intelligently**: 
-   - For IDs/references: Use clear placeholders like "REQUIRED_[TYPE]_ID" 
+   - For Notion: Search first if no real page_id
+   - For content: Transform into proper block format
+   - For IDs from previous steps: Extract real IDs from previous results
    - For optional fields: Omit or use reasonable defaults
-   - For required fields: Extract from context or use descriptive placeholders
 
 4. **Format according to tool expectations**:
    - API tools: Return structured JSON matching the API schema
@@ -854,32 +884,26 @@ TRANSFORMATION PRINCIPLES:
    - Social media: Return concise, engaging text
    - Database tools: Return properly structured data objects
 
-SMART PLACEHOLDER STRATEGY:
-- Instead of fake data, use descriptive placeholders that indicate what's needed
-- Examples: "REQUIRED_PAGE_ID", "USER_PROVIDED_DATABASE_ID", "EXTRACTED_FROM_CONTEXT"
-- This makes it clear what data is missing and needs to be provided
+SMART CONTENT TRANSFORMATION:
+- If previous output contains analysis/content, transform it into proper Notion blocks
+- If creating a page about analysis, use descriptive title like "GitHub Project Analysis - [Project Name]"
+- Convert plain text into rich_text format for Notion blocks
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
-  "toolName": "exact_tool_name_from_available_tools",
-  "inputParams": { /* transformed parameters based on tool requirements */ },
-  "reasoning": "brief explanation of tool selection and parameter transformation"
+  "transformedData": { /* the actual parameters for the next tool */ },
+  "selectedTool": "exact_tool_name_from_available_list",
+  "reasoning": "brief explanation of tool selection and transformation logic"
 }
 
-EXAMPLE TRANSFORMATIONS:
-- For cryptocurrency queries: Use proper coin IDs like "bitcoin", "ethereum" and "usd" for vs_currency
-- For social media: Extract key insights and format as engaging content
-- For API calls: Structure data according to API schema requirements
-- For content creation: Transform data into readable, formatted text
-
-Transform the data now:`;
+Transform and select the tool now:`;
 
       const response = await this.llm.invoke([
         new SystemMessage(toolSelectionPrompt)
       ]);
 
-      let toolSelection;
+      let result;
       try {
         const responseText = response.content.toString().trim();
         // 清理可能的markdown格式
@@ -887,25 +911,61 @@ Transform the data now:`;
           .replace(/```json\s*/g, '')
           .replace(/```\s*$/g, '')
           .trim();
-        toolSelection = JSON.parse(cleanedText);
+        
+        const parsed = JSON.parse(cleanedText);
+        
+        // 🔍 智能工具选择逻辑
+        let selectedTool = parsed.selectedTool;
+        let transformedData = parsed.transformedData || originalArgs;
+        
+        // 检查是否需要强制搜索
+        const dataStr = JSON.stringify(transformedData);
+        if ((objective.includes('创建') || objective.includes('记录') || objective.includes('Notion')) &&
+            (dataStr.includes('EXTRACTED_FROM_SEARCH') || 
+             dataStr.includes('PLACEHOLDER') || 
+             !dataStr.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i))) {
+          
+          logger.info(`🔄 检测到Notion创建任务但缺少真实page_id，强制使用搜索`);
+          
+          // 查找搜索工具
+          const searchTool = availableTools.find(tool => 
+            tool.name.includes('search') || 
+            tool.name.includes('API-post-search')
+          );
+          
+          if (searchTool) {
+            selectedTool = searchTool.name;
+            transformedData = {
+              "query": "",
+              "filter": {
+                "value": "page",
+                "property": "object"
+              }
+            };
+            logger.info(`🔧 自动选择搜索工具: ${selectedTool}`);
+          }
+        }
+        
+        result = {
+          toolName: selectedTool,
+          inputParams: transformedData,
+          reasoning: parsed.reasoning || "Automatic tool selection and parameter transformation"
+        };
+        
+        logger.info(`🎯 工具选择结果: ${selectedTool}`);
+        logger.info(`📋 转换参数: ${JSON.stringify(transformedData, null, 2)}`);
+        
       } catch (parseError) {
-        logger.error(`解析工具选择响应失败: ${response.content}`);
-        // 回退到简单选择
-        const fallbackPrompt = `可用工具: ${availableTools.map(t => t.name).join(', ')}\n目标: ${objective}\n只选择确切的工具名称:`;
-        const fallbackResponse = await this.llm.invoke([new SystemMessage(fallbackPrompt)]);
-        const fallbackToolName = fallbackResponse.content.toString().trim();
-        toolSelection = {
-          toolName: fallbackToolName,
+        logger.error(`解析工具选择结果失败: ${response.content}`);
+        // 回退处理
+        result = {
+          toolName: availableTools[0]?.name || 'unknown',
           inputParams: originalArgs,
-          reasoning: "由于解析错误使用回退选择"
+          reasoning: "Fallback due to parsing error"
         };
       }
 
-      return {
-        toolName: toolSelection.toolName || originalTool,
-        inputParams: toolSelection.inputParams || originalArgs,
-        reasoning: toolSelection.reasoning || "无推理说明"
-      };
+      return result;
 
     } catch (error) {
       logger.error(`LLM工具选择失败:`, error);
@@ -1458,56 +1518,35 @@ CONTEXT:
 CRITICAL NOTION API GUIDELINES:
 When working with Notion API (API-post-page, create_page, etc.):
 
-1. **For creating NEW pages in workspace**: Use this format:
+1. **NEVER use workspace parent** - This is not supported for internal integrations:
+   ❌ {"parent": {"type": "workspace", "workspace": true}}
+
+2. **Always use real page_id or database_id**:
+   ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
+   ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
+
+3. **CRITICAL: If you need to create a Notion page but don't have a real page_id**:
+   - DO NOT use placeholders like "EXTRACTED_FROM_SEARCH"
+   - Instead, return a search query to find available pages first
+   - Use API-post-search with this format:
    {
-     "parent": {"type": "workspace", "workspace": true},
-     "properties": {
-       "title": {"title": [{"text": {"content": "Your Page Title"}}]}
-     },
-     "children": [
-       {
-         "object": "block",
-         "type": "paragraph", 
-         "paragraph": {
-           "rich_text": [{"type": "text", "text": {"content": "Your content here"}}]
-         }
-       }
-     ]
+     "query": "",
+     "filter": {
+       "value": "page", 
+       "property": "object"
+     }
    }
 
-2. **For creating pages under existing page**: Use real page ID:
-   {
-     "parent": {"type": "page_id", "page_id": "REAL_PAGE_ID_FROM_PREVIOUS_STEP"},
-     "properties": {...},
-     "children": [...]
-   }
+4. **Only create pages when you have real page_id from previous search results**
 
-3. **For creating pages in database**: Use real database ID:
-   {
-     "parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"},
-     "properties": {...}
-   }
+5. **Children format**: Must be block objects:
+   ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
 
-4. **NEVER use fake UUIDs** like "valid-uuid-here" - this will cause validation errors
-
-5. **Children format**: Must be block objects, not simple strings:
-   - ❌ "children": ["simple text"]
-   - ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "simple text"}}]}}]
-
-TRANSFORMATION PRINCIPLES:
-1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
-2. **Extract relevant data**: From previous output, extract data that matches the next tool's requirements  
-3. **Handle missing data intelligently**: 
-   - For new Notion pages: Use workspace parent
-   - For content: Transform into proper block format
-   - For IDs from previous steps: Extract real IDs from previous results
-   - For optional fields: Omit or use reasonable defaults
-
-4. **Format according to tool expectations**:
-   - API tools: Return structured JSON matching the API schema
-   - Content tools: Return plain text or formatted content
-   - Social media: Return concise, engaging text
-   - Database tools: Return properly structured data objects
+TRANSFORMATION LOGIC:
+- If nextAction involves Notion page creation AND no real page_id is available: Return search parameters
+- If nextAction involves Notion page creation AND real page_id is available: Return page creation parameters  
+- If nextAction is search: Return search parameters
+- For other actions: Transform according to tool requirements
 
 SMART CONTENT TRANSFORMATION:
 - If previous output contains analysis/content, transform it into proper Notion blocks
@@ -1538,6 +1577,26 @@ Transform the data now:`;
         
         const parsed = JSON.parse(cleanedText);
         transformedData = parsed.transformedData || parsed;
+        
+        // 🔍 检查是否仍然包含占位符
+        const transformedStr = JSON.stringify(transformedData);
+        if (transformedStr.includes('EXTRACTED_FROM_SEARCH') || 
+            transformedStr.includes('PLACEHOLDER') || 
+            transformedStr.includes('REQUIRED_')) {
+          logger.warn(`⚠️ 检测到占位符，回退到搜索策略`);
+          
+          // 如果是Notion页面创建且包含占位符，改为搜索
+          if (nextAction.includes('API-post-page') || nextAction.includes('create') || nextAction.includes('page')) {
+            transformedData = {
+              "query": "",
+              "filter": {
+                "value": "page",
+                "property": "object"
+              }
+            };
+            logger.info(`🔄 自动转换为搜索参数: ${JSON.stringify(transformedData)}`);
+          }
+        }
         
         logger.info(`🤖 LLM数据转换成功: ${JSON.stringify(transformedData, null, 2)}`);
       } catch (parseError) {
@@ -1599,7 +1658,7 @@ Transform the data now:`;
   async executeWorkflow(
     taskId: string,
     query: string,
-    maxIterations: number = 10,
+    maxIterations: number = 50,
     onProgress?: (step: ExecutionStep) => void
   ): Promise<WorkflowState> {
     logger.info(`🚀 启动智能工作流 [任务: ${taskId}]`);
@@ -1640,7 +1699,7 @@ Transform the data now:`;
   async *executeWorkflowStream(
     taskId: string,
     query: string,
-    maxIterations: number = 10
+    maxIterations: number = 50
   ): AsyncGenerator<{ event: string; data: any }, WorkflowState, unknown> {
     logger.info(`🚀 启动流式智能工作流 [任务: ${taskId}]`);
 

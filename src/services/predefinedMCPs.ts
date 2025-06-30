@@ -179,7 +179,7 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: false,
         authParams: {}
     },
-
+    
     // Development Tools 服务
     {
         name: 'github-mcp',
@@ -346,7 +346,7 @@ export const predefinedMCPs: MCPService[] = [
             SUPABASE_ACCESS_TOKEN: "SUPABASE_ACCESS_TOKEN"
         }
     },
-
+    
     // Trading 服务
     {
         name: 'binance-mcp',
@@ -416,7 +416,7 @@ export const predefinedMCPs: MCPService[] = [
             HELIUS_RPC_URL: "HELIUS_RPC_URL"
         }
     },
-
+    
     // Social 服务
     {
         name: 'discord-mcp',
@@ -543,7 +543,7 @@ export const mcpNameMapping: Record<string, string> = {
 export function getPredefinedMCP(name: string): MCPService | undefined {
     // 使用全局映射进行标准化
     const normalizedName = mcpNameMapping[name] || name;
-
+    
     // 从预定义列表中查找
     return predefinedMCPs.find(mcp => mcp.name === normalizedName);
 }

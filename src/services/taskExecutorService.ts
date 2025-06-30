@@ -1385,41 +1385,42 @@ CONTEXT:
 CRITICAL NOTION API GUIDELINES:
 When working with Notion API (API-post-page, create_page, etc.):
 
-1. **For creating NEW pages in workspace**: Use this format:
+1. **NEVER use workspace parent** - This is not supported for internal integrations:
+   ❌ {"parent": {"type": "workspace", "workspace": true}}
+
+2. **Always use real page_id or database_id**:
+   ✅ {"parent": {"type": "page_id", "page_id": "REAL_PAGE_ID"}}
+   ✅ {"parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"}}
+
+3. **Strategy for getting real IDs**:
+   - First call API-post-search to find existing pages/databases
+   - Use the first available page as parent
+   - If no pages found, the user needs to create a page in Notion first
+
+4. **Two-step approach**:
+   Step 1: Search for available pages using API-post-search
+   Step 2: Create page under the first available page
+
+5. **Search query format**:
    {
-     "parent": {"type": "workspace", "workspace": true},
+     "query": "",
+     "filter": {
+       "value": "page",
+       "property": "object"
+     }
+   }
+
+6. **Page creation format**:
+   {
+     "parent": {"type": "page_id", "page_id": "EXTRACTED_FROM_SEARCH"},
      "properties": {
        "title": {"title": [{"text": {"content": "Your Page Title"}}]}
      },
-     "children": [
-       {
-         "object": "block",
-         "type": "paragraph", 
-         "paragraph": {
-           "rich_text": [{"type": "text", "text": {"content": "Your content here"}}]
-         }
-       }
-     ]
-   }
-
-2. **For creating pages under existing page**: Use real page ID:
-   {
-     "parent": {"type": "page_id", "page_id": "REAL_PAGE_ID_FROM_PREVIOUS_STEP"},
-     "properties": {...},
      "children": [...]
    }
 
-3. **For creating pages in database**: Use real database ID:
-   {
-     "parent": {"type": "database_id", "database_id": "REAL_DATABASE_ID"},
-     "properties": {...}
-   }
-
-4. **NEVER use fake UUIDs** like "valid-uuid-here" - this will cause validation errors
-
-5. **Children format**: Must be block objects, not simple strings:
-   - ❌ "children": ["simple text"]
-   - ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "simple text"}}]}}]
+7. **Children format**: Must be block objects:
+   ✅ "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "content"}}]}}]
 
 TRANSFORMATION PRINCIPLES:
 1. **Analyze the tool schema**: Look at the tool's input schema to understand expected parameter format
