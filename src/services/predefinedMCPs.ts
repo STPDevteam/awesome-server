@@ -60,7 +60,7 @@ export const predefinedMCPs: MCPService[] = [
         connected: false,
         category: 'Chain RPC',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
-        githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-serverr',
+        githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
         authRequired: false,
         authParams: {}
     },
