@@ -774,4 +774,73 @@ router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
+/**
+ * 试用Agent
+ * POST /api/agent/:id/try
+ */
+router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const agentId = req.params.id;
+    const { taskContent } = req.body;
+
+    if (!taskContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_TASK_CONTENT',
+        message: 'Task content is required'
+      });
+    }
+
+    // 尝试使用Agent
+    const result = await agentService.tryAgent({
+      agentId,
+      taskContent,
+      userId
+    });
+
+    if (result.success) {
+      res.json({
+        success: true,
+        data: result.executionResult
+      });
+    } else {
+      // 如果需要认证，返回特殊的响应格式
+      if (result.needsAuth) {
+        res.status(403).json({
+          success: false,
+          error: 'AUTH_REQUIRED',
+          message: result.message,
+          data: {
+            needsAuth: true,
+            missingAuth: result.missingAuth
+          }
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: 'TRY_AGENT_FAILED',
+          message: result.message
+        });
+      }
+    }
+  } catch (error) {
+    logger.error(`试用Agent失败 [AgentID: ${req.params.id}]:`, error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to try Agent'
+    });
+  }
+});
+
 export default router; 

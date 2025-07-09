@@ -136,4 +136,35 @@ export interface AgentUsage {
   conversationId?: string;
   executionResult?: any;
   createdAt: Date;
+}
+
+// Try Agent请求参数
+export interface TryAgentRequest {
+  agentId: string;
+  taskContent: string;
+  userId: string;
+}
+
+// Try Agent响应
+export interface TryAgentResponse {
+  success: boolean;
+  needsAuth?: boolean;
+  missingAuth?: Array<{
+    mcpName: string;
+    description: string;
+    authParams?: Record<string, any>;
+  }>;
+  message?: string;
+  executionResult?: any;
+}
+
+// MCP认证状态检查结果
+export interface MCPAuthCheckResult {
+  needsAuth: boolean;
+  missingAuth: Array<{
+    mcpName: string;
+    description: string;
+    authParams?: Record<string, any>;
+  }>;
+  message?: string;
 } 
