@@ -1,0 +1,513 @@
+import { v4 as uuidv4 } from 'uuid';
+import { db } from '../config/database.js';
+import { logger } from '../utils/logger.js';
+import { 
+  Agent, 
+  CreateAgentRequest, 
+  UpdateAgentRequest, 
+  GetAgentsQuery, 
+  AgentMarketplaceQuery,
+  AgentStats,
+  AgentUsage,
+  AgentStatus 
+} from '../models/agent.js';
+
+/**
+ * 数据库行记录接口
+ */
+export interface AgentDbRow {
+  id: string;
+  user_id: string;
+  name: string;
+  description: string;
+  status: AgentStatus;
+  task_id: string | null;
+  mcp_workflow: any;
+  metadata: any;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+  deleted_at: string | null;
+  is_deleted: boolean;
+}
+
+/**
+ * Agent使用记录数据库行接口
+ */
+export interface AgentUsageDbRow {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  task_id: string | null;
+  conversation_id: string | null;
+  execution_result: any;
+  created_at: string;
+}
+
+export class AgentDao {
+  
+  /**
+   * 创建新的Agent
+   */
+  async createAgent(request: CreateAgentRequest): Promise<Agent> {
+    try {
+      const id = uuidv4();
+      const now = new Date();
+      
+      const query = `
+        INSERT INTO agents (
+          id, user_id, name, description, status, task_id, 
+          mcp_workflow, metadata, usage_count, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING *
+      `;
+      
+      const values = [
+        id,
+        request.userId,
+        request.name,
+        request.description,
+        request.status,
+        request.taskId || null,
+        request.mcpWorkflow ? JSON.stringify(request.mcpWorkflow) : null,
+        request.metadata ? JSON.stringify(request.metadata) : null,
+        0, // 初始使用次数为0
+        now,
+        now
+      ];
+      
+      const result = await db.query<AgentDbRow>(query, values);
+      
+      if (result.rows.length === 0) {
+        throw new Error('创建Agent失败');
+      }
+      
+      const agent = this.mapDbRowToAgent(result.rows[0]);
+      logger.info(`Agent已创建: ${agent.id} (${agent.name})`);
+      
+      return agent;
+    } catch (error) {
+      logger.error('创建Agent失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 根据ID获取Agent
+   */
+  async getAgentById(agentId: string): Promise<Agent | null> {
+    try {
+      const query = `
+        SELECT * FROM agents 
+        WHERE id = $1 AND is_deleted = FALSE
+      `;
+      
+      const result = await db.query<AgentDbRow>(query, [agentId]);
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      return this.mapDbRowToAgent(result.rows[0]);
+    } catch (error) {
+      logger.error(`获取Agent失败 [ID: ${agentId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 更新Agent
+   */
+  async updateAgent(agentId: string, request: UpdateAgentRequest): Promise<Agent | null> {
+    try {
+      const setParts: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+      
+      if (request.name !== undefined) {
+        setParts.push(`name = $${paramIndex++}`);
+        values.push(request.name);
+      }
+      
+      if (request.description !== undefined) {
+        setParts.push(`description = $${paramIndex++}`);
+        values.push(request.description);
+      }
+      
+      if (request.status !== undefined) {
+        setParts.push(`status = $${paramIndex++}`);
+        values.push(request.status);
+        
+        // 如果状态改为public，设置发布时间
+        if (request.status === 'public') {
+          setParts.push(`published_at = $${paramIndex++}`);
+          values.push(new Date());
+        }
+      }
+      
+      if (request.metadata !== undefined) {
+        setParts.push(`metadata = $${paramIndex++}`);
+        values.push(JSON.stringify(request.metadata));
+      }
+      
+      if (setParts.length === 0) {
+        // 没有字段需要更新
+        return this.getAgentById(agentId);
+      }
+      
+      setParts.push(`updated_at = $${paramIndex++}`);
+      values.push(new Date());
+      
+      values.push(agentId);
+      
+      const query = `
+        UPDATE agents 
+        SET ${setParts.join(', ')}
+        WHERE id = $${paramIndex} AND is_deleted = FALSE
+        RETURNING *
+      `;
+      
+      const result = await db.query<AgentDbRow>(query, values);
+      
+      if (result.rows.length === 0) {
+        return null;
+      }
+      
+      const agent = this.mapDbRowToAgent(result.rows[0]);
+      logger.info(`Agent已更新: ${agent.id} (${agent.name})`);
+      
+      return agent;
+    } catch (error) {
+      logger.error(`更新Agent失败 [ID: ${agentId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 软删除Agent
+   */
+  async deleteAgent(agentId: string): Promise<boolean> {
+    try {
+      const query = `
+        UPDATE agents 
+        SET is_deleted = TRUE, deleted_at = NOW(), updated_at = NOW()
+        WHERE id = $1 AND is_deleted = FALSE
+      `;
+      
+      const result = await db.query(query, [agentId]);
+      
+      if (result.rowCount === 0) {
+        return false;
+      }
+      
+      logger.info(`Agent已删除: ${agentId}`);
+      return true;
+    } catch (error) {
+      logger.error(`删除Agent失败 [ID: ${agentId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 获取Agent列表
+   */
+  async getAgents(query: GetAgentsQuery): Promise<{ agents: Agent[]; total: number }> {
+    try {
+      const conditions: string[] = ['is_deleted = FALSE'];
+      const values: any[] = [];
+      let paramIndex = 1;
+      
+      if (query.userId) {
+        conditions.push(`user_id = $${paramIndex++}`);
+        values.push(query.userId);
+      }
+      
+      if (query.status) {
+        conditions.push(`status = $${paramIndex++}`);
+        values.push(query.status);
+      }
+      
+      if (query.search) {
+        conditions.push(`(name ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`);
+        values.push(`%${query.search}%`);
+        paramIndex++;
+      }
+      
+      if (query.category) {
+        conditions.push(`metadata->>'category' = $${paramIndex++}`);
+        values.push(query.category);
+      }
+      
+      // 构建排序
+      const orderBy = query.orderBy || 'created_at';
+      const order = query.order || 'desc';
+      
+      // 获取总数
+      const countQuery = `
+        SELECT COUNT(*) as total 
+        FROM agents 
+        WHERE ${conditions.join(' AND ')}
+      `;
+      
+      const countResult = await db.query<{ total: string }>(countQuery, values);
+      const total = parseInt(countResult.rows[0].total);
+      
+      // 获取分页数据
+      const offset = query.offset || 0;
+      const limit = query.limit || 20;
+      
+      const dataQuery = `
+        SELECT * FROM agents 
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY ${orderBy} ${order}
+        LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+      `;
+      
+      values.push(limit, offset);
+      
+      const result = await db.query<AgentDbRow>(dataQuery, values);
+      
+      const agents = result.rows.map(row => this.mapDbRowToAgent(row));
+      
+      return { agents, total };
+    } catch (error) {
+      logger.error('获取Agent列表失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 获取Agent市场数据（仅公开Agent）
+   */
+  async getAgentMarketplace(query: AgentMarketplaceQuery): Promise<{ agents: Agent[]; total: number }> {
+    const marketplaceQuery: GetAgentsQuery = {
+      ...query,
+      status: 'public'
+    };
+    
+    return this.getAgents(marketplaceQuery);
+  }
+  
+  /**
+   * 增加Agent使用次数
+   */
+  async incrementUsageCount(agentId: string): Promise<boolean> {
+    try {
+      const query = `
+        UPDATE agents 
+        SET usage_count = usage_count + 1, updated_at = NOW()
+        WHERE id = $1 AND is_deleted = FALSE
+      `;
+      
+      const result = await db.query(query, [agentId]);
+      
+      if (result.rowCount === 0) {
+        return false;
+      }
+      
+      logger.info(`Agent使用次数已增加: ${agentId}`);
+      return true;
+    } catch (error) {
+      logger.error(`增加Agent使用次数失败 [ID: ${agentId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 记录Agent使用
+   */
+  async recordAgentUsage(agentId: string, userId: string, taskId?: string, conversationId?: string, executionResult?: any): Promise<AgentUsage> {
+    try {
+      const id = uuidv4();
+      const now = new Date();
+      
+      const query = `
+        INSERT INTO agent_usage (
+          id, agent_id, user_id, task_id, conversation_id, execution_result, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *
+      `;
+      
+      const values = [
+        id,
+        agentId,
+        userId,
+        taskId || null,
+        conversationId || null,
+        executionResult ? JSON.stringify(executionResult) : null,
+        now
+      ];
+      
+      const result = await db.query<AgentUsageDbRow>(query, values);
+      
+      if (result.rows.length === 0) {
+        throw new Error('记录Agent使用失败');
+      }
+      
+      // 同时增加使用次数
+      await this.incrementUsageCount(agentId);
+      
+      return this.mapDbRowToAgentUsage(result.rows[0]);
+    } catch (error) {
+      logger.error('记录Agent使用失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 获取Agent统计信息
+   */
+  async getAgentStats(userId?: string): Promise<AgentStats> {
+    try {
+      const conditions = ['is_deleted = FALSE'];
+      const values: any[] = [];
+      let paramIndex = 1;
+      
+      if (userId) {
+        conditions.push(`user_id = $${paramIndex++}`);
+        values.push(userId);
+      }
+      
+      const whereClause = conditions.join(' AND ');
+      
+      // 获取基础统计
+      const statsQuery = `
+        SELECT 
+          COUNT(*) as total_agents,
+          COUNT(CASE WHEN status = 'private' THEN 1 END) as private_agents,
+          COUNT(CASE WHEN status = 'public' THEN 1 END) as public_agents,
+          COALESCE(SUM(usage_count), 0) as total_usage
+        FROM agents 
+        WHERE ${whereClause}
+      `;
+      
+      const statsResult = await db.query<{
+        total_agents: string;
+        private_agents: string;
+        public_agents: string;
+        total_usage: string;
+      }>(statsQuery, values);
+      
+      const stats = statsResult.rows[0];
+      
+      // 获取分类统计
+      const categoriesQuery = `
+        SELECT 
+          metadata->>'category' as category,
+          COUNT(*) as count
+        FROM agents 
+        WHERE ${whereClause} AND metadata->>'category' IS NOT NULL
+        GROUP BY metadata->>'category'
+        ORDER BY count DESC
+        LIMIT 10
+      `;
+      
+      const categoriesResult = await db.query<{
+        category: string;
+        count: string;
+      }>(categoriesQuery, values);
+      
+      const topCategories = categoriesResult.rows.map(row => ({
+        category: row.category,
+        count: parseInt(row.count)
+      }));
+      
+      return {
+        totalAgents: parseInt(stats.total_agents),
+        privateAgents: parseInt(stats.private_agents),
+        publicAgents: parseInt(stats.public_agents),
+        totalUsage: parseInt(stats.total_usage),
+        topCategories
+      };
+    } catch (error) {
+      logger.error('获取Agent统计信息失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 检查Agent名称是否已存在（同一用户）
+   */
+  async isAgentNameExists(userId: string, name: string, excludeId?: string): Promise<boolean> {
+    try {
+      const conditions = ['user_id = $1', 'name = $2', 'is_deleted = FALSE'];
+      const values = [userId, name];
+      
+      if (excludeId) {
+        conditions.push('id != $3');
+        values.push(excludeId);
+      }
+      
+      const query = `
+        SELECT COUNT(*) as count 
+        FROM agents 
+        WHERE ${conditions.join(' AND ')}
+      `;
+      
+      const result = await db.query<{ count: string }>(query, values);
+      return parseInt(result.rows[0].count) > 0;
+    } catch (error) {
+      logger.error('检查Agent名称是否存在失败:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 根据任务ID获取Agent
+   */
+  async getAgentsByTaskId(taskId: string): Promise<Agent[]> {
+    try {
+      const query = `
+        SELECT * FROM agents 
+        WHERE task_id = $1 AND is_deleted = FALSE
+        ORDER BY created_at DESC
+      `;
+      
+      const result = await db.query<AgentDbRow>(query, [taskId]);
+      return result.rows.map(row => this.mapDbRowToAgent(row));
+    } catch (error) {
+      logger.error(`根据任务ID获取Agent失败 [TaskID: ${taskId}]:`, error);
+      throw error;
+    }
+  }
+  
+  /**
+   * 将数据库行映射为Agent对象
+   */
+  private mapDbRowToAgent(row: AgentDbRow): Agent {
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      description: row.description,
+      status: row.status,
+      taskId: row.task_id || undefined,
+      mcpWorkflow: row.mcp_workflow ? JSON.parse(row.mcp_workflow) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      usageCount: row.usage_count,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      publishedAt: row.published_at ? new Date(row.published_at) : undefined,
+      deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+      isDeleted: row.is_deleted
+    };
+  }
+  
+  /**
+   * 将数据库行映射为AgentUsage对象
+   */
+  private mapDbRowToAgentUsage(row: AgentUsageDbRow): AgentUsage {
+    return {
+      id: row.id,
+      agentId: row.agent_id,
+      userId: row.user_id,
+      taskId: row.task_id || undefined,
+      conversationId: row.conversation_id || undefined,
+      executionResult: row.execution_result ? JSON.parse(row.execution_result) : undefined,
+      createdAt: new Date(row.created_at)
+    };
+  }
+}
+
+export const agentDao = new AgentDao(); 

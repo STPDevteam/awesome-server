@@ -856,6 +856,157 @@ class MigrationService {
 
         console.log('✅ Reverted user_login_methods constraint to original state');
       }
+    },
+    {
+      version: 18,
+      name: 'create_agents_and_agent_usage_tables',
+      up: async () => {
+        // 创建agents表
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS agents (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name VARCHAR(50) NOT NULL,
+            description TEXT NOT NULL,
+            status VARCHAR(10) NOT NULL DEFAULT 'private' CHECK (status IN ('private', 'public', 'draft')),
+            task_id VARCHAR(255) REFERENCES tasks(id) ON DELETE SET NULL,
+            mcp_workflow JSONB,
+            metadata JSONB,
+            usage_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            published_at TIMESTAMP WITH TIME ZONE,
+            deleted_at TIMESTAMP WITH TIME ZONE,
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            UNIQUE(user_id, name)
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_user_id 
+          ON agents(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_status 
+          ON agents(status)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_task_id 
+          ON agents(task_id) 
+          WHERE task_id IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_usage_count 
+          ON agents(usage_count)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_created_at 
+          ON agents(created_at)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_published_at 
+          ON agents(published_at) 
+          WHERE published_at IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_is_deleted 
+          ON agents(is_deleted)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_deleted_at 
+          ON agents(deleted_at) 
+          WHERE deleted_at IS NOT NULL
+        `);
+
+        // 为元数据字段创建GIN索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_metadata_gin 
+          ON agents USING GIN (metadata)
+        `);
+
+        // 为分类创建表达式索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_category 
+          ON agents ((metadata->>'category'))
+          WHERE metadata->>'category' IS NOT NULL
+        `);
+
+        // 复合索引：用户ID + 状态 + 非删除
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_user_status_not_deleted 
+          ON agents(user_id, status, is_deleted) 
+          WHERE is_deleted = FALSE
+        `);
+
+        // 复合索引：状态 + 使用次数（用于排序）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agents_status_usage_count 
+          ON agents(status, usage_count DESC) 
+          WHERE is_deleted = FALSE
+        `);
+
+        // 创建agent_usage表
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS agent_usage (
+            id VARCHAR(255) PRIMARY KEY,
+            agent_id VARCHAR(255) NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            task_id VARCHAR(255) REFERENCES tasks(id) ON DELETE SET NULL,
+            conversation_id VARCHAR(255) REFERENCES conversations(id) ON DELETE SET NULL,
+            execution_result JSONB,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_usage_agent_id 
+          ON agent_usage(agent_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_usage_user_id 
+          ON agent_usage(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_usage_task_id 
+          ON agent_usage(task_id) 
+          WHERE task_id IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_usage_conversation_id 
+          ON agent_usage(conversation_id) 
+          WHERE conversation_id IS NOT NULL
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_usage_created_at 
+          ON agent_usage(created_at)
+        `);
+
+        // 复合索引：agent + 时间（用于统计）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_usage_agent_created_at 
+          ON agent_usage(agent_id, created_at DESC)
+        `);
+
+        console.log('✅ Created agents and agent_usage tables');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS agent_usage CASCADE');
+        await db.query('DROP TABLE IF EXISTS agents CASCADE');
+        console.log('✅ Dropped agents and agent_usage tables');
+      }
     }
   ];
 
