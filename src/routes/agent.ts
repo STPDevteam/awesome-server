@@ -377,6 +377,53 @@ router.post('/generate-description', requireAuth, async (req: Request, res: Resp
 });
 
 /**
+ * 生成Agent相关问题
+ * POST /api/agent/generate-questions
+ */
+router.post('/generate-questions', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: '用户未认证'
+      });
+    }
+
+    const { taskTitle, taskContent, mcpWorkflow } = req.body;
+
+    if (!taskTitle || !taskContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: '缺少必需字段：taskTitle, taskContent'
+      });
+    }
+
+    const relatedQuestions = await agentService.generateRelatedQuestions(
+      taskTitle,
+      taskContent,
+      mcpWorkflow
+    );
+
+    res.json({
+      success: true,
+      data: {
+        relatedQuestions
+      }
+    });
+  } catch (error) {
+    logger.error('生成Agent相关问题失败:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '生成Agent相关问题失败'
+    });
+  }
+});
+
+/**
  * 发布Agent为公开
  * POST /api/agent/:id/publish
  */
@@ -463,7 +510,7 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
 });
 
 /**
- * 根据任务创建Agent
+ * 根据任务创建Agent（任务完成后使用）
  * POST /api/agent/from-task/:taskId
  */
 router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -478,7 +525,7 @@ router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Respons
     }
 
     const taskId = req.params.taskId;
-    const { name, description, status = 'private' } = req.body;
+    const { status = 'private' } = req.body;
 
     // 验证status值
     if (!['private', 'public'].includes(status)) {
@@ -489,7 +536,8 @@ router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Respons
       });
     }
 
-    const agent = await agentService.createAgentFromTask(taskId, userId, name, description, status);
+    // 直接从任务创建Agent，所有信息自动生成
+    const agent = await agentService.createAgentFromTask(taskId, userId, status);
 
     res.json({
       success: true,
@@ -506,10 +554,10 @@ router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Respons
           message: error.message
         });
       }
-      if (error.message.includes('已存在') || error.message.includes('allowed')) {
+      if (error.message.includes('未完成')) {
         return res.status(400).json({
           success: false,
-          error: 'VALIDATION_ERROR',
+          error: 'TASK_NOT_COMPLETED',
           message: error.message
         });
       }
@@ -519,6 +567,58 @@ router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Respons
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : '从任务创建Agent失败'
+    });
+  }
+});
+
+/**
+ * 预览从任务创建的Agent信息（用户保存前预览）
+ * GET /api/agent/preview-from-task/:taskId
+ */
+router.get('/preview-from-task/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: '用户未认证'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    
+    // 获取预览信息
+    const preview = await agentService.previewAgentFromTask(taskId, userId);
+
+    res.json({
+      success: true,
+      data: preview
+    });
+  } catch (error) {
+    logger.error(`预览Agent信息失败 [TaskID: ${req.params.taskId}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('未完成')) {
+        return res.status(400).json({
+          success: false,
+          error: 'TASK_NOT_COMPLETED',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '预览Agent信息失败'
     });
   }
 });

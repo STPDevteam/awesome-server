@@ -24,6 +24,7 @@ export interface AgentDbRow {
   task_id: string | null;
   mcp_workflow: any;
   metadata: any;
+  related_questions: any;
   usage_count: number;
   created_at: string;
   updated_at: string;
@@ -58,8 +59,8 @@ export class AgentDao {
       const query = `
         INSERT INTO agents (
           id, user_id, name, description, status, task_id, 
-          mcp_workflow, metadata, usage_count, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          mcp_workflow, metadata, related_questions, usage_count, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *
       `;
       
@@ -72,6 +73,7 @@ export class AgentDao {
         request.taskId || null,
         request.mcpWorkflow ? JSON.stringify(request.mcpWorkflow) : null,
         request.metadata ? JSON.stringify(request.metadata) : null,
+        request.relatedQuestions ? JSON.stringify(request.relatedQuestions) : null,
         0, // 初始使用次数为0
         now,
         now
@@ -149,6 +151,11 @@ export class AgentDao {
       if (request.metadata !== undefined) {
         setParts.push(`metadata = $${paramIndex++}`);
         values.push(JSON.stringify(request.metadata));
+      }
+      
+      if (request.relatedQuestions !== undefined) {
+        setParts.push(`related_questions = $${paramIndex++}`);
+        values.push(JSON.stringify(request.relatedQuestions));
       }
       
       if (setParts.length === 0) {
@@ -485,6 +492,7 @@ export class AgentDao {
       taskId: row.task_id || undefined,
       mcpWorkflow: row.mcp_workflow ? JSON.parse(row.mcp_workflow) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+      relatedQuestions: row.related_questions ? JSON.parse(row.related_questions) : undefined,
       usageCount: row.usage_count,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),

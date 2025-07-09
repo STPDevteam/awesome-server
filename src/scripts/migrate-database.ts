@@ -872,6 +872,7 @@ class MigrationService {
             task_id VARCHAR(255) REFERENCES tasks(id) ON DELETE SET NULL,
             mcp_workflow JSONB,
             metadata JSONB,
+            related_questions JSONB,
             usage_count INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

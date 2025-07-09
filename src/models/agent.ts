@@ -36,6 +36,7 @@ export interface Agent {
     tags?: string[];
     category?: string;
   };
+  relatedQuestions?: string[]; // 三个相关问题，帮助用户理解Agent的用途
   usageCount: number; // 使用次数
   createdAt: Date;
   updatedAt: Date;
@@ -53,6 +54,7 @@ export interface CreateAgentRequest {
   taskId?: string;
   mcpWorkflow?: Agent['mcpWorkflow'];
   metadata?: Agent['metadata'];
+  relatedQuestions?: string[];
 }
 
 // Agent更新请求参数
@@ -61,6 +63,7 @@ export interface UpdateAgentRequest {
   description?: string;
   status?: AgentStatus;
   metadata?: Agent['metadata'];
+  relatedQuestions?: string[];
 }
 
 // Agent查询参数

@@ -339,6 +339,75 @@ Agent信息：
   }
 
   /**
+   * 自动生成Agent相关问题
+   */
+  async generateRelatedQuestions(taskTitle: string, taskContent: string, mcpWorkflow?: Agent['mcpWorkflow']): Promise<string[]> {
+    try {
+      const mcpNames = mcpWorkflow?.mcps?.map(mcp => `${mcp.name} (${mcp.description})`).join(', ') || '无';
+      const workflowActions = mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      
+      const systemPrompt = `你是一个专业的产品经理，擅长设计用户引导问题来帮助用户理解产品功能。
+
+你需要为AI Agent生成3个相关问题，帮助用户更好地理解这个Agent的用途和功能。
+
+问题要求：
+- 每个问题20-40字之间
+- 简洁明了，易于理解
+- 体现Agent的具体功能和应用场景
+- 引导用户思考如何使用这个Agent
+- 避免过于技术性的表达
+
+Agent信息：
+- 任务标题：${taskTitle}
+- 任务内容：${taskContent}
+- 使用的MCP工具：${mcpNames}
+- 工作流操作：${workflowActions}
+
+请生成3个问题，每行一个，不要编号或其他格式，直接返回问题文本。`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage('请生成3个相关问题')
+      ]);
+
+      const questionsText = response.content.toString().trim();
+      
+      // 解析问题
+      const questions = questionsText
+        .split('\n')
+        .map(q => q.trim())
+        .filter(q => q.length > 0 && q.length <= 40)
+        .slice(0, 3); // 确保只有3个问题
+
+      // 如果生成的问题不够3个，添加默认问题
+      while (questions.length < 3) {
+        const defaultQuestions = [
+          `这个Agent能帮我做什么？`,
+          `什么时候适合使用这个Agent？`,
+          `如何使用这个Agent来${taskTitle.replace(/[^\u4e00-\u9fa5\w\s]/g, '').substring(0, 10)}？`
+        ];
+        
+        for (const defaultQ of defaultQuestions) {
+          if (questions.length < 3 && !questions.includes(defaultQ)) {
+            questions.push(defaultQ);
+          }
+        }
+      }
+
+      logger.info(`自动生成Agent相关问题: ${questions.join(', ')}`);
+      return questions;
+    } catch (error) {
+      logger.error('生成Agent相关问题失败:', error);
+      // 返回默认问题
+      return [
+        `这个Agent能帮我做什么？`,
+        `什么时候适合使用这个Agent？`,
+        `如何使用这个Agent完成任务？`
+      ];
+    }
+  }
+
+  /**
    * 验证Agent名称
    */
   async validateAgentName(name: string, userId: string, excludeId?: string): Promise<AgentNameValidation> {
@@ -453,9 +522,19 @@ Agent信息：
   }
 
   /**
-   * 根据任务创建Agent的快捷方法
+   * 预览从任务创建Agent的信息（用户保存前预览）
    */
-  async createAgentFromTask(taskId: string, userId: string, name?: string, description?: string, status: 'private' | 'public' = 'private'): Promise<Agent> {
+  async previewAgentFromTask(taskId: string, userId: string): Promise<{
+    suggestedName: string;
+    suggestedDescription: string;
+    relatedQuestions: string[];
+    taskInfo: {
+      title: string;
+      content: string;
+      status: string;
+    };
+    mcpWorkflow?: any;
+  }> {
     try {
       // 获取任务信息
       const task = await getTaskService().getTaskById(taskId);
@@ -463,24 +542,87 @@ Agent信息：
         throw new Error('任务不存在或无权访问');
       }
 
-      // 如果没有提供名称，自动生成
-      if (!name) {
-        name = await this.generateAgentName({
-          taskTitle: task.title,
-          taskContent: task.content,
-          mcpWorkflow: task.mcpWorkflow
-        });
+      // 检查任务是否已完成
+      if (task.status !== 'completed') {
+        throw new Error('任务未完成，无法创建Agent');
       }
 
-      // 如果没有提供描述，自动生成
-      if (!description) {
-        description = await this.generateAgentDescription({
-          name,
-          taskTitle: task.title,
-          taskContent: task.content,
-          mcpWorkflow: task.mcpWorkflow
-        });
+      // 生成建议的名称
+      const suggestedName = await this.generateAgentName({
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      // 生成建议的描述
+      const suggestedDescription = await this.generateAgentDescription({
+        name: suggestedName,
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      // 生成相关问题
+      const relatedQuestions = await this.generateRelatedQuestions(
+        task.title,
+        task.content,
+        task.mcpWorkflow
+      );
+
+      return {
+        suggestedName,
+        suggestedDescription,
+        relatedQuestions,
+        taskInfo: {
+          title: task.title,
+          content: task.content,
+          status: task.status
+        },
+        mcpWorkflow: task.mcpWorkflow
+      };
+    } catch (error) {
+      logger.error(`预览Agent信息失败 [TaskID: ${taskId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 根据已完成的任务创建Agent
+   */
+  async createAgentFromTask(taskId: string, userId: string, status: 'private' | 'public' = 'private'): Promise<Agent> {
+    try {
+      // 获取任务信息
+      const task = await getTaskService().getTaskById(taskId);
+      if (!task || task.userId !== userId) {
+        throw new Error('任务不存在或无权访问');
       }
+
+      // 检查任务是否已完成
+      if (task.status !== 'completed') {
+        throw new Error('任务未完成，无法创建Agent');
+      }
+
+      // 自动生成Agent名称
+      const name = await this.generateAgentName({
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      // 自动生成Agent描述
+      const description = await this.generateAgentDescription({
+        name,
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      // 自动生成相关问题
+      const relatedQuestions = await this.generateRelatedQuestions(
+        task.title,
+        task.content,
+        task.mcpWorkflow
+      );
 
       // 创建Agent
       const createRequest: CreateAgentRequest = {
@@ -492,15 +634,52 @@ Agent信息：
         mcpWorkflow: task.mcpWorkflow,
         metadata: {
           originalTaskTitle: task.title,
-          originalTaskContent: task.content
-        }
+          originalTaskContent: task.content,
+          deliverables: [], // TODO: 可以从任务结果中提取
+          executionResults: task.result, // 存储任务执行结果
+          category: this.extractCategoryFromMCPs(task.mcpWorkflow)
+        },
+        relatedQuestions
       };
 
-      return await this.createAgent(createRequest);
+      const agent = await this.createAgent(createRequest);
+      logger.info(`从任务创建Agent成功: ${agent.id} (${agent.name}) - 状态: ${status}`);
+      
+      return agent;
     } catch (error) {
       logger.error(`从任务创建Agent失败 [TaskID: ${taskId}]:`, error);
       throw error;
     }
+  }
+
+  /**
+   * 从MCP工作流中提取分类
+   */
+  private extractCategoryFromMCPs(mcpWorkflow?: any): string {
+    if (!mcpWorkflow?.mcps || mcpWorkflow.mcps.length === 0) {
+      return 'general';
+    }
+
+    // 根据使用的MCP工具推断分类
+    const mcpNames = mcpWorkflow.mcps.map((mcp: any) => mcp.name.toLowerCase());
+    
+    if (mcpNames.some((name: string) => name.includes('github'))) {
+      return 'development';
+    }
+    if (mcpNames.some((name: string) => name.includes('coingecko') || name.includes('coinmarketcap'))) {
+      return 'crypto';
+    }
+    if (mcpNames.some((name: string) => name.includes('playwright') || name.includes('web'))) {
+      return 'automation';
+    }
+    if (mcpNames.some((name: string) => name.includes('x-mcp') || name.includes('twitter'))) {
+      return 'social';
+    }
+    if (mcpNames.some((name: string) => name.includes('notion'))) {
+      return 'productivity';
+    }
+
+    return 'general';
   }
 }
 
