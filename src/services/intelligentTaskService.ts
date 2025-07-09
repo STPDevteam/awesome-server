@@ -18,16 +18,7 @@ export class IntelligentTaskService {
     this.taskService = getTaskService();
   }
 
-  /**
-   * 智能分析任务 - 应该由 TaskAnalysisService 处理，不是 IntelligentTaskService
-   * 这个方法不应该存在，分析阶段应该完全由 TaskAnalysisService 完成
-   */
-  async analyzeTaskIntelligently(
-    taskId: string,
-    stream: (data: any) => void
-  ): Promise<boolean> {
-    throw new Error('Analysis phase should be completed by TaskAnalysisService, IntelligentTaskService is only responsible for execution phase');
-  }
+
 
   /**
    * 智能执行任务 - 使用工作流引擎自动执行（基于任务分析结果）
