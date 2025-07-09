@@ -2785,6 +2785,644 @@ data: [DONE]
 
 ---
 
+## Agent管理 API
+
+Agent系统允许用户将完成的任务工作流保存为可重用的Agent，支持私有和公开两种模式。Agent包含自动生成的名称、描述和相关问题，用户可以尝试使用Agent来执行类似的任务。
+
+### 1. 从任务预览Agent
+
+**端点**: `GET /api/agent/preview/:taskId`
+
+**描述**: 预览从指定任务创建Agent时的自动生成内容，不实际创建Agent
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `taskId`: 任务ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "BitcoinPriceAnalyzer",
+    "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
+    "relatedQuestions": [
+      "How do I get real-time cryptocurrency prices?",
+      "What market data can this agent provide?",
+      "Can this agent analyze other cryptocurrencies?"
+    ],
+    "taskId": "task_123456",
+    "metadata": {
+      "requiredMcps": ["coingecko-server"],
+      "totalSteps": 1,
+      "estimatedTime": "30 seconds"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该任务
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 2. 从任务创建Agent
+
+**端点**: `POST /api/agent/create/:taskId`
+
+**描述**: 从指定任务创建Agent，支持私有和公开模式
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `taskId`: 任务ID
+
+**请求体**:
+```json
+{
+  "status": "private"
+}
+```
+
+**状态说明**:
+- `private`: 私有Agent，仅创建者可见和使用
+- `public`: 公开Agent，在Agent市场中对所有用户可见
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agent": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
+      "relatedQuestions": [
+        "How do I get real-time cryptocurrency prices?",
+        "What market data can this agent provide?",
+        "Can this agent analyze other cryptocurrencies?"
+      ],
+      "userId": "user_123",
+      "status": "private",
+      "taskId": "task_123456",
+      "mcpWorkflow": {
+        "mcps": [
+          {
+            "name": "coingecko-server",
+            "description": "CoinGecko官方MCP服务器",
+            "authRequired": true,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coingecko.png",
+            "githubUrl": "https://docs.coingecko.com/reference/mcp-server"
+          }
+        ],
+        "workflow": [
+          {
+            "step": 1,
+            "mcp": "coingecko-server",
+            "action": "Get Bitcoin current price and market data",
+            "input": {}
+          }
+        ]
+      },
+      "metadata": {
+        "requiredMcps": ["coingecko-server"],
+        "totalSteps": 1,
+        "estimatedTime": "30 seconds"
+      },
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:00:00.000Z"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该任务
+- `404 Not Found`: 任务不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 3. 获取Agent列表
+
+**端点**: `GET /api/agent`
+
+**描述**: 获取Agent列表，支持按状态和用户筛选
+
+**认证**: 需要访问令牌
+
+**查询参数**:
+- `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
+- `userId`: 用户ID筛选（可选）
+- `limit`: 每页数量（默认10）
+- `offset`: 偏移量（默认0）
+- `sortBy`: 排序字段（默认 `created_at`）
+- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agents": [
+      {
+        "id": "agent_123456",
+        "name": "BitcoinPriceAnalyzer",
+        "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
+        "relatedQuestions": [
+          "How do I get real-time cryptocurrency prices?",
+          "What market data can this agent provide?",
+          "Can this agent analyze other cryptocurrencies?"
+        ],
+        "userId": "user_123",
+        "status": "public",
+        "taskId": "task_123456",
+        "metadata": {
+          "requiredMcps": ["coingecko-server"],
+          "totalSteps": 1,
+          "estimatedTime": "30 seconds"
+        },
+        "usageCount": 25,
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:00:00.000Z"
+      }
+    ],
+    "total": 1,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 4. 获取Agent详情
+
+**端点**: `GET /api/agent/:id`
+
+**描述**: 获取指定Agent的详细信息
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agent": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
+      "relatedQuestions": [
+        "How do I get real-time cryptocurrency prices?",
+        "What market data can this agent provide?",
+        "Can this agent analyze other cryptocurrencies?"
+      ],
+      "userId": "user_123",
+      "status": "public",
+      "taskId": "task_123456",
+      "mcpWorkflow": {
+        "mcps": [
+          {
+            "name": "coingecko-server",
+            "description": "CoinGecko官方MCP服务器",
+            "authRequired": true,
+            "authVerified": false,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coingecko.png",
+            "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+            "authParams": {
+              "COINGECKO_API_KEY": "string"
+            }
+          }
+        ],
+        "workflow": [
+          {
+            "step": 1,
+            "mcp": "coingecko-server",
+            "action": "Get Bitcoin current price and market data",
+            "input": {}
+          }
+        ]
+      },
+      "metadata": {
+        "requiredMcps": ["coingecko-server"],
+        "totalSteps": 1,
+        "estimatedTime": "30 seconds"
+      },
+      "usageCount": 25,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:00:00.000Z"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent（私有Agent且非创建者）
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 5. 尝试使用Agent
+
+**端点**: `POST /api/agent/:id/try`
+
+**描述**: 尝试使用Agent执行任务，支持3步流程：输入内容 → 验证MCP认证 → 执行任务
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**请求体**:
+```json
+{
+  "content": "I want to get the current Bitcoin price and analyze the market trends for the next week"
+}
+```
+
+**成功响应（认证已验证）**:
+```json
+{
+  "success": true,
+  "data": {
+    "agent": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price...",
+      "status": "public"
+    },
+    "task": {
+      "id": "task_789012",
+      "title": "Get Bitcoin Price and Market Analysis",
+      "content": "I want to get the current Bitcoin price and analyze the market trends for the next week",
+      "status": "created",
+      "mcpWorkflow": {
+        "mcps": [...],
+        "workflow": [...]
+      }
+    },
+    "authStatus": {
+      "allVerified": true,
+      "verifiedMcps": ["coingecko-server"],
+      "requiresAuth": []
+    },
+    "message": "Agent executed successfully. Task created and ready for execution."
+  }
+}
+```
+
+**需要认证的响应**:
+```json
+{
+  "success": false,
+  "error": "Authentication Required",
+  "message": "Some MCP servers require authentication before execution",
+  "data": {
+    "agent": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price...",
+      "status": "public"
+    },
+    "authStatus": {
+      "allVerified": false,
+      "verifiedMcps": [],
+      "requiresAuth": [
+        {
+          "mcpName": "coingecko-server",
+          "description": "CoinGecko官方MCP服务器",
+          "authParams": {
+            "COINGECKO_API_KEY": {
+              "type": "string",
+              "description": "CoinGecko API Key",
+              "required": true
+            }
+          },
+          "authUrl": "https://www.coingecko.com/en/api/pricing"
+        }
+      ]
+    },
+    "message": "Please authenticate with the required MCP servers before using this agent."
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 6. 更新Agent
+
+**端点**: `PUT /api/agent/:id`
+
+**描述**: 更新Agent信息，仅Agent创建者可操作
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**请求体**:
+```json
+{
+  "name": "Enhanced Bitcoin Price Analyzer",
+  "description": "An enhanced intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
+  "status": "public",
+  "relatedQuestions": [
+    "How do I get real-time cryptocurrency prices?",
+    "What market data can this agent provide?",
+    "Can this agent analyze other cryptocurrencies?",
+    "How accurate are the price predictions?"
+  ]
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agent": {
+      "id": "agent_123456",
+      "name": "Enhanced Bitcoin Price Analyzer",
+      "description": "An enhanced intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
+      "relatedQuestions": [
+        "How do I get real-time cryptocurrency prices?",
+        "What market data can this agent provide?",
+        "Can this agent analyze other cryptocurrencies?",
+        "How accurate are the price predictions?"
+      ],
+      "userId": "user_123",
+      "status": "public",
+      "taskId": "task_123456",
+      "mcpWorkflow": {...},
+      "metadata": {...},
+      "usageCount": 25,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T09:00:00.000Z"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权修改该Agent（仅创建者可修改）
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 7. 删除Agent
+
+**端点**: `DELETE /api/agent/:id`
+
+**描述**: 删除Agent，仅Agent创建者可操作
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "Agent deleted successfully",
+    "agentId": "agent_123456",
+    "deletedAt": "2023-06-20T09:00:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权删除该Agent（仅创建者可删除）
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 8. 获取用户创建的Agent
+
+**端点**: `GET /api/agent/my-agents`
+
+**描述**: 获取当前用户创建的所有Agent
+
+**认证**: 需要访问令牌
+
+**查询参数**:
+- `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
+- `limit`: 每页数量（默认10）
+- `offset`: 偏移量（默认0）
+- `sortBy`: 排序字段（默认 `created_at`）
+- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agents": [
+      {
+        "id": "agent_123456",
+        "name": "BitcoinPriceAnalyzer",
+        "description": "An intelligent agent that retrieves Bitcoin's current price...",
+        "relatedQuestions": [...],
+        "status": "public",
+        "taskId": "task_123456",
+        "metadata": {...},
+        "usageCount": 25,
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:00:00.000Z"
+      }
+    ],
+    "total": 1,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 9. 获取公开Agent列表
+
+**端点**: `GET /api/agent/public`
+
+**描述**: 获取所有公开的Agent，用于Agent市场展示
+
+**认证**: 可选
+
+**查询参数**:
+- `category`: 按类别筛选（可选）
+- `search`: 搜索关键词（可选）
+- `limit`: 每页数量（默认10）
+- `offset`: 偏移量（默认0）
+- `sortBy`: 排序字段（默认 `usage_count`）
+- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agents": [
+      {
+        "id": "agent_123456",
+        "name": "BitcoinPriceAnalyzer",
+        "description": "An intelligent agent that retrieves Bitcoin's current price...",
+        "relatedQuestions": [...],
+        "userId": "user_123",
+        "status": "public",
+        "metadata": {
+          "requiredMcps": ["coingecko-server"],
+          "totalSteps": 1,
+          "estimatedTime": "30 seconds",
+          "category": "Market Data"
+        },
+        "usageCount": 25,
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:00:00.000Z"
+      }
+    ],
+    "total": 1,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### Agent使用流程示例
+
+以下是一个完整的Agent使用流程示例：
+
+#### 1. 创建任务并完成
+
+```bash
+# 创建任务
+curl -X POST http://localhost:3001/api/tasks \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"content":"获取比特币当前价格并分析市场趋势"}'
+
+# 分析任务
+curl -X POST http://localhost:3001/api/tasks/task_123456/analyze-stream \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 验证MCP认证
+curl -X POST http://localhost:3001/api/tasks/task_123456/verify-auth \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"mcpName":"coingecko-server","authData":{"COINGECKO_API_KEY":"your_api_key"}}'
+
+# 执行任务
+curl -X POST http://localhost:3001/api/tasks/task_123456/execute-stream \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### 2. 预览Agent内容
+
+```bash
+curl -X GET http://localhost:3001/api/agent/preview/task_123456 \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### 3. 创建Agent
+
+```bash
+curl -X POST http://localhost:3001/api/agent/create/task_123456 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{"status":"public"}'
+```
+
+#### 4. 其他用户尝试使用Agent
+
+```bash
+curl -X POST http://localhost:3001/api/agent/agent_123456/try \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
+  -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
+```
+
+### Agent系统特性
+
+#### 1. 自动内容生成
+- **AI生成名称**: 使用OpenAI自动生成符合X平台用户名规范的Agent名称（最多50字符）
+- **智能描述**: 基于任务内容生成详细的Agent描述（最多280字符）
+- **相关问题**: 自动生成3个相关问题，帮助用户理解Agent的使用场景
+
+#### 2. 权限管理
+- **私有Agent**: 仅创建者可见和使用
+- **公开Agent**: 在Agent市场中对所有用户可见
+- **访问控制**: 完整的权限验证系统
+
+#### 3. 认证验证
+- **MCP认证检查**: 尝试使用Agent时自动检查所需MCP的认证状态
+- **认证引导**: 为未认证的MCP提供详细的认证指导
+- **认证参数**: 清晰展示每个MCP所需的认证参数
+
+#### 4. 使用追踪
+- **使用统计**: 追踪Agent的使用次数
+- **排序优化**: 支持按使用次数排序，突出热门Agent
+
+#### 5. 任务集成
+- **无缝集成**: Agent基于已完成的任务工作流创建
+- **工作流保存**: 完整保存MCP工作流配置
+- **一键执行**: 用户可以一键使用Agent执行类似任务
+
+### 最佳实践
+
+#### 1. Agent创建
+- **完整任务**: 确保基础任务已完全执行成功
+- **描述清晰**: 使用清晰的描述帮助其他用户理解Agent功能
+- **适当公开**: 对有价值的Agent选择公开状态
+
+#### 2. Agent使用
+- **认证准备**: 在使用Agent前准备好所需的MCP认证信息
+- **内容适配**: 根据Agent的功能调整输入内容
+- **结果验证**: 验证Agent执行结果是否符合预期
+
+#### 3. Agent管理
+- **定期更新**: 根据反馈和使用情况更新Agent信息
+- **状态管理**: 合理设置Agent的公开/私有状态
+- **性能监控**: 关注Agent的使用情况和执行效果
+
+---
+
 ## 对话管理 API
 
 ### 1. 创建新对话

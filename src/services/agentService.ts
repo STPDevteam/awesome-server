@@ -13,12 +13,18 @@ import {
   AgentDescriptionValidation,
   AgentStats,
   AgentMarketplaceQuery,
-  AgentUsage
+  AgentUsage,
+  TryAgentRequest,
+  TryAgentResponse,
+  MCPAuthCheckResult
 } from '../models/agent.js';
 import { getTaskService } from './taskService.js';
+import { MCPAuthService } from './mcpAuthService.js';
+import { v4 as uuidv4 } from 'uuid';
 
 export class AgentService {
   private llm: ChatOpenAI;
+  private mcpAuthService: MCPAuthService;
 
   constructor() {
     this.llm = new ChatOpenAI({
@@ -27,6 +33,7 @@ export class AgentService {
       maxTokens: 1000,
       streaming: false,
     });
+    this.mcpAuthService = new MCPAuthService();
   }
 
   /**
@@ -680,6 +687,137 @@ Agent信息：
     }
 
     return 'general';
+  }
+
+  /**
+   * 检查Agent工作流中涉及的MCP认证状态
+   */
+  private async checkAgentMCPAuth(agent: Agent, userId: string): Promise<MCPAuthCheckResult> {
+    try {
+      const mcpWorkflow = agent.mcpWorkflow;
+      if (!mcpWorkflow?.mcps || mcpWorkflow.mcps.length === 0) {
+        return {
+          needsAuth: false,
+          missingAuth: [],
+          message: 'This Agent does not require MCP authentication'
+        };
+      }
+
+      const missingAuth: Array<{
+        mcpName: string;
+        description: string;
+        authParams?: Record<string, any>;
+      }> = [];
+
+      // 检查每个需要认证的MCP
+      for (const mcp of mcpWorkflow.mcps) {
+        if (mcp.authRequired) {
+          // 检查用户是否已经验证了这个MCP
+          const authData = await this.mcpAuthService.getUserMCPAuth(userId, mcp.name);
+          if (!authData || !authData.isVerified) {
+            missingAuth.push({
+              mcpName: mcp.name,
+              description: mcp.description,
+              authParams: mcp.authParams
+            });
+          }
+        }
+      }
+
+      if (missingAuth.length > 0) {
+        return {
+          needsAuth: true,
+          missingAuth,
+          message: 'Please verify auth for all relevant MCP servers first.'
+        };
+      }
+
+              return {
+          needsAuth: false,
+          missingAuth: [],
+          message: 'All MCP servers have been authenticated'
+        };
+    } catch (error) {
+      logger.error(`检查Agent MCP认证状态失败 [Agent: ${agent.id}]:`, error);
+      return {
+        needsAuth: true,
+        missingAuth: [],
+        message: 'Error occurred while checking authentication status'
+      };
+    }
+  }
+
+  /**
+   * 使用Agent执行任务
+   */
+  async tryAgent(request: TryAgentRequest): Promise<TryAgentResponse> {
+    try {
+      const { agentId, taskContent, userId } = request;
+
+      // 获取Agent信息
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        return {
+          success: false,
+          message: 'Agent not found'
+        };
+      }
+
+      // 检查Agent是否为公开或属于当前用户
+      if (agent.status === 'private' && agent.userId !== userId) {
+        return {
+          success: false,
+          message: 'Access denied: This is a private Agent'
+        };
+      }
+
+      // 检查MCP认证状态
+      const authCheck = await this.checkAgentMCPAuth(agent, userId);
+      if (authCheck.needsAuth) {
+        return {
+          success: false,
+          needsAuth: true,
+          missingAuth: authCheck.missingAuth,
+          message: authCheck.message
+        };
+      }
+
+      // 创建临时任务来执行Agent的工作流
+      const taskService = getTaskService();
+      const task = await taskService.createTask({
+        userId,
+        title: `Try Agent: ${agent.name}`,
+        content: taskContent,
+        conversationId: undefined
+      });
+
+      // 更新任务的工作流信息
+      await taskService.updateTask(task.id, {
+        mcpWorkflow: agent.mcpWorkflow,
+        status: 'completed' // 设置为已完成状态，因为分析已由Agent提供
+      });
+
+      // 记录Agent使用
+      await this.recordAgentUsage(agentId, userId, task.id);
+
+      // 返回成功响应，包含任务ID用于后续跟踪
+      return {
+        success: true,
+        executionResult: {
+          taskId: task.id,
+          message: 'Task created successfully. Agent workflow is ready to execute.',
+          agentName: agent.name,
+          agentDescription: agent.description,
+          mcpWorkflow: agent.mcpWorkflow
+        }
+      };
+    } catch (error) {
+      logger.error(`Try Agent失败 [Agent: ${request.agentId}]:`, error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to try Agent'
+      };
+    }
   }
 }
 
