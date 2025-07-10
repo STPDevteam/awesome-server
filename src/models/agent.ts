@@ -141,7 +141,7 @@ export interface AgentUsage {
 // Try Agent请求参数
 export interface TryAgentRequest {
   agentId: string;
-  taskContent: string;
+  content: string;
   userId: string;
 }
 
@@ -155,6 +155,15 @@ export interface TryAgentResponse {
     authParams?: Record<string, any>;
   }>;
   message?: string;
+  conversation?: {
+    id: string;
+    title: string;
+    agentInfo: {
+      id: string;
+      name: string;
+      description: string;
+    };
+  };
   executionResult?: any;
 }
 

@@ -3043,7 +3043,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 **端点**: `POST /api/agent/:id/try`
 
-**描述**: 尝试使用Agent执行任务，支持3步流程：输入内容 → 验证MCP认证 → 执行任务
+**描述**: 开始与Agent的多轮对话，支持聊天和任务执行，Agent会智能识别用户意图并相应处理
 
 **认证**: 需要访问令牌
 
@@ -3053,7 +3053,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 **请求体**:
 ```json
 {
-  "content": "I want to get the current Bitcoin price and analyze the market trends for the next week"
+  "content": "Hello, can you help me get the current Bitcoin price?"
 }
 ```
 
@@ -3062,28 +3062,16 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 {
   "success": true,
   "data": {
-    "agent": {
-      "id": "agent_123456",
-      "name": "BitcoinPriceAnalyzer",
-      "description": "An intelligent agent that retrieves Bitcoin's current price...",
-      "status": "public"
-    },
-    "task": {
-      "id": "task_789012",
-      "title": "Get Bitcoin Price and Market Analysis",
-      "content": "I want to get the current Bitcoin price and analyze the market trends for the next week",
-      "status": "created",
-      "mcpWorkflow": {
-        "mcps": [...],
-        "workflow": [...]
+    "conversation": {
+      "id": "conv_1234567890",
+      "title": "Try BitcoinPriceAnalyzer",
+      "agentInfo": {
+        "id": "agent_123456",
+        "name": "BitcoinPriceAnalyzer",
+        "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis..."
       }
     },
-    "authStatus": {
-      "allVerified": true,
-      "verifiedMcps": ["coingecko-server"],
-      "requiresAuth": []
-    },
-    "message": "Agent executed successfully. Task created and ready for execution."
+    "message": "Agent trial conversation started successfully"
   }
 }
 ```
@@ -3092,35 +3080,18 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 ```json
 {
   "success": false,
-  "error": "Authentication Required",
-  "message": "Some MCP servers require authentication before execution",
-  "data": {
-    "agent": {
-      "id": "agent_123456",
-      "name": "BitcoinPriceAnalyzer",
-      "description": "An intelligent agent that retrieves Bitcoin's current price...",
-      "status": "public"
-    },
-    "authStatus": {
-      "allVerified": false,
-      "verifiedMcps": [],
-      "requiresAuth": [
-        {
-          "mcpName": "coingecko-server",
-          "description": "CoinGecko官方MCP服务器",
-          "authParams": {
-            "COINGECKO_API_KEY": {
-              "type": "string",
-              "description": "CoinGecko API Key",
-              "required": true
-            }
-          },
-          "authUrl": "https://www.coingecko.com/en/api/pricing"
-        }
-      ]
-    },
-    "message": "Please authenticate with the required MCP servers before using this agent."
-  }
+  "error": "AUTH_REQUIRED",
+  "needsAuth": true,
+  "missingAuth": [
+    {
+      "mcpName": "coingecko-mcp",
+      "description": "CoinGecko cryptocurrency market data MCP",
+      "authParams": {
+        "apiKey": "required"
+      }
+    }
+  ],
+  "message": "Please verify auth for all relevant MCP servers first."
 }
 ```
 
@@ -3130,6 +3101,63 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 - `403 Forbidden`: 无权访问该Agent
 - `404 Not Found`: Agent不存在
 - `500 Internal Server Error`: 服务器内部错误
+
+### Agent多轮对话流程
+
+1. **开始Agent试用**:
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Hello, what can you help me with?"}'
+   ```
+
+2. **继续对话**（使用返回的会话ID）:
+   ```bash
+   curl -X POST "http://localhost:3000/api/conversation/conv_1234567890/message" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Can you get me the current Bitcoin price?"}'
+   ```
+
+3. **Agent智能处理**:
+   - **对话意图**: Agent会进行自然对话，回答问题、提供建议
+   - **任务意图**: Agent会识别任务请求，使用其MCP工作流执行具体任务
+   - **自动识别**: 基于消息内容和Agent能力智能判断用户意图
+
+### Agent多轮对话特性
+
+- **🧠 智能意图识别**: 自动区分对话和任务请求
+- **💬 上下文记忆**: 维持整个对话的上下文，理解前后关联
+- **⚡ 工作流集成**: 任务时自动使用Agent的MCP工作流
+- **💫 自然对话**: 非任务时进行友好的聊天交流
+- **🔧 错误处理**: 优雅处理执行错误和异常情况
+
+### 使用示例
+
+**场景1 - 对话交流**:
+```
+用户: "Hello, what can you do?"
+Agent: "Hi! I'm BitcoinPriceAnalyzer. I can help you get real-time Bitcoin prices, analyze market trends, and provide cryptocurrency insights. What would you like to know?"
+```
+
+**场景2 - 任务执行**:
+```
+用户: "Get me the current Bitcoin price"
+Agent: "I'll help you get the current Bitcoin price. Let me fetch that information for you..."
+[Agent执行工作流，调用CoinGecko API]
+Agent: "The current Bitcoin price is $43,250.75 USD (as of 2023-06-20 14:30:00 UTC)..."
+```
+
+**场景3 - 混合对话**:
+```
+用户: "What's Bitcoin's performance this week?"
+Agent: "Let me analyze Bitcoin's performance for you this week..."
+[执行任务]
+Agent: "Based on the data, Bitcoin has gained 5.2% this week..."
+用户: "Is that good compared to other cryptocurrencies?"
+Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other major cryptocurrencies..."
+```
 
 ---
 

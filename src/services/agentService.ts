@@ -20,6 +20,10 @@ import {
 } from '../models/agent.js';
 import { getTaskService } from './taskService.js';
 import { MCPAuthService } from './mcpAuthService.js';
+import { getConversationService } from './conversationService.js';
+import { messageDao } from '../dao/messageDao.js';
+import { conversationDao } from '../dao/conversationDao.js';
+import { MessageType, MessageIntent } from '../models/conversation.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export class AgentService {
@@ -748,11 +752,11 @@ Agent信息：
   }
 
   /**
-   * 使用Agent执行任务
+   * 开始与Agent的多轮对话
    */
   async tryAgent(request: TryAgentRequest): Promise<TryAgentResponse> {
     try {
-      const { agentId, taskContent, userId } = request;
+      const { agentId, content, userId } = request;
 
       // 获取Agent信息
       const agent = await agentDao.getAgentById(agentId);
@@ -782,41 +786,194 @@ Agent信息：
         };
       }
 
-      // 创建临时任务来执行Agent的工作流
+      // 创建Agent试用会话（使用特殊前缀标识Agent试用会话）
+      const conversationService = getConversationService();
+      const conversation = await conversationService.createConversation(
+        userId,
+        `[AGENT:${agent.id}] Try ${agent.name}`
+      );
+
+      // 发送欢迎消息
+      const welcomeMessage = `Hello! I'm ${agent.name}. ${agent.description}\n\nYou can:\n- Chat with me about anything\n- Ask me to help with tasks related to my capabilities\n\nHow can I assist you today?`;
+      
+      await messageDao.createMessage({
+        conversationId: conversation.id,
+        content: welcomeMessage,
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+
+      // 如果用户提供了初始内容，记录用户消息
+      let firstMessage: any = null;
+      if (content) {
+        firstMessage = await messageDao.createMessage({
+          conversationId: conversation.id,
+          content: content,
+          type: MessageType.USER,
+          intent: MessageIntent.CHAT
+        });
+        
+        await conversationDao.incrementMessageCount(conversation.id);
+      }
+
+      // 记录Agent使用
+      await this.recordAgentUsage(agentId, userId, undefined, conversation.id);
+
+      return {
+        success: true,
+        conversation: {
+          id: conversation.id,
+          title: conversation.title,
+          agentInfo: {
+            id: agent.id,
+            name: agent.name,
+            description: agent.description
+          }
+        },
+        message: 'Agent trial conversation started successfully'
+      };
+    } catch (error) {
+      logger.error(`Start Agent trial failed [Agent: ${request.agentId}]:`, error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to start Agent trial'
+      };
+    }
+  }
+
+  /**
+   * 处理Agent试用会话中的消息
+   */
+  async handleAgentTrialMessage(conversationId: string, content: string, agent: Agent, userId: string): Promise<void> {
+    try {
+      // 使用AI分析用户意图
+      const intent = await this.analyzeUserIntent(content, agent);
+      
+      if (intent.type === 'task') {
+        // 用户想要执行任务，使用Agent的工作流
+        const response = await this.executeAgentTask(content, agent, userId, conversationId);
+        
+        await messageDao.createMessage({
+          conversationId,
+          content: response,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK
+        });
+      } else {
+        // 用户想要对话，进行普通聊天
+        const response = await this.chatWithAgent(content, agent);
+        
+        await messageDao.createMessage({
+          conversationId,
+          content: response,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.CHAT
+        });
+      }
+    } catch (error) {
+      logger.error(`Handle agent trial message failed:`, error);
+      
+      // 发送错误消息
+      await messageDao.createMessage({
+        conversationId,
+        content: 'Sorry, I encountered an error while processing your request. Please try again.',
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+    }
+  }
+
+  /**
+   * 分析用户意图：对话 vs 任务
+   */
+  private async analyzeUserIntent(content: string, agent: Agent): Promise<{ type: 'chat' | 'task'; confidence: number }> {
+    try {
+      const prompt = `Analyze the user's intent based on their message and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? JSON.stringify(agent.mcpWorkflow.mcps?.map(m => m.name)) : 'general'}
+
+User message: "${content}"
+
+Determine if the user wants to:
+1. "task" - Execute a specific task using the agent's workflow capabilities
+2. "chat" - Have a general conversation
+
+Look for action words, specific requests, or task-oriented language.
+
+Respond with ONLY a JSON object:
+{"type": "chat" | "task", "confidence": 0.0-1.0, "reasoning": "brief explanation"}`;
+
+      const response = await this.llm.invoke([{ role: 'user', content: prompt }]);
+      const result = JSON.parse(response.content as string);
+      
+      return {
+        type: result.type,
+        confidence: result.confidence
+      };
+    } catch (error) {
+      logger.error('Analyze user intent failed:', error);
+      // 默认为对话
+      return { type: 'chat', confidence: 0.5 };
+    }
+  }
+
+  /**
+   * 执行Agent任务
+   */
+  private async executeAgentTask(content: string, agent: Agent, userId: string, conversationId: string): Promise<string> {
+    try {
+      // 创建任务
       const taskService = getTaskService();
       const task = await taskService.createTask({
         userId,
-        title: `Try Agent: ${agent.name}`,
-        content: taskContent,
-        conversationId: undefined
+        title: `Agent Task: ${agent.name}`,
+        content: content,
+        conversationId
       });
 
-      // 更新任务的工作流信息
+      // 使用Agent的工作流
       await taskService.updateTask(task.id, {
         mcpWorkflow: agent.mcpWorkflow,
-        status: 'completed' // 设置为已完成状态，因为分析已由Agent提供
+        status: 'in_progress'
       });
 
-      // 记录Agent使用
-      await this.recordAgentUsage(agentId, userId, task.id);
-
-      // 返回成功响应，包含任务ID用于后续跟踪
-      return {
-        success: true,
-        executionResult: {
-          taskId: task.id,
-          message: 'Task created successfully. Agent workflow is ready to execute.',
-          agentName: agent.name,
-          agentDescription: agent.description,
-          mcpWorkflow: agent.mcpWorkflow
-        }
-      };
+      // 执行任务（这里简化处理，实际应该调用任务执行服务）
+      // TODO: 集成真正的任务执行逻辑
+      
+      return `I'll help you with that task. Let me use my capabilities to process your request: "${content}".\n\nTask created with ID: ${task.id}\n\n*[This would normally execute the agent's workflow and return real results]*`;
     } catch (error) {
-      logger.error(`Try Agent失败 [Agent: ${request.agentId}]:`, error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to try Agent'
-      };
+      logger.error('Execute agent task failed:', error);
+      return 'Sorry, I encountered an error while trying to execute that task. Please try again or rephrase your request.';
+    }
+  }
+
+  /**
+   * 与Agent聊天
+   */
+  private async chatWithAgent(content: string, agent: Agent): Promise<string> {
+    try {
+      const prompt = `You are ${agent.name}, an AI agent with the following characteristics:
+
+Description: ${agent.description}
+
+Your capabilities include: ${agent.mcpWorkflow ? 
+        agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
+        'general assistance'}
+
+Respond to the user's message in a helpful and friendly manner, staying in character as this agent. 
+If they ask about your capabilities, mention what you can help with based on your description and tools.
+
+User message: "${content}"
+
+Respond naturally and helpfully:`;
+
+      const response = await this.llm.invoke([{ role: 'user', content: prompt }]);
+      return response.content as string;
+    } catch (error) {
+      logger.error('Chat with agent failed:', error);
+      return `Hello! I'm ${agent.name}. I'd be happy to help you. Could you tell me more about what you need assistance with?`;
     }
   }
 }
