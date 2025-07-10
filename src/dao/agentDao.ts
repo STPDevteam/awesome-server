@@ -18,6 +18,8 @@ import {
 export interface AgentDbRow {
   id: string;
   user_id: string;
+  username: string | null;
+  avatar: string | null;
   name: string;
   description: string;
   status: AgentStatus;
@@ -59,15 +61,17 @@ export class AgentDao {
       
       const query = `
         INSERT INTO agents (
-          id, user_id, name, description, status, task_id, categories,
+          id, user_id, username, avatar, name, description, status, task_id, categories,
           mcp_workflow, metadata, related_questions, usage_count, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         RETURNING *
       `;
       
       const values = [
         id,
         request.userId,
+        request.username || null,
+        request.avatar || null,
         request.name,
         request.description,
         request.status,
@@ -489,6 +493,8 @@ export class AgentDao {
     return {
       id: row.id,
       userId: row.user_id,
+      username: row.username || undefined,
+      avatar: row.avatar || undefined,
       name: row.name,
       description: row.description,
       status: row.status,

@@ -5,6 +5,8 @@ export type AgentStatus = 'private' | 'public' | 'draft';
 export interface Agent {
   id: string;
   userId: string;
+  username?: string; // 用户名，从users表同步
+  avatar?: string; // 用户头像，从users表同步
   name: string;
   description: string;
   status: AgentStatus;
@@ -49,6 +51,8 @@ export interface Agent {
 // Agent创建请求参数
 export interface CreateAgentRequest {
   userId: string;
+  username?: string; // 用户名，可选，会从用户信息中获取
+  avatar?: string; // 用户头像，可选，会从用户信息中获取
   name: string;
   description: string;
   status: AgentStatus;

@@ -1069,6 +1069,37 @@ class MigrationService {
         await db.query('ALTER TABLE agents DROP COLUMN IF EXISTS categories');
         console.log('✅ Removed categories field from agents table');
       }
+    },
+    {
+      version: 20,
+      name: 'add_username_avatar_to_agents',
+      up: async () => {
+        // 添加username和avatar字段到agents表
+        await db.query(`
+          ALTER TABLE agents 
+          ADD COLUMN username VARCHAR(255),
+          ADD COLUMN avatar TEXT
+        `);
+
+        // 从users表同步用户信息到agents表
+        await db.query(`
+          UPDATE agents 
+          SET username = u.username, avatar = u.avatar
+          FROM users u
+          WHERE agents.user_id = u.id
+        `);
+
+        console.log('✅ Added username and avatar fields to agents table');
+      },
+      down: async () => {
+        // 删除username和avatar字段
+        await db.query(`
+          ALTER TABLE agents 
+          DROP COLUMN IF EXISTS username,
+          DROP COLUMN IF EXISTS avatar
+        `);
+        console.log('✅ Removed username and avatar fields from agents table');
+      }
     }
   ];
 

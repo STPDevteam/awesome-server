@@ -25,6 +25,7 @@ import { messageDao } from '../dao/messageDao.js';
 import { conversationDao } from '../dao/conversationDao.js';
 import { MessageType, MessageIntent } from '../models/conversation.js';
 import { v4 as uuidv4 } from 'uuid';
+import { userService } from './auth/userService.js';
 
 export class AgentService {
   private llm: ChatOpenAI;
@@ -55,6 +56,15 @@ export class AgentService {
       const descriptionValidation = this.validateAgentDescription(request.description);
       if (!descriptionValidation.isValid) {
         throw new Error(descriptionValidation.error);
+      }
+
+      // 获取用户信息，同步username和avatar
+      if (!request.username || !request.avatar) {
+        const user = await userService.getUserById(request.userId);
+        if (user) {
+          request.username = request.username || user.username;
+          request.avatar = request.avatar || user.avatar;
+        }
       }
 
       // 如果有任务ID，检查任务是否存在且属于该用户
@@ -696,9 +706,14 @@ Please generate 3 questions, one per line, without numbering or other formatting
       // Extract categories from MCP workflow
       const categories = this.extractCategoriesFromMCPs(task.mcpWorkflow);
 
+      // Get user information for username and avatar
+      const user = await userService.getUserById(userId);
+
       // Create Agent
       const createRequest: CreateAgentRequest = {
         userId,
+        username: user?.username,
+        avatar: user?.avatar,
         name,
         description,
         status,

@@ -2789,7 +2789,132 @@ data: [DONE]
 
 Agent系统允许用户将完成的任务工作流保存为可重用的Agent，支持私有和公开两种模式。Agent包含自动生成的名称、描述和相关问题，用户可以尝试使用Agent来执行类似的任务。
 
-### 1. 生成Agent信息
+### Agent数据模型
+
+Agent实体包含以下字段：
+
+- **id**: Agent的唯一标识符
+- **userId**: 创建者的用户ID
+- **username**: 创建者的用户名（从users表同步）
+- **avatar**: 创建者的头像URL（从users表同步）
+- **name**: Agent的名称（最多50字符）
+- **description**: Agent的描述（最多280字符）
+- **status**: Agent的状态（`private`/`public`/`draft`）
+- **taskId**: 来源任务的ID（可选）
+- **categories**: Agent所属的类别列表（从MCP工作流中提取）
+- **mcpWorkflow**: 完整的MCP工作流配置
+- **metadata**: 元数据信息（如所需MCP、步骤数、预计时间等）
+- **relatedQuestions**: 相关问题列表（帮助用户理解使用场景）
+- **usageCount**: 使用次数统计
+- **createdAt**: 创建时间
+- **updatedAt**: 更新时间
+
+### Agent状态说明
+
+- **private**: 私有Agent，仅创建者可见和使用
+- **public**: 公开Agent，在Agent市场中对所有用户可见
+- **draft**: 草稿状态，仅创建者可见，用于编辑中的Agent
+
+### 1. 创建Agent（通用接口）
+
+**端点**: `POST /api/agent`
+
+**描述**: 通用的Agent创建接口，允许用户从零开始创建Agent或基于现有配置创建
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "name": "Bitcoin Price Analyzer",
+  "description": "A comprehensive cryptocurrency price analysis agent",
+  "status": "private",
+  "taskId": "task_123456",
+  "username": "CryptoTrader",
+  "avatar": "https://example.com/avatar.png",
+  "categories": ["Market Data", "Trading"],
+  "mcpWorkflow": {
+    "mcps": [
+      {
+        "name": "coingecko-server",
+        "description": "CoinGecko API integration",
+        "authRequired": true,
+        "category": "Market Data"
+      }
+    ],
+    "workflow": [
+      {
+        "step": 1,
+        "mcp": "coingecko-server",
+        "action": "Get cryptocurrency prices",
+        "input": {}
+      }
+    ]
+  },
+  "metadata": {
+    "requiredMcps": ["coingecko-server"],
+    "totalSteps": 1,
+    "estimatedTime": "30 seconds"
+  },
+  "relatedQuestions": [
+    "How to get crypto prices?",
+    "What cryptocurrencies are supported?",
+    "Can I track price changes?"
+  ]
+}
+```
+
+**必需字段**:
+- `name`: Agent名称（字符串，最多50字符）
+- `description`: Agent描述（字符串，最多280字符）
+- `status`: Agent状态（`private`/`public`/`draft`）
+
+**可选字段**:
+- `taskId`: 关联的任务ID（可选）
+- `username`: 用户名（可选，默认从当前用户获取）
+- `avatar`: 头像URL（可选，默认从当前用户获取）
+- `categories`: 分类列表（可选，字符串数组）
+- `mcpWorkflow`: MCP工作流配置（可选）
+- `metadata`: 元数据信息（可选）
+- `relatedQuestions`: 相关问题列表（可选，字符串数组）
+
+**字段验证**:
+- `categories`: 必须是字符串数组
+- `relatedQuestions`: 必须是字符串数组
+- `status`: 必须是 `private`、`public` 或 `draft` 之一
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "agent_123456",
+    "userId": "user_123",
+    "username": "CryptoTrader",
+    "avatar": "https://example.com/avatar.png",
+    "name": "Bitcoin Price Analyzer",
+    "description": "A comprehensive cryptocurrency price analysis agent",
+    "status": "private",
+    "taskId": "task_123456",
+    "categories": ["Market Data", "Trading"],
+    "mcpWorkflow": {...},
+    "metadata": {...},
+    "relatedQuestions": [...],
+    "usageCount": 0,
+    "createdAt": "2023-06-20T08:00:00.000Z",
+    "updatedAt": "2023-06-20T08:00:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 缺少必需字段或字段格式错误
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 2. 生成Agent信息
 
 **端点**: `POST /api/agent/generate-info/:taskId`
 
@@ -2863,7 +2988,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 3. 从任务创建Agent
+### 4. 从任务创建Agent
 
 **端点**: `POST /api/agent/create/:taskId`
 
@@ -2879,16 +3004,28 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 {
   "status": "private",
   "name": "自定义Agent名称（可选）",
-  "description": "自定义Agent描述（可选）"
+  "description": "自定义Agent描述（可选）",
+  "username": "用户名（可选）",
+  "avatar": "头像URL（可选）",
+  "categories": ["Market Data", "Trading"],
+  "relatedQuestions": [
+    "How to get real-time crypto prices?",
+    "What market data is available?",
+    "Can I analyze other cryptocurrencies?"
+  ]
 }
 ```
 
 **参数说明**:
-- `status`: Agent状态
+- `status`: Agent状态（必需）
   - `private`: 私有Agent，仅创建者可见和使用
   - `public`: 公开Agent，在Agent市场中对所有用户可见
 - `name`: 自定义Agent名称（可选）。如果不提供，系统会自动生成
 - `description`: 自定义Agent描述（可选）。如果不提供，系统会自动生成
+- `username`: 用户名（可选）。如果不提供，会从当前用户信息中自动获取
+- `avatar`: 头像URL（可选）。如果不提供，会从当前用户信息中自动获取
+- `categories`: 分类列表（可选，字符串数组）。如果不提供，会从MCP工作流中自动提取
+- `relatedQuestions`: 相关问题列表（可选，字符串数组）。如果不提供，系统会自动生成
 
 **响应**:
 ```json
@@ -2897,6 +3034,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
   "data": {
     "agent": {
       "id": "agent_123456",
+      "userId": "user_123",
+      "username": "CryptoTrader",
+      "avatar": "https://example.com/avatar.png",
       "name": "BitcoinPriceAnalyzer",
       "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
       "relatedQuestions": [
@@ -2904,9 +3044,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "What market data can this agent provide?",
         "Can this agent analyze other cryptocurrencies?"
       ],
-      "userId": "user_123",
       "status": "private",
       "taskId": "task_123456",
+      "categories": ["Market Data", "Trading"],
       "mcpWorkflow": {
         "mcps": [
           {
@@ -2932,6 +3072,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "totalSteps": 1,
         "estimatedTime": "30 seconds"
       },
+      "usageCount": 25,
       "createdAt": "2023-06-20T08:00:00.000Z",
       "updatedAt": "2023-06-20T08:00:00.000Z"
     }
@@ -2947,7 +3088,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 4. 获取Agent列表
+### 5. 获取Agent列表
 
 **端点**: `GET /api/agent`
 
@@ -2957,6 +3098,8 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 **查询参数**:
 - `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
+- `category`: 按类别筛选（可选）
+- `search`: 搜索关键词（可选）
 - `userId`: 用户ID筛选（可选）
 - `limit`: 每页数量（默认10）
 - `offset`: 偏移量（默认0）
@@ -2971,6 +3114,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
     "agents": [
       {
         "id": "agent_123456",
+        "userId": "user_123",
+        "username": "CryptoTrader",
+        "avatar": "https://example.com/avatar.png",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
         "relatedQuestions": [
@@ -2978,9 +3124,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
           "What market data can this agent provide?",
           "Can this agent analyze other cryptocurrencies?"
         ],
-        "userId": "user_123",
         "status": "public",
         "taskId": "task_123456",
+        "categories": ["Market Data", "Trading"],
         "metadata": {
           "requiredMcps": ["coingecko-server"],
           "totalSteps": 1,
@@ -3004,7 +3150,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 5. 获取Agent详情
+### 6. 获取Agent详情
 
 **端点**: `GET /api/agent/:id`
 
@@ -3022,6 +3168,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
   "data": {
     "agent": {
       "id": "agent_123456",
+      "userId": "user_123",
+      "username": "CryptoTrader",
+      "avatar": "https://example.com/avatar.png",
       "name": "BitcoinPriceAnalyzer",
       "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
       "relatedQuestions": [
@@ -3029,9 +3178,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "What market data can this agent provide?",
         "Can this agent analyze other cryptocurrencies?"
       ],
-      "userId": "user_123",
       "status": "public",
       "taskId": "task_123456",
+      "categories": ["Market Data", "Trading"],
       "mcpWorkflow": {
         "mcps": [
           {
@@ -3225,6 +3374,13 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 }
 ```
 
+**支持的字段**:
+- `name`: Agent名称（可选）
+- `description`: Agent描述（可选）
+- `status`: Agent状态（可选）
+- `metadata`: 元数据信息（可选）
+- `relatedQuestions`: 相关问题列表（可选，字符串数组）
+
 **响应**:
 ```json
 {
@@ -3232,6 +3388,9 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
   "data": {
     "agent": {
       "id": "agent_123456",
+      "userId": "user_123",
+      "username": "CryptoTrader",
+      "avatar": "https://example.com/avatar.png",
       "name": "Enhanced Bitcoin Price Analyzer",
       "description": "An enhanced intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
       "relatedQuestions": [
@@ -3240,9 +3399,9 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
         "Can this agent analyze other cryptocurrencies?",
         "How accurate are the price predictions?"
       ],
-      "userId": "user_123",
       "status": "public",
       "taskId": "task_123456",
+      "categories": ["Market Data", "Trading"],
       "mcpWorkflow": {...},
       "metadata": {...},
       "usageCount": 25,
@@ -3292,7 +3451,103 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 9. 获取用户创建的Agent
+### 9. 获取所有Agent分类列表
+
+**端点**: `GET /api/agent/categories`
+
+**描述**: 获取所有可用的Agent分类及其Agent数量统计
+
+**认证**: 不需要认证
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "Market Data",
+      "count": 15
+    },
+    {
+      "name": "Development Tools", 
+      "count": 8
+    },
+    {
+      "name": "Trading",
+      "count": 6
+    },
+    {
+      "name": "Social",
+      "count": 4
+    }
+  ],
+  "message": "分类列表功能正在开发中"
+}
+```
+
+**字段说明**:
+- `name`: 分类名称
+- `count`: 该分类下的Agent数量
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 10. 按分类获取Agent列表
+
+**端点**: `GET /api/agent/category/:category`
+
+**描述**: 获取指定分类下的所有公开Agent
+
+**认证**: 不需要认证
+
+**路径参数**:
+- `category`: 分类名称（如：Market Data、Development Tools等）
+
+**查询参数**:
+- `search`: 搜索关键词（可选）
+- `orderBy`: 排序字段（可选，默认 `usage_count`）
+- `order`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+- `limit`: 每页数量（可选，默认10）
+- `offset`: 偏移量（可选，默认0）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "category": "Market Data",
+    "agents": [
+      {
+        "id": "agent_123456",
+        "userId": "user_123",
+        "username": "CryptoTrader",
+        "avatar": "https://example.com/avatar.png",
+        "name": "BitcoinPriceAnalyzer",
+        "description": "An intelligent agent that retrieves Bitcoin's current price...",
+        "relatedQuestions": [...],
+        "status": "public",
+        "categories": ["Market Data", "Trading"],
+        "metadata": {...},
+        "usageCount": 25,
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:00:00.000Z"
+      }
+    ],
+    "total": 15,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 11. 获取用户创建的Agent
 
 **端点**: `GET /api/agent/my-agents`
 
@@ -3302,6 +3557,8 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 **查询参数**:
 - `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
+- `category`: 按类别筛选（可选）
+- `search`: 搜索关键词（可选）
 - `limit`: 每页数量（默认10）
 - `offset`: 偏移量（默认0）
 - `sortBy`: 排序字段（默认 `created_at`）
@@ -3315,11 +3572,15 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
     "agents": [
       {
         "id": "agent_123456",
+        "userId": "user_123",
+        "username": "CryptoTrader",
+        "avatar": "https://example.com/avatar.png",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price...",
         "relatedQuestions": [...],
         "status": "public",
         "taskId": "task_123456",
+        "categories": ["Market Data", "Trading"],
         "metadata": {...},
         "usageCount": 25,
         "createdAt": "2023-06-20T08:00:00.000Z",
@@ -3339,7 +3600,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 10. 获取公开Agent列表
+### 12. 获取公开Agent列表
 
 **端点**: `GET /api/agent/public`
 
@@ -3363,16 +3624,18 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
     "agents": [
       {
         "id": "agent_123456",
+        "userId": "user_123",
+        "username": "CryptoTrader",
+        "avatar": "https://example.com/avatar.png",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price...",
         "relatedQuestions": [...],
-        "userId": "user_123",
         "status": "public",
+        "categories": ["Market Data", "Trading"],
         "metadata": {
           "requiredMcps": ["coingecko-server"],
           "totalSteps": 1,
-          "estimatedTime": "30 seconds",
-          "category": "Market Data"
+          "estimatedTime": "30 seconds"
         },
         "usageCount": 25,
         "createdAt": "2023-06-20T08:00:00.000Z",
@@ -3481,14 +3744,48 @@ curl -X POST http://localhost:3001/api/agent/agent_123456/try \
 - **认证引导**: 为未认证的MCP提供详细的认证指导
 - **认证参数**: 清晰展示每个MCP所需的认证参数
 
-#### 4. 使用追踪
+#### 4. 用户信息同步
+- **用户名同步**: 自动同步创建者的用户名到Agent记录
+- **头像同步**: 自动同步创建者的头像到Agent记录
+- **直接获取**: 无需联表查询即可获取Agent创建者信息
+- **数据一致性**: 创建Agent时实时同步用户信息
+
+#### 5. 分类管理
+- **类别提取**: 自动从MCP工作流中提取类别信息
+- **多类别支持**: 支持Agent属于多个类别
+- **高效查询**: 通过categories字段实现高效的类别过滤
+
+#### 6. 使用追踪
 - **使用统计**: 追踪Agent的使用次数
 - **排序优化**: 支持按使用次数排序，突出热门Agent
 
-#### 5. 任务集成
+#### 7. 任务集成
 - **无缝集成**: Agent基于已完成的任务工作流创建
 - **工作流保存**: 完整保存MCP工作流配置
 - **一键执行**: 用户可以一键使用Agent执行类似任务
+
+### 数据库迁移
+
+从v2.0开始，Agent系统引入了重要的数据库结构变更：
+
+#### 新增字段
+- **username**: 创建者用户名（从users表同步）
+- **avatar**: 创建者头像URL（从users表同步）
+- **categories**: Agent类别列表（JSONB格式，从MCP工作流中提取）
+
+#### 迁移脚本
+数据库迁移脚本会自动：
+1. 添加新字段到agents表
+2. 为categories字段创建GIN索引以提高查询性能
+3. 从现有的mcp_workflow数据中提取类别信息
+4. 同步用户信息到Agent记录
+5. 确保所有Agent都有至少一个类别
+
+#### 迁移命令
+```bash
+# 运行数据库迁移
+npm run migrate up
+```
 
 ### 最佳实践
 
@@ -3508,6 +3805,11 @@ curl -X POST http://localhost:3001/api/agent/agent_123456/try \
 - **定期更新**: 根据反馈和使用情况更新Agent信息
 - **状态管理**: 合理设置Agent的公开/私有状态
 - **性能监控**: 关注Agent的使用情况和执行效果
+
+#### 4. 数据库性能
+- **索引利用**: 充分利用categories字段的GIN索引进行类别过滤
+- **查询优化**: 使用categories字段而非联表查询获取类别信息
+- **缓存策略**: 对于频繁访问的Agent数据考虑使用缓存
 
 ---
 
