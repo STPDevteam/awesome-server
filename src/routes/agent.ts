@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { agentService } from '../services/agentService.js';
 import { logger } from '../utils/logger.js';
 import { 
@@ -114,28 +114,30 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
  * 
  * 查询参数：
  * - queryType: 'public' | 'my-private' | 'my-saved' | 'all'
- *   - public: 公开的Agent
- *   - my-private: 我的私有Agent
- *   - my-saved: 我收藏的Agent
- *   - all: 所有可见的Agent（默认）
+ *   - public: 公开的Agent（无需登录）
+ *   - my-private: 我的私有Agent（需要登录）
+ *   - my-saved: 我收藏的Agent（需要登录）
+ *   - all: 所有可见的Agent（需要登录）
  */
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: '用户未认证'
-      });
-    }
-
     let queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
     
     // 兼容处理：如果status参数是查询类型，则映射为queryType
     const statusParam = req.query.status as string;
     if (statusParam && ['public', 'my-private', 'my-saved'].includes(statusParam)) {
       queryType = statusParam as 'public' | 'my-private' | 'my-saved';
+    }
+
+    const userId = req.user?.id;
+    
+    // 检查需要登录的查询类型
+    if (['my-private', 'my-saved', 'all'].includes(queryType) && !userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: '此操作需要用户登录'
+      });
     }
     
     const query: GetAgentsQuery = {
