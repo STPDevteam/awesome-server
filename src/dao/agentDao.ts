@@ -342,24 +342,83 @@ export class AgentDao {
       const orderBy = query.orderBy || 'created_at';
       const order = query.order || 'desc';
       
-      // 为count查询创建独立的values数组副本
-      const countValues = [...values];
-      
-      // 根据查询类型构建对应的count查询FROM子句
+      // 为count查询单独构建参数和条件
       let countFromClause = 'FROM agents a';
-      if (query.queryType === 'my-saved') {
-        countFromClause = 'FROM agents a INNER JOIN agent_favorites f ON a.id = f.agent_id';
-      } else if ((query.queryType === 'public' || query.queryType === 'all') && query.userId) {
-        // 如果baseQuery包含LEFT JOIN，count查询不需要，因为我们只关心agent数量
-        countFromClause = 'FROM agents a';
+      let countConditions: string[] = ['a.is_deleted = FALSE'];
+      let countValues: any[] = [];
+      let countParamIndex = 1;
+      
+      // 根据查询类型构建count查询的条件
+      switch (query.queryType) {
+        case 'public':
+          countConditions.push(`a.status = 'public'`);
+          break;
+          
+        case 'my-private':
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
+          countConditions.push(`a.user_id = $${countParamIndex++}`);
+          countConditions.push(`a.status = 'private'`);
+          countValues.push(query.userId);
+          break;
+          
+        case 'my-saved':
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
+          countFromClause = 'FROM agents a INNER JOIN agent_favorites f ON a.id = f.agent_id';
+          countConditions.push(`f.user_id = $${countParamIndex++}`);
+          countConditions.push(`a.status = 'public'`);
+          countValues.push(query.userId);
+          break;
+          
+        case 'all':
+        default:
+          if (query.userId) {
+            countConditions.push(`(a.user_id = $${countParamIndex++} OR a.status = 'public')`);
+            countValues.push(query.userId);
+          } else {
+            countConditions.push(`a.status = 'public'`);
+          }
+          break;
+      }
+      
+      // 添加其他过滤条件到count查询
+      if (query.status && query.queryType !== 'public' && query.queryType !== 'my-private') {
+        const hasStatusCondition = countConditions.some(condition => condition.includes('a.status'));
+        if (!hasStatusCondition) {
+          countConditions.push(`a.status = $${countParamIndex++}`);
+          countValues.push(query.status);
+        }
+      }
+      
+      if (query.search) {
+        countConditions.push(`(a.name ILIKE $${countParamIndex++} OR a.description ILIKE $${countParamIndex++})`);
+        countValues.push(`%${query.search}%`, `%${query.search}%`);
+      }
+      
+      if (query.category) {
+        countConditions.push(`a.metadata->>'category' = $${countParamIndex++}`);
+        countValues.push(query.category);
       }
       
       // 获取总数
       const countQuery = `
         SELECT COUNT(*) as total 
         ${countFromClause}
-        WHERE ${conditions.join(' AND ')}
+        WHERE ${countConditions.join(' AND ')}
       `;
+      
+      // 添加调试信息
+      logger.info(`Count查询调试信息: 
+        queryType: ${query.queryType || 'undefined'}
+        userId: ${query.userId || 'undefined'}
+        status: ${query.status || 'undefined'}
+        countQuery: ${countQuery}
+        countValues: ${JSON.stringify(countValues)}
+        countConditions: ${JSON.stringify(countConditions)}
+      `);
       
       const countResult = await db.query<{ total: string }>(countQuery, countValues);
       const total = parseInt(countResult.rows[0].total);
