@@ -1008,6 +1008,67 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS agents CASCADE');
         console.log('✅ Dropped agents and agent_usage tables');
       }
+    },
+    {
+      version: 19,
+      name: 'add_categories_to_agents',
+      up: async () => {
+        // 添加categories字段，存储JSON数组格式的类别列表
+        await db.query(`
+          ALTER TABLE agents ADD COLUMN categories JSONB DEFAULT '[]'::jsonb
+        `);
+
+        // 为categories字段添加GIN索引，提高查询性能
+        await db.query(`
+          CREATE INDEX idx_agents_categories ON agents USING GIN (categories)
+        `);
+
+        // 为现有Agent数据填充categories字段
+        // 基于现有的mcp_workflow字段来推断categories
+        await db.query(`
+          UPDATE agents 
+          SET categories = CASE 
+            WHEN mcp_workflow IS NULL OR mcp_workflow = 'null' THEN '["General"]'::jsonb
+            ELSE (
+              SELECT jsonb_agg(DISTINCT category)
+              FROM (
+                SELECT CASE 
+                  WHEN mcp->>'category' IS NOT NULL THEN mcp->>'category'
+                  WHEN lower(mcp->>'name') LIKE '%github%' THEN 'Development Tools'
+                  WHEN lower(mcp->>'name') LIKE '%coingecko%' OR lower(mcp->>'name') LIKE '%coinmarketcap%' THEN 'Market Data'
+                  WHEN lower(mcp->>'name') LIKE '%playwright%' OR lower(mcp->>'name') LIKE '%web%' THEN 'Automation'
+                  WHEN lower(mcp->>'name') LIKE '%x-mcp%' OR lower(mcp->>'name') LIKE '%twitter%' THEN 'Social'
+                  WHEN lower(mcp->>'name') LIKE '%notion%' THEN 'Productivity'
+                  ELSE 'General'
+                END as category
+                FROM jsonb_array_elements(mcp_workflow->'mcps') as mcp
+              ) as categories
+              WHERE category IS NOT NULL
+            )
+          END
+          WHERE categories = '[]'::jsonb
+        `);
+
+        // 确保所有Agent至少有一个类别
+        await db.query(`
+          UPDATE agents 
+          SET categories = '["General"]'::jsonb
+          WHERE categories = '[]'::jsonb OR categories IS NULL
+        `);
+
+        // 添加NOT NULL约束
+        await db.query(`
+          ALTER TABLE agents ALTER COLUMN categories SET NOT NULL
+        `);
+
+        console.log('✅ Added categories field to agents table');
+      },
+      down: async () => {
+        // 删除categories字段相关的索引和字段
+        await db.query('DROP INDEX IF EXISTS idx_agents_categories');
+        await db.query('ALTER TABLE agents DROP COLUMN IF EXISTS categories');
+        console.log('✅ Removed categories field from agents table');
+      }
     }
   ];
 

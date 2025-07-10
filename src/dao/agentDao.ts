@@ -22,6 +22,7 @@ export interface AgentDbRow {
   description: string;
   status: AgentStatus;
   task_id: string | null;
+  categories: any; // JSONB数组，存储MCP类别
   mcp_workflow: any;
   metadata: any;
   related_questions: any;
@@ -58,9 +59,9 @@ export class AgentDao {
       
       const query = `
         INSERT INTO agents (
-          id, user_id, name, description, status, task_id, 
+          id, user_id, name, description, status, task_id, categories,
           mcp_workflow, metadata, related_questions, usage_count, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *
       `;
       
@@ -71,6 +72,7 @@ export class AgentDao {
         request.description,
         request.status,
         request.taskId || null,
+        JSON.stringify(request.categories || ['General']),
         request.mcpWorkflow ? JSON.stringify(request.mcpWorkflow) : null,
         request.metadata ? JSON.stringify(request.metadata) : null,
         request.relatedQuestions ? JSON.stringify(request.relatedQuestions) : null,
@@ -242,8 +244,8 @@ export class AgentDao {
       }
       
       if (query.category) {
-        conditions.push(`metadata->>'category' = $${paramIndex++}`);
-        values.push(query.category);
+        conditions.push(`categories @> $${paramIndex++}`);
+        values.push(JSON.stringify([query.category]));
       }
       
       // 构建排序
@@ -401,11 +403,12 @@ export class AgentDao {
       // 获取分类统计
       const categoriesQuery = `
         SELECT 
-          metadata->>'category' as category,
+          category,
           COUNT(*) as count
-        FROM agents 
-        WHERE ${whereClause} AND metadata->>'category' IS NOT NULL
-        GROUP BY metadata->>'category'
+        FROM agents, 
+             jsonb_array_elements_text(categories) as category
+        WHERE ${whereClause} 
+        GROUP BY category
         ORDER BY count DESC
         LIMIT 10
       `;
@@ -490,6 +493,7 @@ export class AgentDao {
       description: row.description,
       status: row.status,
       taskId: row.task_id || undefined,
+      categories: row.categories ? JSON.parse(row.categories) : ['General'],
       mcpWorkflow: row.mcp_workflow ? JSON.parse(row.mcp_workflow) : undefined,
       metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       relatedQuestions: row.related_questions ? JSON.parse(row.related_questions) : undefined,

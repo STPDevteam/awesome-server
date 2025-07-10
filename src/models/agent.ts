@@ -9,6 +9,7 @@ export interface Agent {
   description: string;
   status: AgentStatus;
   taskId?: string; // 来源任务ID
+  categories: string[]; // 使用的MCP类别列表，提取自mcpWorkflow.mcps，便于高效查询
   mcpWorkflow?: {
     mcps: Array<{
       name: string;
@@ -52,6 +53,7 @@ export interface CreateAgentRequest {
   description: string;
   status: AgentStatus;
   taskId?: string;
+  categories?: string[]; // 使用的MCP类别列表
   mcpWorkflow?: Agent['mcpWorkflow'];
   metadata?: Agent['metadata'];
   relatedQuestions?: string[];

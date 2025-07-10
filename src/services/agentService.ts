@@ -77,6 +77,13 @@ export class AgentService {
         request.metadata.originalTaskContent = task.content;
       }
 
+      // 如果没有提供categories，从mcpWorkflow中提取
+      if (!request.categories && request.mcpWorkflow) {
+        request.categories = this.extractCategoriesFromMCPs(request.mcpWorkflow);
+      } else if (!request.categories) {
+        request.categories = ['General'];
+      }
+
       const agent = await agentDao.createAgent(request);
       logger.info(`Agent创建成功: ${agent.id} (${agent.name})`);
       
@@ -686,6 +693,9 @@ Please generate 3 questions, one per line, without numbering or other formatting
         task.mcpWorkflow
       );
 
+      // Extract categories from MCP workflow
+      const categories = this.extractCategoriesFromMCPs(task.mcpWorkflow);
+
       // Create Agent
       const createRequest: CreateAgentRequest = {
         userId,
@@ -693,13 +703,14 @@ Please generate 3 questions, one per line, without numbering or other formatting
         description,
         status,
         taskId,
+        categories,
         mcpWorkflow: task.mcpWorkflow,
         metadata: {
           originalTaskTitle: task.title,
           originalTaskContent: task.content,
           deliverables: [], // TODO: can extract from task results
           executionResults: task.result, // Store task execution results
-          category: this.extractCategoryFromMCPs(task.mcpWorkflow)
+          category: categories[0] // 为了向后兼容，保留单一类别
         },
         relatedQuestions
       };
@@ -715,33 +726,49 @@ Please generate 3 questions, one per line, without numbering or other formatting
   }
 
   /**
-   * 从MCP工作流中提取分类
+   * 从MCP工作流中提取分类列表
    */
-  private extractCategoryFromMCPs(mcpWorkflow?: any): string {
+  private extractCategoriesFromMCPs(mcpWorkflow?: any): string[] {
     if (!mcpWorkflow?.mcps || mcpWorkflow.mcps.length === 0) {
-      return 'general';
+      return ['General'];
     }
 
-    // 根据使用的MCP工具推断分类
-    const mcpNames = mcpWorkflow.mcps.map((mcp: any) => mcp.name.toLowerCase());
+    // 直接从MCP的category字段提取类别
+    const categories = new Set<string>();
     
-    if (mcpNames.some((name: string) => name.includes('github'))) {
-      return 'development';
-    }
-    if (mcpNames.some((name: string) => name.includes('coingecko') || name.includes('coinmarketcap'))) {
-      return 'crypto';
-    }
-    if (mcpNames.some((name: string) => name.includes('playwright') || name.includes('web'))) {
-      return 'automation';
-    }
-    if (mcpNames.some((name: string) => name.includes('x-mcp') || name.includes('twitter'))) {
-      return 'social';
-    }
-    if (mcpNames.some((name: string) => name.includes('notion'))) {
-      return 'productivity';
+    mcpWorkflow.mcps.forEach((mcp: any) => {
+      if (mcp.category) {
+        categories.add(mcp.category);
+      }
+    });
+
+    // 如果没有从category字段提取到类别，则根据MCP名称推断
+    if (categories.size === 0) {
+      const mcpNames = mcpWorkflow.mcps.map((mcp: any) => mcp.name.toLowerCase());
+      
+      if (mcpNames.some((name: string) => name.includes('github'))) {
+        categories.add('Development Tools');
+      }
+      if (mcpNames.some((name: string) => name.includes('coingecko') || name.includes('coinmarketcap'))) {
+        categories.add('Market Data');
+      }
+      if (mcpNames.some((name: string) => name.includes('playwright') || name.includes('web'))) {
+        categories.add('Automation');
+      }
+      if (mcpNames.some((name: string) => name.includes('x-mcp') || name.includes('twitter'))) {
+        categories.add('Social');
+      }
+      if (mcpNames.some((name: string) => name.includes('notion'))) {
+        categories.add('Productivity');
+      }
+
+      // 如果还是没有类别，添加默认值
+      if (categories.size === 0) {
+        categories.add('General');
+      }
     }
 
-    return 'general';
+    return Array.from(categories);
   }
 
   /**
