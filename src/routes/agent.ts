@@ -265,7 +265,11 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: 'Agent已删除'
+      data: {
+        message: 'Agent已删除',
+        agentId: agentId,
+        deletedAt: new Date().toISOString()
+      }
     });
   } catch (error) {
     logger.error(`删除Agent失败 [ID: ${req.params.id}]:`, error);
@@ -758,7 +762,7 @@ router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => 
 });
 
 /**
- * 试用Agent
+ * 开始与Agent的多轮对话
  * POST /api/agent/:id/try
  */
 router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
@@ -773,27 +777,31 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
     }
 
     const agentId = req.params.id;
-    const { taskContent } = req.body;
+    const { content } = req.body;
 
-    if (!taskContent) {
+    // content可以为空，表示只想开始对话
+    if (content !== undefined && typeof content !== 'string') {
       return res.status(400).json({
         success: false,
-        error: 'MISSING_TASK_CONTENT',
-        message: 'Task content is required'
+        error: 'INVALID_CONTENT',
+        message: 'Content must be a string'
       });
     }
 
-    // 尝试使用Agent
+    // 开始与Agent的多轮对话
     const result = await agentService.tryAgent({
       agentId,
-      taskContent,
+      content: content || '',
       userId
     });
 
     if (result.success) {
       res.json({
         success: true,
-        data: result.executionResult
+        data: {
+          conversation: result.conversation,
+          message: result.message
+        }
       });
     } else {
       // 如果需要认证，返回特殊的响应格式
@@ -801,11 +809,9 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
         res.status(403).json({
           success: false,
           error: 'AUTH_REQUIRED',
-          message: result.message,
-          data: {
-            needsAuth: true,
-            missingAuth: result.missingAuth
-          }
+          needsAuth: true,
+          missingAuth: result.missingAuth,
+          message: result.message
         });
       } else {
         res.status(400).json({
@@ -816,12 +822,12 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
       }
     }
   } catch (error) {
-    logger.error(`试用Agent失败 [AgentID: ${req.params.id}]:`, error);
+    logger.error(`开始Agent对话失败 [AgentID: ${req.params.id}]:`, error);
     
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to try Agent'
+      message: error instanceof Error ? error.message : 'Failed to start Agent conversation'
     });
   }
 });
