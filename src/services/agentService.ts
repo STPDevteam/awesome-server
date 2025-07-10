@@ -815,7 +815,7 @@ Agent信息：
         
         await conversationDao.incrementMessageCount(conversation.id);
       }
-
+ 
       // 记录Agent使用
       await this.recordAgentUsage(agentId, userId, undefined, conversation.id);
 
