@@ -29,6 +29,7 @@ import { conversationDao } from '../dao/conversationDao.js';
 import { MessageType, MessageIntent } from '../models/conversation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { userService } from './auth/userService.js';
+import { generateAgentAvatarUrl, generateAvatarSeed, getRecommendedAvatarStyle } from '../utils/avatarGenerator.js';
 
 export class AgentService {
   private llm: ChatOpenAI;
@@ -68,6 +69,26 @@ export class AgentService {
           request.username = request.username || user.username;
           request.avatar = request.avatar || user.avatar;
         }
+      }
+
+      // 自动生成Agent头像（如果没有提供）
+      if (!request.agentAvatar) {
+        // 提取categories，用于选择合适的头像样式
+        let categories = request.categories;
+        if (!categories && request.mcpWorkflow) {
+          categories = this.extractCategoriesFromMCPs(request.mcpWorkflow);
+        }
+        
+        // 根据类别选择头像样式
+        const avatarStyle = getRecommendedAvatarStyle(categories);
+        
+        // 生成头像种子值
+        const avatarSeed = generateAvatarSeed(request.name);
+        
+        // 生成头像URL
+        request.agentAvatar = generateAgentAvatarUrl(avatarSeed, avatarStyle);
+        
+        logger.info(`为Agent生成头像: ${request.name} -> ${request.agentAvatar}`);
       }
 
       // 如果有任务ID，检查任务是否存在且属于该用户
