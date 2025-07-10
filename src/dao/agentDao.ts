@@ -249,17 +249,27 @@ export class AgentDao {
         case 'public':
           // 公开的Agent
           conditions.push(`a.status = 'public'`);
-          baseQuery = `
-            SELECT a.*, 
-                   CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
-            FROM agents a
-            LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
-          `;
-          values.push(query.userId);
+          if (query.userId) {
+            baseQuery = `
+              SELECT a.*, 
+                     CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
+              FROM agents a
+              LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
+            `;
+            values.push(query.userId);
+          } else {
+            baseQuery = `
+              SELECT a.*, FALSE as is_favorited
+              FROM agents a
+            `;
+          }
           break;
           
         case 'my-private':
           // 我的私有Agent
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
           conditions.push(`a.user_id = $${paramIndex++}`);
           conditions.push(`a.status = 'private'`);
           baseQuery = `
@@ -271,6 +281,9 @@ export class AgentDao {
           
         case 'my-saved':
           // 我收藏的Agent
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
           conditions.push(`f.user_id = $${paramIndex++}`);
           conditions.push(`a.status = 'public'`);
           baseQuery = `
@@ -284,21 +297,35 @@ export class AgentDao {
         case 'all':
         default:
           // 所有可见的Agent（我的私有 + 公开的）
-          conditions.push(`(a.user_id = $${paramIndex++} OR a.status = 'public')`);
-          baseQuery = `
-            SELECT a.*, 
-                   CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
-            FROM agents a
-            LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
-          `;
-          values.push(query.userId, query.userId);
+          if (query.userId) {
+            conditions.push(`(a.user_id = $${paramIndex++} OR a.status = 'public')`);
+            baseQuery = `
+              SELECT a.*, 
+                     CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
+              FROM agents a
+              LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
+            `;
+            values.push(query.userId, query.userId);
+          } else {
+            // 如果没有用户ID，只返回公开的Agent
+            conditions.push(`a.status = 'public'`);
+            baseQuery = `
+              SELECT a.*, FALSE as is_favorited
+              FROM agents a
+            `;
+          }
           break;
       }
       
       // 其他过滤条件
+      // 只有在没有预设状态条件时才添加状态过滤
       if (query.status && query.queryType !== 'public' && query.queryType !== 'my-private') {
-        conditions.push(`a.status = $${paramIndex++}`);
-        values.push(query.status);
+        // 检查是否已经有状态条件（避免重复）
+        const hasStatusCondition = conditions.some(condition => condition.includes('a.status'));
+        if (!hasStatusCondition) {
+          conditions.push(`a.status = $${paramIndex++}`);
+          values.push(query.status);
+        }
       }
       
       if (query.search) {
