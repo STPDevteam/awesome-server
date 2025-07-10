@@ -591,6 +591,38 @@ export class AgentDao {
       throw error;
     }
   }
+
+  /**
+   * 获取所有分类及其数量统计
+   */
+  async getAllCategories(): Promise<Array<{ name: string; count: number }>> {
+    try {
+      // 只统计公开的Agent分类
+      const categoriesQuery = `
+        SELECT 
+          category as name,
+          COUNT(*) as count
+        FROM agents, 
+             jsonb_array_elements_text(categories) as category
+        WHERE is_deleted = FALSE AND status = 'public'
+        GROUP BY category
+        ORDER BY count DESC, category ASC
+      `;
+      
+      const categoriesResult = await db.query<{
+        name: string;
+        count: string;
+      }>(categoriesQuery);
+      
+      return categoriesResult.rows.map(row => ({
+        name: row.name,
+        count: parseInt(row.count)
+      }));
+    } catch (error) {
+      logger.error('获取所有分类失败:', error);
+      throw error;
+    }
+  }
   
   /**
    * 检查Agent名称是否已存在（同一用户）

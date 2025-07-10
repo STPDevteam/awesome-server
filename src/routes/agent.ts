@@ -154,9 +154,27 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 
     const result = await agentService.getAgents(query);
 
+    // 从当前查询结果中统计分类信息
+    const categoryMap = new Map<string, number>();
+    result.agents.forEach(agent => {
+      if (agent.categories && Array.isArray(agent.categories)) {
+        agent.categories.forEach(category => {
+          categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+        });
+      }
+    });
+
+    // 转换为数组并按数量降序排序
+    const categories = Array.from(categoryMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
     res.json({
       success: true,
-      data: result
+      data: {
+        ...result,
+        categories
+      }
     });
   } catch (error) {
     logger.error('获取Agent列表失败:', error);
@@ -781,21 +799,11 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
  */
 router.get('/categories', async (req: Request, res: Response) => {
   try {
-    // 使用统计接口获取分类信息（不需要用户认证的全局统计）
-    const marketplace = await agentService.getAgentMarketplace({
-      limit: 1 // 只需要获取分类统计，不需要具体的Agent数据
-    });
-
-    // 从公开Agent中提取所有分类
-    const categories = new Set<string>();
-    // 注意：这里需要在agentService中添加获取所有分类的逻辑
-    // 暂时返回空数组，后续需要在服务层实现
-    const categoryList: Array<{name: string, count: number}> = [];
+    const categories = await agentService.getAllCategories();
 
     res.json({
       success: true,
-      data: categoryList,
-      message: '分类列表功能正在开发中'
+      data: categories
     });
   } catch (error) {
     logger.error('获取Agent分类失败:', error);

@@ -3146,10 +3146,37 @@ Agent实体包含以下字段：
     ],
     "total": 1,
     "limit": 20,
-    "offset": 0
+    "offset": 0,
+    "categories": [
+      {
+        "name": "Market Data",
+        "count": 15
+      },
+      {
+        "name": "Development Tools",
+        "count": 8
+      },
+      {
+        "name": "Trading",
+        "count": 6
+      },
+      {
+        "name": "Social",
+        "count": 4
+      }
+    ]
   }
 }
 ```
+
+**字段说明**:
+- `agents`: Agent列表数组
+- `total`: 符合条件的Agent总数
+- `limit`: 每页数量
+- `offset`: 偏移量
+- `categories`: 当前查询结果中的分类统计（基于返回的Agent列表计算）
+  - `name`: 分类名称
+  - `count`: 该分类在当前结果中的Agent数量
 
 **错误响应**:
 - `401 Unauthorized`: 无效的访问令牌

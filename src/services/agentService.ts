@@ -217,6 +217,18 @@ export class AgentService {
   }
 
   /**
+   * 获取所有分类及其数量统计
+   */
+  async getAllCategories(): Promise<Array<{ name: string; count: number }>> {
+    try {
+      return await agentDao.getAllCategories();
+    } catch (error) {
+      logger.error('获取所有分类失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 获取Agent统计信息
    */
   async getAgentStats(userId?: string): Promise<AgentStats> {
