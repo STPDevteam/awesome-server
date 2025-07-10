@@ -511,9 +511,9 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
 
 /**
  * 根据任务创建Agent（任务完成后使用）
- * POST /api/agent/from-task/:taskId
+ * POST /api/agent/create/:taskId
  */
-router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Response) => {
+router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -573,9 +573,9 @@ router.post('/from-task/:taskId', requireAuth, async (req: Request, res: Respons
 
 /**
  * 预览从任务创建的Agent信息（用户保存前预览）
- * GET /api/agent/preview-from-task/:taskId
+ * GET /api/agent/preview/:taskId
  */
-router.get('/preview-from-task/:taskId', requireAuth, async (req: Request, res: Response) => {
+router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
