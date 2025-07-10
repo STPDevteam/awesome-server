@@ -29,7 +29,18 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    const { name, description, status, taskId, mcpWorkflow, metadata } = req.body;
+    const { 
+      name, 
+      description, 
+      status, 
+      taskId, 
+      mcpWorkflow, 
+      metadata, 
+      username, 
+      avatar, 
+      categories,
+      relatedQuestions 
+    } = req.body;
 
     // 验证必需字段
     if (!name || !description || !status) {
@@ -49,14 +60,36 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
+    // 验证categories格式（如果提供）
+    if (categories && !Array.isArray(categories)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_CATEGORIES',
+        message: 'categories必须是字符串数组'
+      });
+    }
+
+    // 验证relatedQuestions格式（如果提供）
+    if (relatedQuestions && !Array.isArray(relatedQuestions)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_RELATED_QUESTIONS',
+        message: 'relatedQuestions必须是字符串数组'
+      });
+    }
+
     const createRequest: CreateAgentRequest = {
       userId,
+      username,
+      avatar,
       name,
       description,
       status,
       taskId,
+      categories,
       mcpWorkflow,
-      metadata
+      metadata,
+      relatedQuestions
     };
 
     const agent = await agentService.createAgent(createRequest);
@@ -193,7 +226,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
     }
 
     const agentId = req.params.id;
-    const { name, description, status, metadata } = req.body;
+    const { name, description, status, metadata, relatedQuestions } = req.body;
 
     // 验证status值（如果提供）
     if (status && !['private', 'public', 'draft'].includes(status)) {
@@ -204,11 +237,21 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
+    // 验证relatedQuestions格式（如果提供）
+    if (relatedQuestions && !Array.isArray(relatedQuestions)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_RELATED_QUESTIONS',
+        message: 'relatedQuestions必须是字符串数组'
+      });
+    }
+
     const updateRequest: UpdateAgentRequest = {
       name,
       description,
       status,
-      metadata
+      metadata,
+      relatedQuestions
     };
 
     const agent = await agentService.updateAgent(agentId, userId, updateRequest);
@@ -540,7 +583,7 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
     }
 
     const taskId = req.params.taskId;
-    const { status = 'private' } = req.body;
+    const { status = 'private', name, description } = req.body;
 
     // 验证status值
     if (!['private', 'public'].includes(status)) {
@@ -551,8 +594,8 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
       });
     }
 
-    // 直接从任务创建Agent，所有信息自动生成
-    const agent = await agentService.createAgentFromTask(taskId, userId, status);
+    // 从任务创建Agent，支持自定义name和description
+    const agent = await agentService.createAgentFromTask(taskId, userId, status, name, description);
 
     res.json({
       success: true,
@@ -582,6 +625,58 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : '从任务创建Agent失败'
+    });
+  }
+});
+
+/**
+ * 生成Agent的name和description（供前端显示）
+ * POST /api/agent/generate-info/:taskId
+ */
+router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    
+    // Generate Agent name and description
+    const generatedInfo = await agentService.generateAgentInfo(taskId, userId);
+
+    res.json({
+      success: true,
+      data: generatedInfo
+    });
+  } catch (error) {
+    logger.error(`Failed to generate Agent info [TaskID: ${req.params.taskId}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: 'Task not found or access denied'
+        });
+      }
+      if (error.message.includes('未完成')) {
+        return res.status(400).json({
+          success: false,
+          error: 'TASK_NOT_COMPLETED',
+          message: 'Task is not completed'
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to generate Agent info'
     });
   }
 });
@@ -668,6 +763,73 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : '获取Agent统计信息失败'
+    });
+  }
+});
+
+/**
+ * 获取所有Agent分类列表
+ * GET /api/agent/categories
+ */
+router.get('/categories', async (req: Request, res: Response) => {
+  try {
+    // 使用统计接口获取分类信息（不需要用户认证的全局统计）
+    const marketplace = await agentService.getAgentMarketplace({
+      limit: 1 // 只需要获取分类统计，不需要具体的Agent数据
+    });
+
+    // 从公开Agent中提取所有分类
+    const categories = new Set<string>();
+    // 注意：这里需要在agentService中添加获取所有分类的逻辑
+    // 暂时返回空数组，后续需要在服务层实现
+    const categoryList: Array<{name: string, count: number}> = [];
+
+    res.json({
+      success: true,
+      data: categoryList,
+      message: '分类列表功能正在开发中'
+    });
+  } catch (error) {
+    logger.error('获取Agent分类失败:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '获取Agent分类失败'
+    });
+  }
+});
+
+/**
+ * 按分类获取Agent列表
+ * GET /api/agent/category/:category
+ */
+router.get('/category/:category', async (req: Request, res: Response) => {
+  try {
+    const category = req.params.category;
+    const query: AgentMarketplaceQuery = {
+      category,
+      search: req.query.search as string,
+      orderBy: req.query.orderBy as any,
+      order: req.query.order as any,
+      offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined
+    };
+
+    const result = await agentService.getAgentMarketplace(query);
+
+    res.json({
+      success: true,
+      data: {
+        category,
+        ...result
+      }
+    });
+  } catch (error) {
+    logger.error(`按分类获取Agent失败 [Category: ${req.params.category}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '按分类获取Agent失败'
     });
   }
 });
