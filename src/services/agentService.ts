@@ -16,7 +16,10 @@ import {
   AgentUsage,
   TryAgentRequest,
   TryAgentResponse,
-  MCPAuthCheckResult
+  MCPAuthCheckResult,
+  AgentFavorite,
+  FavoriteAgentRequest,
+  FavoriteAgentResponse
 } from '../models/agent.js';
 import { getTaskService } from './taskService.js';
 import { MCPAuthService } from './mcpAuthService.js';
@@ -817,6 +820,106 @@ Agent信息：
         success: false,
         message: error instanceof Error ? error.message : 'Failed to try Agent'
       };
+    }
+  }
+
+  /**
+   * 添加收藏
+   */
+  async addFavorite(userId: string, agentId: string): Promise<FavoriteAgentResponse> {
+    try {
+      // 检查Agent是否存在且为公开状态
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        throw new Error('Agent不存在');
+      }
+      
+      if (agent.status !== 'public') {
+        throw new Error('只能收藏公开的Agent');
+      }
+      
+      // 检查是否已收藏
+      const isFavorited = await agentDao.isFavorited(userId, agentId);
+      if (isFavorited) {
+        return {
+          success: true,
+          message: '已经收藏过此Agent',
+          agentId,
+          isFavorited: true
+        };
+      }
+      
+      // 添加收藏
+      await agentDao.addFavorite(userId, agentId);
+      
+      return {
+        success: true,
+        message: '收藏成功',
+        agentId,
+        isFavorited: true
+      };
+    } catch (error) {
+      logger.error('添加收藏失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 取消收藏
+   */
+  async removeFavorite(userId: string, agentId: string): Promise<FavoriteAgentResponse> {
+    try {
+      // 检查Agent是否存在
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        throw new Error('Agent不存在');
+      }
+      
+      // 取消收藏
+      const success = await agentDao.removeFavorite(userId, agentId);
+      
+      if (!success) {
+        return {
+          success: true,
+          message: '您还没有收藏此Agent',
+          agentId,
+          isFavorited: false
+        };
+      }
+      
+      return {
+        success: true,
+        message: '取消收藏成功',
+        agentId,
+        isFavorited: false
+      };
+    } catch (error) {
+      logger.error('取消收藏失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 检查收藏状态
+   */
+  async checkFavoriteStatus(userId: string, agentId: string): Promise<boolean> {
+    try {
+      return await agentDao.isFavorited(userId, agentId);
+    } catch (error) {
+      logger.error('检查收藏状态失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取用户收藏的Agent列表
+   */
+  async getFavoriteAgents(userId: string, offset: number = 0, limit: number = 20): Promise<{ agents: Agent[]; total: number }> {
+    try {
+      return await agentDao.getFavoriteAgents(userId, offset, limit);
+    } catch (error) {
+      logger.error('获取收藏Agent列表失败:', error);
+      throw error;
     }
   }
 }
