@@ -130,12 +130,18 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    const queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
+    let queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
+    
+    // 兼容处理：如果status参数是查询类型，则映射为queryType
+    const statusParam = req.query.status as string;
+    if (statusParam && ['public', 'my-private', 'my-saved'].includes(statusParam)) {
+      queryType = statusParam as 'public' | 'my-private' | 'my-saved';
+    }
     
     const query: GetAgentsQuery = {
       userId,
       queryType,
-      status: req.query.status as any,
+      status: ['public', 'my-private', 'my-saved'].includes(statusParam) ? undefined : req.query.status as any,
       search: req.query.search as string,
       category: req.query.category as string,
       orderBy: req.query.orderBy as any,

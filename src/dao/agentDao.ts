@@ -410,16 +410,6 @@ export class AgentDao {
         WHERE ${countConditions.join(' AND ')}
       `;
       
-      // 添加调试信息
-      logger.info(`Count查询调试信息: 
-        queryType: ${query.queryType || 'undefined'}
-        userId: ${query.userId || 'undefined'}
-        status: ${query.status || 'undefined'}
-        countQuery: ${countQuery}
-        countValues: ${JSON.stringify(countValues)}
-        countConditions: ${JSON.stringify(countConditions)}
-      `);
-      
       const countResult = await db.query<{ total: string }>(countQuery, countValues);
       const total = parseInt(countResult.rows[0].total);
       
