@@ -1144,6 +1144,40 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS agent_favorites CASCADE');
         console.log('✅ Dropped agent_favorites table');
       }
+    },
+    {
+      version: 22,
+      name: 'add_agent_avatar_field',
+      up: async () => {
+        // 添加agent_avatar字段到agents表
+        await db.query(`
+          ALTER TABLE agents ADD COLUMN agent_avatar TEXT
+        `);
+
+        // 为现有Agent数据生成头像
+        // 使用Agent名称作为种子值生成DiceBear头像URL
+        await db.query(`
+          UPDATE agents 
+          SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || 
+                           encode(digest(
+                             lower(
+                               regexp_replace(
+                                 regexp_replace(name, '[^a-zA-Z0-9\-_\s]', '', 'g'),
+                                 '\s+', '-', 'g'
+                               )
+                             ), 'md5'), 'hex')
+          WHERE agent_avatar IS NULL OR agent_avatar = ''
+        `);
+
+        console.log('✅ Added agent_avatar field to agents table');
+      },
+      down: async () => {
+        // 删除agent_avatar字段
+        await db.query(`
+          ALTER TABLE agents DROP COLUMN IF EXISTS agent_avatar
+        `);
+        console.log('✅ Removed agent_avatar field from agents table');
+      }
     }
   ];
 

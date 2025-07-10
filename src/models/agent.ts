@@ -7,6 +7,7 @@ export interface Agent {
   userId: string;
   username?: string; // 用户名，从users表同步
   avatar?: string; // 用户头像，从users表同步
+  agentAvatar?: string; // Agent专用头像URL，使用DiceBear生成
   name: string;
   description: string;
   status: AgentStatus;
@@ -54,6 +55,7 @@ export interface CreateAgentRequest {
   userId: string;
   username?: string; // 用户名，可选，会从用户信息中获取
   avatar?: string; // 用户头像，可选，会从用户信息中获取
+  agentAvatar?: string; // Agent专用头像URL，可选，会自动生成
   name: string;
   description: string;
   status: AgentStatus;
