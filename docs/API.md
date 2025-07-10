@@ -2789,7 +2789,37 @@ data: [DONE]
 
 Agent系统允许用户将完成的任务工作流保存为可重用的Agent，支持私有和公开两种模式。Agent包含自动生成的名称、描述和相关问题，用户可以尝试使用Agent来执行类似的任务。
 
-### 1. 从任务预览Agent
+### 1. 生成Agent信息
+
+**端点**: `POST /api/agent/generate-info/:taskId`
+
+**描述**: 生成Agent的name和description供前端显示，用户可以在此基础上编辑后创建Agent
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `taskId`: 任务ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "BitcoinPriceAnalyzer",
+    "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data."
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: User not authenticated
+- `404 Not Found`: Task not found or access denied
+- `400 Bad Request`: Task is not completed
+- `500 Internal Server Error`: Failed to generate Agent info
+
+---
+
+### 2. 从任务预览Agent
 
 **端点**: `GET /api/agent/preview/:taskId`
 
@@ -2805,18 +2835,21 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 {
   "success": true,
   "data": {
-    "name": "BitcoinPriceAnalyzer",
-    "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
+    "suggestedName": "BitcoinPriceAnalyzer",
+    "suggestedDescription": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
     "relatedQuestions": [
       "How do I get real-time cryptocurrency prices?",
       "What market data can this agent provide?",
       "Can this agent analyze other cryptocurrencies?"
     ],
-    "taskId": "task_123456",
-    "metadata": {
-      "requiredMcps": ["coingecko-server"],
-      "totalSteps": 1,
-      "estimatedTime": "30 seconds"
+    "taskInfo": {
+      "title": "Get Bitcoin current price and market analysis",
+      "content": "Help me get Bitcoin's current price and analyze market trends",
+      "status": "completed"
+    },
+    "mcpWorkflow": {
+      "mcps": [...],
+      "workflow": [...]
     }
   }
 }
@@ -2830,11 +2863,11 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 2. 从任务创建Agent
+### 3. 从任务创建Agent
 
 **端点**: `POST /api/agent/create/:taskId`
 
-**描述**: 从指定任务创建Agent，支持私有和公开模式
+**描述**: 从指定任务创建Agent，支持私有和公开模式，可选择使用自定义的name和description
 
 **认证**: 需要访问令牌
 
@@ -2844,13 +2877,18 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 **请求体**:
 ```json
 {
-  "status": "private"
+  "status": "private",
+  "name": "自定义Agent名称（可选）",
+  "description": "自定义Agent描述（可选）"
 }
 ```
 
-**状态说明**:
-- `private`: 私有Agent，仅创建者可见和使用
-- `public`: 公开Agent，在Agent市场中对所有用户可见
+**参数说明**:
+- `status`: Agent状态
+  - `private`: 私有Agent，仅创建者可见和使用
+  - `public`: 公开Agent，在Agent市场中对所有用户可见
+- `name`: 自定义Agent名称（可选）。如果不提供，系统会自动生成
+- `description`: 自定义Agent描述（可选）。如果不提供，系统会自动生成
 
 **响应**:
 ```json
@@ -2909,7 +2947,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 3. 获取Agent列表
+### 4. 获取Agent列表
 
 **端点**: `GET /api/agent`
 
@@ -2966,7 +3004,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 4. 获取Agent详情
+### 5. 获取Agent详情
 
 **端点**: `GET /api/agent/:id`
 
@@ -3039,7 +3077,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 5. 尝试使用Agent
+### 6. 尝试使用Agent
 
 **端点**: `POST /api/agent/:id/try`
 
@@ -3161,7 +3199,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 6. 更新Agent
+### 7. 更新Agent
 
 **端点**: `PUT /api/agent/:id`
 
@@ -3223,7 +3261,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 7. 删除Agent
+### 8. 删除Agent
 
 **端点**: `DELETE /api/agent/:id`
 
@@ -3254,7 +3292,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 8. 获取用户创建的Agent
+### 9. 获取用户创建的Agent
 
 **端点**: `GET /api/agent/my-agents`
 
@@ -3301,7 +3339,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 9. 获取公开Agent列表
+### 10. 获取公开Agent列表
 
 **端点**: `GET /api/agent/public`
 
@@ -3381,23 +3419,42 @@ curl -X POST http://localhost:3001/api/tasks/task_123456/execute-stream \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-#### 2. 预览Agent内容
+#### 2. 生成Agent信息
+
+```bash
+curl -X POST http://localhost:3001/api/agent/generate-info/task_123456 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### 3. 预览Agent内容
 
 ```bash
 curl -X GET http://localhost:3001/api/agent/preview/task_123456 \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-#### 3. 创建Agent
+#### 4. 创建Agent
 
 ```bash
+# 使用自动生成的名称和描述
 curl -X POST http://localhost:3001/api/agent/create/task_123456 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{"status":"public"}'
+
+# 使用自定义的名称和描述
+curl -X POST http://localhost:3001/api/agent/create/task_123456 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "status": "public",
+    "name": "Bitcoin Market Analyzer Pro",
+    "description": "Advanced Bitcoin price analysis tool with comprehensive market insights and trend predictions."
+  }'
 ```
 
-#### 4. 其他用户尝试使用Agent
+#### 5. 其他用户尝试使用Agent
 
 ```bash
 curl -X POST http://localhost:3001/api/agent/agent_123456/try \
@@ -3409,9 +3466,10 @@ curl -X POST http://localhost:3001/api/agent/agent_123456/try \
 ### Agent系统特性
 
 #### 1. 自动内容生成
-- **AI生成名称**: 使用OpenAI自动生成符合X平台用户名规范的Agent名称（最多50字符）
-- **智能描述**: 基于任务内容生成详细的Agent描述（最多280字符）
+- **AI生成名称**: 使用AI自动生成符合平台规范的Agent名称（最多50字符，仅包含字母、数字和下划线）
+- **智能描述**: 基于任务内容生成详细的Agent描述（最多280字符，英文描述）
 - **相关问题**: 自动生成3个相关问题，帮助用户理解Agent的使用场景
+- **灵活定制**: 支持用户自定义Agent名称和描述，也支持使用AI生成的内容
 
 #### 2. 权限管理
 - **私有Agent**: 仅创建者可见和使用
@@ -3436,6 +3494,8 @@ curl -X POST http://localhost:3001/api/agent/agent_123456/try \
 
 #### 1. Agent创建
 - **完整任务**: 确保基础任务已完全执行成功
+- **内容生成**: 使用 `/api/agent/generate-info/:taskId` 接口预先生成Agent信息
+- **内容编辑**: 基于AI生成的内容进行适当编辑，确保名称和描述准确反映Agent功能
 - **描述清晰**: 使用清晰的描述帮助其他用户理解Agent功能
 - **适当公开**: 对有价值的Agent选择公开状态
 

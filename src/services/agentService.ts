@@ -248,51 +248,51 @@ export class AgentService {
    */
   async generateAgentName(request: GenerateAgentNameRequest): Promise<string> {
     try {
-      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || '无';
-      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || 'None';
+      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
       
-      const systemPrompt = `你是一个专业的Agent命名专家。你需要根据任务信息为AI Agent生成一个简洁、专业的名称。
+      const systemPrompt = `You are a professional Agent naming expert. You need to generate a concise, professional name for an AI Agent based on task information.
 
-命名规则：
-- 只能使用字母(A-Z)、数字(0-9)和下划线(_)
-- 最多50个字符
-- 名称要简洁明了，能体现Agent的功能
-- 避免使用过于通用的名称
-- 优先使用英文，如果需要中文概念可以用拼音或英文表达
+Naming rules:
+- Only use letters (A-Z), numbers (0-9), and underscores (_)
+- Maximum 50 characters
+- Name should be concise and clear, reflecting the Agent's functionality
+- Avoid overly generic names
+- Use English only
 
-任务信息：
-- 任务标题：${request.taskTitle}
-- 任务内容：${request.taskContent}
-- 使用的MCP工具：${mcpNames}
-- 工作流操作：${workflowActions}
+Task information:
+- Task title: ${request.taskTitle}
+- Task content: ${request.taskContent}
+- MCP tools used: ${mcpNames}
+- Workflow actions: ${workflowActions}
 
-请为这个Agent生成一个合适的名称，只返回名称本身，不要其他解释。`;
+Please generate a suitable name for this Agent. Return only the name itself, no other explanation.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('请生成Agent名称')
+        new HumanMessage('Please generate an Agent name')
       ]);
 
       let generatedName = response.content.toString().trim();
       
-      // 清理生成的名称，确保符合规则
+      // Clean the generated name to ensure it meets the rules
       generatedName = generatedName.replace(/[^A-Za-z0-9_]/g, '_');
       
-      // 确保长度不超过50个字符
+      // Ensure length does not exceed 50 characters
       if (generatedName.length > 50) {
         generatedName = generatedName.substring(0, 50);
       }
 
-      // 如果名称为空或只有下划线，提供默认名称
+      // If name is empty or only underscores, provide default name
       if (!generatedName || generatedName.replace(/_/g, '').length === 0) {
         generatedName = 'Custom_Agent_' + Date.now();
       }
 
-      logger.info(`自动生成Agent名称: ${generatedName}`);
+      logger.info(`Auto-generated Agent name: ${generatedName}`);
       return generatedName;
     } catch (error) {
-      logger.error('生成Agent名称失败:', error);
-      // 返回默认名称
+      logger.error('Failed to generate Agent name:', error);
+      // Return default name
       return 'Custom_Agent_' + Date.now();
     }
   }
@@ -302,50 +302,50 @@ export class AgentService {
    */
   async generateAgentDescription(request: GenerateAgentDescriptionRequest): Promise<string> {
     try {
-      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || '无';
-      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || 'None';
+      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
       
-      const systemPrompt = `你是一个专业的Agent描述生成专家。你需要根据任务信息为AI Agent生成一个吸引人的描述。
+      const systemPrompt = `You are a professional Agent description generation expert. You need to generate an attractive description for an AI Agent based on task information.
 
-描述规则：
-- 最多280个字符
-- 描述要简洁明了，突出Agent的核心功能和价值
-- 使用中文，语言要专业且易懂
-- 避免过于技术性的术语
-- 重点说明Agent能解决什么问题或提供什么服务
+Description rules:
+- Maximum 280 characters
+- Description should be concise and clear, highlighting the Agent's core functionality and value
+- Use English, language should be professional and easy to understand
+- Avoid overly technical terms
+- Focus on what problems the Agent can solve or what services it provides
 
-Agent信息：
-- Agent名称：${request.name}
-- 原始任务标题：${request.taskTitle}
-- 原始任务内容：${request.taskContent}
-- 使用的MCP工具：${mcpNames}
-- 工作流操作：${workflowActions}
+Agent information:
+- Agent name: ${request.name}
+- Original task title: ${request.taskTitle}
+- Original task content: ${request.taskContent}
+- MCP tools used: ${mcpNames}
+- Workflow actions: ${workflowActions}
 
-请为这个Agent生成一个合适的描述，只返回描述本身，不要其他解释。`;
+Please generate a suitable description for this Agent. Return only the description itself, no other explanation.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('请生成Agent描述')
+        new HumanMessage('Please generate an Agent description')
       ]);
 
       let generatedDescription = response.content.toString().trim();
       
-      // 确保长度不超过280个字符
+      // Ensure length does not exceed 280 characters
       if (generatedDescription.length > 280) {
         generatedDescription = generatedDescription.substring(0, 280);
       }
 
-      // 如果描述为空，提供默认描述
+      // If description is empty, provide default description
       if (!generatedDescription) {
-        generatedDescription = '这是一个智能Agent，能够帮助您完成各种任务。';
+        generatedDescription = 'This is an intelligent Agent that can help you complete various tasks.';
       }
 
-      logger.info(`自动生成Agent描述: ${generatedDescription}`);
+      logger.info(`Auto-generated Agent description: ${generatedDescription}`);
       return generatedDescription;
     } catch (error) {
-      logger.error('生成Agent描述失败:', error);
-      // 返回默认描述
-      return '这是一个智能Agent，能够帮助您完成各种任务。';
+      logger.error('Failed to generate Agent description:', error);
+      // Return default description
+      return 'This is an intelligent Agent that can help you complete various tasks.';
     }
   }
 
@@ -354,48 +354,49 @@ Agent信息：
    */
   async generateRelatedQuestions(taskTitle: string, taskContent: string, mcpWorkflow?: Agent['mcpWorkflow']): Promise<string[]> {
     try {
-      const mcpNames = mcpWorkflow?.mcps?.map(mcp => `${mcp.name} (${mcp.description})`).join(', ') || '无';
-      const workflowActions = mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      const mcpNames = mcpWorkflow?.mcps?.map(mcp => `${mcp.name} (${mcp.description})`).join(', ') || 'None';
+      const workflowActions = mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
       
-      const systemPrompt = `你是一个专业的产品经理，擅长设计用户引导问题来帮助用户理解产品功能。
+      const systemPrompt = `You are a professional product manager skilled at designing user guidance questions to help users understand product functionality.
 
-你需要为AI Agent生成3个相关问题，帮助用户更好地理解这个Agent的用途和功能。
+You need to generate 3 related questions for an AI Agent to help users better understand this Agent's purpose and functionality.
 
-问题要求：
-- 每个问题20-40字之间
-- 简洁明了，易于理解
-- 体现Agent的具体功能和应用场景
-- 引导用户思考如何使用这个Agent
-- 避免过于技术性的表达
+Question requirements:
+- Each question should be between 20-100 characters
+- Concise and clear, easy to understand
+- Reflect the Agent's specific functionality and use cases
+- Guide users to think about how to use this Agent
+- Avoid overly technical expressions
+- Use English only
 
-Agent信息：
-- 任务标题：${taskTitle}
-- 任务内容：${taskContent}
-- 使用的MCP工具：${mcpNames}
-- 工作流操作：${workflowActions}
+Agent information:
+- Task title: ${taskTitle}
+- Task content: ${taskContent}
+- MCP tools used: ${mcpNames}
+- Workflow actions: ${workflowActions}
 
-请生成3个问题，每行一个，不要编号或其他格式，直接返回问题文本。`;
+Please generate 3 questions, one per line, without numbering or other formatting, return the question text directly.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('请生成3个相关问题')
+        new HumanMessage('Please generate 3 related questions')
       ]);
 
       const questionsText = response.content.toString().trim();
       
-      // 解析问题
+      // Parse questions
       const questions = questionsText
         .split('\n')
         .map(q => q.trim())
-        .filter(q => q.length > 0 && q.length <= 40)
-        .slice(0, 3); // 确保只有3个问题
+        .filter(q => q.length > 0 && q.length <= 100)
+        .slice(0, 3); // Ensure only 3 questions
 
-      // 如果生成的问题不够3个，添加默认问题
+      // If not enough questions generated, add default questions
       while (questions.length < 3) {
         const defaultQuestions = [
-          `这个Agent能帮我做什么？`,
-          `什么时候适合使用这个Agent？`,
-          `如何使用这个Agent来${taskTitle.replace(/[^\u4e00-\u9fa5\w\s]/g, '').substring(0, 10)}？`
+          `What can this Agent help me with?`,
+          `When is it appropriate to use this Agent?`,
+          `How can I use this Agent for ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 20)}?`
         ];
         
         for (const defaultQ of defaultQuestions) {
@@ -533,6 +534,50 @@ Agent信息：
   }
 
   /**
+   * 生成Agent的name和description（供前端显示）
+   */
+  async generateAgentInfo(taskId: string, userId: string): Promise<{
+    name: string;
+    description: string;
+  }> {
+    try {
+      // Get task information
+      const task = await getTaskService().getTaskById(taskId);
+      if (!task || task.userId !== userId) {
+        throw new Error('Task not found or access denied');
+      }
+
+      // Check if task is completed
+      if (task.status !== 'completed') {
+        throw new Error('Task is not completed, cannot create Agent');
+      }
+
+      // Generate Agent name
+      const name = await this.generateAgentName({
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      // Generate Agent description
+      const description = await this.generateAgentDescription({
+        name,
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      return {
+        name,
+        description
+      };
+    } catch (error) {
+      logger.error(`Failed to generate Agent info [TaskID: ${taskId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * 预览从任务创建Agent的信息（用户保存前预览）
    */
   async previewAgentFromTask(taskId: string, userId: string): Promise<{
@@ -547,25 +592,25 @@ Agent信息：
     mcpWorkflow?: any;
   }> {
     try {
-      // 获取任务信息
+      // Get task information
       const task = await getTaskService().getTaskById(taskId);
       if (!task || task.userId !== userId) {
-        throw new Error('任务不存在或无权访问');
+        throw new Error('Task not found or access denied');
       }
 
-      // 检查任务是否已完成
+      // Check if task is completed
       if (task.status !== 'completed') {
-        throw new Error('任务未完成，无法创建Agent');
+        throw new Error('Task is not completed, cannot create Agent');
       }
 
-      // 生成建议的名称
+      // Generate suggested name
       const suggestedName = await this.generateAgentName({
         taskTitle: task.title,
         taskContent: task.content,
         mcpWorkflow: task.mcpWorkflow
       });
 
-      // 生成建议的描述
+      // Generate suggested description
       const suggestedDescription = await this.generateAgentDescription({
         name: suggestedName,
         taskTitle: task.title,
@@ -573,7 +618,7 @@ Agent信息：
         mcpWorkflow: task.mcpWorkflow
       });
 
-      // 生成相关问题
+      // Generate related questions
       const relatedQuestions = await this.generateRelatedQuestions(
         task.title,
         task.content,
@@ -592,7 +637,7 @@ Agent信息：
         mcpWorkflow: task.mcpWorkflow
       };
     } catch (error) {
-      logger.error(`预览Agent信息失败 [TaskID: ${taskId}]:`, error);
+      logger.error(`Failed to preview Agent info [TaskID: ${taskId}]:`, error);
       throw error;
     }
   }
@@ -600,42 +645,48 @@ Agent信息：
   /**
    * 根据已完成的任务创建Agent
    */
-  async createAgentFromTask(taskId: string, userId: string, status: 'private' | 'public' = 'private'): Promise<Agent> {
+  async createAgentFromTask(taskId: string, userId: string, status: 'private' | 'public' = 'private', customName?: string, customDescription?: string): Promise<Agent> {
     try {
-      // 获取任务信息
+      // Get task information
       const task = await getTaskService().getTaskById(taskId);
       if (!task || task.userId !== userId) {
-        throw new Error('任务不存在或无权访问');
+        throw new Error('Task not found or access denied');
       }
 
-      // 检查任务是否已完成
+      // Check if task is completed
       if (task.status !== 'completed') {
-        throw new Error('任务未完成，无法创建Agent');
+        throw new Error('Task is not completed, cannot create Agent');
       }
 
-      // 自动生成Agent名称
-      const name = await this.generateAgentName({
-        taskTitle: task.title,
-        taskContent: task.content,
-        mcpWorkflow: task.mcpWorkflow
-      });
+      // Use custom name or auto-generate Agent name
+      let name = customName;
+      if (!name) {
+        name = await this.generateAgentName({
+          taskTitle: task.title,
+          taskContent: task.content,
+          mcpWorkflow: task.mcpWorkflow
+        });
+      }
 
-      // 自动生成Agent描述
-      const description = await this.generateAgentDescription({
-        name,
-        taskTitle: task.title,
-        taskContent: task.content,
-        mcpWorkflow: task.mcpWorkflow
-      });
+      // Use custom description or auto-generate Agent description
+      let description = customDescription;
+      if (!description) {
+        description = await this.generateAgentDescription({
+          name,
+          taskTitle: task.title,
+          taskContent: task.content,
+          mcpWorkflow: task.mcpWorkflow
+        });
+      }
 
-      // 自动生成相关问题
+      // Auto-generate related questions
       const relatedQuestions = await this.generateRelatedQuestions(
         task.title,
         task.content,
         task.mcpWorkflow
       );
 
-      // 创建Agent
+      // Create Agent
       const createRequest: CreateAgentRequest = {
         userId,
         name,
@@ -646,19 +697,19 @@ Agent信息：
         metadata: {
           originalTaskTitle: task.title,
           originalTaskContent: task.content,
-          deliverables: [], // TODO: 可以从任务结果中提取
-          executionResults: task.result, // 存储任务执行结果
+          deliverables: [], // TODO: can extract from task results
+          executionResults: task.result, // Store task execution results
           category: this.extractCategoryFromMCPs(task.mcpWorkflow)
         },
         relatedQuestions
       };
 
       const agent = await this.createAgent(createRequest);
-      logger.info(`从任务创建Agent成功: ${agent.id} (${agent.name}) - 状态: ${status}`);
+      logger.info(`Successfully created Agent from task: ${agent.id} (${agent.name}) - Status: ${status}`);
       
       return agent;
     } catch (error) {
-      logger.error(`从任务创建Agent失败 [TaskID: ${taskId}]:`, error);
+      logger.error(`Failed to create Agent from task [TaskID: ${taskId}]:`, error);
       throw error;
     }
   }

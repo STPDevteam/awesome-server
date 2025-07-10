@@ -529,7 +529,7 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
     }
 
     const taskId = req.params.taskId;
-    const { status = 'private' } = req.body;
+    const { status = 'private', name, description } = req.body;
 
     // 验证status值
     if (!['private', 'public'].includes(status)) {
@@ -540,8 +540,8 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
       });
     }
 
-    // 直接从任务创建Agent，所有信息自动生成
-    const agent = await agentService.createAgentFromTask(taskId, userId, status);
+    // 从任务创建Agent，支持自定义name和description
+    const agent = await agentService.createAgentFromTask(taskId, userId, status, name, description);
 
     res.json({
       success: true,
@@ -571,6 +571,58 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : '从任务创建Agent失败'
+    });
+  }
+});
+
+/**
+ * 生成Agent的name和description（供前端显示）
+ * POST /api/agent/generate-info/:taskId
+ */
+router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    
+    // Generate Agent name and description
+    const generatedInfo = await agentService.generateAgentInfo(taskId, userId);
+
+    res.json({
+      success: true,
+      data: generatedInfo
+    });
+  } catch (error) {
+    logger.error(`Failed to generate Agent info [TaskID: ${req.params.taskId}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: 'Task not found or access denied'
+        });
+      }
+      if (error.message.includes('未完成')) {
+        return res.status(400).json({
+          success: false,
+          error: 'TASK_NOT_COMPLETED',
+          message: 'Task is not completed'
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to generate Agent info'
     });
   }
 });
