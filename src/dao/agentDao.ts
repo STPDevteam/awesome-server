@@ -342,20 +342,34 @@ export class AgentDao {
       const orderBy = query.orderBy || 'created_at';
       const order = query.order || 'desc';
       
+      // 为count查询创建独立的values数组副本
+      const countValues = [...values];
+      
+      // 根据查询类型构建对应的count查询FROM子句
+      let countFromClause = 'FROM agents a';
+      if (query.queryType === 'my-saved') {
+        countFromClause = 'FROM agents a INNER JOIN agent_favorites f ON a.id = f.agent_id';
+      } else if ((query.queryType === 'public' || query.queryType === 'all') && query.userId) {
+        // 如果baseQuery包含LEFT JOIN，count查询不需要，因为我们只关心agent数量
+        countFromClause = 'FROM agents a';
+      }
+      
       // 获取总数
       const countQuery = `
         SELECT COUNT(*) as total 
-        FROM agents a
-        ${query.queryType === 'my-saved' ? 'INNER JOIN agent_favorites f ON a.id = f.agent_id' : ''}
+        ${countFromClause}
         WHERE ${conditions.join(' AND ')}
       `;
       
-      const countResult = await db.query<{ total: string }>(countQuery, values);
+      const countResult = await db.query<{ total: string }>(countQuery, countValues);
       const total = parseInt(countResult.rows[0].total);
       
       // 获取分页数据
       const offset = query.offset || 0;
       const limit = query.limit || 20;
+      
+      // 为data查询创建新的values数组副本并添加分页参数
+      const dataValues = [...values, limit, offset];
       
       const dataQuery = `
         ${baseQuery}
@@ -364,9 +378,7 @@ export class AgentDao {
         LIMIT $${paramIndex++} OFFSET $${paramIndex++}
       `;
       
-      values.push(limit, offset);
-      
-      const result = await db.query<AgentDbRow & { is_favorited: boolean }>(dataQuery, values);
+      const result = await db.query<AgentDbRow & { is_favorited: boolean }>(dataQuery, dataValues);
       
       const agents = result.rows.map(row => {
         const agent = this.mapDbRowToAgent(row);
