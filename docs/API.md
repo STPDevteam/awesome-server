@@ -3088,23 +3088,28 @@ Agent实体包含以下字段：
 
 ---
 
-### 5. 获取Agent列表
+### 5. 获取Agent列表（统一接口）
 
 **端点**: `GET /api/agent`
 
-**描述**: 获取Agent列表，支持按状态和用户筛选
+**描述**: 统一的Agent列表接口，支持多种查询类型并返回收藏状态
 
 **认证**: 需要访问令牌
 
 **查询参数**:
-- `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
-- `category`: 按类别筛选（可选）
+
+- `queryType`: 查询类型 (`public`, `my-private`, `my-saved`, `all`)，默认为 `all`
+  - `public`: 公开的Agent
+  - `my-private`: 我的私有Agent
+  - `my-saved`: 我收藏的Agent
+  - `all`: 所有可见的Agent（我的私有 + 公开的）
+- `status`: Agent状态筛选 (`private`, `public`)（可选）
 - `search`: 搜索关键词（可选）
-- `userId`: 用户ID筛选（可选）
-- `limit`: 每页数量（默认10）
+- `category`: 按类别筛选（可选）
+- `orderBy`: 排序字段（默认 `created_at`）
+- `order`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+- `limit`: 每页数量（默认20）
 - `offset`: 偏移量（默认0）
-- `sortBy`: 排序字段（默认 `created_at`）
-- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
 
 **响应**:
 ```json
@@ -3130,15 +3135,17 @@ Agent实体包含以下字段：
         "metadata": {
           "requiredMcps": ["coingecko-server"],
           "totalSteps": 1,
-          "estimatedTime": "30 seconds"
+          "estimatedTime": "30 seconds",
+          "category": "crypto"
         },
         "usageCount": 25,
+        "isFavorited": true,
         "createdAt": "2023-06-20T08:00:00.000Z",
         "updatedAt": "2023-06-20T08:00:00.000Z"
       }
     ],
     "total": 1,
-    "limit": 10,
+    "limit": 20,
     "offset": 0
   }
 }
@@ -3226,7 +3233,7 @@ Agent实体包含以下字段：
 
 ---
 
-### 6. 尝试使用Agent
+### 7. 尝试使用Agent
 
 **端点**: `POST /api/agent/:id/try`
 
@@ -3348,7 +3355,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 7. 更新Agent
+### 8. 更新Agent
 
 **端点**: `PUT /api/agent/:id`
 
@@ -3420,7 +3427,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 8. 删除Agent
+### 9. 删除Agent
 
 **端点**: `DELETE /api/agent/:id`
 
@@ -3451,7 +3458,96 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 9. 获取所有Agent分类列表
+### 10. 收藏Agent
+
+**端点**: `POST /api/agent/:id/favorite`
+
+**描述**: 收藏指定的公开Agent
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "收藏成功",
+    "agentId": "agent_123456",
+    "isFavorited": true
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `400 Bad Request`: 只能收藏公开的Agent
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 11. 取消收藏Agent
+
+**端点**: `DELETE /api/agent/:id/favorite`
+
+**描述**: 取消收藏指定的Agent
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "取消收藏成功",
+    "agentId": "agent_123456",
+    "isFavorited": false
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 12. 检查Agent收藏状态
+
+**端点**: `GET /api/agent/:id/favorite/status`
+
+**描述**: 检查指定Agent的收藏状态
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agentId": "agent_123456",
+    "isFavorited": true
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 13. 获取Agent分类列表
 
 **端点**: `GET /api/agent/categories`
 
@@ -3480,8 +3576,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
       "name": "Social",
       "count": 4
     }
-  ],
-  "message": "分类列表功能正在开发中"
+  ]
 }
 ```
 
@@ -3494,7 +3589,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 10. 按分类获取Agent列表
+### 14. 按分类获取Agent列表
 
 **端点**: `GET /api/agent/category/:category`
 
@@ -3536,113 +3631,6 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
       }
     ],
     "total": 15,
-    "limit": 10,
-    "offset": 0
-  }
-}
-```
-
-**错误响应**:
-- `500 Internal Server Error`: 服务器内部错误
-
----
-
-### 11. 获取用户创建的Agent
-
-**端点**: `GET /api/agent/my-agents`
-
-**描述**: 获取当前用户创建的所有Agent
-
-**认证**: 需要访问令牌
-
-**查询参数**:
-- `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
-- `category`: 按类别筛选（可选）
-- `search`: 搜索关键词（可选）
-- `limit`: 每页数量（默认10）
-- `offset`: 偏移量（默认0）
-- `sortBy`: 排序字段（默认 `created_at`）
-- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
-
-**响应**:
-```json
-{
-  "success": true,
-  "data": {
-    "agents": [
-      {
-        "id": "agent_123456",
-        "userId": "user_123",
-        "username": "CryptoTrader",
-        "avatar": "https://example.com/avatar.png",
-        "name": "BitcoinPriceAnalyzer",
-        "description": "An intelligent agent that retrieves Bitcoin's current price...",
-        "relatedQuestions": [...],
-        "status": "public",
-        "taskId": "task_123456",
-        "categories": ["Market Data", "Trading"],
-        "metadata": {...},
-        "usageCount": 25,
-        "createdAt": "2023-06-20T08:00:00.000Z",
-        "updatedAt": "2023-06-20T08:00:00.000Z"
-      }
-    ],
-    "total": 1,
-    "limit": 10,
-    "offset": 0
-  }
-}
-```
-
-**错误响应**:
-- `401 Unauthorized`: 无效的访问令牌
-- `500 Internal Server Error`: 服务器内部错误
-
----
-
-### 12. 获取公开Agent列表
-
-**端点**: `GET /api/agent/public`
-
-**描述**: 获取所有公开的Agent，用于Agent市场展示
-
-**认证**: 可选
-
-**查询参数**:
-- `category`: 按类别筛选（可选）
-- `search`: 搜索关键词（可选）
-- `limit`: 每页数量（默认10）
-- `offset`: 偏移量（默认0）
-- `sortBy`: 排序字段（默认 `usage_count`）
-- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
-
-**响应**:
-```json
-{
-  "success": true,
-  "data": {
-    "agents": [
-      {
-        "id": "agent_123456",
-        "userId": "user_123",
-        "username": "CryptoTrader",
-        "avatar": "https://example.com/avatar.png",
-        "name": "BitcoinPriceAnalyzer",
-        "description": "An intelligent agent that retrieves Bitcoin's current price...",
-        "relatedQuestions": [...],
-        "status": "public",
-        "categories": ["Market Data", "Trading"],
-        "metadata": {
-          "requiredMcps": ["coingecko-server"],
-          "totalSteps": 1,
-          "estimatedTime": "30 seconds"
-        },
-        "usageCount": 25,
-        "createdAt": "2023-06-20T08:00:00.000Z",
-        "updatedAt": "2023-06-20T08:00:00.000Z"
-      }
-    ],
-    "total": 1,
     "limit": 10,
     "offset": 0
   }
@@ -3724,6 +3712,46 @@ curl -X POST http://localhost:3001/api/agent/agent_123456/try \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
   -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
+```
+
+#### 5. 收藏和管理Agent
+
+```bash
+# 收藏Agent
+curl -X POST http://localhost:3001/api/agent/agent_123456/favorite \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 取消收藏Agent
+curl -X DELETE http://localhost:3001/api/agent/agent_123456/favorite \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 检查收藏状态
+curl -X GET http://localhost:3001/api/agent/agent_123456/favorite/status \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### 6. 使用统一接口获取不同类型的Agent
+
+```bash
+# 获取公开的Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=public&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取我的私有Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=my-private&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取我收藏的Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=my-saved&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取所有可见的Agent（默认）
+curl -X GET "http://localhost:3001/api/agent?queryType=all&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 搜索公开Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=public&search=bitcoin&category=crypto" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
 ### Agent系统特性

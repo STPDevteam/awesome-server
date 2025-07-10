@@ -1100,6 +1100,50 @@ class MigrationService {
         `);
         console.log('✅ Removed username and avatar fields from agents table');
       }
+    },
+    {
+      version: 21,
+      name: 'create_agent_favorites_table',
+      up: async () => {
+        // 创建agent_favorites表
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS agent_favorites (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            agent_id VARCHAR(255) NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, agent_id)
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_user_id 
+          ON agent_favorites(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_agent_id 
+          ON agent_favorites(agent_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_created_at 
+          ON agent_favorites(created_at)
+        `);
+
+        // 复合索引：用户ID + 创建时间（用于排序）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_user_created_at 
+          ON agent_favorites(user_id, created_at DESC)
+        `);
+
+        console.log('✅ Created agent_favorites table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS agent_favorites CASCADE');
+        console.log('✅ Dropped agent_favorites table');
+      }
     }
   ];
 

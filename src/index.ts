@@ -106,7 +106,7 @@ app.use('/api/task', taskRoutes);
 // 支付路由
 app.use('/api/payment', paymentRoutes);
 
-// 对话路由 - 新增
+// 对话路由 - 新增（已集成增强版多轮对话功能）
 app.use('/api/conversation', conversationRoutes);
 
 // Agent路由

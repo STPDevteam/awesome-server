@@ -46,6 +46,7 @@ export interface Agent {
   publishedAt?: Date;
   deletedAt?: Date;
   isDeleted: boolean;
+  isFavorited?: boolean; // 是否被当前用户收藏
 }
 
 // Agent创建请求参数
@@ -82,6 +83,8 @@ export interface GetAgentsQuery {
   order?: 'asc' | 'desc';
   offset?: number;
   limit?: number;
+  // 新增查询类型
+  queryType?: 'public' | 'my-private' | 'my-saved' | 'all';
 }
 
 // Agent名称生成请求
@@ -142,6 +145,28 @@ export interface AgentUsage {
   conversationId?: string;
   executionResult?: any;
   createdAt: Date;
+}
+
+// Agent收藏记录
+export interface AgentFavorite {
+  id: string;
+  userId: string;
+  agentId: string;
+  createdAt: Date;
+}
+
+// Agent收藏操作请求
+export interface FavoriteAgentRequest {
+  agentId: string;
+  userId: string;
+}
+
+// Agent收藏操作响应
+export interface FavoriteAgentResponse {
+  success: boolean;
+  message: string;
+  agentId: string;
+  isFavorited: boolean;
 }
 
 // Try Agent请求参数

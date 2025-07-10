@@ -8,7 +8,8 @@ import {
   GetAgentsQuery, 
   GenerateAgentNameRequest, 
   GenerateAgentDescriptionRequest,
-  AgentMarketplaceQuery
+  AgentMarketplaceQuery,
+  FavoriteAgentRequest
 } from '../models/agent.js';
 
 const router = Router();
@@ -108,8 +109,15 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 获取Agent列表
+ * 获取Agent列表（统一接口）
  * GET /api/agent
+ * 
+ * 查询参数：
+ * - queryType: 'public' | 'my-private' | 'my-saved' | 'all'
+ *   - public: 公开的Agent
+ *   - my-private: 我的私有Agent
+ *   - my-saved: 我收藏的Agent
+ *   - all: 所有可见的Agent（默认）
  */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -122,8 +130,11 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
+    const queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
+    
     const query: GetAgentsQuery = {
       userId,
+      queryType,
       status: req.query.status as any,
       search: req.query.search as string,
       category: req.query.category as string,
@@ -722,36 +733,8 @@ router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) 
   }
 });
 
-/**
- * 获取Agent市场数据（公开Agent）
- * GET /api/agent/marketplace
- */
-router.get('/marketplace', async (req: Request, res: Response) => {
-  try {
-    const query: AgentMarketplaceQuery = {
-      search: req.query.search as string,
-      category: req.query.category as string,
-      orderBy: req.query.orderBy as any,
-      order: req.query.order as any,
-      offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined
-    };
-
-    const result = await agentService.getAgentMarketplace(query);
-
-    res.json({
-      success: true,
-      data: result
-    });
-  } catch (error) {
-    logger.error('获取Agent市场数据失败:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '获取Agent市场数据失败'
-    });
-  }
-});
+// 已移除 /api/agent/marketplace 接口
+// 使用统一的 GET /api/agent?queryType=public 接口替代
 
 /**
  * 获取Agent统计信息
@@ -1007,6 +990,142 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to start Agent conversation'
+    });
+  }
+});
+
+/**
+ * 收藏Agent
+ * POST /api/agent/:id/favorite
+ */
+router.post('/:id/favorite', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: '用户未认证'
+      });
+    }
+
+    const agentId = req.params.id;
+    const result = await agentService.addFavorite(userId, agentId);
+
+    res.json({
+      success: result.success,
+      data: {
+        message: result.message,
+        agentId: result.agentId,
+        isFavorited: result.isFavorited
+      }
+    });
+  } catch (error) {
+    logger.error(`收藏Agent失败 [AgentID: ${req.params.id}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('不存在')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('只能收藏')) {
+        return res.status(400).json({
+          success: false,
+          error: 'INVALID_OPERATION',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '收藏Agent失败'
+    });
+  }
+});
+
+/**
+ * 取消收藏Agent
+ * DELETE /api/agent/:id/favorite
+ */
+router.delete('/:id/favorite', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: '用户未认证'
+      });
+    }
+
+    const agentId = req.params.id;
+    const result = await agentService.removeFavorite(userId, agentId);
+
+    res.json({
+      success: result.success,
+      data: {
+        message: result.message,
+        agentId: result.agentId,
+        isFavorited: result.isFavorited
+      }
+    });
+  } catch (error) {
+    logger.error(`取消收藏Agent失败 [AgentID: ${req.params.id}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('不存在')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '取消收藏Agent失败'
+    });
+  }
+});
+
+/**
+ * 检查Agent收藏状态
+ * GET /api/agent/:id/favorite/status
+ */
+router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: '用户未认证'
+      });
+    }
+
+    const agentId = req.params.id;
+    const isFavorited = await agentService.checkFavoriteStatus(userId, agentId);
+
+    res.json({
+      success: true,
+      data: {
+        agentId,
+        isFavorited
+      }
+    });
+  } catch (error) {
+    logger.error(`检查Agent收藏状态失败 [AgentID: ${req.params.id}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : '检查Agent收藏状态失败'
     });
   }
 });
