@@ -296,9 +296,8 @@ export class AgentDao {
       }
       
       if (query.search) {
-        conditions.push(`(a.name ILIKE $${paramIndex} OR a.description ILIKE $${paramIndex})`);
-        values.push(`%${query.search}%`);
-        paramIndex++;
+        conditions.push(`(a.name ILIKE $${paramIndex++} OR a.description ILIKE $${paramIndex++})`);
+        values.push(`%${query.search}%`, `%${query.search}%`);
       }
       
       if (query.category) {
