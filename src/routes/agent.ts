@@ -1035,9 +1035,9 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
         }
       });
     } else {
-      // If authentication is required, return special response format
+      // If authentication is required, return special response format with 200 status
       if (result.needsAuth) {
-        res.status(403).json({
+        res.status(200).json({
           success: false,
           error: 'MCP_AUTH_REQUIRED',
           needsAuth: true,
