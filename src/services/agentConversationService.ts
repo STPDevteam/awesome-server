@@ -464,6 +464,9 @@ Respond with ONLY a JSON object:
         });
         
         logger.info(`Applied Agent workflow to task [Agent: ${agent.name}, Task: ${task.id}]`);
+        
+        // 🔧 关键修复：在任务执行前验证和预连接所需的MCP
+        await this.ensureAgentMCPsConnected(agent, userId, task.id);
       }
 
       // Execute the task using Agent's workflow
@@ -571,6 +574,29 @@ I encountered an error while executing this task. Please try again or check the 
             mcpCount: agent.mcpWorkflow.mcps?.length || 0
           }
         });
+        
+        // 🔧 关键修复：在任务执行前验证和预连接所需的MCP
+        streamCallback({
+          event: 'mcp_connection_start',
+          data: { message: 'Verifying and connecting required MCP services...' }
+        });
+        
+        try {
+          await this.ensureAgentMCPsConnected(agent, userId, task.id);
+          streamCallback({
+            event: 'mcp_connection_success',
+            data: { message: 'All required MCP services connected successfully' }
+          });
+        } catch (mcpError) {
+          streamCallback({
+            event: 'mcp_connection_error',
+            data: { 
+              message: 'Failed to connect required MCP services',
+              error: mcpError instanceof Error ? mcpError.message : 'Unknown error'
+            }
+          });
+          throw mcpError;
+        }
       }
 
       // Execute the task using Agent's workflow
@@ -600,9 +626,7 @@ I encountered an error while executing this task. Please try again or check the 
           }
         });
       } catch (error) {
-        executionError = error instanceof Error ? error : new Error('Unknown execution error');
-        logger.error(`Agent task execution failed [Task: ${task.id}]:`, executionError);
-        
+        executionError = error instanceof Error ? error : new Error(String(error));
         streamCallback({
           event: 'task_execution_error',
           data: { 
@@ -613,66 +637,137 @@ I encountered an error while executing this task. Please try again or check the 
         });
       }
 
-      // Get the completed task with results
-      const completedTask = await taskService.getTaskById(task.id);
-
-      // Create response message based on execution results
-      let responseContent: string;
-      
-      if (executionSuccess) {
-        responseContent = `✅ Task completed successfully using ${agent.name}'s capabilities!
+      // Create assistant message based on execution result
+      let assistantContent: string;
+      if (executionError) {
+        assistantContent = `❌ Task execution failed: ${executionError.message}
 
 **Task**: ${task.title}
 **Agent**: ${agent.name}
-**Status**: ${completedTask?.status || 'completed'}
-**Capabilities Used**: ${agent.mcpWorkflow ? 
-        agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
-        'general assistance'}
+**Task ID**: ${task.id}
+
+I encountered an error while executing this task. Please try again or check the task configuration.`;
+      } else if (executionSuccess) {
+        assistantContent = `✅ Task completed successfully using ${agent.name}'s capabilities!
+
+**Task**: ${task.title}
+**Agent**: ${agent.name}
+**Task ID**: ${task.id}
 
 I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
-      } else if (executionError) {
-        responseContent = `❌ Task execution failed: ${task.title}
-
-**Agent**: ${agent.name}
-**Error**: ${executionError.message}
-**Task ID**: ${task.id}
-
-The task has been saved and you can try executing it again later.`;
       } else {
-        responseContent = `⚠️ Task execution completed with warnings: ${task.title}
+        assistantContent = `⚠️ Task execution completed with warnings using ${agent.name}'s capabilities.
 
+**Task**: ${task.title}
 **Agent**: ${agent.name}
-**Status**: ${completedTask?.status || 'unknown'}
 **Task ID**: ${task.id}
 
-I'll help you with this task using my capabilities. You can check the task status and results separately.`;
+The task has been processed, but some steps may have encountered issues. Please check the task details for more information.`;
       }
 
       const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: responseContent,
+        content: assistantContent,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK
       });
 
       streamCallback({
-        event: 'task_response_complete',
+        event: 'message_complete',
         data: { 
-          assistantMessageId: assistantMessage.id,
-          taskId: task.id,
-          message: 'Task processing completed',
-          executionSuccess
+          messageId: assistantMessage.id,
+          content: assistantContent,
+          taskId: task.id
         }
       });
 
-      return {
-        assistantMessageId: assistantMessage.id,
-        taskId: task.id
+      return { 
+        assistantMessageId: assistantMessage.id, 
+        taskId: task.id 
       };
     } catch (error) {
       logger.error('Execute Agent task stream failed:', error);
       throw error;
     }
+  }
+
+  /**
+   * 🔧 新增：确保Agent所需的MCP服务已连接并具有正确的认证信息
+   */
+  private async ensureAgentMCPsConnected(agent: Agent, userId: string, taskId: string): Promise<void> {
+    if (!agent.mcpWorkflow || !agent.mcpWorkflow.mcps || agent.mcpWorkflow.mcps.length === 0) {
+      logger.info(`Agent ${agent.name} does not require MCP services`);
+      return;
+    }
+
+    // 通过TaskExecutorService访问MCPManager
+    const mcpManager = (this.taskExecutorService as any).mcpManager;
+    const requiredMCPs = agent.mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired);
+
+    if (requiredMCPs.length === 0) {
+      logger.info(`Agent ${agent.name} does not require authenticated MCP services`);
+      return;
+    }
+
+    logger.info(`Ensuring MCP connections for Agent ${agent.name}, required MCPs: ${requiredMCPs.map((mcp: any) => mcp.name).join(', ')}`);
+
+    for (const mcpInfo of requiredMCPs) {
+      try {
+        // 检查MCP是否已连接
+        const connectedMCPs = mcpManager.getConnectedMCPs(userId);
+        const isConnected = connectedMCPs.some((mcp: any) => mcp.name === mcpInfo.name);
+
+        if (!isConnected) {
+          logger.info(`MCP ${mcpInfo.name} not connected, attempting to connect for Agent task...`);
+          
+          // 获取MCP配置
+          const { getPredefinedMCP } = await import('./predefinedMCPs.js');
+          const mcpConfig = getPredefinedMCP(mcpInfo.name);
+          
+          if (!mcpConfig) {
+            throw new Error(`MCP ${mcpInfo.name} configuration not found`);
+          }
+
+          // 获取用户认证信息
+          const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
+          if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
+            throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}`);
+          }
+
+          // 动态注入认证信息
+          const dynamicEnv = { ...mcpConfig.env };
+          if (mcpConfig.env) {
+            for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                dynamicEnv[envKey] = userAuth.authData[envKey];
+                logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name}`);
+              }
+            }
+          }
+
+          // 创建带认证信息的MCP配置
+          const authenticatedMcpConfig = {
+            ...mcpConfig,
+            env: dynamicEnv
+          };
+
+          // 连接MCP
+          const connected = await mcpManager.connectPredefined(authenticatedMcpConfig, userId);
+          if (!connected) {
+            throw new Error(`Failed to connect to MCP ${mcpInfo.name}`);
+          }
+
+          logger.info(`✅ Successfully connected MCP ${mcpInfo.name} for Agent task`);
+        } else {
+          logger.info(`✅ MCP ${mcpInfo.name} already connected`);
+        }
+      } catch (error) {
+        logger.error(`Failed to ensure MCP connection for ${mcpInfo.name}:`, error);
+        throw new Error(`Failed to connect required MCP service ${mcpInfo.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    logger.info(`✅ All required MCP services connected for Agent ${agent.name}`);
   }
 
   /**
