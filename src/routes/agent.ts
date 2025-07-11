@@ -1227,12 +1227,8 @@ router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response)
 
     logger.info(`🔐 Agent MCP authentication request - User: ${userId}, MCP: ${mcpName}`);
 
-    // Verify authentication
-    const verificationResult = await mcpAuthService.verifyAuth(
-      userId,
-      mcpName,
-      authData
-    );
+    // Agent MCP认证逻辑：不依赖任务，直接为用户验证和保存MCP认证信息
+    const verificationResult = await verifyAgentMCPAuth(userId, mcpName, authData);
 
     if (verificationResult.success) {
       logger.info(`✅ Agent MCP authentication successful - User: ${userId}, MCP: ${mcpName}`);
@@ -1265,6 +1261,272 @@ router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response)
     });
   }
 });
+
+/**
+ * Agent专用MCP认证函数
+ * 不依赖任务，直接为用户验证和保存MCP认证信息
+ */
+async function verifyAgentMCPAuth(
+  userId: string,
+  mcpName: string,
+  authData: Record<string, string>
+): Promise<{ success: boolean; message: string; details?: string }> {
+  try {
+    logger.info(`🔐 Starting Agent MCP auth verification - User: ${userId}, MCP: ${mcpName}`);
+    
+    // 1. 验证认证数据的有效性
+    const validationResult = await validateMCPAuthData(mcpName, authData);
+    if (!validationResult.success) {
+      return validationResult;
+    }
+
+    // 2. 保存认证信息（标记为已验证）
+    await mcpAuthService.saveAuthData(userId, mcpName, authData, true);
+    
+    logger.info(`✅ Agent MCP auth saved successfully - User: ${userId}, MCP: ${mcpName}`);
+    
+    return {
+      success: true,
+      message: `MCP ${mcpName} authentication verified and saved successfully`,
+      details: 'Authentication data has been validated and stored for Agent usage'
+    };
+  } catch (error) {
+    logger.error(`❌ Agent MCP auth verification failed - User: ${userId}, MCP: ${mcpName}:`, error);
+    return {
+      success: false,
+      message: 'Authentication verification failed',
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
+ * 验证MCP认证数据的有效性
+ */
+async function validateMCPAuthData(
+  mcpName: string,
+  authData: Record<string, string>
+): Promise<{ success: boolean; message: string; details?: string }> {
+  try {
+    // 检查是否有空字段
+    const hasEmptyFields = Object.values(authData).some(value => !value || value.trim() === '');
+    if (hasEmptyFields) {
+      return {
+        success: false,
+        message: 'All authentication fields must be filled',
+        details: 'Please provide values for all required authentication parameters'
+      };
+    }
+
+    // 根据MCP类型进行特定验证
+    switch (mcpName.toLowerCase()) {
+      case 'github-mcp-server':
+      case 'github-mcp':
+        return await validateGitHubAuth(authData);
+      
+      case 'coingecko-server':
+      case 'coingecko-mcp':
+        return await validateCoinGeckoAuth(authData);
+      
+      case 'google-search-mcp':
+        return await validateGoogleSearchAuth(authData);
+      
+      case 'twitter-mcp':
+      case 'x-mcp':
+        return await validateTwitterAuth(authData);
+      
+      default:
+        // 对于未知的MCP，只做基本验证
+        return {
+          success: true,
+          message: `Authentication data for ${mcpName} has been validated`,
+          details: 'Basic validation passed - all fields are provided'
+        };
+    }
+  } catch (error) {
+    logger.error(`Validation error for MCP ${mcpName}:`, error);
+    return {
+      success: false,
+      message: 'Validation failed',
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
+ * 验证GitHub认证
+ */
+async function validateGitHubAuth(authData: Record<string, string>): Promise<{ success: boolean; message: string; details?: string }> {
+  try {
+    const token = authData.GITHUB_TOKEN || authData.github_token;
+    if (!token) {
+      return {
+        success: false,
+        message: 'GitHub token is required',
+        details: 'Please provide GITHUB_TOKEN'
+      };
+    }
+
+    // 验证GitHub Token
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    if (response.ok) {
+      const userData = await response.json() as { login?: string };
+      return {
+        success: true,
+        message: 'GitHub authentication verified successfully',
+        details: `Authenticated as ${userData.login || 'unknown'}`
+      };
+    } else {
+      const errorData = await response.json() as { message?: string };
+      return {
+        success: false,
+        message: 'GitHub authentication failed',
+        details: errorData.message || `HTTP Error: ${response.status}`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: 'GitHub authentication validation error',
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
+ * 验证CoinGecko认证
+ */
+async function validateCoinGeckoAuth(authData: Record<string, string>): Promise<{ success: boolean; message: string; details?: string }> {
+  try {
+    const apiKey = authData.COINGECKO_API_KEY || authData.coingecko_api_key;
+    if (!apiKey) {
+      return {
+        success: false,
+        message: 'CoinGecko API key is required',
+        details: 'Please provide COINGECKO_API_KEY'
+      };
+    }
+
+    // 验证CoinGecko API Key
+    const response = await fetch(`https://api.coingecko.com/api/v3/ping?x_cg_demo_api_key=${apiKey}`, {
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      return {
+        success: true,
+        message: 'CoinGecko API key verified successfully',
+        details: 'API key is valid and active'
+      };
+    } else {
+      return {
+        success: false,
+        message: 'CoinGecko API key validation failed',
+        details: `HTTP Error: ${response.status}`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: 'CoinGecko authentication validation error',
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
+ * 验证Google Search认证
+ */
+async function validateGoogleSearchAuth(authData: Record<string, string>): Promise<{ success: boolean; message: string; details?: string }> {
+  try {
+    const apiKey = authData.GOOGLE_API_KEY;
+    const searchEngineId = authData.CUSTOM_SEARCH_ENGINE_ID;
+    
+    if (!apiKey || !searchEngineId) {
+      return {
+        success: false,
+        message: 'Google API key and Custom Search Engine ID are required',
+        details: 'Please provide both GOOGLE_API_KEY and CUSTOM_SEARCH_ENGINE_ID'
+      };
+    }
+
+    // 测试Google Custom Search API
+    const testQuery = 'test';
+    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${testQuery}`;
+    
+    const response = await fetch(url);
+    
+    if (response.ok) {
+      return {
+        success: true,
+        message: 'Google Search authentication verified successfully',
+        details: 'API key and search engine ID are valid'
+      };
+    } else {
+      const errorData = await response.json() as { error?: { message?: string } };
+      return {
+        success: false,
+        message: 'Google Search authentication failed',
+        details: errorData.error?.message || `HTTP Error: ${response.status}`
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message: 'Google Search authentication validation error',
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
+ * 验证Twitter认证
+ */
+async function validateTwitterAuth(authData: Record<string, string>): Promise<{ success: boolean; message: string; details?: string }> {
+  try {
+    const apiKey = authData.TWITTER_API_KEY;
+    const apiSecret = authData.TWITTER_API_SECRET;
+    const accessToken = authData.TWITTER_ACCESS_TOKEN;
+    const accessSecret = authData.TWITTER_ACCESS_SECRET;
+    
+    // 检查必需字段
+    if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
+      const missingFields = [];
+      if (!apiKey) missingFields.push('TWITTER_API_KEY');
+      if (!apiSecret) missingFields.push('TWITTER_API_SECRET');
+      if (!accessToken) missingFields.push('TWITTER_ACCESS_TOKEN');
+      if (!accessSecret) missingFields.push('TWITTER_ACCESS_SECRET');
+      
+      return {
+        success: false,
+        message: 'Missing required Twitter authentication fields',
+        details: `Please provide: ${missingFields.join(', ')}`
+      };
+    }
+    
+    // Twitter API需要OAuth，这里只做基本验证
+    // 实际的API调用验证会在MCP工具使用时进行
+    return {
+      success: true,
+      message: 'Twitter authentication data validated successfully',
+      details: 'All required Twitter authentication fields are provided'
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: 'Twitter authentication validation error',
+      details: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
 
 /**
  * Get User's MCP Authentication Status
