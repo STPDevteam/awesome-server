@@ -602,16 +602,29 @@ Please generate 3 questions, one per line, without numbering or other formatting
     description: string;
   }> {
     try {
+      logger.info(`Generating Agent info for task ${taskId} by user ${userId}`);
+      
       // Get task information
       const task = await getTaskService().getTaskById(taskId);
-      if (!task || task.userId !== userId) {
-        throw new Error('Task not found or access denied');
+      
+      // 详细的错误检查和日志
+      if (!task) {
+        logger.warn(`Task not found: ${taskId} (requested by user: ${userId})`);
+        throw new Error(`Task with ID ${taskId} not found`);
+      }
+      
+      if (task.userId !== userId) {
+        logger.warn(`Access denied: User ${userId} attempted to access task ${taskId} owned by user ${task.userId}`);
+        throw new Error(`Access denied: This task belongs to another user`);
       }
 
       // Check if task is completed
       if (task.status !== 'completed') {
-        throw new Error('Task is not completed, cannot create Agent');
+        logger.warn(`Task ${taskId} is not completed (status: ${task.status}), cannot create Agent`);
+        throw new Error(`Task is not completed (status: ${task.status}), cannot create Agent`);
       }
+
+      logger.info(`Task ${taskId} validation passed, generating Agent info...`);
 
       // Generate Agent name
       const name = await this.generateAgentName({
@@ -628,12 +641,14 @@ Please generate 3 questions, one per line, without numbering or other formatting
         mcpWorkflow: task.mcpWorkflow
       });
 
+      logger.info(`Successfully generated Agent info for task ${taskId}: name="${name}"`);
+
       return {
         name,
         description
       };
     } catch (error) {
-      logger.error(`Failed to generate Agent info [TaskID: ${taskId}]:`, error);
+      logger.error(`Failed to generate Agent info [TaskID: ${taskId}, UserID: ${userId}]:`, error);
       throw error;
     }
   }

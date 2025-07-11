@@ -248,18 +248,26 @@ router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Res
     logger.error(`Failed to generate Agent info [TaskID: ${req.params.taskId}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('not found') || error.message.includes('access denied')) {
+      // 更详细的错误处理
+      if (error.message.includes('not found')) {
         return res.status(404).json({
           success: false,
-          error: 'NOT_FOUND',
-          message: 'Task not found or access denied'
+          error: 'TASK_NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('Access denied') || error.message.includes('belongs to another user')) {
+        return res.status(403).json({
+          success: false,
+          error: 'ACCESS_DENIED',
+          message: error.message
         });
       }
       if (error.message.includes('not completed')) {
         return res.status(400).json({
           success: false,
           error: 'TASK_NOT_COMPLETED',
-          message: 'Task is not completed'
+          message: error.message
         });
       }
     }
