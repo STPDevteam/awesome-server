@@ -6,6 +6,32 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 
 **基础URL**: `http://localhost:3001`
 
+## 架构更新 (v2.1)
+
+从v2.1开始，Agent对话系统已完全解耦，具有以下重要变更：
+
+### Agent对话系统解耦
+
+- **独立服务**: 新增 `AgentConversationService` 专门处理Agent多轮对话
+- **专用路由**: 新增 `/api/agent-conversation/` 路由处理Agent对话请求
+- **完全分离**: Agent对话逻辑与传统任务执行对话完全分离
+- **向后兼容**: 传统对话和任务执行功能保持不变
+
+### 新的Agent对话流程
+
+1. **Agent试用**: 使用 `POST /api/agent/:id/try` 开始Agent对话
+2. **后续消息**: 使用 `POST /api/agent-conversation/:conversationId/message` 发送消息
+3. **流式处理**: 使用 `POST /api/agent-conversation/:conversationId/message/stream` 获得实时响应
+4. **对话管理**: 使用 `GET /api/agent-conversation/:conversationId` 获取对话详情
+5. **记忆管理**: 使用 `DELETE /api/agent-conversation/:conversationId/memory` 清除记忆
+
+### 重要说明
+
+- **路由变更**: Agent对话不再使用 `/api/conversation/` 路由
+- **功能增强**: Agent对话支持真正的工作流执行和智能意图识别
+- **性能优化**: 专门优化的Agent对话处理逻辑
+- **错误处理**: 更好的Agent特定错误处理和用户引导
+
 ## 认证
 
 本API使用JWT (JSON Web Token) 进行认证。大部分端点需要在请求头中包含有效的访问令牌：
@@ -2789,6 +2815,17 @@ data: [DONE]
 
 Agent系统允许用户将完成的任务工作流保存为可重用的Agent，支持私有和公开两种模式。Agent包含自动生成的名称、描述和相关问题，用户可以尝试使用Agent来执行类似的任务。
 
+### Agent对话系统架构
+
+从v2.1开始，Agent对话系统已完全解耦，拥有独立的服务和路由：
+
+- **独立服务**: `AgentConversationService` 专门处理Agent多轮对话
+- **专用路由**: `/api/agent-conversation/` 路由专门处理Agent对话请求
+- **完全解耦**: 与传统任务执行对话完全分离，避免代码耦合
+- **智能识别**: 自动识别用户意图（聊天vs任务执行）
+- **工作流集成**: 任务时自动使用Agent的MCP工作流执行真实任务
+- **上下文记忆**: 维持完整的对话上下文和Agent专属记忆
+
 ### Agent数据模型
 
 Agent实体包含以下字段：
@@ -3298,7 +3335,7 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
 
 **端点**: `POST /api/agent/:id/try`
 
-**描述**: 开始与Agent的多轮对话，支持聊天和任务执行，Agent会智能识别用户意图并相应处理
+**描述**: 开始与Agent的多轮对话，支持聊天和任务执行，Agent会智能识别用户意图并相应处理。此接口会创建Agent专属对话并返回对话ID，后续消息通过Agent对话API进行处理。
 
 **认证**: 需要访问令牌
 
@@ -3319,14 +3356,14 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
   "data": {
     "conversation": {
       "id": "conv_1234567890",
-      "title": "Try BitcoinPriceAnalyzer",
+      "title": "[AGENT:agent_123456] Try BitcoinPriceAnalyzer",
       "agentInfo": {
         "id": "agent_123456",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis..."
       }
     },
-    "message": "Agent trial conversation started successfully"
+    "message": "Agent trial conversation started successfully. Use /api/agent-conversation/:conversationId/message for subsequent messages."
   }
 }
 ```
@@ -3346,7 +3383,7 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
       }
     }
   ],
-  "message": "Please verify auth for all relevant MCP servers first."
+  "message": "Please verify authentication for all relevant MCP servers first."
 }
 ```
 
@@ -3367,9 +3404,9 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
      -d '{"content": "Hello, what can you help me with?"}'
    ```
 
-2. **继续对话**（使用返回的会话ID）:
+2. **继续对话**（使用返回的会话ID和专用Agent对话接口）:
    ```bash
-   curl -X POST "http://localhost:3000/api/conversation/conv_1234567890/message" \
+   curl -X POST "http://localhost:3000/api/agent-conversation/conv_1234567890/message" \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"content": "Can you get me the current Bitcoin price?"}'
@@ -3377,7 +3414,7 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
 
 3. **流式对话**（推荐使用）:
    ```bash
-   curl -X POST "http://localhost:3000/api/conversation/conv_1234567890/message/stream" \
+   curl -X POST "http://localhost:3000/api/agent-conversation/conv_1234567890/message/stream" \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"content": "Can you get me the current Bitcoin price?"}'
@@ -3424,31 +3461,84 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 8. Agent流式对话支持
+## Agent对话 API
 
-**重要说明**: Agent试用对话完全支持流式处理。当用户通过 `POST /api/agent/:id/try` 开始Agent对话后，后续的所有消息都可以通过标准的流式消息接口 `POST /api/conversation/:id/message/stream` 进行处理。
+Agent对话系统提供了专门的API端点来处理Agent多轮对话，完全独立于传统的任务执行对话。
 
-#### Agent流式对话流程
+### 1. 发送Agent对话消息
 
-1. **开始Agent试用** (创建Agent对话):
-   ```bash
-   curl -X POST "http://localhost:3000/api/agent/agent_123/try" \
-     -H "Authorization: Bearer YOUR_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "Hello"}'
-   ```
+**端点**: `POST /api/agent-conversation/:conversationId/message`
 
-2. **使用流式消息接口继续对话**:
-   ```bash
-   curl -X POST "http://localhost:3000/api/conversation/conv_1234567890/message/stream" \
-     -H "Authorization: Bearer YOUR_TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "Get me the current Bitcoin price"}'
-   ```
+**描述**: 向Agent对话发送消息，支持聊天和任务执行，Agent会智能识别用户意图并相应处理
 
-#### Agent流式响应事件
+**认证**: 需要访问令牌
 
-当用户向Agent对话发送消息时，系统会自动识别这是Agent试用对话，并触发特殊的Agent流式处理：
+**路径参数**:
+- `conversationId`: Agent对话ID（通过 `/api/agent/:id/try` 获得）
+
+**请求体**:
+```json
+{
+  "content": "Can you get me the current Bitcoin price and analyze the market trends?"
+}
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": {
+      "id": "msg_123456",
+      "conversationId": "conv_1234567890",
+      "content": "Can you get me the current Bitcoin price and analyze the market trends?",
+      "type": "user",
+      "intent": "task",
+      "createdAt": "2023-06-20T08:00:00.000Z"
+    },
+    "assistantMessage": {
+      "id": "msg_123457",
+      "conversationId": "conv_1234567890",
+      "content": "I'll help you get the current Bitcoin price and analyze market trends. Let me fetch that information for you...",
+      "type": "assistant",
+      "intent": "task",
+      "taskId": "task_789",
+      "createdAt": "2023-06-20T08:00:05.000Z"
+    },
+    "intent": "task",
+    "taskId": "task_789"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent对话
+- `404 Not Found`: Agent对话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 2. 发送Agent对话消息（流式版本）
+
+**端点**: `POST /api/agent-conversation/:conversationId/message/stream`
+
+**描述**: 向Agent对话发送消息的流式版本，实时返回Agent处理过程和响应
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: Agent对话ID
+
+**请求体**:
+```json
+{
+  "content": "Can you get me the current Bitcoin price?"
+}
+```
+
+**流式响应事件**:
 
 **Agent检测和加载**:
 ```
@@ -3466,7 +3556,7 @@ data: {"event":"agent_intent_analysis","data":{"status":"analyzing","message":"A
 data: {"event":"agent_intent_analysis","data":{"status":"completed","intent":"task","confidence":0.92,"reasoning":"User is requesting specific task execution that matches Agent's capabilities"}}
 ```
 
-**Agent任务执行** (⭐ 真正的工作流执行):
+**Agent任务执行**（真正的工作流执行）:
 ```
 data: {"event":"task_creation_start","data":{"message":"Creating task based on Agent workflow..."}}
 
@@ -3501,91 +3591,210 @@ data: {"event":"agent_processing_complete","data":{"messageId":"msg_456","respon
 data: [DONE]
 ```
 
-#### Agent流式事件类型
+**Agent流式事件类型**:
+- `agent_detection`: 检测到Agent试用对话
+- `agent_loading`: Agent信息加载中
+- `agent_loaded`: Agent信息加载完成
+- `agent_intent_analysis`: Agent意图分析（考虑Agent能力）
+- `task_creation_start`: 任务创建开始
+- `task_created`: 任务创建完成
+- `workflow_applying`: 工作流应用中
+- `workflow_applied`: 工作流应用完成
+- `task_execution_start`: 任务执行开始
+- `task_execution_progress`: 任务执行进度
+- `task_execution_complete`: 任务执行完成
+- `task_response_complete`: 任务响应完成
+- `agent_chat_response`: Agent聊天响应流式输出
+- `agent_processing_complete`: Agent处理完成
 
-- **agent_detection**: 检测到Agent试用对话
-- **agent_loading**: Agent信息加载中
-- **agent_loaded**: Agent信息加载完成
-- **agent_intent_analysis**: Agent意图分析（考虑Agent能力）
-- **task_creation_start**: 任务创建开始
-- **task_created**: 任务创建完成
-- **workflow_applying**: 工作流应用中
-- **workflow_applied**: 工作流应用完成
-- **task_execution_start**: 任务执行开始 (⭐ 新增)
-- **task_execution_progress**: 任务执行进度 (⭐ 新增)
-- **task_execution_complete**: 任务执行完成 (⭐ 新增)
-- **task_response_complete**: 任务响应完成
-- **agent_chat_response**: Agent聊天响应流式输出
-- **agent_processing_complete**: Agent处理完成
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
 
-#### Agent流式对话特性
+---
 
-**智能意图识别**:
-- 基于Agent的能力和用户输入进行智能意图分析
-- 自动判断是执行任务还是进行对话
-- 提供置信度评分和决策理由
+### 3. 获取Agent对话详情
 
-**任务执行集成** (⭐ 真正的工作流执行):
-- 自动使用Agent的MCP工作流创建和执行任务
-- **真正执行任务**: 调用TaskExecutorService执行Agent的完整工作流
-- 实时反馈任务创建、工作流应用、执行进度和结果
-- 无缝集成到对话流程中，提供实际的执行结果
+**端点**: `GET /api/agent-conversation/:conversationId`
 
-**上下文记忆**:
-- 维护Agent对话的完整上下文
-- 支持多轮对话的语义理解
-- 基于历史对话优化响应
+**描述**: 获取Agent对话的详细信息和消息历史
 
-**错误处理**:
-- 优雅处理MCP认证失败
-- 提供详细的错误信息和解决建议
-- 自动降级到聊天模式
+**认证**: 需要访问令牌
 
-#### Agent流式对话使用建议
+**路径参数**:
+- `conversationId`: Agent对话ID
 
-1. **优先使用流式接口**: 提供更好的用户体验和实时反馈
-2. **监听特定事件**: 根据 `agent_` 前缀的事件类型优化UI展示
-3. **处理认证需求**: 当Agent任务需要MCP认证时，引导用户完成认证
-4. **展示Agent信息**: 利用 `agent_loaded` 事件展示Agent的能力和描述
-5. **任务执行进度**: 使用 `task_execution_progress` 事件实时展示真正的任务执行进度
-
-**前端集成示例**:
-```javascript
-// 监听Agent特定事件
-eventSource.onmessage = function(event) {
-  const data = JSON.parse(event.data);
-  
-  switch(data.event) {
-    case 'agent_detection':
-      showAgentInfo(data.data);
-      break;
-    case 'agent_intent_analysis':
-      showIntentAnalysis(data.data);
-      break;
-    case 'task_creation_start':
-      showTaskCreationStart(data.data);
-      break;
-    case 'workflow_applied':
-      showWorkflowApplied(data.data);
-      break;
-    case 'task_execution_start':
-      showTaskExecutionStart(data.data);
-      break;
-    case 'task_execution_progress':
-      updateTaskProgress(data.data); // 实时进度更新
-      break;
-    case 'task_execution_complete':
-      showTaskExecutionComplete(data.data);
-      break;
-    case 'agent_chat_response':
-      appendChatResponse(data.data.content);
-      break;
-    case 'agent_processing_complete':
-      markProcessingComplete(data.data);
-      break;
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_1234567890",
+      "userId": "user_123",
+      "title": "[AGENT:agent_123456] Try BitcoinPriceAnalyzer",
+      "lastMessageContent": "Bitcoin price: $45,230.50 USD (+2.3% in 24h)...",
+      "lastMessageAt": "2023-06-20T08:05:30.000Z",
+      "taskCount": 1,
+      "messageCount": 6,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:05:30.000Z"
+    },
+    "messages": [
+      {
+        "id": "msg_1",
+        "conversationId": "conv_1234567890",
+        "content": "Can you get me the current Bitcoin price?",
+        "type": "user",
+        "intent": "task",
+        "taskId": "task_789",
+        "createdAt": "2023-06-20T08:00:00.000Z"
+      },
+      {
+        "id": "msg_2",
+        "conversationId": "conv_1234567890",
+        "content": "I'll help you get the current Bitcoin price. Let me fetch that information for you...",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_789",
+        "createdAt": "2023-06-20T08:00:05.000Z"
+      },
+      {
+        "id": "msg_3",
+        "conversationId": "conv_1234567890",
+        "content": "Bitcoin price: $45,230.50 USD (+2.3% in 24h). Market cap: $890.2B. Trading volume: $28.5B. Technical analysis shows bullish momentum with RSI at 65.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_789",
+        "createdAt": "2023-06-20T08:05:30.000Z"
+      }
+    ],
+    "agentInfo": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer"
+    }
   }
-};
+}
 ```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent对话
+- `404 Not Found`: Agent对话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 4. 清除Agent对话记忆
+
+**端点**: `DELETE /api/agent-conversation/:conversationId/memory`
+
+**描述**: 清除Agent对话的上下文记忆，保留消息历史但重置对话上下文
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: Agent对话ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "conv_1234567890",
+    "message": "Agent conversation memory cleared successfully",
+    "clearedAt": "2023-06-20T09:00:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent对话
+- `404 Not Found`: Agent对话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### Agent对话系统特性
+
+#### 1. 完全解耦
+- **独立服务**: 使用专门的 `AgentConversationService` 处理Agent对话
+- **专用路由**: `/api/agent-conversation/` 路由与传统对话路由完全分离
+- **避免耦合**: 不影响传统任务执行对话的逻辑
+
+#### 2. 智能意图识别
+- **上下文感知**: 基于Agent能力和对话历史进行意图分析
+- **自动判断**: 智能区分聊天请求和任务执行请求
+- **置信度评分**: 提供意图识别的置信度和决策理由
+
+#### 3. 真实任务执行
+- **工作流集成**: 任务时自动使用Agent的MCP工作流
+- **真实执行**: 调用TaskExecutorService执行完整的任务流程
+- **实时反馈**: 提供任务创建、执行和完成的实时进度
+
+#### 4. 上下文记忆
+- **对话记忆**: 维护Agent对话的完整上下文
+- **多轮理解**: 支持基于历史对话的语义理解
+- **记忆管理**: 支持清除记忆但保留消息历史
+
+#### 5. 流式处理
+- **实时响应**: 支持流式消息处理和实时反馈
+- **事件驱动**: 提供详细的事件类型用于前端状态管理
+- **错误处理**: 优雅处理各种异常情况
+
+---
+
+### 8. Agent对话使用流程
+
+从v2.1开始，Agent对话系统已完全解耦，使用专门的Agent对话API。以下是完整的使用流程：
+
+#### 完整Agent对话流程
+
+1. **开始Agent试用** (创建Agent对话):
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Hello"}'
+   ```
+
+2. **使用专用Agent对话接口继续对话**:
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent-conversation/conv_1234567890/message/stream" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Get me the current Bitcoin price"}'
+   ```
+
+3. **获取Agent对话详情**:
+   ```bash
+   curl -X GET "http://localhost:3000/api/agent-conversation/conv_1234567890" \
+     -H "Authorization: Bearer YOUR_TOKEN"
+   ```
+
+4. **清除Agent对话记忆**（可选）:
+   ```bash
+   curl -X DELETE "http://localhost:3000/api/agent-conversation/conv_1234567890/memory" \
+     -H "Authorization: Bearer YOUR_TOKEN"
+   ```
+
+#### 前端集成建议
+
+1. **使用专用路由**: 始终使用 `/api/agent-conversation/` 路由处理Agent对话
+2. **监听Agent事件**: 监听 `agent_` 前缀的流式事件进行UI优化
+3. **处理认证**: 在Agent试用前检查并完成必要的MCP认证
+4. **展示Agent信息**: 利用Agent信息优化用户体验
+5. **记忆管理**: 提供清除记忆功能让用户重置对话上下文
+
+#### 架构优势
+
+- **完全解耦**: Agent对话与传统对话完全分离
+- **专用优化**: 针对Agent特性进行的专门优化
+- **真实执行**: 支持真正的任务工作流执行
+- **智能识别**: 基于Agent能力的智能意图识别
+- **上下文记忆**: 专门的Agent对话记忆管理
 
 ---
 
