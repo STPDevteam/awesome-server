@@ -23,7 +23,16 @@ router.use((req, res, next) => {
   if (!agentService) {
     // Get TaskExecutorService instance from app
     const taskExecutorService = req.app.get('taskExecutorService') as TaskExecutorService;
+    if (!taskExecutorService) {
+      logger.error('TaskExecutorService not found in app context');
+      return res.status(500).json({
+        success: false,
+        error: 'SERVICE_UNAVAILABLE',
+        message: 'Task executor service not available'
+      });
+    }
     agentService = getAgentService(taskExecutorService);
+    logger.info('AgentService initialized successfully');
   }
   next();
 });
@@ -128,23 +137,16 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
  * 
  * Query Parameters:
  * - queryType: 'public' | 'my-private' | 'my-saved' | 'all'
-<<<<<<< HEAD
- *   - public: Public Agents
- *   - my-private: My Private Agents
- *   - my-saved: My Saved Agents
- *   - all: All Visible Agents (default)
-=======
- *   - public: 公开的Agent（无需登录）
- *   - my-private: 我的私有Agent（需要登录）
- *   - my-saved: 我收藏的Agent（需要登录）
- *   - all: 所有可见的Agent（需要登录）
->>>>>>> origin/dev
+ *   - public: Public Agents (no login required)
+ *   - my-private: My Private Agents (login required)
+ *   - my-saved: My Saved Agents (login required)
+ *   - all: All Visible Agents (login required)
  */
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
     let queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
     
-    // 兼容处理：如果status参数是查询类型，则映射为queryType
+    // Compatibility handling: if status parameter is a query type, map it to queryType
     const statusParam = req.query.status as string;
     if (statusParam && ['public', 'my-private', 'my-saved'].includes(statusParam)) {
       queryType = statusParam as 'public' | 'my-private' | 'my-saved';
@@ -152,7 +154,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 
     const userId = req.user?.id;
     
-    // 检查需要登录的查询类型
+    // Check query types that require login
     if (['my-private', 'my-saved', 'all'].includes(queryType) && !userId) {
       return res.status(401).json({
         success: false,
@@ -175,7 +177,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 
     const result = await agentService.getAgents(query);
 
-    // 从当前查询结果中统计分类信息
+    // Count category information from current query results
     const categoryMap = new Map<string, number>();
     result.agents.forEach(agent => {
       if (agent.categories && Array.isArray(agent.categories)) {
@@ -185,7 +187,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       }
     });
 
-    // 转换为数组并按数量降序排序
+    // Convert to array and sort by count in descending order
     const categories = Array.from(categoryMap.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -203,6 +205,182 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to get Agent list'
+    });
+  }
+});
+
+/**
+ * Generate Agent name and description (for frontend display)
+ * POST /api/agent/generate-info/:taskId
+ */
+router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    
+    // Add debug logging
+    logger.info(`Generate Agent info request - TaskID: ${taskId}, UserID: ${userId}`);
+    
+    if (!taskId) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_TASK_ID',
+        message: 'Task ID is required'
+      });
+    }
+    
+    // Generate Agent name and description
+    const generatedInfo = await agentService.generateAgentInfo(taskId, userId);
+
+    res.json({
+      success: true,
+      data: generatedInfo
+    });
+  } catch (error) {
+    logger.error(`Failed to generate Agent info [TaskID: ${req.params.taskId}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('not found') || error.message.includes('access denied')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: 'Task not found or access denied'
+        });
+      }
+      if (error.message.includes('not completed')) {
+        return res.status(400).json({
+          success: false,
+          error: 'TASK_NOT_COMPLETED',
+          message: 'Task is not completed'
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to generate Agent info'
+    });
+  }
+});
+
+/**
+ * Preview Agent information created from Task (User preview before saving)
+ * GET /api/agent/preview/:taskId
+ */
+router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    
+    // Get preview information
+    const preview = await agentService.previewAgentFromTask(taskId, userId);
+
+    res.json({
+      success: true,
+      data: preview
+    });
+  } catch (error) {
+    logger.error(`Failed to preview Agent info [TaskID: ${req.params.taskId}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('not found') || error.message.includes('access denied')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('not completed')) {
+        return res.status(400).json({
+          success: false,
+          error: 'TASK_NOT_COMPLETED',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to preview Agent info'
+    });
+  }
+});
+
+/**
+ * Create Agent from completed task
+ * POST /api/agent/create/:taskId
+ */
+router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    const { status = 'private', name, description } = req.body;
+
+    // Validate status value
+    if (!['private', 'public'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_STATUS',
+        message: 'Status must be either private or public'
+      });
+    }
+
+    const agent = await agentService.createAgentFromTask(taskId, userId, status, name, description);
+
+    res.json({
+      success: true,
+      data: agent
+    });
+  } catch (error) {
+    logger.error(`Failed to create Agent from task [TaskID: ${req.params.taskId}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('not found') || error.message.includes('access denied')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('not completed')) {
+        return res.status(400).json({
+          success: false,
+          error: 'TASK_NOT_COMPLETED',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to create Agent from Task'
     });
   }
 });
@@ -610,172 +788,6 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to make Agent private'
-    });
-  }
-});
-
-/**
- * Create Agent from Task (Used after Task Completion)
- * POST /api/agent/create/:taskId
- */
-router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const taskId = req.params.taskId;
-    const { status = 'private', name, description } = req.body;
-
-    // Validate status value
-    if (!['private', 'public'].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_STATUS',
-        message: 'Status must be either private or public'
-      });
-    }
-
-    // Create Agent from Task, supports custom name and description
-    const agent = await agentService.createAgentFromTask(taskId, userId, status, name, description);
-
-    res.json({
-      success: true,
-      data: agent
-    });
-  } catch (error) {
-    logger.error(`Failed to create Agent from Task [TaskID: ${req.params.taskId}]:`, error);
-    
-    if (error instanceof Error) {
-      if (error.message.includes('not found') || error.message.includes('access denied')) {
-        return res.status(404).json({
-          success: false,
-          error: 'NOT_FOUND',
-          message: error.message
-        });
-      }
-      if (error.message.includes('not completed')) {
-        return res.status(400).json({
-          success: false,
-          error: 'TASK_NOT_COMPLETED',
-          message: error.message
-        });
-      }
-    }
-
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to create Agent from Task'
-    });
-  }
-});
-
-/**
- * Generate Agent name and description (for frontend display)
- * POST /api/agent/generate-info/:taskId
- */
-router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const taskId = req.params.taskId;
-    
-    // Generate Agent name and description
-    const generatedInfo = await agentService.generateAgentInfo(taskId, userId);
-
-    res.json({
-      success: true,
-      data: generatedInfo
-    });
-  } catch (error) {
-    logger.error(`Failed to generate Agent info [TaskID: ${req.params.taskId}]:`, error);
-    
-    if (error instanceof Error) {
-      if (error.message.includes('not found') || error.message.includes('access denied')) {
-        return res.status(404).json({
-          success: false,
-          error: 'NOT_FOUND',
-          message: 'Task not found or access denied'
-        });
-      }
-      if (error.message.includes('not completed')) {
-        return res.status(400).json({
-          success: false,
-          error: 'TASK_NOT_COMPLETED',
-          message: 'Task is not completed'
-        });
-      }
-    }
-
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to generate Agent info'
-    });
-  }
-});
-
-/**
- * Preview Agent information created from Task (User preview before saving)
- * GET /api/agent/preview/:taskId
- */
-router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const taskId = req.params.taskId;
-    
-    // Get preview information
-    const preview = await agentService.previewAgentFromTask(taskId, userId);
-
-    res.json({
-      success: true,
-      data: preview
-    });
-  } catch (error) {
-    logger.error(`Failed to preview Agent info [TaskID: ${req.params.taskId}]:`, error);
-    
-    if (error instanceof Error) {
-      if (error.message.includes('not found') || error.message.includes('access denied')) {
-        return res.status(404).json({
-          success: false,
-          error: 'NOT_FOUND',
-          message: error.message
-        });
-      }
-      if (error.message.includes('not completed')) {
-        return res.status(400).json({
-          success: false,
-          error: 'TASK_NOT_COMPLETED',
-          message: error.message
-        });
-      }
-    }
-
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to preview Agent info'
     });
   }
 });
