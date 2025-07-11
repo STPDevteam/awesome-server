@@ -25,12 +25,23 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 4. **对话管理**: 使用 `GET /api/agent-conversation/:conversationId` 获取对话详情
 5. **记忆管理**: 使用 `DELETE /api/agent-conversation/:conversationId/memory` 清除记忆
 
+### Agent MCP认证验证系统 (v2.1.1)
+
+从v2.1.1开始，Agent系统引入了完整的MCP认证验证流程：
+
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **前端友好**: 返回结构化的认证信息供前端引导用户
+
 ### 重要说明
 
 - **路由变更**: Agent对话不再使用 `/api/conversation/` 路由
 - **功能增强**: Agent对话支持真正的工作流执行和智能意图识别
 - **性能优化**: 专门优化的Agent对话处理逻辑
 - **错误处理**: 更好的Agent特定错误处理和用户引导
+- **认证保障**: 确保Agent任务执行时所需的MCP服务都已正确认证
 
 ## 认证
 
@@ -2815,6 +2826,26 @@ data: [DONE]
 
 Agent系统允许用户将完成的任务工作流保存为可重用的Agent，支持私有和公开两种模式。Agent包含自动生成的名称、描述和相关问题，用户可以尝试使用Agent来执行类似的任务。
 
+### Agent MCP认证验证系统
+
+从v2.1.1开始，Agent系统引入了完整的MCP认证验证流程，确保Agent在试用和使用过程中能够正确连接所需的MCP服务：
+
+#### 认证验证特性
+
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理，确保数据安全
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **前端友好**: 返回结构化的认证信息供前端引导用户完成认证
+
+#### 认证验证流程
+
+1. **Agent试用检查**: 用户尝试使用Agent时，系统自动检查Agent所需的MCP认证状态
+2. **认证状态返回**: 如果存在未认证的MCP，返回详细的认证信息给前端
+3. **用户认证**: 用户根据返回的信息完成MCP认证
+4. **重新尝试**: 认证完成后，用户可以重新尝试使用Agent
+5. **消息处理验证**: 在Agent对话过程中，每次消息处理前都会验证MCP认证状态
+
 ### Agent对话系统架构
 
 从v2.1开始，Agent对话系统已完全解耦，拥有独立的服务和路由：
@@ -4233,6 +4264,25 @@ curl -X POST http://localhost:3001/api/agent/create/task_123456 \
 #### 5. 其他用户尝试使用Agent
 
 ```bash
+# 首次尝试使用Agent（可能需要认证）
+curl -X POST http://localhost:3001/api/agent/agent_123456/try \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
+  -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
+
+# 如果返回需要认证的响应，先完成MCP认证
+curl -X POST http://localhost:3001/api/mcp/auth/verify \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
+  -d '{
+    "mcpName": "coingecko-server",
+    "authData": {
+      "COINGECKO_API_KEY": "your_api_key_here"
+    },
+    "saveForLater": true
+  }'
+
+# 认证完成后重新尝试使用Agent
 curl -X POST http://localhost:3001/api/agent/agent_123456/try \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
@@ -4292,10 +4342,14 @@ curl -X GET "http://localhost:3001/api/agent?queryType=public&search=bitcoin&cat
 - **公开Agent**: 在Agent市场中对所有用户可见
 - **访问控制**: 完整的权限验证系统
 
-#### 3. 认证验证
-- **MCP认证检查**: 尝试使用Agent时自动检查所需MCP的认证状态
-- **认证引导**: 为未认证的MCP提供详细的认证指导
-- **认证参数**: 清晰展示每个MCP所需的认证参数
+#### 3. MCP认证验证系统
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **认证引导**: 为未认证的MCP提供详细的认证指导和参数说明
+- **前端友好**: 返回结构化的认证信息供前端引导用户完成认证
+- **错误处理**: 优雅处理认证失败和MCP连接异常情况
 
 #### 4. 用户信息同步
 - **用户名同步**: 自动同步创建者的用户名到Agent记录
@@ -4360,6 +4414,9 @@ npm run migrate up
 
 #### 2. Agent使用
 - **认证准备**: 在使用Agent前准备好所需的MCP认证信息
+- **认证流程**: 遵循Agent试用 → MCP认证 → 重新试用的完整流程
+- **多用户认证**: 理解每个用户需要独立完成MCP认证
+- **认证状态检查**: 定期检查和更新MCP认证状态
 - **内容适配**: 根据Agent的功能调整输入内容
 - **结果验证**: 验证Agent执行结果是否符合预期
 
