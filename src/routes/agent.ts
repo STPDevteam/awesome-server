@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getAgentService } from '../services/agentService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
+import { MCPAuthService } from '../services/mcpAuthService.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { 
@@ -15,8 +16,9 @@ import {
 
 const router = Router();
 
-// Initialize agentService with TaskExecutorService dependency
+// Initialize services
 let agentService: ReturnType<typeof getAgentService>;
+const mcpAuthService = new MCPAuthService();
 
 // Middleware: Ensure agentService is initialized
 router.use((req, res, next) => {
@@ -1193,6 +1195,130 @@ router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Respon
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to check Agent favorite status'
+    });
+  }
+});
+
+/**
+ * Verify MCP Authentication for Agent Usage
+ * POST /api/agent/mcp/verify-auth
+ */
+router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { mcpName, authData, saveAuth = true } = req.body;
+
+    // Validate required fields
+    if (!mcpName || !authData) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required fields: mcpName, authData'
+      });
+    }
+
+    logger.info(`🔐 Agent MCP authentication request - User: ${userId}, MCP: ${mcpName}`);
+
+    // Verify authentication
+    const verificationResult = await mcpAuthService.verifyAuth(
+      userId,
+      mcpName,
+      authData
+    );
+
+    if (verificationResult.success) {
+      logger.info(`✅ Agent MCP authentication successful - User: ${userId}, MCP: ${mcpName}`);
+      
+      res.json({
+        success: true,
+        message: verificationResult.message,
+        data: {
+          verified: true,
+          mcpName,
+          userId,
+          details: verificationResult.details
+        }
+      });
+    } else {
+      logger.warn(`❌ Agent MCP authentication failed - User: ${userId}, MCP: ${mcpName}: ${verificationResult.message}`);
+      
+      res.json({
+        success: false,
+        error: 'VERIFICATION_FAILED',
+        message: verificationResult.message
+      });
+    }
+  } catch (error) {
+    logger.error(`Agent MCP authentication error:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to verify MCP authentication'
+    });
+  }
+});
+
+/**
+ * Get User's MCP Authentication Status
+ * GET /api/agent/mcp/auth-status
+ */
+router.get('/mcp/auth-status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { mcpNames } = req.query;
+    
+    if (!mcpNames) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required query parameter: mcpNames'
+      });
+    }
+
+    // Parse MCP names (comma-separated)
+    const mcpNameList = (mcpNames as string).split(',').map(name => name.trim());
+    
+    // Get authentication status for each MCP
+    const authStatuses = await Promise.all(
+      mcpNameList.map(async (mcpName) => {
+        const authData = await mcpAuthService.getUserMCPAuth(userId, mcpName);
+        return {
+          mcpName,
+          isAuthenticated: authData && authData.isVerified,
+          hasAuthData: !!authData?.authData
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        userId,
+        authStatuses
+      }
+    });
+  } catch (error) {
+    logger.error(`Get Agent MCP auth status error:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get MCP authentication status'
     });
   }
 });

@@ -30,6 +30,8 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 从v2.1.1开始，Agent系统引入了完整的MCP认证验证流程：
 
 - **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **独立认证API**: 提供专门的Agent MCP认证API (`/api/agent/mcp/verify-auth`)
+- **状态查询API**: 支持批量查询MCP认证状态 (`/api/agent/mcp/auth-status`)
 - **多用户隔离**: 每个用户的MCP认证状态独立管理
 - **实时验证**: 消息处理时自动进行MCP认证验证
 - **详细反馈**: 提供未认证MCP的完整信息和认证参数
@@ -2857,6 +2859,164 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 - **工作流集成**: 任务时自动使用Agent的MCP工作流执行真实任务
 - **上下文记忆**: 维持完整的对话上下文和Agent专属记忆
 
+### Agent MCP认证验证API
+
+从v2.1.1开始，Agent系统提供了专门的MCP认证验证API，允许用户为Agent使用独立认证MCP服务，无需依赖特定任务。
+
+#### 1. 验证Agent MCP认证
+
+**端点**: `POST /api/agent/mcp/verify-auth`
+
+**描述**: 为Agent使用验证MCP认证信息，独立于任务系统。用户可以预先认证Agent所需的MCP服务，确保Agent试用时能够正常工作。
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "mcpName": "coingecko-server",
+  "authData": {
+    "COINGECKO_API_KEY": "your_api_key_here"
+  },
+  "saveAuth": true
+}
+```
+
+**参数说明**:
+- `mcpName`: MCP服务器名称（必需）
+- `authData`: 认证数据对象（必需）
+- `saveAuth`: 是否保存认证信息供后续使用（可选，默认true）
+
+**成功响应**:
+```json
+{
+  "success": true,
+  "message": "MCP authentication verified successfully",
+  "data": {
+    "verified": true,
+    "mcpName": "coingecko-server",
+    "userId": "user_123",
+    "details": "API key is valid and permissions are correct"
+  }
+}
+```
+
+**失败响应**:
+```json
+{
+  "success": false,
+  "error": "VERIFICATION_FAILED",
+  "message": "Invalid API key or insufficient permissions"
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 缺少必需字段或字段格式错误
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误或MCP认证服务不可用
+
+---
+
+#### 2. 获取用户MCP认证状态
+
+**端点**: `GET /api/agent/mcp/auth-status`
+
+**描述**: 获取当前用户对指定MCP服务的认证状态，用于检查Agent所需MCP的认证情况。
+
+**认证**: 需要访问令牌
+
+**查询参数**:
+- `mcpNames`: MCP名称列表，用逗号分隔（必需）
+
+**请求示例**:
+```bash
+GET /api/agent/mcp/auth-status?mcpNames=coingecko-server,github-mcp-server
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "userId": "user_123",
+    "authStatuses": [
+      {
+        "mcpName": "coingecko-server",
+        "isAuthenticated": true,
+        "hasAuthData": true
+      },
+      {
+        "mcpName": "github-mcp-server",
+        "isAuthenticated": false,
+        "hasAuthData": false
+      }
+    ]
+  }
+}
+```
+
+**字段说明**:
+- `userId`: 用户ID
+- `authStatuses`: 认证状态数组
+  - `mcpName`: MCP服务器名称
+  - `isAuthenticated`: 是否已认证且验证通过
+  - `hasAuthData`: 是否存在认证数据
+
+**错误响应**:
+- `400 Bad Request`: 缺少必需的查询参数
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### Agent MCP认证使用流程
+
+1. **检查认证状态**:
+   ```bash
+   curl -X GET "http://localhost:3001/api/agent/mcp/auth-status?mcpNames=coingecko-server,github-mcp-server" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+   ```
+
+2. **认证未验证的MCP**:
+   ```bash
+   curl -X POST "http://localhost:3001/api/agent/mcp/verify-auth" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "mcpName": "coingecko-server",
+       "authData": {
+         "COINGECKO_API_KEY": "your_api_key_here"
+       }
+     }'
+   ```
+
+3. **尝试使用Agent**:
+   ```bash
+   curl -X POST "http://localhost:3001/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Get me the current Bitcoin price"}'
+   ```
+
+#### 认证验证特性
+
+- **独立认证**: 不依赖特定任务，可以预先为Agent使用认证MCP
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **状态检查**: 支持批量检查多个MCP的认证状态
+- **自动保存**: 认证信息自动保存，供后续Agent使用
+- **安全验证**: 实际调用MCP服务验证认证信息的有效性
+- **详细反馈**: 提供详细的认证失败原因和建议
+
+#### 与任务MCP认证的区别
+
+| 特性 | Agent MCP认证 | 任务MCP认证 |
+|------|---------------|-------------|
+| **端点** | `/api/agent/mcp/verify-auth` | `/api/task/:id/verify-auth` |
+| **依赖** | 无需特定任务 | 需要特定任务ID |
+| **用途** | Agent使用预认证 | 任务执行认证 |
+| **权限** | 仅需用户认证 | 需要任务所有权 |
+| **适用场景** | Agent试用前准备 | 任务执行前验证 |
+
 ### Agent数据模型
 
 Agent实体包含以下字段：
@@ -3440,7 +3600,7 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
 
 **MCP认证完成后的使用流程**:
 
-1. **完成MCP认证**: 使用 `/api/mcp/auth/verify` 接口完成所需MCP的认证
+1. **完成MCP认证**: 使用 `/api/agent/mcp/verify-auth` 接口完成所需MCP的认证
 2. **重新尝试Agent**: 重新调用 `/api/agent/:id/try` 接口
 3. **开始对话**: 认证通过后即可开始与Agent对话
 4. **后续消息**: 使用 `/api/agent-conversation/:conversationId/message` 发送消息
@@ -4271,14 +4431,12 @@ curl -X POST http://localhost:3001/api/agent/create/task_123456 \
 #### 5. 其他用户尝试使用Agent
 
 ```bash
-# 首次尝试使用Agent（可能需要认证）
-curl -X POST http://localhost:3001/api/agent/agent_123456/try \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
-  -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
+# 首先检查Agent所需MCP的认证状态
+curl -X GET "http://localhost:3001/api/agent/mcp/auth-status?mcpNames=coingecko-server,github-mcp-server" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN"
 
-# 如果返回需要认证的响应，先完成MCP认证
-curl -X POST http://localhost:3001/api/mcp/auth/verify \
+# 如果有未认证的MCP，先完成认证
+curl -X POST http://localhost:3001/api/agent/mcp/verify-auth \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
   -d '{
@@ -4286,10 +4444,17 @@ curl -X POST http://localhost:3001/api/mcp/auth/verify \
     "authData": {
       "COINGECKO_API_KEY": "your_api_key_here"
     },
-    "saveForLater": true
+    "saveAuth": true
   }'
 
-# 认证完成后重新尝试使用Agent
+# 认证完成后尝试使用Agent
+curl -X POST http://localhost:3001/api/agent/agent_123456/try \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
+  -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
+
+# 如果Agent试用时仍然返回需要认证的响应，根据返回的missingAuth信息进行认证
+# 然后重新尝试使用Agent
 curl -X POST http://localhost:3001/api/agent/agent_123456/try \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
@@ -4351,6 +4516,8 @@ curl -X GET "http://localhost:3001/api/agent?queryType=public&search=bitcoin&cat
 
 #### 3. MCP认证验证系统
 - **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **独立认证API**: 提供专门的Agent MCP认证API，无需依赖特定任务
+- **状态查询**: 支持批量查询多个MCP的认证状态
 - **多用户隔离**: 每个用户的MCP认证状态独立管理
 - **实时验证**: 消息处理时自动进行MCP认证验证
 - **详细反馈**: 提供未认证MCP的完整信息和认证参数
