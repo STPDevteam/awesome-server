@@ -251,17 +251,27 @@ export class AgentDao {
         case 'public':
           // 公开的Agent
           conditions.push(`a.status = 'public'`);
-          baseQuery = `
-            SELECT a.*, 
-                   CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
-            FROM agents a
-            LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
-          `;
-          values.push(query.userId);
+          if (query.userId) {
+            baseQuery = `
+              SELECT a.*, 
+                     CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
+              FROM agents a
+              LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
+            `;
+            values.push(query.userId);
+          } else {
+            baseQuery = `
+              SELECT a.*, FALSE as is_favorited
+              FROM agents a
+            `;
+          }
           break;
           
         case 'my-private':
           // 我的私有Agent
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
           conditions.push(`a.user_id = $${paramIndex++}`);
           conditions.push(`a.status = 'private'`);
           baseQuery = `
@@ -273,6 +283,9 @@ export class AgentDao {
           
         case 'my-saved':
           // 我收藏的Agent
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
           conditions.push(`f.user_id = $${paramIndex++}`);
           conditions.push(`a.status = 'public'`);
           baseQuery = `
@@ -286,27 +299,40 @@ export class AgentDao {
         case 'all':
         default:
           // 所有可见的Agent（我的私有 + 公开的）
-          conditions.push(`(a.user_id = $${paramIndex++} OR a.status = 'public')`);
-          baseQuery = `
-            SELECT a.*, 
-                   CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
-            FROM agents a
-            LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
-          `;
-          values.push(query.userId, query.userId);
+          if (query.userId) {
+            conditions.push(`(a.user_id = $${paramIndex++} OR a.status = 'public')`);
+            baseQuery = `
+              SELECT a.*, 
+                     CASE WHEN f.id IS NOT NULL THEN TRUE ELSE FALSE END as is_favorited
+              FROM agents a
+              LEFT JOIN agent_favorites f ON a.id = f.agent_id AND f.user_id = $${paramIndex++}
+            `;
+            values.push(query.userId, query.userId);
+          } else {
+            // 如果没有用户ID，只返回公开的Agent
+            conditions.push(`a.status = 'public'`);
+            baseQuery = `
+              SELECT a.*, FALSE as is_favorited
+              FROM agents a
+            `;
+          }
           break;
       }
       
       // 其他过滤条件
+      // 只有在没有预设状态条件时才添加状态过滤
       if (query.status && query.queryType !== 'public' && query.queryType !== 'my-private') {
-        conditions.push(`a.status = $${paramIndex++}`);
-        values.push(query.status);
+        // 检查是否已经有状态条件（避免重复）
+        const hasStatusCondition = conditions.some(condition => condition.includes('a.status'));
+        if (!hasStatusCondition) {
+          conditions.push(`a.status = $${paramIndex++}`);
+          values.push(query.status);
+        }
       }
       
       if (query.search) {
-        conditions.push(`(a.name ILIKE $${paramIndex} OR a.description ILIKE $${paramIndex})`);
-        values.push(`%${query.search}%`);
-        paramIndex++;
+        conditions.push(`(a.name ILIKE $${paramIndex++} OR a.description ILIKE $${paramIndex++})`);
+        values.push(`%${query.search}%`, `%${query.search}%`);
       }
       
       if (query.category) {
@@ -318,20 +344,83 @@ export class AgentDao {
       const orderBy = query.orderBy || 'created_at';
       const order = query.order || 'desc';
       
+      // 为count查询单独构建参数和条件
+      let countFromClause = 'FROM agents a';
+      let countConditions: string[] = ['a.is_deleted = FALSE'];
+      let countValues: any[] = [];
+      let countParamIndex = 1;
+      
+      // 根据查询类型构建count查询的条件
+      switch (query.queryType) {
+        case 'public':
+          countConditions.push(`a.status = 'public'`);
+          break;
+          
+        case 'my-private':
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
+          countConditions.push(`a.user_id = $${countParamIndex++}`);
+          countConditions.push(`a.status = 'private'`);
+          countValues.push(query.userId);
+          break;
+          
+        case 'my-saved':
+          if (!query.userId) {
+            throw new Error('用户ID是必需的');
+          }
+          countFromClause = 'FROM agents a INNER JOIN agent_favorites f ON a.id = f.agent_id';
+          countConditions.push(`f.user_id = $${countParamIndex++}`);
+          countConditions.push(`a.status = 'public'`);
+          countValues.push(query.userId);
+          break;
+          
+        case 'all':
+        default:
+          if (query.userId) {
+            countConditions.push(`(a.user_id = $${countParamIndex++} OR a.status = 'public')`);
+            countValues.push(query.userId);
+          } else {
+            countConditions.push(`a.status = 'public'`);
+          }
+          break;
+      }
+      
+      // 添加其他过滤条件到count查询
+      if (query.status && query.queryType !== 'public' && query.queryType !== 'my-private') {
+        const hasStatusCondition = countConditions.some(condition => condition.includes('a.status'));
+        if (!hasStatusCondition) {
+          countConditions.push(`a.status = $${countParamIndex++}`);
+          countValues.push(query.status);
+        }
+      }
+      
+      if (query.search) {
+        countConditions.push(`(a.name ILIKE $${countParamIndex++} OR a.description ILIKE $${countParamIndex++})`);
+        countValues.push(`%${query.search}%`, `%${query.search}%`);
+      }
+      
+      if (query.category) {
+        countConditions.push(`a.metadata->>'category' = $${countParamIndex++}`);
+        countValues.push(query.category);
+      }
+      
       // 获取总数
       const countQuery = `
         SELECT COUNT(*) as total 
-        FROM agents a
-        ${query.queryType === 'my-saved' ? 'INNER JOIN agent_favorites f ON a.id = f.agent_id' : ''}
-        WHERE ${conditions.join(' AND ')}
+        ${countFromClause}
+        WHERE ${countConditions.join(' AND ')}
       `;
       
-      const countResult = await db.query<{ total: string }>(countQuery, values);
+      const countResult = await db.query<{ total: string }>(countQuery, countValues);
       const total = parseInt(countResult.rows[0].total);
       
       // 获取分页数据
       const offset = query.offset || 0;
       const limit = query.limit || 20;
+      
+      // 为data查询创建新的values数组副本并添加分页参数
+      const dataValues = [...values, limit, offset];
       
       const dataQuery = `
         ${baseQuery}
@@ -340,9 +429,7 @@ export class AgentDao {
         LIMIT $${paramIndex++} OFFSET $${paramIndex++}
       `;
       
-      values.push(limit, offset);
-      
-      const result = await db.query<AgentDbRow & { is_favorited: boolean }>(dataQuery, values);
+      const result = await db.query<AgentDbRow & { is_favorited: boolean }>(dataQuery, dataValues);
       
       const agents = result.rows.map(row => {
         const agent = this.mapDbRowToAgent(row);
@@ -503,6 +590,38 @@ export class AgentDao {
       };
     } catch (error) {
       logger.error('获取Agent统计信息失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取所有分类及其数量统计
+   */
+  async getAllCategories(): Promise<Array<{ name: string; count: number }>> {
+    try {
+      // 只统计公开的Agent分类
+      const categoriesQuery = `
+        SELECT 
+          category as name,
+          COUNT(*) as count
+        FROM agents, 
+             jsonb_array_elements_text(categories) as category
+        WHERE is_deleted = FALSE AND status = 'public'
+        GROUP BY category
+        ORDER BY count DESC, category ASC
+      `;
+      
+      const categoriesResult = await db.query<{
+        name: string;
+        count: string;
+      }>(categoriesQuery);
+      
+      return categoriesResult.rows.map(row => ({
+        name: row.name,
+        count: parseInt(row.count)
+      }));
+    } catch (error) {
+      logger.error('获取所有分类失败:', error);
       throw error;
     }
   }

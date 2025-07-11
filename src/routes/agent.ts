@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { requireAuth } from '../middleware/auth.js';
 import { getAgentService } from '../services/agentService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { 
   CreateAgentRequest, 
@@ -128,28 +128,43 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
  * 
  * Query Parameters:
  * - queryType: 'public' | 'my-private' | 'my-saved' | 'all'
+<<<<<<< HEAD
  *   - public: Public Agents
  *   - my-private: My Private Agents
  *   - my-saved: My Saved Agents
  *   - all: All Visible Agents (default)
+=======
+ *   - public: 公开的Agent（无需登录）
+ *   - my-private: 我的私有Agent（需要登录）
+ *   - my-saved: 我收藏的Agent（需要登录）
+ *   - all: 所有可见的Agent（需要登录）
+>>>>>>> origin/dev
  */
-router.get('/', requireAuth, async (req: Request, res: Response) => {
+router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
+    let queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
+    
+    // 兼容处理：如果status参数是查询类型，则映射为queryType
+    const statusParam = req.query.status as string;
+    if (statusParam && ['public', 'my-private', 'my-saved'].includes(statusParam)) {
+      queryType = statusParam as 'public' | 'my-private' | 'my-saved';
+    }
+
     const userId = req.user?.id;
-    if (!userId) {
+    
+    // 检查需要登录的查询类型
+    if (['my-private', 'my-saved', 'all'].includes(queryType) && !userId) {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
         message: 'User not authenticated'
       });
     }
-
-    const queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
     
     const query: GetAgentsQuery = {
       userId,
       queryType,
-      status: req.query.status as any,
+      status: ['public', 'my-private', 'my-saved'].includes(statusParam) ? undefined : req.query.status as any,
       search: req.query.search as string,
       category: req.query.category as string,
       orderBy: req.query.orderBy as any,
@@ -160,9 +175,27 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
 
     const result = await agentService.getAgents(query);
 
+    // 从当前查询结果中统计分类信息
+    const categoryMap = new Map<string, number>();
+    result.agents.forEach(agent => {
+      if (agent.categories && Array.isArray(agent.categories)) {
+        agent.categories.forEach(category => {
+          categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+        });
+      }
+    });
+
+    // 转换为数组并按数量降序排序
+    const categories = Array.from(categoryMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
     res.json({
       success: true,
-      data: result
+      data: {
+        ...result,
+        categories
+      }
     });
   } catch (error) {
     logger.error('Failed to get Agent list:', error);
