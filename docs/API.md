@@ -3372,20 +3372,52 @@ Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
 ```json
 {
   "success": false,
-  "error": "AUTH_REQUIRED",
+  "error": "MCP_AUTH_REQUIRED",
   "needsAuth": true,
   "missingAuth": [
     {
-      "mcpName": "coingecko-mcp",
-      "description": "CoinGecko cryptocurrency market data MCP",
+      "mcpName": "coingecko-server",
+      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+      "authRequired": true,
+      "authVerified": false,
       "authParams": {
-        "apiKey": "required"
+        "COINGECKO_API_KEY": {
+          "type": "string",
+          "description": "CoinGecko API密钥",
+          "required": true
+        }
       }
     }
   ],
-  "message": "Please verify authentication for all relevant MCP servers first."
+  "message": "请先完成所有相关MCP服务器的认证验证"
 }
 ```
+
+**MCP认证验证流程**:
+
+1. **自动检查**: Agent试用时自动检查所需MCP的认证状态
+2. **多用户隔离**: 每个用户的MCP认证状态独立管理
+3. **详细信息**: 返回未认证MCP的详细信息和认证参数
+4. **前端引导**: 前端可根据返回信息引导用户完成认证
+
+**认证参数说明**:
+- `mcpName`: MCP服务器名称
+- `description`: MCP服务器描述
+- `authRequired`: 是否需要认证
+- `authVerified`: 当前用户是否已认证
+- `authParams`: 认证参数详情，包含参数名称、类型、描述和是否必需
+
+**MCP认证完成后的使用流程**:
+
+1. **完成MCP认证**: 使用 `/api/mcp/auth/verify` 接口完成所需MCP的认证
+2. **重新尝试Agent**: 重新调用 `/api/agent/:id/try` 接口
+3. **开始对话**: 认证通过后即可开始与Agent对话
+4. **后续消息**: 使用 `/api/agent-conversation/:conversationId/message` 发送消息
+
+**注意事项**:
+- 不同用户需要分别完成MCP认证
+- MCP认证状态会影响Agent的任务执行能力
+- 建议在Agent试用前引导用户完成必要的认证设置
 
 **错误响应**:
 - `400 Bad Request`: 请求参数无效
@@ -3469,7 +3501,9 @@ Agent对话系统提供了专门的API端点来处理Agent多轮对话，完全�
 
 **端点**: `POST /api/agent-conversation/:conversationId/message`
 
-**描述**: 向Agent对话发送消息，支持聊天和任务执行，Agent会智能识别用户意图并相应处理
+**描述**: 向Agent对话发送消息，支持聊天和任务执行，Agent会智能识别用户意图并相应处理。
+
+**重要更新**: 从v2.1.1开始，Agent消息处理时会自动进行MCP认证验证，确保任务执行时所需的MCP服务都已正确认证。
 
 **认证**: 需要访问令牌
 
@@ -3483,7 +3517,7 @@ Agent对话系统提供了专门的API端点来处理Agent多轮对话，完全�
 }
 ```
 
-**响应**:
+**成功响应（认证已验证）**:
 ```json
 {
   "success": true,
@@ -3511,6 +3545,37 @@ Agent对话系统提供了专门的API端点来处理Agent多轮对话，完全�
 }
 ```
 
+**需要认证的响应**:
+```json
+{
+  "success": false,
+  "error": "MCP_AUTH_REQUIRED",
+  "needsAuth": true,
+  "missingAuth": [
+    {
+      "mcpName": "coingecko-server",
+      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+      "authRequired": true,
+      "authVerified": false,
+      "authParams": {
+        "COINGECKO_API_KEY": {
+          "type": "string",
+          "description": "CoinGecko API密钥",
+          "required": true
+        }
+      }
+    }
+  ],
+  "message": "请先完成所有相关MCP服务器的认证验证"
+}
+```
+
+**MCP认证验证特性**:
+- **自动检查**: 消息处理时自动检查Agent所需MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **实时验证**: 在任务执行前进行MCP连接验证
+- **详细反馈**: 提供未认证MCP的详细信息和认证参数
+
 **错误响应**:
 - `400 Bad Request`: 请求参数无效
 - `401 Unauthorized`: 无效的访问令牌
@@ -3524,7 +3589,7 @@ Agent对话系统提供了专门的API端点来处理Agent多轮对话，完全�
 
 **端点**: `POST /api/agent-conversation/:conversationId/message/stream`
 
-**描述**: 向Agent对话发送消息的流式版本，实时返回Agent处理过程和响应
+**描述**: 向Agent对话发送消息的流式版本，实时返回Agent处理过程和响应。包含完整的MCP认证验证流程。
 
 **认证**: 需要访问令牌
 
@@ -3554,6 +3619,17 @@ data: {"event":"agent_loaded","data":{"agentId":"agent_123456","agentName":"Bitc
 data: {"event":"agent_intent_analysis","data":{"status":"analyzing","message":"Analyzing user intent based on Agent capabilities..."}}
 
 data: {"event":"agent_intent_analysis","data":{"status":"completed","intent":"task","confidence":0.92,"reasoning":"User is requesting specific task execution that matches Agent's capabilities"}}
+```
+
+**Agent MCP认证验证**:
+```
+data: {"event":"mcp_auth_check","data":{"message":"Checking MCP authentication status..."}}
+
+data: {"event":"mcp_auth_verified","data":{"message":"All required MCPs are authenticated","mcpCount":2}}
+
+data: {"event":"mcp_connection_start","data":{"message":"Establishing MCP connections..."}}
+
+data: {"event":"mcp_connection_success","data":{"message":"MCP connections established successfully","connectedMcps":["coingecko-server"]}}
 ```
 
 **Agent任务执行**（真正的工作流执行）:
@@ -3596,6 +3672,10 @@ data: [DONE]
 - `agent_loading`: Agent信息加载中
 - `agent_loaded`: Agent信息加载完成
 - `agent_intent_analysis`: Agent意图分析（考虑Agent能力）
+- `mcp_auth_check`: MCP认证状态检查
+- `mcp_auth_verified`: MCP认证验证完成
+- `mcp_connection_start`: MCP连接开始
+- `mcp_connection_success`: MCP连接成功
 - `task_creation_start`: 任务创建开始
 - `task_created`: 任务创建完成
 - `workflow_applying`: 工作流应用中
