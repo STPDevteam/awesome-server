@@ -890,85 +890,26 @@ Please generate 3 questions, one per line, without numbering or other formatting
 
   /**
    * Start multi-turn conversation with Agent
+   * Now uses dedicated AgentConversationService
    */
   async tryAgent(request: TryAgentRequest): Promise<TryAgentResponse> {
     try {
-      const { agentId, content, userId } = request;
-
-      // Get Agent information
-      const agent = await agentDao.getAgentById(agentId);
-      if (!agent) {
+      // Check if TaskExecutorService is available
+      if (!this.taskExecutorService) {
         return {
           success: false,
-          message: 'Agent not found'
+          message: 'Task executor service not available'
         };
       }
 
-      // Check if Agent is public or belongs to current user
-      if (agent.status === 'private' && agent.userId !== userId) {
-        return {
-          success: false,
-          message: 'Access denied: This is a private Agent'
-        };
-      }
-
-      // Check MCP authentication status
-      const authCheck = await this.checkAgentMCPAuth(agent, userId);
-      if (authCheck.needsAuth) {
-        return {
-          success: false,
-          needsAuth: true,
-          missingAuth: authCheck.missingAuth,
-          message: authCheck.message
-        };
-      }
-
-      // Create Agent trial session (use special prefix to identify Agent trial session)
-      const conversationService = getConversationService();
-      const conversation = await conversationService.createConversation(
-        userId,
-        `[AGENT:${agent.id}] Try ${agent.name}`
-      );
-
-      // Send welcome message
-      const welcomeMessage = `Hello! I'm ${agent.name}. ${agent.description}\n\nYou can:\n- Chat with me about anything\n- Ask me to help with tasks related to my capabilities\n\nHow can I assist you today?`;
+      // Import AgentConversationService dynamically to avoid circular dependency
+      const { getAgentConversationService } = await import('./agentConversationService.js');
       
-      await messageDao.createMessage({
-        conversationId: conversation.id,
-        content: welcomeMessage,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
-      });
-
-      // If user provided initial content, record user message
-      let firstMessage: any = null;
-      if (content) {
-        firstMessage = await messageDao.createMessage({
-          conversationId: conversation.id,
-          content: content,
-          type: MessageType.USER,
-          intent: MessageIntent.CHAT
-        });
-        
-        await conversationDao.incrementMessageCount(conversation.id);
-      }
- 
-      // Record Agent usage
-      await this.recordAgentUsage(agentId, userId, undefined, conversation.id);
-
-      return {
-        success: true,
-        conversation: {
-          id: conversation.id,
-          title: conversation.title,
-          agentInfo: {
-            id: agent.id,
-            name: agent.name,
-            description: agent.description
-          }
-        },
-        message: 'Agent trial conversation started successfully'
-      };
+      // Get AgentConversationService instance
+      const agentConversationService = getAgentConversationService(this.taskExecutorService);
+      
+      // Delegate to dedicated Agent conversation service
+      return await agentConversationService.startAgentTrial(request);
     } catch (error) {
       logger.error(`Start Agent trial failed [Agent: ${request.agentId}]:`, error);
       return {
