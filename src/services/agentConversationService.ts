@@ -57,27 +57,40 @@ export class AgentConversationService {
   async startAgentTrial(request: TryAgentRequest): Promise<TryAgentResponse> {
     try {
       const { agentId, content, userId } = request;
+      
+      logger.info(`🚀 Starting Agent trial [AgentID: ${agentId}, UserID: ${userId}]`);
 
       // Get Agent information
       const agent = await agentDao.getAgentById(agentId);
       if (!agent) {
+        logger.error(`❌ Agent not found [AgentID: ${agentId}]`);
         return {
           success: false,
           message: 'Agent not found'
         };
       }
 
+      logger.info(`✅ Agent found [${agent.name}] - Status: ${agent.status}, CreatedBy: ${agent.userId}`);
+
       // Check if Agent is accessible
       if (agent.status === 'private' && agent.userId !== userId) {
+        logger.warn(`❌ Access denied for private Agent [${agent.name}] - User [${userId}] is not the owner [${agent.userId}]`);
         return {
           success: false,
           message: 'Access denied: This is a private Agent'
         };
       }
 
-      // Check MCP authentication status
+      logger.info(`✅ Agent access check passed for user [${userId}]`);
+
+      // 🔧 CRITICAL: Check MCP authentication status
+      logger.info(`🔐 Starting MCP authentication check for Agent [${agent.name}] by user [${userId}]`);
       const authCheck = await this.checkAgentMCPAuth(agent, userId);
+      
       if (authCheck.needsAuth) {
+        logger.warn(`❌ MCP authentication check FAILED for Agent [${agent.name}] by user [${userId}]`);
+        logger.warn(`❌ User must authenticate the following MCP services: ${authCheck.missingAuth.map(m => m.mcpName).join(', ')}`);
+        
         return {
           success: false,
           needsAuth: true,
@@ -86,8 +99,11 @@ export class AgentConversationService {
         };
       }
 
+      logger.info(`✅ MCP authentication check PASSED for Agent [${agent.name}] by user [${userId}]`);
+
       // Create Agent conversation
       const conversation = await this.createAgentConversation(userId, agent);
+      logger.info(`✅ Agent conversation created [ConversationID: ${conversation.id}]`);
 
       // Send welcome message
       const welcomeMessage = await this.generateWelcomeMessage(agent);
@@ -100,11 +116,14 @@ export class AgentConversationService {
 
       // If user provided initial content, process it
       if (content && content.trim()) {
+        logger.info(`📝 Processing initial user message: "${content}"`);
         await this.processAgentMessage(conversation.id, userId, content, agent);
       }
 
       // Record Agent usage
       await agentDao.recordAgentUsage(agentId, userId, undefined, conversation.id);
+
+      logger.info(`🎉 Agent trial started successfully [Agent: ${agent.name}, User: ${userId}, Conversation: ${conversation.id}]`);
 
       return {
         success: true,
@@ -120,7 +139,7 @@ export class AgentConversationService {
         message: 'Agent trial conversation started successfully'
       };
     } catch (error) {
-      logger.error(`Start Agent trial failed [Agent: ${request.agentId}]:`, error);
+      logger.error(`❌ Start Agent trial failed [Agent: ${request.agentId}, User: ${request.userId}]:`, error);
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to start Agent trial'
@@ -1035,17 +1054,38 @@ How can I assist you today?`;
    * Check Agent MCP authentication
    */
   private async checkAgentMCPAuth(agent: Agent, userId: string): Promise<MCPAuthCheckResult> {
+    logger.info(`🔍 Starting MCP authentication check for Agent [${agent.name}] by user [${userId}]`);
+    
     if (!agent.mcpWorkflow || !agent.mcpWorkflow.mcps) {
+      logger.info(`✅ Agent [${agent.name}] does not require MCP services`);
       return { needsAuth: false, missingAuth: [] };
     }
+
+    logger.info(`🔍 Agent [${agent.name}] requires ${agent.mcpWorkflow.mcps.length} MCP services`);
+    logger.info(`🔍 MCP services: ${JSON.stringify(agent.mcpWorkflow.mcps.map(m => ({ name: m.name, authRequired: m.authRequired })))}`);
 
     const missingAuth: any[] = [];
     
     for (const mcp of agent.mcpWorkflow.mcps) {
+      logger.info(`🔍 Checking MCP [${mcp.name}] - authRequired: ${mcp.authRequired}`);
+      
       if (mcp.authRequired) {
+        logger.info(`🔍 Getting user MCP auth for user [${userId}] and MCP [${mcp.name}]`);
+        
         const authData = await this.mcpAuthService.getUserMCPAuth(userId, mcp.name);
+        logger.info(`🔍 Auth data result: ${JSON.stringify({
+          hasAuthData: !!authData,
+          isVerified: authData?.isVerified,
+          hasAuthDataField: !!authData?.authData,
+          mcpName: mcp.name,
+          userId: userId
+        })}`);
+        
         const isAuthenticated = authData && authData.isVerified;
+        
         if (!isAuthenticated) {
+          logger.warn(`❌ User [${userId}] is NOT authenticated for MCP [${mcp.name}]`);
+          
           // 🔧 重要修复：返回完整的认证参数信息给前端
           missingAuth.push({
             mcpName: mcp.name,
@@ -1053,22 +1093,32 @@ How can I assist you today?`;
             category: mcp.category || 'Unknown',
             imageUrl: mcp.imageUrl,
             githubUrl: mcp.githubUrl,
+            authRequired: true,
+            authVerified: false,
             authParams: mcp.authParams || {},
             // 添加认证指引信息
             authInstructions: this.generateAuthInstructions(mcp.name, mcp.authParams)
           });
+        } else {
+          logger.info(`✅ User [${userId}] is authenticated for MCP [${mcp.name}]`);
         }
+      } else {
+        logger.info(`ℹ️ MCP [${mcp.name}] does not require authentication`);
       }
     }
 
     if (missingAuth.length > 0) {
+      logger.warn(`❌ Authentication check FAILED for Agent [${agent.name}] by user [${userId}]`);
+      logger.warn(`❌ Missing authentication for ${missingAuth.length} MCP services: ${missingAuth.map(m => m.mcpName).join(', ')}`);
+      
       return {
         needsAuth: true,
         missingAuth,
-        message: 'Please verify authentication for all relevant MCP servers first.'
+        message: `请先为以下MCP服务完成认证：${missingAuth.map(m => m.mcpName).join(', ')}`
       };
     }
 
+    logger.info(`✅ Authentication check PASSED for Agent [${agent.name}] by user [${userId}]`);
     return { needsAuth: false, missingAuth: [] };
   }
 
