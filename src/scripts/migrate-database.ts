@@ -1149,14 +1149,27 @@ class MigrationService {
       version: 22,
       name: 'add_agent_avatar_field',
       up: async () => {
-        // 添加agent_avatar字段到agents表
-        await db.query(`
-          ALTER TABLE agents ADD COLUMN agent_avatar TEXT
+        // 检查agent_avatar列是否已存在
+        const columnCheck = await db.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'agents' 
+          AND column_name = 'agent_avatar'
         `);
 
-        // 为现有Agent数据生成头像
+        // 如果列不存在，则添加它
+        if (columnCheck.rows.length === 0) {
+          await db.query(`
+            ALTER TABLE agents ADD COLUMN agent_avatar TEXT
+          `);
+          console.log('✅ Added agent_avatar column to agents table');
+        } else {
+          console.log('ℹ️  agent_avatar column already exists, skipping column creation');
+        }
+
+        // 为现有Agent数据生成头像（无论列是否刚刚创建）
         // 使用Agent名称作为种子值生成DiceBear头像URL
-        await db.query(`
+        const updateResult = await db.query(`
           UPDATE agents 
           SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || 
                            encode(digest(
@@ -1169,7 +1182,13 @@ class MigrationService {
           WHERE agent_avatar IS NULL OR agent_avatar = ''
         `);
 
-        console.log('✅ Added agent_avatar field to agents table');
+        if (updateResult.rowCount && updateResult.rowCount > 0) {
+          console.log(`✅ Updated ${updateResult.rowCount} agents with generated avatars`);
+        } else {
+          console.log('ℹ️  No agents needed avatar updates');
+        }
+
+        console.log('✅ agent_avatar field migration completed');
       },
       down: async () => {
         // 删除agent_avatar字段
