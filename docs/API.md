@@ -2797,6 +2797,7 @@ Agent实体包含以下字段：
 - **userId**: 创建者的用户ID
 - **username**: 创建者的用户名（从users表同步）
 - **avatar**: 创建者的头像URL（从users表同步）
+- **agentAvatar**: Agent专属头像URL（使用DiceBear API自动生成）
 - **name**: Agent的名称（最多50字符）
 - **description**: Agent的描述（最多280字符）
 - **status**: Agent的状态（`private`/`public`/`draft`）
@@ -2808,6 +2809,35 @@ Agent实体包含以下字段：
 - **usageCount**: 使用次数统计
 - **createdAt**: 创建时间
 - **updatedAt**: 更新时间
+
+### Agent头像系统
+
+Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
+
+#### 头像生成机制
+- **自动生成**: 创建Agent时基于Agent名称自动生成头像
+- **唯一性**: 每个Agent名称对应唯一的头像样式
+- **URL格式**: `https://api.dicebear.com/9.x/bottts-neutral/svg?seed={seed}`
+- **种子生成**: 使用Agent名称的清理版本作为种子值
+
+#### 头像样式规则
+- **默认样式**: 使用`bottts-neutral`风格，适合技术类Agent
+- **智能推荐**: 根据Agent类别推荐不同样式：
+  - `Development Tools` → `bottts-neutral`
+  - `Market Data` → `avataaars-neutral`
+  - `Social` → `adventurer-neutral`
+  - 其他类别 → `bottts-neutral`
+
+#### 种子值处理
+- **字符清理**: 移除特殊字符，仅保留字母、数字、连字符和下划线
+- **空格处理**: 将空格替换为连字符
+- **大小写**: 转换为小写
+- **示例**: `"My Test Agent!"` → `"my-test-agent"`
+
+#### 头像URL示例
+- Agent名称: `"Bitcoin Price Analyzer"`
+- 生成种子: `"bitcoin-price-analyzer"`
+- 头像URL: `"https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoin-price-analyzer"`
 
 ### Agent状态说明
 
@@ -2892,6 +2922,7 @@ Agent实体包含以下字段：
     "userId": "user_123",
     "username": "CryptoTrader",
     "avatar": "https://example.com/avatar.png",
+    "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoin-price-analyzer",
     "name": "Bitcoin Price Analyzer",
     "description": "A comprehensive cryptocurrency price analysis agent",
     "status": "private",
@@ -3037,6 +3068,7 @@ Agent实体包含以下字段：
       "userId": "user_123",
       "username": "CryptoTrader",
       "avatar": "https://example.com/avatar.png",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
       "name": "BitcoinPriceAnalyzer",
       "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
       "relatedQuestions": [
@@ -3122,6 +3154,7 @@ Agent实体包含以下字段：
         "userId": "user_123",
         "username": "CryptoTrader",
         "avatar": "https://example.com/avatar.png",
+        "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
         "relatedQuestions": [
@@ -3178,6 +3211,7 @@ Agent实体包含以下字段：
       "userId": "user_123",
       "username": "CryptoTrader",
       "avatar": "https://example.com/avatar.png",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
       "name": "BitcoinPriceAnalyzer",
       "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
       "relatedQuestions": [
@@ -3314,12 +3348,20 @@ Agent实体包含以下字段：
      -d '{"content": "Can you get me the current Bitcoin price?"}'
    ```
 
-3. **Agent智能处理**:
+3. **流式对话**（推荐使用）:
+   ```bash
+   curl -X POST "http://localhost:3000/api/conversation/conv_1234567890/message/stream" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Can you get me the current Bitcoin price?"}'
+   ```
+
+4. **Agent智能处理**:
    - **对话意图**: Agent会进行自然对话，回答问题、提供建议
    - **任务意图**: Agent会识别任务请求，使用其MCP工作流执行具体任务
    - **自动识别**: 基于消息内容和Agent能力智能判断用户意图
 
-### Agent多轮对话特性
+### Agent流式对话特性
 
 - **🧠 智能意图识别**: 自动区分对话和任务请求
 - **💬 上下文记忆**: 维持整个对话的上下文，理解前后关联
@@ -3327,7 +3369,7 @@ Agent实体包含以下字段：
 - **💫 自然对话**: 非任务时进行友好的聊天交流
 - **🔧 错误处理**: 优雅处理执行错误和异常情况
 
-### 使用示例
+### Agent对话示例
 
 **场景1 - 对话交流**:
 ```
@@ -3355,7 +3397,172 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
 
 ---
 
-### 8. 更新Agent
+### 8. Agent流式对话支持
+
+**重要说明**: Agent试用对话完全支持流式处理。当用户通过 `POST /api/agent/:id/try` 开始Agent对话后，后续的所有消息都可以通过标准的流式消息接口 `POST /api/conversation/:id/message/stream` 进行处理。
+
+#### Agent流式对话流程
+
+1. **开始Agent试用** (创建Agent对话):
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Hello"}'
+   ```
+
+2. **使用流式消息接口继续对话**:
+   ```bash
+   curl -X POST "http://localhost:3000/api/conversation/conv_1234567890/message/stream" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Get me the current Bitcoin price"}'
+   ```
+
+#### Agent流式响应事件
+
+当用户向Agent对话发送消息时，系统会自动识别这是Agent试用对话，并触发特殊的Agent流式处理：
+
+**Agent检测和加载**:
+```
+data: {"event":"agent_detection","data":{"agentId":"agent_123456","agentName":"BitcoinPriceAnalyzer"}}
+
+data: {"event":"agent_loading","data":{"status":"loading"}}
+
+data: {"event":"agent_loaded","data":{"agentId":"agent_123456","agentName":"BitcoinPriceAnalyzer","agentDescription":"An intelligent agent that retrieves Bitcoin's current price..."}}
+```
+
+**Agent意图分析**:
+```
+data: {"event":"agent_intent_analysis","data":{"status":"analyzing","message":"Analyzing user intent based on Agent capabilities..."}}
+
+data: {"event":"agent_intent_analysis","data":{"status":"completed","intent":"task","confidence":0.92,"reasoning":"User is requesting specific task execution that matches Agent's capabilities"}}
+```
+
+**Agent任务执行** (⭐ 真正的工作流执行):
+```
+data: {"event":"task_creation_start","data":{"message":"Creating task based on Agent workflow..."}}
+
+data: {"event":"task_created","data":{"taskId":"task_789","title":"Get Bitcoin current price","message":"Task created"}}
+
+data: {"event":"workflow_applying","data":{"message":"Applying Agent workflow configuration..."}}
+
+data: {"event":"workflow_applied","data":{"message":"Agent workflow applied successfully","mcpCount":2}}
+
+data: {"event":"task_execution_start","data":{"message":"Starting task execution with Agent workflow..."}}
+
+data: {"event":"task_execution_progress","data":{"step":"calling_coingecko_api","status":"in_progress","message":"Fetching Bitcoin price from CoinGecko..."}}
+
+data: {"event":"task_execution_complete","data":{"message":"Task execution completed successfully","taskId":"task_789","success":true}}
+
+data: {"event":"task_response_complete","data":{"responseId":"resp_456","taskId":"task_789","message":"Task processing completed","executionSuccess":true}}
+```
+
+**Agent聊天响应**:
+```
+data: {"event":"agent_chat_response","data":{"content":"Hi! I'm BitcoinPriceAnalyzer."}}
+
+data: {"event":"agent_chat_response","data":{"content":" I can help you get real-time Bitcoin prices"}}
+
+data: {"event":"agent_chat_response","data":{"content":" and analyze market trends. What would you like to know?"}}
+```
+
+**处理完成**:
+```
+data: {"event":"agent_processing_complete","data":{"messageId":"msg_456","responseId":"msg_457","intent":"task","taskId":"task_789","agentId":"agent_123456"}}
+
+data: [DONE]
+```
+
+#### Agent流式事件类型
+
+- **agent_detection**: 检测到Agent试用对话
+- **agent_loading**: Agent信息加载中
+- **agent_loaded**: Agent信息加载完成
+- **agent_intent_analysis**: Agent意图分析（考虑Agent能力）
+- **task_creation_start**: 任务创建开始
+- **task_created**: 任务创建完成
+- **workflow_applying**: 工作流应用中
+- **workflow_applied**: 工作流应用完成
+- **task_execution_start**: 任务执行开始 (⭐ 新增)
+- **task_execution_progress**: 任务执行进度 (⭐ 新增)
+- **task_execution_complete**: 任务执行完成 (⭐ 新增)
+- **task_response_complete**: 任务响应完成
+- **agent_chat_response**: Agent聊天响应流式输出
+- **agent_processing_complete**: Agent处理完成
+
+#### Agent流式对话特性
+
+**智能意图识别**:
+- 基于Agent的能力和用户输入进行智能意图分析
+- 自动判断是执行任务还是进行对话
+- 提供置信度评分和决策理由
+
+**任务执行集成** (⭐ 真正的工作流执行):
+- 自动使用Agent的MCP工作流创建和执行任务
+- **真正执行任务**: 调用TaskExecutorService执行Agent的完整工作流
+- 实时反馈任务创建、工作流应用、执行进度和结果
+- 无缝集成到对话流程中，提供实际的执行结果
+
+**上下文记忆**:
+- 维护Agent对话的完整上下文
+- 支持多轮对话的语义理解
+- 基于历史对话优化响应
+
+**错误处理**:
+- 优雅处理MCP认证失败
+- 提供详细的错误信息和解决建议
+- 自动降级到聊天模式
+
+#### Agent流式对话使用建议
+
+1. **优先使用流式接口**: 提供更好的用户体验和实时反馈
+2. **监听特定事件**: 根据 `agent_` 前缀的事件类型优化UI展示
+3. **处理认证需求**: 当Agent任务需要MCP认证时，引导用户完成认证
+4. **展示Agent信息**: 利用 `agent_loaded` 事件展示Agent的能力和描述
+5. **任务执行进度**: 使用 `task_execution_progress` 事件实时展示真正的任务执行进度
+
+**前端集成示例**:
+```javascript
+// 监听Agent特定事件
+eventSource.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  
+  switch(data.event) {
+    case 'agent_detection':
+      showAgentInfo(data.data);
+      break;
+    case 'agent_intent_analysis':
+      showIntentAnalysis(data.data);
+      break;
+    case 'task_creation_start':
+      showTaskCreationStart(data.data);
+      break;
+    case 'workflow_applied':
+      showWorkflowApplied(data.data);
+      break;
+    case 'task_execution_start':
+      showTaskExecutionStart(data.data);
+      break;
+    case 'task_execution_progress':
+      updateTaskProgress(data.data); // 实时进度更新
+      break;
+    case 'task_execution_complete':
+      showTaskExecutionComplete(data.data);
+      break;
+    case 'agent_chat_response':
+      appendChatResponse(data.data.content);
+      break;
+    case 'agent_processing_complete':
+      markProcessingComplete(data.data);
+      break;
+  }
+};
+```
+
+---
+
+### 9. 更新Agent
 
 **端点**: `PUT /api/agent/:id`
 
@@ -3398,6 +3605,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
       "userId": "user_123",
       "username": "CryptoTrader",
       "avatar": "https://example.com/avatar.png",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=enhanced-bitcoin-price-analyzer",
       "name": "Enhanced Bitcoin Price Analyzer",
       "description": "An enhanced intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
       "relatedQuestions": [
@@ -3619,6 +3827,7 @@ Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other majo
         "userId": "user_123",
         "username": "CryptoTrader",
         "avatar": "https://example.com/avatar.png",
+        "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price...",
         "relatedQuestions": [...],
@@ -3792,6 +4001,12 @@ curl -X GET "http://localhost:3001/api/agent?queryType=public&search=bitcoin&cat
 - **工作流保存**: 完整保存MCP工作流配置
 - **一键执行**: 用户可以一键使用Agent执行类似任务
 
+#### 8. 头像生成
+- **自动生成**: 每个Agent都有独特的DiceBear头像
+- **基于名称**: 头像基于Agent名称生成，确保一致性
+- **样式适配**: 根据Agent类别自动选择合适的头像风格
+- **URL稳定**: 头像URL基于名称生成，重复生成结果一致
+
 ### 数据库迁移
 
 从v2.0开始，Agent系统引入了重要的数据库结构变更：
@@ -3799,15 +4014,17 @@ curl -X GET "http://localhost:3001/api/agent?queryType=public&search=bitcoin&cat
 #### 新增字段
 - **username**: 创建者用户名（从users表同步）
 - **avatar**: 创建者头像URL（从users表同步）
+- **agentAvatar**: Agent专属头像URL（使用DiceBear API自动生成）
 - **categories**: Agent类别列表（JSONB格式，从MCP工作流中提取）
 
 #### 迁移脚本
 数据库迁移脚本会自动：
-1. 添加新字段到agents表
+1. 添加新字段到agents表（username、avatar、agentAvatar、categories）
 2. 为categories字段创建GIN索引以提高查询性能
 3. 从现有的mcp_workflow数据中提取类别信息
 4. 同步用户信息到Agent记录
-5. 确保所有Agent都有至少一个类别
+5. 为现有Agent自动生成头像URL
+6. 确保所有Agent都有至少一个类别
 
 #### 迁移命令
 ```bash
@@ -3823,6 +4040,7 @@ npm run migrate up
 - **内容编辑**: 基于AI生成的内容进行适当编辑，确保名称和描述准确反映Agent功能
 - **描述清晰**: 使用清晰的描述帮助其他用户理解Agent功能
 - **适当公开**: 对有价值的Agent选择公开状态
+- **头像预览**: Agent头像会根据名称自动生成，建议预览头像效果
 
 #### 2. Agent使用
 - **认证准备**: 在使用Agent前准备好所需的MCP认证信息
@@ -3838,6 +4056,12 @@ npm run migrate up
 - **索引利用**: 充分利用categories字段的GIN索引进行类别过滤
 - **查询优化**: 使用categories字段而非联表查询获取类别信息
 - **缓存策略**: 对于频繁访问的Agent数据考虑使用缓存
+
+#### 5. 头像性能
+- **CDN缓存**: DiceBear头像支持CDN缓存，提高加载速度
+- **懒加载**: 在列表页面可以考虑对头像进行懒加载
+- **尺寸优化**: 可以在URL中添加size参数控制头像大小
+- **格式选择**: 支持SVG格式，矢量图形适合各种尺寸显示
 
 ---
 

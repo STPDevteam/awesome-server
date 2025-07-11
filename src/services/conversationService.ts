@@ -41,76 +41,88 @@ export class ConversationService {
   }
   
   /**
-   * 获取或创建会话记忆（增强版，自动加载历史消息）
+   * 获取或创建会话记忆
    */
-  private async getConversationMemory(conversationId: string): Promise<BufferMemory> {
+  private getConversationMemory(conversationId: string): BufferMemory {
     if (!this.conversationMemories.has(conversationId)) {
       const memory = new BufferMemory({
         returnMessages: true,
-        memoryKey: 'chat_history',
-        inputKey: 'input',
-        outputKey: 'output'
+        memoryKey: 'chat_history'
       });
-      
-      // 从数据库加载历史消息到记忆中
-      await this.loadHistoryToMemory(conversationId, memory);
-      
       this.conversationMemories.set(conversationId, memory);
     }
     return this.conversationMemories.get(conversationId)!;
   }
-
+  
   /**
-   * 从数据库加载历史消息到记忆中（智能处理任务消息）
+   * 使用LangChain增强的聊天处理
    */
-  private async loadHistoryToMemory(conversationId: string, memory: BufferMemory): Promise<void> {
+  private async handleChatIntentEnhanced(conversationId: string, userId: string, content: string): Promise<{
+    response: Message;
+    taskId: undefined;
+  }> {
     try {
-      const recentMessages = await messageDao.getRecentMessages(conversationId, 20);
+      logger.info(`[LangChain] Processing chat intent with enhanced features [Conversation ID: ${conversationId}]`);
       
-      let conversationPairs = 0;
-      let i = 0;
+      // 获取会话记忆
+      const memory = this.getConversationMemory(conversationId);
       
-      while (i < recentMessages.length) {
-        const currentMessage = recentMessages[i];
-        
-        if (currentMessage?.type === MessageType.USER) {
-          // 找到用户消息，寻找后续的助手回复
-          let assistantResponses: string[] = [];
-          let j = i + 1;
-          
-          // 收集所有连续的助手消息（包括任务相关的多条消息）
-          while (j < recentMessages.length && recentMessages[j]?.type === MessageType.ASSISTANT) {
-            assistantResponses.push(recentMessages[j].content);
-            j++;
+      // 从记忆中获取历史消息
+      const memoryVariables = await memory.loadMemoryVariables({});
+      const chatHistory = memoryVariables.chat_history || [];
+      
+      // 创建增强的提示模板
+      const enhancedPrompt = ChatPromptTemplate.fromMessages([
+        ['system', `You are a helpful AI assistant having a conversation with a user.
+Remember the conversation context and provide coherent, helpful responses.
+If the user asks about performing specific tasks, you can suggest creating a task for them.`],
+        ...chatHistory.map((msg: any) => {
+          if (msg._getType() === 'human') {
+            return ['human', msg.content];
+          } else if (msg._getType() === 'ai') {
+            return ['assistant', msg.content];
           }
-          
-          // 如果有助手回复，将它们合并成一个对话对
-          if (assistantResponses.length > 0) {
-            const combinedResponse = assistantResponses.join('\n\n');
-            
-            await memory.saveContext(
-              { input: currentMessage.content },
-              { output: combinedResponse }
-            );
-            
-            conversationPairs++;
-          }
-          
-          // 跳到下一个用户消息
-          i = j;
-        } else {
-          // 如果不是用户消息，继续寻找
-          i++;
-        }
-      }
+          return ['system', msg.content];
+        }),
+        ['human', content]
+      ]);
       
-      logger.info(`✅ 已加载 ${conversationPairs} 条历史对话到记忆中 [对话ID: ${conversationId}]`);
+      // 格式化提示
+      const formattedMessages = await enhancedPrompt.formatMessages({});
+      
+      // 调用LLM
+      const response = await this.llm.invoke(formattedMessages);
+      
+      // 保存到记忆
+      await memory.saveContext(
+        { input: content },
+        { output: response.content.toString() }
+      );
+      
+      // 保存助手回复
+      const assistantMessage = await messageDao.createMessage({
+        conversationId,
+        content: response.content.toString(),
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+      
+      // 增量会话消息计数
+      await conversationDao.incrementMessageCount(conversationId);
+      
+      logger.info(`[LangChain] Chat intent processed successfully with memory`);
+      
+      return {
+        response: assistantMessage,
+        taskId: undefined
+      };
     } catch (error) {
-      logger.error(`❌ 加载历史对话到记忆失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`[LangChain] Error processing enhanced chat intent:`, error);
+      
+      // 降级到原有实现
+      return this.handleChatIntent(conversationId, userId, content);
     }
   }
-  
-
   
   /**
    * Create new conversation
@@ -341,8 +353,9 @@ export class ConversationService {
   
   /**
    * Process user message - Core functionality
-   * 1. Identify user intent (chat vs task)
-   * 2. Process message based on intent
+   * 1. Check if this is an Agent trial conversation
+   * 2. Identify user intent (chat vs task)
+   * 3. Process message based on intent
    */
   async processUserMessage(conversationId: string, userId: string, content: string): Promise<{
     message: Message;
@@ -364,14 +377,21 @@ export class ConversationService {
       // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 2. Identify user intent
+      // 2. Check if this is an Agent trial conversation
+      const conversation = await conversationDao.getConversationById(conversationId);
+      if (conversation && conversation.title.startsWith('[AGENT:')) {
+        // This is an Agent trial conversation, use Agent-specific logic
+        return this.handleAgentTrialConversation(conversationId, userId, content, userMessage);
+      }
+      
+      // 3. Identify user intent for regular conversations
       const intentResult = await this.identifyUserIntent(conversationId, content, userId);
       const userIntent = intentResult.intent;
       
       // Update message intent
       await messageDao.updateMessageIntent(userMessage.id, userIntent);
       
-      // 3. Process message based on intent
+      // 4. Process message based on intent
       let response: Message;
       let taskId: string | undefined;
       
@@ -387,13 +407,13 @@ export class ConversationService {
         // Increment conversation task count
         await conversationDao.incrementTaskCount(conversationId);
       } else {
-        // Handle chat intent
-        const chatResult = await this.handleChatIntent(conversationId, userId, content);
+        // Handle chat intent - 使用增强版本
+        const chatResult = await this.handleChatIntentEnhanced(conversationId, userId, content);
         response = chatResult.response;
         taskId = chatResult.taskId;
       }
       
-      // 4. Return processing result
+      // 5. Return processing result
       return {
         message: userMessage,
         response,
@@ -511,111 +531,39 @@ Please analyze the user intent and return the result in JSON format:
     try {
       logger.info(`Processing chat intent [Conversation ID: ${conversationId}]`);
       
-      // 尝试使用增强记忆功能
-      try {
-        // 获取对话记忆
-        const memory = await this.getConversationMemory(conversationId);
-        
-        // 获取完整的历史对话（包含任务消息）
-        const conversationHistory = await messageDao.getRecentMessages(conversationId, 15);
-        const completeHistory = conversationHistory.map(msg => {
-          if (msg.type === MessageType.USER) {
-            return new HumanMessage(msg.content);
-          } else if (msg.type === MessageType.ASSISTANT) {
-            return new AIMessage(msg.content);
-          } else {
-            return new SystemMessage(msg.content);
-          }
-        });
-        
-        // 构建增强的系统提示
-        const systemPrompt = `你是一个智能助手，具有以下能力：
-- 记住对话历史和上下文
-- 提供连贯、有用的回复
-- 如果用户需要执行具体任务，可以建议创建任务
-
-**重要提示**：对话历史中可能包含任务执行的完整过程，包括：
-- 📋 任务创建
-- 🔍 任务分析  
-- ⚙️ 任务执行开始
-- 🔧 工具调用详情
-- ✅ 任务执行完成
-- 📊 任务总结
-
-请基于这些信息提供有针对性的回复。`;
-        
-        const enhancedMessages = [
-          new SystemMessage(systemPrompt),
-          ...completeHistory,
-          new HumanMessage(content)
-        ];
-        
-        // 调用LLM生成回复
-        const response = await this.llm.invoke(enhancedMessages);
-        
-        // 更新记忆
-        await memory.saveContext(
-          { input: content },
-          { output: response.content.toString() }
-        );
-        
-        // 保存助手回复
-        const assistantMessage = await messageDao.createMessage({
-          conversationId,
-          content: response.content.toString(),
-          type: MessageType.ASSISTANT,
-          intent: MessageIntent.CHAT
-        });
-        
-        // 增量会话消息计数
-        await conversationDao.incrementMessageCount(conversationId);
-        
-        logger.info(`✅ Enhanced chat intent processed successfully with memory`);
-        
-        return {
-          response: assistantMessage,
-          taskId: undefined
-        };
-        
-      } catch (memoryError) {
-        logger.warn(`Memory enhancement failed, falling back to standard processing:`, memoryError);
-        
-        // 降级到原有实现
-        // Get conversation history for context
-        const conversationHistory = await messageDao.getRecentMessages(conversationId, 10);
-        const messages = conversationHistory.map(msg => {
-          if (msg.type === MessageType.USER) {
-            return new HumanMessage(msg.content);
-          } else if (msg.type === MessageType.ASSISTANT) {
-            return new AIMessage(msg.content);
-          } else {
-            return new SystemMessage(msg.content);
-          }
-        });
-        
-        // Add current user message
-        messages.push(new HumanMessage(content));
-        
-        // Call LLM to generate response
-        const response = await this.llm.invoke(messages);
-        
-        // Save assistant response
-        const assistantMessage = await messageDao.createMessage({
-          conversationId,
-          content: response.content.toString(),
-          type: MessageType.ASSISTANT,
-          intent: MessageIntent.CHAT
-        });
-        
-        // Increment conversation message count
-        await conversationDao.incrementMessageCount(conversationId);
-        
-        return {
-          response: assistantMessage,
-          taskId: undefined
-        };
-      }
+      // Get conversation history for context
+      const conversationHistory = await messageDao.getRecentMessages(conversationId, 10);
+      const messages = conversationHistory.map(msg => {
+        if (msg.type === MessageType.USER) {
+          return new HumanMessage(msg.content);
+        } else if (msg.type === MessageType.ASSISTANT) {
+          return new AIMessage(msg.content);
+        } else {
+          return new SystemMessage(msg.content);
+        }
+      });
       
+      // Add current user message
+      messages.push(new HumanMessage(content));
+      
+      // Call LLM to generate response
+      const response = await this.llm.invoke(messages);
+      
+      // Save assistant response
+      const assistantMessage = await messageDao.createMessage({
+        conversationId,
+        content: response.content.toString(),
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+      
+      // Increment conversation message count
+      await conversationDao.incrementMessageCount(conversationId);
+      
+      return {
+        response: assistantMessage,
+        taskId: undefined
+      };
     } catch (error) {
       logger.error(`Error processing chat intent [Conversation ID: ${conversationId}]:`, error);
       throw new Error('Error processing message');
@@ -630,59 +578,328 @@ Please analyze the user intent and return the result in JSON format:
     taskId: string;
   }> {
     try {
-      logger.info(`🚀 任务处理开始 [对话ID: ${conversationId}]`);
+      logger.info(`Handling task intent [Conversation ID: ${conversationId}]`);
       
-      // 1. 创建任务
+      // 1. Create task
       const task = await this.taskService.createTask({
         userId,
         title: content.length > 30 ? content.substring(0, 30) + '...' : content,
         content,
-        conversationId
+        conversationId // Directly link to conversation
       });
       
-      // 2. 创建任务确认消息
-      const taskMessage = await messageDao.createMessage({
+      // 2. Create assistant message reply
+      const response = await messageDao.createMessage({
         conversationId,
-        content: `任务已创建并开始执行: ${task.title}`,
+        content: `Task created: ${task.title}\n`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
       });
       
+      // 3. Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 3. 异步执行任务（让真实的执行系统处理）
-      this.taskExecutorService.executeTaskStream(task.id, (data: any) => {
-        // 任务执行过程中的回调，真实的执行系统会处理消息创建
-        logger.debug(`任务执行事件 [${task.id}]:`, data);
-      }).catch(error => {
-        logger.error(`任务执行失败 [${task.id}]:`, error);
-      });
-      
-      logger.info(`✅ 任务创建完成，正在后台执行 [对话ID: ${conversationId}, 任务ID: ${task.id}]`);
+      logger.info(`Task intent handling complete [Conversation ID: ${conversationId}, Task ID: ${task.id}]`);
       
       return {
-        response: taskMessage,
+        response,
         taskId: task.id
       };
-      
     } catch (error) {
-      logger.error(`❌ 任务创建失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Error handling task intent [Conversation ID: ${conversationId}]:`, error);
       
-      // 创建错误消息
+      // Create error response
       const errorMessage = await messageDao.createMessage({
         conversationId,
-        content: `任务创建失败: ${error instanceof Error ? error.message : String(error)}`,
+        content: `Sorry, there was a problem creating the task. ${error instanceof Error ? error.message : ''}`,
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT // Downgrade to regular chat
+      });
+      
+      throw error;
+    }
+  }
+  
+  /**
+   * Handle Agent trial conversation
+   */
+  private async handleAgentTrialConversation(
+    conversationId: string, 
+    userId: string, 
+    content: string, 
+    userMessage: Message
+  ): Promise<{
+    message: Message;
+    response: Message;
+    intent: MessageIntent;
+    taskId?: string;
+  }> {
+    try {
+      // Extract agentId from conversation title
+      const conversation = await conversationDao.getConversationById(conversationId);
+      const agentId = this.extractAgentIdFromTitle(conversation?.title || '');
+      
+      if (!agentId) {
+        throw new Error('Invalid Agent trial conversation');
+      }
+      
+      // Import AgentService dynamically to avoid circular dependency
+      const { AgentService } = await import('./agentService.js');
+      const agentService = new AgentService();
+      
+      // Get Agent information
+      const agent = await agentService.getAgentById(agentId, userId);
+      
+      // Use Agent-specific intent analysis
+      const intent = await this.analyzeAgentUserIntent(content, agent);
+      
+      // Update message intent
+      await messageDao.updateMessageIntent(userMessage.id, intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT);
+      
+      // Process message using Agent logic
+      let response: Message;
+      let taskId: string | undefined;
+      
+      if (intent.type === 'task') {
+        // Execute Agent task
+        const taskResult = await this.executeAgentTask(content, agent, userId, conversationId);
+        response = await messageDao.createMessage({
+          conversationId,
+          content: taskResult,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK
+        });
+        
+        // Increment conversation task count
+        await conversationDao.incrementTaskCount(conversationId);
+      } else {
+        // Chat with Agent (with memory support)
+        const chatResult = await this.chatWithAgent(content, agent, conversationId);
+        response = await messageDao.createMessage({
+          conversationId,
+          content: chatResult,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.CHAT
+        });
+      }
+      
+      // Increment conversation message count
+      await conversationDao.incrementMessageCount(conversationId);
+      
+      return {
+        message: userMessage,
+        response,
+        intent: intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT,
+        taskId
+      };
+    } catch (error) {
+      logger.error(`Error handling Agent trial conversation [Conversation ID: ${conversationId}]:`, error);
+      
+      // Create error response
+      const errorResponse = await messageDao.createMessage({
+        conversationId,
+        content: 'Sorry, I encountered an error while processing your request. Please try again.',
         type: MessageType.ASSISTANT,
         intent: MessageIntent.CHAT
       });
       
       await conversationDao.incrementMessageCount(conversationId);
       
-      throw error;
+      return {
+        message: userMessage,
+        response: errorResponse,
+        intent: MessageIntent.CHAT,
+        taskId: undefined
+      };
     }
   }
   
+  /**
+   * Extract Agent ID from conversation title
+   */
+  private extractAgentIdFromTitle(title: string): string | null {
+    const match = title.match(/^\[AGENT:([^\]]+)\]/);
+    return match ? match[1] : null;
+  }
+  
+  /**
+   * Analyze user intent for Agent conversations
+   */
+  private async analyzeAgentUserIntent(content: string, agent: any): Promise<{ type: 'chat' | 'task'; confidence: number }> {
+    try {
+      const prompt = `Analyze the user's intent based on their message and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? JSON.stringify(agent.mcpWorkflow.mcps?.map((m: any) => m.name)) : 'general'}
+
+User message: "${content}"
+
+Determine if the user wants to:
+1. "task" - Execute a specific task using the agent's workflow capabilities
+2. "chat" - Have a general conversation
+
+TASK INDICATORS (classify as "task"):
+- Action requests: "Help me...", "Show me...", "Create...", "Generate...", "Analyze...", "Get...", "Find...", "Execute..."
+- Imperative statements: "Do this...", "Make a...", "Build...", "Search for...", "Retrieve..."
+- Task-oriented requests related to the agent's capabilities
+- Questions that expect the agent to perform actions or use its tools
+- Requests for the agent to demonstrate its functionality
+
+CHAT INDICATORS (classify as "chat"):
+- General conversation: "Hello", "How are you?", "Nice to meet you"
+- Philosophical discussions or opinions
+- Casual small talk
+- Questions about the agent's nature or feelings (not capabilities)
+
+Look for action words, specific requests, or task-oriented language. 
+If the user's message relates to using the agent's capabilities or tools, classify as "task".
+If the user's message is asking the agent to perform any action, classify as "task".
+
+Respond with ONLY a JSON object:
+{"type": "chat" | "task", "confidence": 0.0-1.0, "reasoning": "brief explanation"}`;
+
+      const response = await this.llm.invoke([new SystemMessage(prompt)]);
+      const result = JSON.parse(response.content as string);
+      
+      return {
+        type: result.type,
+        confidence: result.confidence
+      };
+    } catch (error) {
+      logger.error('Analyze Agent user intent failed:', error);
+      // Default to chat
+      return { type: 'chat', confidence: 0.5 };
+    }
+  }
+  
+  /**
+   * Execute Agent task
+   */
+  private async executeAgentTask(content: string, agent: any, userId: string, conversationId: string): Promise<string> {
+    try {
+      // Create task based on Agent's workflow
+      const taskService = getTaskService();
+      const task = await taskService.createTask({
+        userId,
+        title: content.length > 30 ? content.substring(0, 30) + '...' : content,
+        content,
+        conversationId
+      });
+      
+      // Apply Agent's workflow to the task
+      if (agent.mcpWorkflow) {
+        await taskService.updateTask(task.id, {
+          mcpWorkflow: agent.mcpWorkflow,
+          status: 'created'
+        });
+        
+        logger.info(`Applied Agent workflow to task [Agent: ${agent.name}, Task: ${task.id}]`);
+      }
+      
+      // Execute the task using Agent's workflow
+      try {
+        const executionSuccess = await this.taskExecutorService.executeTaskStream(task.id, (data) => {
+          // Silent execution for non-streaming context
+          logger.debug(`Task execution progress: ${JSON.stringify(data)}`);
+        });
+        
+        if (executionSuccess) {
+          // Get the completed task with results
+          const completedTask = await taskService.getTaskById(task.id);
+          
+          const successMessage = `✅ Task completed successfully using ${agent.name}'s capabilities!
+
+**Task**: ${task.title}
+**Agent**: ${agent.name}
+**Status**: ${completedTask?.status || 'completed'}
+
+I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
+
+          return successMessage;
+        } else {
+          return `⚠️ Task was created but execution encountered issues. Task ID: ${task.id}
+
+I'll help you with this task using my capabilities. You can check the task status and results separately.`;
+        }
+      } catch (executionError) {
+        logger.error(`Agent task execution failed [Task: ${task.id}]:`, executionError);
+        
+        return `⚠️ Task created but execution failed: ${task.title}
+
+**Agent**: ${agent.name}
+**Error**: ${executionError instanceof Error ? executionError.message : 'Unknown execution error'}
+
+The task has been saved and you can try executing it again later.`;
+      }
+    } catch (error) {
+      logger.error('Execute Agent task failed:', error);
+      return `❌ I encountered an error while creating and executing the task. Please try again or rephrase your request.
+
+**Error**: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  }
+  
+  /**
+   * Chat with Agent (with memory support)
+   */
+  private async chatWithAgent(content: string, agent: any, conversationId: string): Promise<string> {
+    try {
+      logger.info(`[Agent Chat] Processing chat with ${agent.name} [Conversation ID: ${conversationId}]`);
+      
+      // 获取会话记忆
+      const memory = this.getConversationMemory(conversationId);
+      
+      // 从记忆中获取历史消息
+      const memoryVariables = await memory.loadMemoryVariables({});
+      const chatHistory = memoryVariables.chat_history || [];
+      
+      // 创建Agent角色的提示模板
+      const agentPrompt = ChatPromptTemplate.fromMessages([
+        ['system', `You are ${agent.name}, an AI agent with the following characteristics:
+
+Description: ${agent.description}
+
+Your capabilities include: ${agent.mcpWorkflow ? 
+        agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
+        'general assistance'}
+
+Respond to the user's message in a helpful and friendly manner, staying in character as this agent. 
+If they ask about your capabilities, mention what you can help with based on your description and tools.
+Remember the conversation context and provide coherent, helpful responses.`],
+        ...chatHistory.map((msg: any) => {
+          if (msg._getType() === 'human') {
+            return ['human', msg.content];
+          } else if (msg._getType() === 'ai') {
+            return ['assistant', msg.content];
+          }
+          return ['system', msg.content];
+        }),
+        ['human', content]
+      ]);
+      
+      // 格式化提示
+      const formattedMessages = await agentPrompt.formatMessages({});
+      
+      // 调用LLM
+      const response = await this.llm.invoke(formattedMessages);
+      
+      // 保存到记忆
+      await memory.saveContext(
+        { input: content },
+        { output: response.content.toString() }
+      );
+      
+      logger.info(`[Agent Chat] Successfully processed chat with memory support`);
+      
+      return response.content as string;
+    } catch (error) {
+      logger.error('Chat with Agent failed:', error);
+      return `Hello! I'm ${agent.name}. I'd be happy to help you. Could you tell me more about what you need assistance with?`;
+    }
+  }
+
   /**
    * Handle streaming user message (for real-time response)
    */
@@ -710,7 +927,35 @@ Please analyze the user intent and return the result in JSON format:
         data: { messageId: userMessage.id }
       });
       
-      // 2. Identify user intent
+      // 2. Check if this is an Agent trial conversation
+      const conversation = await conversationDao.getConversationById(conversationId);
+      const agentId = this.extractAgentIdFromTitle(conversation?.title || '');
+      
+      if (agentId) {
+        // Handle Agent trial conversation (streaming)
+        streamCallback({
+          event: 'agent_detection',
+          data: { status: 'processing', agentId }
+        });
+        
+        const agentResult = await this.handleAgentTrialConversationStream(
+          conversationId,
+          userId,
+          content,
+          userMessage,
+          agentId,
+          streamCallback
+        );
+        
+        return {
+          messageId: userMessage.id,
+          responseId: agentResult.responseId,
+          intent: agentResult.intent,
+          taskId: agentResult.taskId
+        };
+      }
+      
+      // 3. Regular conversation processing
       streamCallback({
         event: 'intent_detection',
         data: { status: 'processing' }
@@ -733,7 +978,7 @@ Please analyze the user intent and return the result in JSON format:
         }
       });
       
-      // 3. Process message based on intent
+      // 4. Process message based on intent
       let responseId: string;
       let taskId: string | undefined;
       
@@ -778,7 +1023,7 @@ Please analyze the user intent and return the result in JSON format:
         }
       });
       
-      // 4. Return processing result
+      // 5. Return processing result
       return {
         messageId: userMessage.id,
         responseId,
@@ -802,7 +1047,7 @@ Please analyze the user intent and return the result in JSON format:
   }
   
   /**
-   * Stream chat intent handling - 增强版
+   * Stream chat intent handling
    */
   private async handleChatIntentStream(
     conversationId: string, 
@@ -811,11 +1056,6 @@ Please analyze the user intent and return the result in JSON format:
     streamCallback: (chunk: string) => void
   ): Promise<{ responseId: string; taskId: undefined }> {
     try {
-      logger.info(`🧠 增强版流式聊天处理开始 [对话ID: ${conversationId}]`);
-      
-      // 获取或创建对话记忆
-      const memory = await this.getConversationMemory(conversationId);
-      
       // Create an empty reply message
       const assistantMessage = await messageDao.createMessage({
         conversationId,
@@ -827,9 +1067,9 @@ Please analyze the user intent and return the result in JSON format:
       // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 获取完整的历史对话（包含任务消息）
-      const conversationHistory = await messageDao.getRecentMessages(conversationId, 15);
-      const completeHistory = conversationHistory.map(msg => {
+      // Get conversation history for context
+      const conversationHistory = await messageDao.getRecentMessages(conversationId, 10);
+      const messages = conversationHistory.map(msg => {
         if (msg.type === MessageType.USER) {
           return new HumanMessage(msg.content);
         } else if (msg.type === MessageType.ASSISTANT) {
@@ -839,33 +1079,14 @@ Please analyze the user intent and return the result in JSON format:
         }
       });
       
-      // 构建增强的系统提示
-      const systemPrompt = `你是一个智能助手，具有以下能力：
-- 记住对话历史和上下文
-- 提供连贯、有用的回复
-- 如果用户需要执行具体任务，可以建议创建任务
-
-**重要提示**：对话历史中可能包含任务执行的完整过程，包括：
-- 📋 任务创建
-- 🔍 任务分析  
-- ⚙️ 任务执行开始
-- 🔧 工具调用详情
-- ✅ 任务执行完成
-- 📊 任务总结
-
-请基于这些信息提供有针对性的回复。`;
-      
-      const enhancedMessages = [
-        new SystemMessage(systemPrompt),
-        ...completeHistory,
-        new HumanMessage(content)
-      ];
+      // Add current user message
+      messages.push(new HumanMessage(content));
       
       // Prepare streaming response handling
       let fullResponse = '';
       
       // Call LLM with streaming
-      const stream = await this.llm.stream(enhancedMessages);
+      const stream = await this.llm.stream(messages);
       
       // Process streaming response
       for await (const chunk of stream) {
@@ -875,77 +1096,171 @@ Please analyze the user intent and return the result in JSON format:
         }
       }
       
-      // 更新记忆
-      try {
-        await memory.saveContext(
-          { input: content },
-          { output: fullResponse }
-        );
-      } catch (memoryError) {
-        logger.warn(`记忆更新失败:`, memoryError);
-      }
-      
       // Update assistant message with complete content
       await messageDao.updateMessageContent(assistantMessage.id, fullResponse);
-      
-      logger.info(`✅ 增强版流式聊天处理完成 [对话ID: ${conversationId}]`);
       
       return {
         responseId: assistantMessage.id,
         taskId: undefined
       };
     } catch (error) {
-      logger.error(`❌ 增强版流式聊天处理失败，降级到简单处理 [对话ID: ${conversationId}]:`, error);
-      
-      // 降级到简单处理
-      try {
-        // Create an empty reply message
-        const assistantMessage = await messageDao.createMessage({
-          conversationId,
-          content: '',
-          type: MessageType.ASSISTANT,
-          intent: MessageIntent.CHAT
-        });
-        
-        await conversationDao.incrementMessageCount(conversationId);
-        
-        // Simple LLM call without memory
-        const conversationHistory = await messageDao.getRecentMessages(conversationId, 10);
-        const messages = conversationHistory.map(msg => {
-          if (msg.type === MessageType.USER) {
-            return new HumanMessage(msg.content);
-          } else if (msg.type === MessageType.ASSISTANT) {
-            return new AIMessage(msg.content);
-          } else {
-            return new SystemMessage(msg.content);
-          }
-        });
-        
-        messages.push(new HumanMessage(content));
-        
-        let fullResponse = '';
-        const stream = await this.llm.stream(messages);
-        
-        for await (const chunk of stream) {
-          if (chunk.content) {
-            fullResponse += chunk.content;
-            streamCallback(chunk.content as string);
-          }
-        }
-        
-        await messageDao.updateMessageContent(assistantMessage.id, fullResponse);
-        
-        return {
-          responseId: assistantMessage.id,
-          taskId: undefined
-        };
-      } catch (fallbackError) {
-        logger.error(`❌ 简单流式聊天处理也失败 [对话ID: ${conversationId}]:`, fallbackError);
-        throw new Error('Error processing message');
-      }
+      logger.error(`Error processing chat intent stream [Conversation ID: ${conversationId}]:`, error);
+      throw new Error('Error processing message');
     }
   }
   
+  /**
+   * Handle Agent trial conversation (streaming version)
+   */
+  private async handleAgentTrialConversationStream(
+    conversationId: string, 
+    userId: string, 
+    content: string, 
+    userMessage: Message,
+    agentId: string,
+    streamCallback: (chunk: any) => void
+  ): Promise<{
+    responseId: string;
+    intent: MessageIntent;
+    taskId?: string;
+  }> {
+    try {
+      // Get Agent information
+      streamCallback({
+        event: 'agent_loading',
+        data: { status: 'loading_agent', agentId }
+      });
+      
+      // Import AgentService dynamically to avoid circular dependency
+      const { AgentService } = await import('./agentService.js');
+      const agentService = new AgentService();
+      
+      // Get Agent information
+      const agent = await agentService.getAgentById(agentId, userId);
+      
+      if (!agent) {
+        throw new Error(`Agent not found: ${agentId}`);
+      }
+      
+      streamCallback({
+        event: 'agent_loaded',
+        data: { 
+          status: 'loaded',
+          agent: {
+            id: agent.id,
+            name: agent.name,
+            description: agent.description
+          }
+        }
+      });
+      
+      // Use Agent-specific intent analysis (streaming)
+      streamCallback({
+        event: 'agent_intent_analysis',
+        data: { status: 'analyzing' }
+      });
+      
+      const intent = await this.analyzeAgentUserIntentStream(content, agent, streamCallback);
+      
+      // Update message intent
+      await messageDao.updateMessageIntent(userMessage.id, intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT);
+      
+      streamCallback({
+        event: 'agent_intent_analysis',
+        data: { 
+          status: 'completed',
+          intent: intent.type,
+          confidence: intent.confidence
+        }
+      });
+      
+      // Process message using Agent logic (streaming)
+      let responseId: string;
+      let taskId: string | undefined;
+      
+      if (intent.type === 'task') {
+        // Execute Agent task (streaming)
+        const taskResult = await this.executeAgentTaskStream(
+          content, 
+          agent, 
+          userId, 
+          conversationId,
+          (chunk) => streamCallback({ event: 'agent_task_execution', data: chunk })
+        );
+        
+        responseId = taskResult.responseId;
+        taskId = taskResult.taskId;
+        
+        // Link user message to task
+        if (taskId) {
+          await messageDao.linkMessageToTask(userMessage.id, taskId);
+        }
+        
+        // Increment conversation task count
+        await conversationDao.incrementTaskCount(conversationId);
+      } else {
+        // Chat with Agent (streaming with memory support)
+        const chatResult = await this.chatWithAgentStream(
+          content, 
+          agent, 
+          conversationId,
+          (chunk) => streamCallback({ event: 'agent_chat_response', data: { content: chunk } })
+        );
+        
+        responseId = chatResult.responseId;
+        taskId = chatResult.taskId;
+      }
+      
+      // Increment conversation message count
+      await conversationDao.incrementMessageCount(conversationId);
+      
+      // Send Agent processing complete message
+      streamCallback({
+        event: 'agent_processing_complete',
+        data: { 
+          responseId,
+          intent: intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT,
+          taskId,
+          agentId: agent.id,
+          agentName: agent.name
+        }
+      });
+      
+      return {
+        responseId,
+        intent: intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT,
+        taskId
+      };
+    } catch (error) {
+      logger.error(`Error handling Agent trial conversation stream [Conversation ID: ${conversationId}]:`, error);
+      
+      // Create error response
+      const errorResponse = await messageDao.createMessage({
+        conversationId,
+        content: 'Sorry, I encountered an error while processing your request. Please try again.',
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+      
+      await conversationDao.incrementMessageCount(conversationId);
+      
+      // Send error through stream
+      streamCallback({
+        event: 'agent_error',
+        data: { 
+          message: 'Error processing Agent request',
+          details: error instanceof Error ? error.message : String(error)
+        }
+      });
+      
+      return {
+        responseId: errorResponse.id,
+        intent: MessageIntent.CHAT,
+        taskId: undefined
+      };
+    }
+  }
+
   /**
    * Stream task intent handling
    */
@@ -956,94 +1271,418 @@ Please analyze the user intent and return the result in JSON format:
     streamCallback: (chunk: any) => void
   ): Promise<{ responseId: string; taskId: string }> {
     try {
-      logger.info(`🚀 流式任务处理开始 [对话ID: ${conversationId}]`);
-      
-      // 1. 创建任务
-      streamCallback({ 
-        status: 'creating_task', 
-        message: '正在创建任务...' 
-      });
-      
+      // Create task
+      streamCallback({ status: 'creating_task' });
       const task = await this.taskService.createTask({
         userId,
         title: content.length > 30 ? content.substring(0, 30) + '...' : content,
         content,
-        conversationId
+        conversationId // Direct conversation link
       });
       
       streamCallback({ 
         status: 'task_created',
         taskId: task.id,
-        title: task.title,
-        message: `任务已创建: ${task.title}`
+        title: task.title
       });
       
-      // 2. 创建任务确认消息
-      const taskMessage = await messageDao.createMessage({
+      // Create an assistant message reply
+      const assistantMessage = await messageDao.createMessage({
         conversationId,
-        content: `任务已创建并开始执行: ${task.title}`,
+        content: `Task created: ${task.title}\n`,
         type: MessageType.ASSISTANT,
         intent: MessageIntent.TASK,
         taskId: task.id
       });
       
+      // Increment conversation message count
       await conversationDao.incrementMessageCount(conversationId);
       
-      // 3. 开始执行任务（使用真实的执行系统）
-      streamCallback({
-        status: 'starting_execution',
-        message: '开始执行任务...'
-      });
-      
-      // 执行真实的任务，将执行过程的事件传递给前端
-      this.taskExecutorService.executeTaskStream(task.id, (executionData: any) => {
-        // 将真实执行系统的事件转发给前端
-        streamCallback({
-          status: 'execution_event',
-          data: executionData,
-          message: `任务执行中...`
-        });
-      }).catch(error => {
-        logger.error(`任务执行失败 [${task.id}]:`, error);
-        streamCallback({
-          status: 'execution_error',
-          error: error.message,
-          message: '任务执行出现错误'
-        });
-      });
-      
-      streamCallback({
-        status: 'task_initiated',
-        message: '任务已启动，请查看对话历史了解执行进度'
-      });
-      
-      logger.info(`✅ 流式任务创建完成，正在后台执行 [对话ID: ${conversationId}, 任务ID: ${task.id}]`);
-      
       return { 
-        responseId: taskMessage.id,
+        responseId: assistantMessage.id,
         taskId: task.id
       };
-      
     } catch (error) {
-      logger.error(`❌ 流式任务创建失败 [对话ID: ${conversationId}]:`, error);
+      logger.error(`Error handling task intent stream [Conversation ID: ${conversationId}]:`, error);
       
-      // 创建错误消息
+      // Create error response
       const errorMessage = await messageDao.createMessage({
         conversationId,
-        content: `任务创建失败: ${error instanceof Error ? error.message : String(error)}`,
+        content: `Sorry, there was a problem creating the task. ${error instanceof Error ? error.message : ''}`,
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT // Downgrade to regular chat
+      });
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Analyze Agent user intent (streaming version)
+   */
+  private async analyzeAgentUserIntentStream(
+    content: string, 
+    agent: any, 
+    streamCallback: (chunk: any) => void
+  ): Promise<{ type: 'chat' | 'task'; confidence: number }> {
+    try {
+      streamCallback({
+        event: 'intent_analysis_start',
+        data: { message: 'Analyzing user intent with Agent context...' }
+      });
+
+      const prompt = `Analyze the user's intent based on their message and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? JSON.stringify(agent.mcpWorkflow.mcps?.map((m: any) => m.name)) : 'general'}
+
+User message: "${content}"
+
+Determine if the user wants to:
+1. "task" - Execute a specific task using the agent's workflow capabilities
+2. "chat" - Have a general conversation
+
+TASK INDICATORS (classify as "task"):
+- Action requests: "Help me...", "Show me...", "Create...", "Generate...", "Analyze...", "Get...", "Find...", "Execute..."
+- Imperative statements: "Do this...", "Make a...", "Build...", "Search for...", "Retrieve..."
+- Task-oriented requests related to the agent's capabilities
+- Questions that expect the agent to perform actions or use its tools
+- Requests for the agent to demonstrate its functionality
+
+CHAT INDICATORS (classify as "chat"):
+- General conversation: "Hello", "How are you?", "Nice to meet you"
+- Philosophical discussions or opinions
+- Casual small talk
+- Questions about the agent's nature or feelings (not capabilities)
+
+Look for action words, specific requests, or task-oriented language.
+If the user's message relates to using the agent's capabilities or tools, classify as "task".
+If the user's message is asking the agent to perform any action, classify as "task".
+
+Respond with ONLY a JSON object:
+{"type": "chat" | "task", "confidence": 0.0-1.0, "reasoning": "brief explanation"}`;
+
+      const response = await this.llm.invoke([new SystemMessage(prompt)]);
+      const result = JSON.parse(response.content as string);
+      
+      streamCallback({
+        event: 'intent_analysis_complete',
+        data: { 
+          type: result.type,
+          confidence: result.confidence,
+          reasoning: result.reasoning
+        }
+      });
+      
+      return {
+        type: result.type,
+        confidence: result.confidence
+      };
+    } catch (error) {
+      logger.error('Analyze Agent user intent stream failed:', error);
+      
+      streamCallback({
+        event: 'intent_analysis_error',
+        data: { message: 'Intent analysis failed, defaulting to chat' }
+      });
+      
+      // Default to chat
+      return { type: 'chat', confidence: 0.5 };
+    }
+  }
+
+  /**
+   * Execute Agent task (streaming version)
+   */
+  private async executeAgentTaskStream(
+    content: string, 
+    agent: any, 
+    userId: string, 
+    conversationId: string,
+    streamCallback: (chunk: any) => void
+  ): Promise<{ responseId: string; taskId: string | undefined }> {
+    try {
+      streamCallback({
+        event: 'task_creation_start',
+        data: { message: 'Creating task based on Agent workflow...' }
+      });
+
+      // Create task based on Agent's workflow
+      const taskService = getTaskService();
+      const task = await taskService.createTask({
+        userId,
+        title: content.length > 30 ? content.substring(0, 30) + '...' : content,
+        content,
+        conversationId
+      });
+
+      streamCallback({
+        event: 'task_created',
+        data: { 
+          taskId: task.id,
+          title: task.title,
+          message: `Task created: ${task.title}`
+        }
+      });
+
+      // Apply Agent's workflow to the task
+      if (agent.mcpWorkflow) {
+        streamCallback({
+          event: 'workflow_applying',
+          data: { message: 'Applying Agent workflow configuration...' }
+        });
+
+        await taskService.updateTask(task.id, {
+          mcpWorkflow: agent.mcpWorkflow,
+          status: 'created'
+        });
+
+        streamCallback({
+          event: 'workflow_applied',
+          data: { 
+            message: 'Agent workflow applied successfully',
+            mcpCount: agent.mcpWorkflow.mcps?.length || 0
+          }
+        });
+      }
+
+      // Execute the task using Agent's workflow
+      let executionSuccess = false;
+      let executionError: Error | null = null;
+
+      try {
+        streamCallback({
+          event: 'task_execution_start',
+          data: { message: 'Starting task execution with Agent workflow...' }
+        });
+
+        executionSuccess = await this.taskExecutorService.executeTaskStream(task.id, (executionData) => {
+          // Forward task execution events to the client
+          streamCallback({
+            event: 'task_execution_progress',
+            data: executionData
+          });
+        });
+
+        if (executionSuccess) {
+          streamCallback({
+            event: 'task_execution_complete',
+            data: { 
+              message: 'Task execution completed successfully',
+              taskId: task.id,
+              success: true
+            }
+          });
+        } else {
+          streamCallback({
+            event: 'task_execution_warning',
+            data: { 
+              message: 'Task execution completed with warnings',
+              taskId: task.id,
+              success: false
+            }
+          });
+        }
+      } catch (error) {
+        executionError = error instanceof Error ? error : new Error('Unknown execution error');
+        logger.error(`Agent task execution failed [Task: ${task.id}]:`, executionError);
+        
+        streamCallback({
+          event: 'task_execution_error',
+          data: { 
+            message: 'Task execution failed',
+            error: executionError.message,
+            taskId: task.id
+          }
+        });
+      }
+
+      // Get the completed task with results
+      const completedTask = await taskService.getTaskById(task.id);
+
+      // Create response message based on execution results
+      let responseContent: string;
+      
+      if (executionSuccess) {
+        responseContent = `✅ Task completed successfully using ${agent.name}'s capabilities!
+
+**Task**: ${task.title}
+**Agent**: ${agent.name}
+**Status**: ${completedTask?.status || 'completed'}
+**Capabilities Used**: ${agent.mcpWorkflow ? 
+        agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
+        'general assistance'}
+
+I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
+      } else if (executionError) {
+        responseContent = `⚠️ Task created but execution failed: ${task.title}
+
+**Agent**: ${agent.name}
+**Error**: ${executionError.message}
+**Task ID**: ${task.id}
+
+The task has been saved and you can try executing it again later.`;
+      } else {
+        responseContent = `⚠️ Task was created but execution encountered issues: ${task.title}
+
+**Agent**: ${agent.name}
+**Status**: ${completedTask?.status || 'unknown'}
+**Task ID**: ${task.id}
+
+I'll help you with this task using my capabilities. You can check the task status and results separately.`;
+      }
+
+      const assistantMessage = await messageDao.createMessage({
+        conversationId,
+        content: responseContent,
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.TASK
+      });
+
+      streamCallback({
+        event: 'task_response_complete',
+        data: { 
+          responseId: assistantMessage.id,
+          taskId: task.id,
+          message: 'Task processing completed',
+          executionSuccess
+        }
+      });
+
+      return {
+        responseId: assistantMessage.id,
+        taskId: task.id
+      };
+    } catch (error) {
+      logger.error('Execute Agent task stream failed:', error);
+      
+      streamCallback({
+        event: 'task_execution_error',
+        data: { message: 'Task creation and execution failed' }
+      });
+
+      // Create error response
+      const errorContent = `❌ I encountered an error while creating and executing the task. Please try again or rephrase your request.
+
+**Error**: ${error instanceof Error ? error.message : 'Unknown error'}`;
+
+      const errorMessage = await messageDao.createMessage({
+        conversationId,
+        content: errorContent,
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.TASK
+      });
+
+      return {
+        responseId: errorMessage.id,
+        taskId: undefined
+      };
+    }
+  }
+
+  /**
+   * Chat with Agent (streaming version with memory support)
+   */
+  private async chatWithAgentStream(
+    content: string, 
+    agent: any, 
+    conversationId: string,
+    streamCallback: (chunk: string) => void
+  ): Promise<{ responseId: string; taskId: undefined }> {
+    try {
+      logger.info(`[Agent Chat Stream] Processing chat with ${agent.name} [Conversation ID: ${conversationId}]`);
+      
+      // Create empty assistant message
+      const assistantMessage = await messageDao.createMessage({
+        conversationId,
+        content: '',  // Empty content, will be updated after stream processing
         type: MessageType.ASSISTANT,
         intent: MessageIntent.CHAT
       });
       
-      await conversationDao.incrementMessageCount(conversationId);
+      // Get conversation memory
+      const memory = this.getConversationMemory(conversationId);
       
-      streamCallback({
-        status: 'task_creation_failed',
-        error: error instanceof Error ? error.message : String(error),
-        message: '任务创建失败'
+      // Load memory variables
+      const memoryVariables = await memory.loadMemoryVariables({});
+      const chatHistory = memoryVariables.chat_history || [];
+      
+      // Create Agent role prompt template
+      const agentPrompt = ChatPromptTemplate.fromMessages([
+        ['system', `You are ${agent.name}, an AI agent with the following characteristics:
+
+Description: ${agent.description}
+
+Your capabilities include: ${agent.mcpWorkflow ? 
+        agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
+        'general assistance'}
+
+Respond to the user's message in a helpful and friendly manner, staying in character as this agent. 
+If they ask about your capabilities, mention what you can help with based on your description and tools.
+Remember the conversation context and provide coherent, helpful responses.`],
+        ...chatHistory.map((msg: any) => {
+          if (msg._getType() === 'human') {
+            return ['human', msg.content];
+          } else if (msg._getType() === 'ai') {
+            return ['assistant', msg.content];
+          }
+          return ['system', msg.content];
+        }),
+        ['human', content]
+      ]);
+      
+      // Format messages
+      const formattedMessages = await agentPrompt.formatMessages({});
+      
+      // Prepare streaming response handling
+      let fullResponse = '';
+      
+      // Call LLM with streaming
+      const stream = await this.llm.stream(formattedMessages);
+      
+      // Process streaming response
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          fullResponse += chunk.content;
+          streamCallback(chunk.content as string);
+        }
+      }
+      
+      // Update assistant message with complete content
+      await messageDao.updateMessageContent(assistantMessage.id, fullResponse);
+      
+      // Save to memory
+      await memory.saveContext(
+        { input: content },
+        { output: fullResponse }
+      );
+      
+      logger.info(`[Agent Chat Stream] Chat completed with ${agent.name}, response length: ${fullResponse.length}`);
+      
+      return {
+        responseId: assistantMessage.id,
+        taskId: undefined
+      };
+    } catch (error) {
+      logger.error(`[Agent Chat Stream] Error processing chat with ${agent.name}:`, error);
+      
+      // Create fallback response
+      const fallbackResponse = `Hello! I'm ${agent.name}. I'd be happy to help you, but I encountered an error processing your message. Could you please try again?`;
+      
+      const fallbackMessage = await messageDao.createMessage({
+        conversationId,
+        content: fallbackResponse,
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
       });
       
-      throw error;
+      streamCallback(fallbackResponse);
+      
+      return {
+        responseId: fallbackMessage.id,
+        taskId: undefined
+      };
     }
   }
 }

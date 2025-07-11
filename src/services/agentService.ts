@@ -402,11 +402,15 @@ Please generate a suitable description for this Agent. Return only the descripti
 
 You need to generate 3 related questions for an AI Agent to help users better understand this Agent's purpose and functionality.
 
+IMPORTANT: Generate questions as ACTION REQUESTS, not as general inquiries. Users should be able to click on these questions to directly execute tasks with the Agent.
+
 Question requirements:
 - Each question should be between 20-100 characters
-- Concise and clear, easy to understand
+- Write as action requests or task descriptions (e.g., "Help me analyze...", "Show me how to...", "Create a report about...")
+- Avoid question words like "What", "How", "When", "Why"
+- Use imperative or request tone that implies task execution
 - Reflect the Agent's specific functionality and use cases
-- Guide users to think about how to use this Agent
+- Guide users to directly use the Agent's capabilities
 - Avoid overly technical expressions
 - Use English only
 
@@ -416,11 +420,12 @@ Agent information:
 - MCP tools used: ${mcpNames}
 - Workflow actions: ${workflowActions}
 
+Generate 3 task-oriented requests that users can directly execute with this Agent.
 Please generate 3 questions, one per line, without numbering or other formatting, return the question text directly.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('Please generate 3 related questions')
+        new HumanMessage('Please generate 3 related task requests')
       ]);
 
       const questionsText = response.content.toString().trim();
@@ -432,12 +437,12 @@ Please generate 3 questions, one per line, without numbering or other formatting
         .filter(q => q.length > 0 && q.length <= 100)
         .slice(0, 3); // Ensure only 3 questions
 
-      // If not enough questions generated, add default questions
+      // If not enough questions generated, add default task-oriented questions
       while (questions.length < 3) {
         const defaultQuestions = [
-          `What can this Agent help me with?`,
-          `When is it appropriate to use this Agent?`,
-          `How can I use this Agent for ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 20)}?`
+          `Help me with ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 30)}`,
+          `Show me how to use this Agent's capabilities`,
+          `Execute a task similar to ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 25)}`
         ];
         
         for (const defaultQ of defaultQuestions) {
@@ -447,15 +452,15 @@ Please generate 3 questions, one per line, without numbering or other formatting
         }
       }
 
-      logger.info(`自动生成Agent相关问题: ${questions.join(', ')}`);
+      logger.info(`自动生成Agent相关任务问题: ${questions.join(', ')}`);
       return questions;
     } catch (error) {
       logger.error('生成Agent相关问题失败:', error);
-      // 返回默认问题
+      // 返回默认任务导向问题
       return [
-        `这个Agent能帮我做什么？`,
-        `什么时候适合使用这个Agent？`,
-        `如何使用这个Agent完成任务？`
+        `Help me use this Agent's capabilities`,
+        `Execute a task with this Agent`,
+        `Show me what this Agent can do`
       ];
     }
   }
@@ -1017,7 +1022,22 @@ Determine if the user wants to:
 1. "task" - Execute a specific task using the agent's workflow capabilities
 2. "chat" - Have a general conversation
 
+TASK INDICATORS (classify as "task"):
+- Action requests: "Help me...", "Show me...", "Create...", "Generate...", "Analyze...", "Get...", "Find...", "Execute..."
+- Imperative statements: "Do this...", "Make a...", "Build...", "Search for...", "Retrieve..."
+- Task-oriented requests related to the agent's capabilities
+- Questions that expect the agent to perform actions or use its tools
+- Requests for the agent to demonstrate its functionality
+
+CHAT INDICATORS (classify as "chat"):
+- General conversation: "Hello", "How are you?", "Nice to meet you"
+- Philosophical discussions or opinions
+- Casual small talk
+- Questions about the agent's nature or feelings (not capabilities)
+
 Look for action words, specific requests, or task-oriented language.
+If the user's message relates to using the agent's capabilities or tools, classify as "task".
+If the user's message is asking the agent to perform any action, classify as "task".
 
 Respond with ONLY a JSON object:
 {"type": "chat" | "task", "confidence": 0.0-1.0, "reasoning": "brief explanation"}`;
