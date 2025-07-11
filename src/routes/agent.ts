@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
+import { getAgentService } from '../services/agentService.js';
+import { TaskExecutorService } from '../services/taskExecutorService.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
-import { agentService } from '../services/agentService.js';
 import { logger } from '../utils/logger.js';
 import { 
   CreateAgentRequest, 
@@ -14,8 +15,21 @@ import {
 
 const router = Router();
 
+// Initialize agentService with TaskExecutorService dependency
+let agentService: ReturnType<typeof getAgentService>;
+
+// Middleware: Ensure agentService is initialized
+router.use((req, res, next) => {
+  if (!agentService) {
+    // Get TaskExecutorService instance from app
+    const taskExecutorService = req.app.get('taskExecutorService') as TaskExecutorService;
+    agentService = getAgentService(taskExecutorService);
+  }
+  next();
+});
+
 /**
- * 创建Agent
+ * Create Agent
  * POST /api/agent
  */
 router.post('/', requireAuth, async (req: Request, res: Response) => {
@@ -25,7 +39,7 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -42,39 +56,39 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       relatedQuestions 
     } = req.body;
 
-    // 验证必需字段
+    // Validate required fields
     if (!name || !description || !status) {
       return res.status(400).json({
         success: false,
         error: 'MISSING_REQUIRED_FIELDS',
-        message: '缺少必需字段：name, description, status'
+        message: 'Missing required fields: name, description, status'
       });
     }
 
-    // 验证status值
+    // Validate status value
     if (!['private', 'public', 'draft'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_STATUS',
-        message: 'status必须是private, public或draft之一'
+        message: 'Status must be one of: private, public, draft'
       });
     }
 
-    // 验证categories格式（如果提供）
+    // Validate categories format (if provided)
     if (categories && !Array.isArray(categories)) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_CATEGORIES',
-        message: 'categories必须是字符串数组'
+        message: 'Categories must be an array of strings'
       });
     }
 
-    // 验证relatedQuestions格式（如果提供）
+    // Validate relatedQuestions format (if provided)
     if (relatedQuestions && !Array.isArray(relatedQuestions)) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_RELATED_QUESTIONS',
-        message: 'relatedQuestions必须是字符串数组'
+        message: 'RelatedQuestions must be an array of strings'
       });
     }
 
@@ -99,25 +113,32 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
       data: agent
     });
   } catch (error) {
-    logger.error('创建Agent失败:', error);
+    logger.error('Failed to create Agent:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '创建Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to create Agent'
     });
   }
 });
 
 /**
- * 获取Agent列表（统一接口）
+ * Get Agent List (Unified Interface)
  * GET /api/agent
  * 
- * 查询参数：
+ * Query Parameters:
  * - queryType: 'public' | 'my-private' | 'my-saved' | 'all'
+<<<<<<< HEAD
+ *   - public: Public Agents
+ *   - my-private: My Private Agents
+ *   - my-saved: My Saved Agents
+ *   - all: All Visible Agents (default)
+=======
  *   - public: 公开的Agent（无需登录）
  *   - my-private: 我的私有Agent（需要登录）
  *   - my-saved: 我收藏的Agent（需要登录）
  *   - all: 所有可见的Agent（需要登录）
+>>>>>>> origin/dev
  */
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
@@ -136,7 +157,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '此操作需要用户登录'
+        message: 'User not authenticated'
       });
     }
     
@@ -177,17 +198,17 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error('获取Agent列表失败:', error);
+    logger.error('Failed to get Agent list:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '获取Agent列表失败'
+      message: error instanceof Error ? error.message : 'Failed to get Agent list'
     });
   }
 });
 
 /**
- * 获取Agent详情
+ * Get Agent Details
  * GET /api/agent/:id
  */
 router.get('/:id', requireAuth, async (req: Request, res: Response) => {
@@ -197,7 +218,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -209,17 +230,17 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       data: agent
     });
   } catch (error) {
-    logger.error(`获取Agent详情失败 [ID: ${req.params.id}]:`, error);
+    logger.error(`Failed to get Agent details [ID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在')) {
+      if (error.message.includes('not found') || error.message.includes('does not exist')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: error.message
         });
       }
-      if (error.message.includes('无权访问')) {
+      if (error.message.includes('access denied') || error.message.includes('no permission')) {
         return res.status(403).json({
           success: false,
           error: 'FORBIDDEN',
@@ -231,13 +252,13 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '获取Agent详情失败'
+      message: error instanceof Error ? error.message : 'Failed to get Agent details'
     });
   }
 });
 
 /**
- * 更新Agent
+ * Update Agent
  * PUT /api/agent/:id
  */
 router.put('/:id', requireAuth, async (req: Request, res: Response) => {
@@ -247,28 +268,28 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
     const agentId = req.params.id;
     const { name, description, status, metadata, relatedQuestions } = req.body;
 
-    // 验证status值（如果提供）
+    // Validate status value (if provided)
     if (status && !['private', 'public', 'draft'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_STATUS',
-        message: 'status必须是private, public或draft之一'
+        message: 'Status must be one of: private, public, draft'
       });
     }
 
-    // 验证relatedQuestions格式（如果提供）
+    // Validate relatedQuestions format (if provided)
     if (relatedQuestions && !Array.isArray(relatedQuestions)) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_RELATED_QUESTIONS',
-        message: 'relatedQuestions必须是字符串数组'
+        message: 'RelatedQuestions must be an array of strings'
       });
     }
 
@@ -287,17 +308,17 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
       data: agent
     });
   } catch (error) {
-    logger.error(`更新Agent失败 [ID: ${req.params.id}]:`, error);
+    logger.error(`Failed to update Agent [ID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('no permission')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: error.message
         });
       }
-      if (error.message.includes('已存在') || error.message.includes('allowed')) {
+      if (error.message.includes('already exists') || error.message.includes('allowed')) {
         return res.status(400).json({
           success: false,
           error: 'VALIDATION_ERROR',
@@ -309,13 +330,13 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '更新Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to update Agent'
     });
   }
 });
 
 /**
- * 删除Agent
+ * Delete Agent
  * DELETE /api/agent/:id
  */
 router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
@@ -325,7 +346,7 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -335,16 +356,16 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
     res.json({
       success: true,
       data: {
-        message: 'Agent已删除',
+        message: 'Agent has been deleted',
         agentId: agentId,
         deletedAt: new Date().toISOString()
       }
     });
   } catch (error) {
-    logger.error(`删除Agent失败 [ID: ${req.params.id}]:`, error);
+    logger.error(`Failed to delete Agent [ID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('no permission')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
@@ -356,13 +377,13 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '删除Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to delete Agent'
     });
   }
 });
 
 /**
- * 生成Agent名称
+ * Generate Agent Name
  * POST /api/agent/generate-name
  */
 router.post('/generate-name', requireAuth, async (req: Request, res: Response) => {
@@ -372,7 +393,7 @@ router.post('/generate-name', requireAuth, async (req: Request, res: Response) =
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -382,7 +403,7 @@ router.post('/generate-name', requireAuth, async (req: Request, res: Response) =
       return res.status(400).json({
         success: false,
         error: 'MISSING_REQUIRED_FIELDS',
-        message: '缺少必需字段：taskTitle, taskContent'
+        message: 'Missing required fields: taskTitle, taskContent'
       });
     }
 
@@ -401,17 +422,17 @@ router.post('/generate-name', requireAuth, async (req: Request, res: Response) =
       }
     });
   } catch (error) {
-    logger.error('生成Agent名称失败:', error);
+    logger.error('Failed to generate Agent name:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '生成Agent名称失败'
+      message: error instanceof Error ? error.message : 'Failed to generate Agent name'
     });
   }
 });
 
 /**
- * 生成Agent描述
+ * Generate Agent Description
  * POST /api/agent/generate-description
  */
 router.post('/generate-description', requireAuth, async (req: Request, res: Response) => {
@@ -421,7 +442,7 @@ router.post('/generate-description', requireAuth, async (req: Request, res: Resp
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -431,7 +452,7 @@ router.post('/generate-description', requireAuth, async (req: Request, res: Resp
       return res.status(400).json({
         success: false,
         error: 'MISSING_REQUIRED_FIELDS',
-        message: '缺少必需字段：name, taskTitle, taskContent'
+        message: 'Missing required fields: name, taskTitle, taskContent'
       });
     }
 
@@ -451,17 +472,17 @@ router.post('/generate-description', requireAuth, async (req: Request, res: Resp
       }
     });
   } catch (error) {
-    logger.error('生成Agent描述失败:', error);
+    logger.error('Failed to generate Agent description:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '生成Agent描述失败'
+      message: error instanceof Error ? error.message : 'Failed to generate Agent description'
     });
   }
 });
 
 /**
- * 生成Agent相关问题
+ * Generate Agent Related Questions
  * POST /api/agent/generate-questions
  */
 router.post('/generate-questions', requireAuth, async (req: Request, res: Response) => {
@@ -471,7 +492,7 @@ router.post('/generate-questions', requireAuth, async (req: Request, res: Respon
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -481,7 +502,7 @@ router.post('/generate-questions', requireAuth, async (req: Request, res: Respon
       return res.status(400).json({
         success: false,
         error: 'MISSING_REQUIRED_FIELDS',
-        message: '缺少必需字段：taskTitle, taskContent'
+        message: 'Missing required fields: taskTitle, taskContent'
       });
     }
 
@@ -498,17 +519,17 @@ router.post('/generate-questions', requireAuth, async (req: Request, res: Respon
       }
     });
   } catch (error) {
-    logger.error('生成Agent相关问题失败:', error);
+    logger.error('Failed to generate Agent related questions:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '生成Agent相关问题失败'
+      message: error instanceof Error ? error.message : 'Failed to generate Agent related questions'
     });
   }
 });
 
 /**
- * 发布Agent为公开
+ * Publish Agent as Public
  * POST /api/agent/:id/publish
  */
 router.post('/:id/publish', requireAuth, async (req: Request, res: Response) => {
@@ -518,7 +539,7 @@ router.post('/:id/publish', requireAuth, async (req: Request, res: Response) => 
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -530,10 +551,10 @@ router.post('/:id/publish', requireAuth, async (req: Request, res: Response) => 
       data: agent
     });
   } catch (error) {
-    logger.error(`发布Agent失败 [ID: ${req.params.id}]:`, error);
+    logger.error(`Failed to publish Agent [ID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('no permission')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
@@ -545,13 +566,13 @@ router.post('/:id/publish', requireAuth, async (req: Request, res: Response) => 
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '发布Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to publish Agent'
     });
   }
 });
 
 /**
- * 将Agent设为私有
+ * Set Agent to Private
  * POST /api/agent/:id/private
  */
 router.post('/:id/private', requireAuth, async (req: Request, res: Response) => {
@@ -561,7 +582,7 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -573,10 +594,10 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
       data: agent
     });
   } catch (error) {
-    logger.error(`设为私有失败 [ID: ${req.params.id}]:`, error);
+    logger.error(`Failed to make Agent private [ID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('no permission')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
@@ -588,13 +609,13 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '设为私有失败'
+      message: error instanceof Error ? error.message : 'Failed to make Agent private'
     });
   }
 });
 
 /**
- * 根据任务创建Agent（任务完成后使用）
+ * Create Agent from Task (Used after Task Completion)
  * POST /api/agent/create/:taskId
  */
 router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -604,23 +625,23 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
     const taskId = req.params.taskId;
     const { status = 'private', name, description } = req.body;
 
-    // 验证status值
+    // Validate status value
     if (!['private', 'public'].includes(status)) {
       return res.status(400).json({
         success: false,
         error: 'INVALID_STATUS',
-        message: 'status必须是private或public之一'
+        message: 'Status must be either private or public'
       });
     }
 
-    // 从任务创建Agent，支持自定义name和description
+    // Create Agent from Task, supports custom name and description
     const agent = await agentService.createAgentFromTask(taskId, userId, status, name, description);
 
     res.json({
@@ -628,17 +649,17 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
       data: agent
     });
   } catch (error) {
-    logger.error(`从任务创建Agent失败 [TaskID: ${req.params.taskId}]:`, error);
+    logger.error(`Failed to create Agent from Task [TaskID: ${req.params.taskId}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('access denied')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: error.message
         });
       }
-      if (error.message.includes('未完成')) {
+      if (error.message.includes('not completed')) {
         return res.status(400).json({
           success: false,
           error: 'TASK_NOT_COMPLETED',
@@ -650,13 +671,13 @@ router.post('/create/:taskId', requireAuth, async (req: Request, res: Response) 
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '从任务创建Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to create Agent from Task'
     });
   }
 });
 
 /**
- * 生成Agent的name和description（供前端显示）
+ * Generate Agent name and description (for frontend display)
  * POST /api/agent/generate-info/:taskId
  */
 router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -683,14 +704,14 @@ router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Res
     logger.error(`Failed to generate Agent info [TaskID: ${req.params.taskId}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('access denied')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: 'Task not found or access denied'
         });
       }
-      if (error.message.includes('未完成')) {
+      if (error.message.includes('not completed')) {
         return res.status(400).json({
           success: false,
           error: 'TASK_NOT_COMPLETED',
@@ -708,7 +729,7 @@ router.post('/generate-info/:taskId', requireAuth, async (req: Request, res: Res
 });
 
 /**
- * 预览从任务创建的Agent信息（用户保存前预览）
+ * Preview Agent information created from Task (User preview before saving)
  * GET /api/agent/preview/:taskId
  */
 router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -718,13 +739,13 @@ router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) 
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
     const taskId = req.params.taskId;
     
-    // 获取预览信息
+    // Get preview information
     const preview = await agentService.previewAgentFromTask(taskId, userId);
 
     res.json({
@@ -732,17 +753,17 @@ router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) 
       data: preview
     });
   } catch (error) {
-    logger.error(`预览Agent信息失败 [TaskID: ${req.params.taskId}]:`, error);
+    logger.error(`Failed to preview Agent info [TaskID: ${req.params.taskId}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在') || error.message.includes('无权访问')) {
+      if (error.message.includes('not found') || error.message.includes('access denied')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: error.message
         });
       }
-      if (error.message.includes('未完成')) {
+      if (error.message.includes('not completed')) {
         return res.status(400).json({
           success: false,
           error: 'TASK_NOT_COMPLETED',
@@ -754,16 +775,16 @@ router.get('/preview/:taskId', requireAuth, async (req: Request, res: Response) 
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '预览Agent信息失败'
+      message: error instanceof Error ? error.message : 'Failed to preview Agent info'
     });
   }
 });
 
-// 已移除 /api/agent/marketplace 接口
-// 使用统一的 GET /api/agent?queryType=public 接口替代
+// Removed /api/agent/marketplace endpoint
+// Use unified GET /api/agent?queryType=public endpoint instead
 
 /**
- * 获取Agent统计信息
+ * Get Agent Statistics
  * GET /api/agent/stats
  */
 router.get('/stats', requireAuth, async (req: Request, res: Response) => {
@@ -773,7 +794,7 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -784,39 +805,49 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
       data: stats
     });
   } catch (error) {
-    logger.error('获取Agent统计信息失败:', error);
+    logger.error('Failed to get Agent statistics:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '获取Agent统计信息失败'
+      message: error instanceof Error ? error.message : 'Failed to get Agent statistics'
     });
   }
 });
 
 /**
- * 获取所有Agent分类列表
+ * Get All Agent Categories List
  * GET /api/agent/categories
  */
 router.get('/categories', async (req: Request, res: Response) => {
   try {
-    const categories = await agentService.getAllCategories();
+    // Use statistics endpoint to get category information (does not require user authentication for global stats)
+    const marketplace = await agentService.getAgentMarketplace({
+      limit: 1 // Only need category statistics, not specific Agent data
+    });
+
+    // Extract all categories from public Agents
+    const categories = new Set<string>();
+    // Note: Need to add logic to get all categories in agentService
+    // Temporarily return empty array, need to implement in service layer
+    const categoryList: Array<{name: string, count: number}> = [];
 
     res.json({
       success: true,
-      data: categories
+      data: categoryList,
+      message: 'Category list functionality is under development'
     });
   } catch (error) {
-    logger.error('获取Agent分类失败:', error);
+    logger.error('Failed to get Agent categories:', error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '获取Agent分类失败'
+      message: error instanceof Error ? error.message : 'Failed to get Agent categories'
     });
   }
 });
 
 /**
- * 按分类获取Agent列表
+ * Get Agent List by Category
  * GET /api/agent/category/:category
  */
 router.get('/category/:category', async (req: Request, res: Response) => {
@@ -841,17 +872,17 @@ router.get('/category/:category', async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    logger.error(`按分类获取Agent失败 [Category: ${req.params.category}]:`, error);
+    logger.error(`Failed to get Agents by category [Category: ${req.params.category}]:`, error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '按分类获取Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to get Agents by category'
     });
   }
 });
 
 /**
- * 记录Agent使用
+ * Record Agent Usage
  * POST /api/agent/:id/usage
  */
 router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
@@ -861,7 +892,7 @@ router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -875,17 +906,17 @@ router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
       data: usage
     });
   } catch (error) {
-    logger.error(`记录Agent使用失败 [ID: ${req.params.id}]:`, error);
+    logger.error(`Failed to record Agent usage [ID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在')) {
+      if (error.message.includes('not found')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: error.message
         });
       }
-      if (error.message.includes('无权使用')) {
+      if (error.message.includes('no permission')) {
         return res.status(403).json({
           success: false,
           error: 'FORBIDDEN',
@@ -897,13 +928,13 @@ router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '记录Agent使用失败'
+      message: error instanceof Error ? error.message : 'Failed to record Agent usage'
     });
   }
 });
 
 /**
- * 根据任务ID获取Agent
+ * Get Agent by Task ID
  * GET /api/agent/task/:taskId
  */
 router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => {
@@ -913,14 +944,14 @@ router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => 
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
     const taskId = req.params.taskId;
     const agents = await agentService.getAgentsByTaskId(taskId);
 
-    // 过滤只返回用户可以访问的Agent
+    // Filter to return only Agents that user can access
     const accessibleAgents = agents.filter(agent => 
       agent.userId === userId || agent.status === 'public'
     );
@@ -930,17 +961,17 @@ router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => 
       data: accessibleAgents
     });
   } catch (error) {
-    logger.error(`根据任务ID获取Agent失败 [TaskID: ${req.params.taskId}]:`, error);
+    logger.error(`Failed to get Agent by task ID [TaskID: ${req.params.taskId}]:`, error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '根据任务ID获取Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to get Agent by task ID'
     });
   }
 });
 
 /**
- * 开始与Agent的多轮对话
+ * Start Multi-turn Conversation with Agent
  * POST /api/agent/:id/try
  */
 router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
@@ -957,7 +988,7 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
     const agentId = req.params.id;
     const { content } = req.body;
 
-    // content可以为空，表示只想开始对话
+    // content can be empty, indicating wanting to start conversation only
     if (content !== undefined && typeof content !== 'string') {
       return res.status(400).json({
         success: false,
@@ -966,7 +997,7 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // 开始与Agent的多轮对话
+    // Start multi-turn conversation with Agent
     const result = await agentService.tryAgent({
       agentId,
       content: content || '',
@@ -982,7 +1013,7 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
         }
       });
     } else {
-      // 如果需要认证，返回特殊的响应格式
+      // If authentication is required, return special response format
       if (result.needsAuth) {
         res.status(403).json({
           success: false,
@@ -1000,7 +1031,7 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
       }
     }
   } catch (error) {
-    logger.error(`开始Agent对话失败 [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to start Agent conversation [AgentID: ${req.params.id}]:`, error);
     
     res.status(500).json({
       success: false,
@@ -1011,7 +1042,7 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * 收藏Agent
+ * Favorite Agent
  * POST /api/agent/:id/favorite
  */
 router.post('/:id/favorite', requireAuth, async (req: Request, res: Response) => {
@@ -1021,7 +1052,7 @@ router.post('/:id/favorite', requireAuth, async (req: Request, res: Response) =>
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -1037,17 +1068,17 @@ router.post('/:id/favorite', requireAuth, async (req: Request, res: Response) =>
       }
     });
   } catch (error) {
-    logger.error(`收藏Agent失败 [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to favorite Agent [AgentID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在')) {
+      if (error.message.includes('not found')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
           message: error.message
         });
       }
-      if (error.message.includes('只能收藏')) {
+      if (error.message.includes('can only favorite')) {
         return res.status(400).json({
           success: false,
           error: 'INVALID_OPERATION',
@@ -1059,13 +1090,13 @@ router.post('/:id/favorite', requireAuth, async (req: Request, res: Response) =>
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '收藏Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to favorite Agent'
     });
   }
 });
 
 /**
- * 取消收藏Agent
+ * Unfavorite Agent
  * DELETE /api/agent/:id/favorite
  */
 router.delete('/:id/favorite', requireAuth, async (req: Request, res: Response) => {
@@ -1075,7 +1106,7 @@ router.delete('/:id/favorite', requireAuth, async (req: Request, res: Response) 
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -1091,10 +1122,10 @@ router.delete('/:id/favorite', requireAuth, async (req: Request, res: Response) 
       }
     });
   } catch (error) {
-    logger.error(`取消收藏Agent失败 [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to unfavorite Agent [AgentID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
-      if (error.message.includes('不存在')) {
+      if (error.message.includes('not found')) {
         return res.status(404).json({
           success: false,
           error: 'NOT_FOUND',
@@ -1106,13 +1137,13 @@ router.delete('/:id/favorite', requireAuth, async (req: Request, res: Response) 
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '取消收藏Agent失败'
+      message: error instanceof Error ? error.message : 'Failed to unfavorite Agent'
     });
   }
 });
 
 /**
- * 检查Agent收藏状态
+ * Check Agent Favorite Status
  * GET /api/agent/:id/favorite/status
  */
 router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Response) => {
@@ -1122,7 +1153,7 @@ router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Respon
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
-        message: '用户未认证'
+        message: 'User not authenticated'
       });
     }
 
@@ -1137,11 +1168,11 @@ router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Respon
       }
     });
   } catch (error) {
-    logger.error(`检查Agent收藏状态失败 [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to check Agent favorite status [AgentID: ${req.params.id}]:`, error);
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : '检查Agent收藏状态失败'
+      message: error instanceof Error ? error.message : 'Failed to check Agent favorite status'
     });
   }
 });
