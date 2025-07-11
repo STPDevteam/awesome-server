@@ -1029,7 +1029,7 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
       if (result.needsAuth) {
         res.status(403).json({
           success: false,
-          error: 'AUTH_REQUIRED',
+          error: 'MCP_AUTH_REQUIRED',
           needsAuth: true,
           missingAuth: result.missingAuth,
           message: result.message
