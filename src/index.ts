@@ -113,6 +113,10 @@ app.use('/api/conversation', conversationRoutes);
 import agentRoutes from './routes/agent.js';
 app.use('/api/agent', agentRoutes);
 
+// Agent对话路由 - 专门处理Agent多轮对话
+import agentConversationRoutes from './routes/agentConversation.js';
+app.use('/api/agent-conversation', agentConversationRoutes);
+
 // API 路由 - 保护聊天端点，需要登录
 app.post('/api/chat', requireAuth, async (req, res) => {
   try {

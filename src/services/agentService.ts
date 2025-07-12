@@ -16,17 +16,28 @@ import {
   AgentUsage,
   TryAgentRequest,
   TryAgentResponse,
-  MCPAuthCheckResult
+  MCPAuthCheckResult,
+  AgentFavorite,
+  FavoriteAgentRequest,
+  FavoriteAgentResponse
 } from '../models/agent.js';
 import { getTaskService } from './taskService.js';
 import { MCPAuthService } from './mcpAuthService.js';
+import { getConversationService } from './conversationService.js';
+import { messageDao } from '../dao/messageDao.js';
+import { conversationDao } from '../dao/conversationDao.js';
+import { MessageType, MessageIntent } from '../models/conversation.js';
 import { v4 as uuidv4 } from 'uuid';
+import { userService } from './auth/userService.js';
+import { generateAgentAvatarUrl, generateAvatarSeed, getRecommendedAvatarStyle } from '../utils/avatarGenerator.js';
+import { TaskExecutorService } from './taskExecutorService.js';
 
 export class AgentService {
   private llm: ChatOpenAI;
   private mcpAuthService: MCPAuthService;
+  private taskExecutorService?: TaskExecutorService;
 
-  constructor() {
+  constructor(taskExecutorService?: TaskExecutorService) {
     this.llm = new ChatOpenAI({
       modelName: 'gpt-3.5-turbo',
       temperature: 0.7,
@@ -34,38 +45,68 @@ export class AgentService {
       streaming: false,
     });
     this.mcpAuthService = new MCPAuthService();
+    this.taskExecutorService = taskExecutorService;
   }
 
   /**
-   * 创建Agent
+   * Create Agent
    */
   async createAgent(request: CreateAgentRequest): Promise<Agent> {
     try {
-      // 验证Agent名称
+      // Validate Agent name
       const nameValidation = await this.validateAgentName(request.name, request.userId);
       if (!nameValidation.isValid) {
         throw new Error(nameValidation.error);
       }
 
-      // 验证Agent描述
+      // Validate Agent description
       const descriptionValidation = this.validateAgentDescription(request.description);
       if (!descriptionValidation.isValid) {
         throw new Error(descriptionValidation.error);
       }
 
-      // 如果有任务ID，检查任务是否存在且属于该用户
+      // Get user info, sync username and avatar
+      if (!request.username || !request.avatar) {
+        const user = await userService.getUserById(request.userId);
+        if (user) {
+          request.username = request.username || user.username;
+          request.avatar = request.avatar || user.avatar;
+        }
+      }
+
+      // Auto-generate Agent avatar (if not provided)
+      if (!request.agentAvatar) {
+        // Extract categories for choosing appropriate avatar style
+        let categories = request.categories;
+        if (!categories && request.mcpWorkflow) {
+          categories = this.extractCategoriesFromMCPs(request.mcpWorkflow);
+        }
+        
+        // Choose avatar style based on categories
+        const avatarStyle = getRecommendedAvatarStyle(categories);
+        
+        // Generate avatar seed value
+        const avatarSeed = generateAvatarSeed(request.name);
+        
+        // Generate avatar URL
+        request.agentAvatar = generateAgentAvatarUrl(avatarSeed, avatarStyle);
+        
+        logger.info(`Generated avatar for Agent: ${request.name} -> ${request.agentAvatar}`);
+      }
+
+      // If there's a task ID, check if task exists and belongs to the user
       if (request.taskId) {
         const task = await getTaskService().getTaskById(request.taskId);
         if (!task || task.userId !== request.userId) {
-          throw new Error('任务不存在或无权访问');
+          throw new Error('Task not found or access denied');
         }
 
-        // 如果没有提供工作流，从任务中获取
+        // If no workflow provided, get from task
         if (!request.mcpWorkflow && task.mcpWorkflow) {
           request.mcpWorkflow = task.mcpWorkflow;
         }
 
-        // 补充元数据
+        // Add metadata
         if (!request.metadata) {
           request.metadata = {};
         }
@@ -73,28 +114,35 @@ export class AgentService {
         request.metadata.originalTaskContent = task.content;
       }
 
+      // If no categories provided, extract from mcpWorkflow
+      if (!request.categories && request.mcpWorkflow) {
+        request.categories = this.extractCategoriesFromMCPs(request.mcpWorkflow);
+      } else if (!request.categories) {
+        request.categories = ['General'];
+      }
+
       const agent = await agentDao.createAgent(request);
-      logger.info(`Agent创建成功: ${agent.id} (${agent.name})`);
+      logger.info(`Agent created successfully: ${agent.id} (${agent.name})`);
       
       return agent;
     } catch (error) {
-      logger.error('创建Agent失败:', error);
+      logger.error('Failed to create Agent:', error);
       throw error;
     }
   }
 
   /**
-   * 更新Agent
+   * Update Agent
    */
   async updateAgent(agentId: string, userId: string, request: UpdateAgentRequest): Promise<Agent> {
     try {
-      // 检查Agent是否存在且属于该用户
+      // Check if Agent exists and belongs to the user
       const existingAgent = await agentDao.getAgentById(agentId);
       if (!existingAgent || existingAgent.userId !== userId) {
-        throw new Error('Agent不存在或无权访问');
+        throw new Error('Agent not found or access denied');
       }
 
-      // 验证Agent名称（如果更新了名称）
+      // Validate Agent name (if name was updated)
       if (request.name !== undefined) {
         const nameValidation = await this.validateAgentName(request.name, userId, agentId);
         if (!nameValidation.isValid) {
@@ -102,7 +150,7 @@ export class AgentService {
         }
       }
 
-      // 验证Agent描述（如果更新了描述）
+      // Validate Agent description (if description was updated)
       if (request.description !== undefined) {
         const descriptionValidation = this.validateAgentDescription(request.description);
         if (!descriptionValidation.isValid) {
@@ -112,286 +160,304 @@ export class AgentService {
 
       const updatedAgent = await agentDao.updateAgent(agentId, request);
       if (!updatedAgent) {
-        throw new Error('更新Agent失败');
+        throw new Error('Failed to update Agent');
       }
 
-      logger.info(`Agent更新成功: ${agentId} (${updatedAgent.name})`);
+      logger.info(`Agent updated successfully: ${agentId} (${updatedAgent.name})`);
       return updatedAgent;
     } catch (error) {
-      logger.error(`更新Agent失败 [ID: ${agentId}]:`, error);
+      logger.error(`Failed to update Agent [ID: ${agentId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 删除Agent
+   * Delete Agent
    */
   async deleteAgent(agentId: string, userId: string): Promise<void> {
     try {
-      // 检查Agent是否存在且属于该用户
+      // Check if Agent exists and belongs to the user
       const existingAgent = await agentDao.getAgentById(agentId);
       if (!existingAgent || existingAgent.userId !== userId) {
-        throw new Error('Agent不存在或无权访问');
+        throw new Error('Agent not found or access denied');
       }
 
       const success = await agentDao.deleteAgent(agentId);
       if (!success) {
-        throw new Error('删除Agent失败');
+        throw new Error('Failed to delete Agent');
       }
 
-      logger.info(`Agent删除成功: ${agentId}`);
+      logger.info(`Agent deleted successfully: ${agentId}`);
     } catch (error) {
-      logger.error(`删除Agent失败 [ID: ${agentId}]:`, error);
+      logger.error(`Failed to delete Agent [ID: ${agentId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 获取Agent详情
+   * Get Agent Details
    */
   async getAgentById(agentId: string, userId?: string): Promise<Agent> {
     try {
       const agent = await agentDao.getAgentById(agentId);
       if (!agent) {
-        throw new Error('Agent不存在');
+        throw new Error('Agent not found');
       }
 
-      // 如果是私有Agent，需要检查权限
+      // If it's a private Agent, check permissions
       if (agent.status === 'private' && agent.userId !== userId) {
-        throw new Error('无权访问私有Agent');
+        throw new Error('Access denied for private Agent');
       }
 
       return agent;
     } catch (error) {
-      logger.error(`获取Agent详情失败 [ID: ${agentId}]:`, error);
+      logger.error(`Failed to get Agent details [ID: ${agentId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 获取Agent列表
+   * Get Agent List
    */
   async getAgents(query: GetAgentsQuery): Promise<{ agents: Agent[]; total: number }> {
     try {
       return await agentDao.getAgents(query);
     } catch (error) {
-      logger.error('获取Agent列表失败:', error);
+      logger.error('Failed to get Agent list:', error);
       throw error;
     }
   }
 
   /**
-   * 获取Agent市场数据
+   * Get Agent Marketplace Data
    */
   async getAgentMarketplace(query: AgentMarketplaceQuery): Promise<{ agents: Agent[]; total: number }> {
     try {
       return await agentDao.getAgentMarketplace(query);
     } catch (error) {
-      logger.error('获取Agent市场数据失败:', error);
+      logger.error('Failed to get Agent marketplace data:', error);
       throw error;
     }
   }
 
   /**
-   * 获取Agent统计信息
+   * 获取所有分类及其数量统计
+   */
+  async getAllCategories(): Promise<Array<{ name: string; count: number }>> {
+    try {
+      return await agentDao.getAllCategories();
+    } catch (error) {
+      logger.error('获取所有分类失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get Agent Statistics
    */
   async getAgentStats(userId?: string): Promise<AgentStats> {
     try {
       return await agentDao.getAgentStats(userId);
     } catch (error) {
-      logger.error('获取Agent统计信息失败:', error);
+      logger.error('Failed to get Agent statistics:', error);
       throw error;
     }
   }
 
   /**
-   * 记录Agent使用
+   * Record Agent Usage
    */
   async recordAgentUsage(agentId: string, userId: string, taskId?: string, conversationId?: string, executionResult?: any): Promise<AgentUsage> {
     try {
-      // 检查Agent是否存在
+      // Check if Agent exists
       const agent = await agentDao.getAgentById(agentId);
       if (!agent) {
-        throw new Error('Agent不存在');
+        throw new Error('Agent not found');
       }
 
-      // 如果是私有Agent，需要检查权限
+      // If it's a private Agent, check permissions
       if (agent.status === 'private' && agent.userId !== userId) {
-        throw new Error('无权使用私有Agent');
+        throw new Error('No permission to use private Agent');
       }
 
       return await agentDao.recordAgentUsage(agentId, userId, taskId, conversationId, executionResult);
     } catch (error) {
-      logger.error('记录Agent使用失败:', error);
+      logger.error('Failed to record Agent usage:', error);
       throw error;
     }
   }
 
   /**
-   * 根据任务ID获取Agent
+   * Get Agents by Task ID
    */
   async getAgentsByTaskId(taskId: string): Promise<Agent[]> {
     try {
       return await agentDao.getAgentsByTaskId(taskId);
     } catch (error) {
-      logger.error(`根据任务ID获取Agent失败 [TaskID: ${taskId}]:`, error);
+      logger.error(`Failed to get Agents by task ID [TaskID: ${taskId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 自动生成Agent名称
+   * Auto-generate Agent Name
    */
   async generateAgentName(request: GenerateAgentNameRequest): Promise<string> {
     try {
-      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || '无';
-      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || 'None';
+      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
       
-      const systemPrompt = `你是一个专业的Agent命名专家。你需要根据任务信息为AI Agent生成一个简洁、专业的名称。
+      const systemPrompt = `You are a professional Agent naming expert. You need to generate a concise, professional name for an AI Agent based on task information.
 
-命名规则：
-- 只能使用字母(A-Z)、数字(0-9)和下划线(_)
-- 最多50个字符
-- 名称要简洁明了，能体现Agent的功能
-- 避免使用过于通用的名称
-- 优先使用英文，如果需要中文概念可以用拼音或英文表达
+Naming rules:
+- Only use letters (A-Z), numbers (0-9), and underscores (_)
+- Maximum 50 characters
+- Name should be concise and clear, reflecting the Agent's functionality
+- Avoid overly generic names
+- Use English only
 
-任务信息：
-- 任务标题：${request.taskTitle}
-- 任务内容：${request.taskContent}
-- 使用的MCP工具：${mcpNames}
-- 工作流操作：${workflowActions}
+Task information:
+- Task title: ${request.taskTitle}
+- Task content: ${request.taskContent}
+- MCP tools used: ${mcpNames}
+- Workflow actions: ${workflowActions}
 
-请为这个Agent生成一个合适的名称，只返回名称本身，不要其他解释。`;
+Please generate a suitable name for this Agent. Return only the name itself, no other explanation.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('请生成Agent名称')
+        new HumanMessage('Please generate an Agent name')
       ]);
 
       let generatedName = response.content.toString().trim();
       
-      // 清理生成的名称，确保符合规则
+      // Clean the generated name to ensure it meets the rules
       generatedName = generatedName.replace(/[^A-Za-z0-9_]/g, '_');
       
-      // 确保长度不超过50个字符
+      // Ensure length does not exceed 50 characters
       if (generatedName.length > 50) {
         generatedName = generatedName.substring(0, 50);
       }
 
-      // 如果名称为空或只有下划线，提供默认名称
+      // If name is empty or only underscores, provide default name
       if (!generatedName || generatedName.replace(/_/g, '').length === 0) {
         generatedName = 'Custom_Agent_' + Date.now();
       }
 
-      logger.info(`自动生成Agent名称: ${generatedName}`);
+      logger.info(`Auto-generated Agent name: ${generatedName}`);
       return generatedName;
     } catch (error) {
-      logger.error('生成Agent名称失败:', error);
-      // 返回默认名称
+      logger.error('Failed to generate Agent name:', error);
+      // Return default name
       return 'Custom_Agent_' + Date.now();
     }
   }
 
   /**
-   * 自动生成Agent描述
+   * Auto-generate Agent Description
    */
   async generateAgentDescription(request: GenerateAgentDescriptionRequest): Promise<string> {
     try {
-      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || '无';
-      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || 'None';
+      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
       
-      const systemPrompt = `你是一个专业的Agent描述生成专家。你需要根据任务信息为AI Agent生成一个吸引人的描述。
+      const systemPrompt = `You are a professional Agent description generation expert. You need to generate an attractive description for an AI Agent based on task information.
 
-描述规则：
-- 最多280个字符
-- 描述要简洁明了，突出Agent的核心功能和价值
-- 使用中文，语言要专业且易懂
-- 避免过于技术性的术语
-- 重点说明Agent能解决什么问题或提供什么服务
+Description rules:
+- Maximum 280 characters
+- Description should be concise and clear, highlighting the Agent's core functionality and value
+- Use English, language should be professional and easy to understand
+- Avoid overly technical terms
+- Focus on what problems the Agent can solve or what services it provides
 
-Agent信息：
-- Agent名称：${request.name}
-- 原始任务标题：${request.taskTitle}
-- 原始任务内容：${request.taskContent}
-- 使用的MCP工具：${mcpNames}
-- 工作流操作：${workflowActions}
+Agent information:
+- Agent name: ${request.name}
+- Original task title: ${request.taskTitle}
+- Original task content: ${request.taskContent}
+- MCP tools used: ${mcpNames}
+- Workflow actions: ${workflowActions}
 
-请为这个Agent生成一个合适的描述，只返回描述本身，不要其他解释。`;
+Please generate a suitable description for this Agent. Return only the description itself, no other explanation.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('请生成Agent描述')
+        new HumanMessage('Please generate an Agent description')
       ]);
 
       let generatedDescription = response.content.toString().trim();
       
-      // 确保长度不超过280个字符
+      // Ensure length does not exceed 280 characters
       if (generatedDescription.length > 280) {
         generatedDescription = generatedDescription.substring(0, 280);
       }
 
-      // 如果描述为空，提供默认描述
+      // If description is empty, provide default description
       if (!generatedDescription) {
-        generatedDescription = '这是一个智能Agent，能够帮助您完成各种任务。';
+        generatedDescription = 'This is an intelligent Agent that can help you complete various tasks.';
       }
 
-      logger.info(`自动生成Agent描述: ${generatedDescription}`);
+      logger.info(`Auto-generated Agent description: ${generatedDescription}`);
       return generatedDescription;
     } catch (error) {
-      logger.error('生成Agent描述失败:', error);
-      // 返回默认描述
-      return '这是一个智能Agent，能够帮助您完成各种任务。';
+      logger.error('Failed to generate Agent description:', error);
+      // Return default description
+      return 'This is an intelligent Agent that can help you complete various tasks.';
     }
   }
 
   /**
-   * 自动生成Agent相关问题
+   * Auto-generate Agent Related Questions
    */
   async generateRelatedQuestions(taskTitle: string, taskContent: string, mcpWorkflow?: Agent['mcpWorkflow']): Promise<string[]> {
     try {
-      const mcpNames = mcpWorkflow?.mcps?.map(mcp => `${mcp.name} (${mcp.description})`).join(', ') || '无';
-      const workflowActions = mcpWorkflow?.workflow?.map(step => step.action).join(', ') || '无';
+      const mcpNames = mcpWorkflow?.mcps?.map(mcp => `${mcp.name} (${mcp.description})`).join(', ') || 'None';
+      const workflowActions = mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
       
-      const systemPrompt = `你是一个专业的产品经理，擅长设计用户引导问题来帮助用户理解产品功能。
+      const systemPrompt = `You are a professional product manager skilled at designing user guidance questions to help users understand product functionality.
 
-你需要为AI Agent生成3个相关问题，帮助用户更好地理解这个Agent的用途和功能。
+You need to generate 3 related questions for an AI Agent to help users better understand this Agent's purpose and functionality.
 
-问题要求：
-- 每个问题20-40字之间
-- 简洁明了，易于理解
-- 体现Agent的具体功能和应用场景
-- 引导用户思考如何使用这个Agent
-- 避免过于技术性的表达
+IMPORTANT: Generate questions as ACTION REQUESTS, not as general inquiries. Users should be able to click on these questions to directly execute tasks with the Agent.
 
-Agent信息：
-- 任务标题：${taskTitle}
-- 任务内容：${taskContent}
-- 使用的MCP工具：${mcpNames}
-- 工作流操作：${workflowActions}
+Question requirements:
+- Each question should be between 20-100 characters
+- Write as action requests or task descriptions (e.g., "Help me analyze...", "Show me how to...", "Create a report about...")
+- Avoid question words like "What", "How", "When", "Why"
+- Use imperative or request tone that implies task execution
+- Reflect the Agent's specific functionality and use cases
+- Guide users to directly use the Agent's capabilities
+- Avoid overly technical expressions
+- Use English only
 
-请生成3个问题，每行一个，不要编号或其他格式，直接返回问题文本。`;
+Agent information:
+- Task title: ${taskTitle}
+- Task content: ${taskContent}
+- MCP tools used: ${mcpNames}
+- Workflow actions: ${workflowActions}
+
+Generate 3 task-oriented requests that users can directly execute with this Agent.
+Please generate 3 questions, one per line, without numbering or other formatting, return the question text directly.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('请生成3个相关问题')
+        new HumanMessage('Please generate 3 related task requests')
       ]);
 
       const questionsText = response.content.toString().trim();
       
-      // 解析问题
+      // Parse questions
       const questions = questionsText
         .split('\n')
         .map(q => q.trim())
-        .filter(q => q.length > 0 && q.length <= 40)
-        .slice(0, 3); // 确保只有3个问题
+        .filter(q => q.length > 0 && q.length <= 100)
+        .slice(0, 3); // Ensure only 3 questions
 
-      // 如果生成的问题不够3个，添加默认问题
+      // If not enough questions generated, add default task-oriented questions
       while (questions.length < 3) {
         const defaultQuestions = [
-          `这个Agent能帮我做什么？`,
-          `什么时候适合使用这个Agent？`,
-          `如何使用这个Agent来${taskTitle.replace(/[^\u4e00-\u9fa5\w\s]/g, '').substring(0, 10)}？`
+          `Help me with ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 30)}`,
+          `Show me how to use this Agent's capabilities`,
+          `Execute a task similar to ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 25)}`
         ];
         
         for (const defaultQ of defaultQuestions) {
@@ -401,135 +467,194 @@ Agent信息：
         }
       }
 
-      logger.info(`自动生成Agent相关问题: ${questions.join(', ')}`);
+      logger.info(`Auto-generated Agent related task questions: ${questions.join(', ')}`);
       return questions;
     } catch (error) {
-      logger.error('生成Agent相关问题失败:', error);
-      // 返回默认问题
+      logger.error('Failed to generate Agent related questions:', error);
+      // Return default task-oriented questions
       return [
-        `这个Agent能帮我做什么？`,
-        `什么时候适合使用这个Agent？`,
-        `如何使用这个Agent完成任务？`
+        `Help me use this Agent's capabilities`,
+        `Execute a task with this Agent`,
+        `Show me what this Agent can do`
       ];
     }
   }
 
   /**
-   * 验证Agent名称
+   * Validate Agent Name
    */
   async validateAgentName(name: string, userId: string, excludeId?: string): Promise<AgentNameValidation> {
     try {
-      // 检查长度
+      // Check length
       if (!name || name.length === 0) {
-        return { isValid: false, error: 'Agent名称不能为空' };
+        return { isValid: false, error: 'Agent name cannot be empty' };
       }
 
       if (name.length > 50) {
-        return { isValid: false, error: 'Agent名称最多50个字符' };
+        return { isValid: false, error: 'Agent name must be 50 characters or less' };
       }
 
-      // 检查字符规则
+      // Check character rules
       const validPattern = /^[A-Za-z0-9_]+$/;
       if (!validPattern.test(name)) {
         return { isValid: false, error: 'Only letters (A-Z), numbers (0-9), and underscores (_) are allowed' };
       }
 
-      // 检查是否已存在
+      // Check if name already exists
       const exists = await agentDao.isAgentNameExists(userId, name, excludeId);
       if (exists) {
-        return { isValid: false, error: '该Agent名称已存在' };
+        return { isValid: false, error: 'Agent name already exists' };
       }
 
       return { isValid: true };
     } catch (error) {
-      logger.error('验证Agent名称失败:', error);
-      return { isValid: false, error: '验证失败' };
+      logger.error('Failed to validate Agent name:', error);
+      return { isValid: false, error: 'Validation failed' };
     }
   }
 
   /**
-   * 验证Agent描述
+   * Validate Agent Description
    */
   validateAgentDescription(description: string): AgentDescriptionValidation {
     try {
-      // 检查长度
+      // Check length
       if (!description || description.length === 0) {
-        return { isValid: false, error: 'Agent描述不能为空' };
+        return { isValid: false, error: 'Agent description cannot be empty' };
       }
 
       if (description.length > 280) {
-        return { isValid: false, error: 'Agent描述最多280个字符' };
+        return { isValid: false, error: 'Agent description must be 280 characters or less' };
       }
 
       return { isValid: true };
     } catch (error) {
-      logger.error('验证Agent描述失败:', error);
-      return { isValid: false, error: '验证失败' };
+      logger.error('Failed to validate Agent description:', error);
+      return { isValid: false, error: 'Validation failed' };
     }
   }
 
   /**
-   * 发布Agent为公开
+   * Publish Agent as Public
    */
   async publishAgent(agentId: string, userId: string): Promise<Agent> {
     try {
-      // 检查Agent是否存在且属于该用户
+      // Check if Agent exists and belongs to the user
       const existingAgent = await agentDao.getAgentById(agentId);
       if (!existingAgent || existingAgent.userId !== userId) {
-        throw new Error('Agent不存在或无权访问');
+        throw new Error('Agent not found or access denied');
       }
 
-      // 检查是否已经是公开状态
+      // Check if already public
       if (existingAgent.status === 'public') {
         return existingAgent;
       }
 
-      // 更新为公开状态
+      // Update to public status
       const updatedAgent = await agentDao.updateAgent(agentId, { status: 'public' });
       if (!updatedAgent) {
-        throw new Error('发布Agent失败');
+        throw new Error('Failed to publish Agent');
       }
 
-      logger.info(`Agent已发布为公开: ${agentId} (${updatedAgent.name})`);
+      logger.info(`Agent published as public: ${agentId} (${updatedAgent.name})`);
       return updatedAgent;
     } catch (error) {
-      logger.error(`发布Agent失败 [ID: ${agentId}]:`, error);
+      logger.error(`Failed to publish Agent [ID: ${agentId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 将Agent设为私有
+   * Make Agent Private
    */
   async makeAgentPrivate(agentId: string, userId: string): Promise<Agent> {
     try {
-      // 检查Agent是否存在且属于该用户
+      // Check if Agent exists and belongs to the user
       const existingAgent = await agentDao.getAgentById(agentId);
       if (!existingAgent || existingAgent.userId !== userId) {
-        throw new Error('Agent不存在或无权访问');
+        throw new Error('Agent not found or access denied');
       }
 
-      // 检查是否已经是私有状态
+      // Check if already private
       if (existingAgent.status === 'private') {
         return existingAgent;
       }
 
-      // 更新为私有状态
+      // Update to private status
       const updatedAgent = await agentDao.updateAgent(agentId, { status: 'private' });
       if (!updatedAgent) {
-        throw new Error('设为私有失败');
+        throw new Error('Failed to make Agent private');
       }
 
-      logger.info(`Agent已设为私有: ${agentId} (${updatedAgent.name})`);
+      logger.info(`Agent made private: ${agentId} (${updatedAgent.name})`);
       return updatedAgent;
     } catch (error) {
-      logger.error(`设为私有失败 [ID: ${agentId}]:`, error);
+      logger.error(`Failed to make Agent private [ID: ${agentId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 预览从任务创建Agent的信息（用户保存前预览）
+   * Generate Agent name and description (for frontend display)
+   */
+  async generateAgentInfo(taskId: string, userId: string): Promise<{
+    name: string;
+    description: string;
+  }> {
+    try {
+      logger.info(`Generating Agent info for task ${taskId} by user ${userId}`);
+      
+      // Get task information
+      const task = await getTaskService().getTaskById(taskId);
+      
+      // 详细的错误检查和日志
+      if (!task) {
+        logger.warn(`Task not found: ${taskId} (requested by user: ${userId})`);
+        throw new Error(`Task with ID ${taskId} not found`);
+      }
+      
+      if (task.userId !== userId) {
+        logger.warn(`Access denied: User ${userId} attempted to access task ${taskId} owned by user ${task.userId}`);
+        throw new Error(`Access denied: This task belongs to another user`);
+      }
+
+      // Check if task is completed
+      if (task.status !== 'completed') {
+        logger.warn(`Task ${taskId} is not completed (status: ${task.status}), cannot create Agent`);
+        throw new Error(`Task is not completed (status: ${task.status}), cannot create Agent`);
+      }
+
+      logger.info(`Task ${taskId} validation passed, generating Agent info...`);
+
+      // Generate Agent name
+      const name = await this.generateAgentName({
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      // Generate Agent description
+      const description = await this.generateAgentDescription({
+        name,
+        taskTitle: task.title,
+        taskContent: task.content,
+        mcpWorkflow: task.mcpWorkflow
+      });
+
+      logger.info(`Successfully generated Agent info for task ${taskId}: name="${name}"`);
+
+      return {
+        name,
+        description
+      };
+    } catch (error) {
+      logger.error(`Failed to generate Agent info [TaskID: ${taskId}, UserID: ${userId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Preview Agent information created from task (user preview before saving)
    */
   async previewAgentFromTask(taskId: string, userId: string): Promise<{
     suggestedName: string;
@@ -543,25 +668,25 @@ Agent信息：
     mcpWorkflow?: any;
   }> {
     try {
-      // 获取任务信息
+      // Get task information
       const task = await getTaskService().getTaskById(taskId);
       if (!task || task.userId !== userId) {
-        throw new Error('任务不存在或无权访问');
+        throw new Error('Task not found or access denied');
       }
 
-      // 检查任务是否已完成
+      // Check if task is completed
       if (task.status !== 'completed') {
-        throw new Error('任务未完成，无法创建Agent');
+        throw new Error('Task is not completed, cannot create Agent');
       }
 
-      // 生成建议的名称
+      // Generate suggested name
       const suggestedName = await this.generateAgentName({
         taskTitle: task.title,
         taskContent: task.content,
         mcpWorkflow: task.mcpWorkflow
       });
 
-      // 生成建议的描述
+      // Generate suggested description
       const suggestedDescription = await this.generateAgentDescription({
         name: suggestedName,
         taskTitle: task.title,
@@ -569,7 +694,7 @@ Agent信息：
         mcpWorkflow: task.mcpWorkflow
       });
 
-      // 生成相关问题
+      // Generate related questions
       const relatedQuestions = await this.generateRelatedQuestions(
         task.title,
         task.content,
@@ -588,109 +713,140 @@ Agent信息：
         mcpWorkflow: task.mcpWorkflow
       };
     } catch (error) {
-      logger.error(`预览Agent信息失败 [TaskID: ${taskId}]:`, error);
+      logger.error(`Failed to preview Agent info [TaskID: ${taskId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 根据已完成的任务创建Agent
+   * Create Agent from completed task
    */
-  async createAgentFromTask(taskId: string, userId: string, status: 'private' | 'public' = 'private'): Promise<Agent> {
+  async createAgentFromTask(taskId: string, userId: string, status: 'private' | 'public' = 'private', customName?: string, customDescription?: string): Promise<Agent> {
     try {
-      // 获取任务信息
+      // Get task information
       const task = await getTaskService().getTaskById(taskId);
       if (!task || task.userId !== userId) {
-        throw new Error('任务不存在或无权访问');
+        throw new Error('Task not found or access denied');
       }
 
-      // 检查任务是否已完成
+      // Check if task is completed
       if (task.status !== 'completed') {
-        throw new Error('任务未完成，无法创建Agent');
+        throw new Error('Task is not completed, cannot create Agent');
       }
 
-      // 自动生成Agent名称
-      const name = await this.generateAgentName({
-        taskTitle: task.title,
-        taskContent: task.content,
-        mcpWorkflow: task.mcpWorkflow
-      });
+      // Use custom name or auto-generate Agent name
+      let name = customName;
+      if (!name) {
+        name = await this.generateAgentName({
+          taskTitle: task.title,
+          taskContent: task.content,
+          mcpWorkflow: task.mcpWorkflow
+        });
+      }
 
-      // 自动生成Agent描述
-      const description = await this.generateAgentDescription({
-        name,
-        taskTitle: task.title,
-        taskContent: task.content,
-        mcpWorkflow: task.mcpWorkflow
-      });
+      // Use custom description or auto-generate Agent description
+      let description = customDescription;
+      if (!description) {
+        description = await this.generateAgentDescription({
+          name,
+          taskTitle: task.title,
+          taskContent: task.content,
+          mcpWorkflow: task.mcpWorkflow
+        });
+      }
 
-      // 自动生成相关问题
+      // Auto-generate related questions
       const relatedQuestions = await this.generateRelatedQuestions(
         task.title,
         task.content,
         task.mcpWorkflow
       );
 
-      // 创建Agent
+      // Extract categories from MCP workflow
+      const categories = this.extractCategoriesFromMCPs(task.mcpWorkflow);
+
+      // Get user information for username and avatar
+      const user = await userService.getUserById(userId);
+
+      // Create Agent
       const createRequest: CreateAgentRequest = {
         userId,
+        username: user?.username,
+        avatar: user?.avatar,
         name,
         description,
         status,
         taskId,
+        categories,
         mcpWorkflow: task.mcpWorkflow,
         metadata: {
           originalTaskTitle: task.title,
           originalTaskContent: task.content,
-          deliverables: [], // TODO: 可以从任务结果中提取
-          executionResults: task.result, // 存储任务执行结果
-          category: this.extractCategoryFromMCPs(task.mcpWorkflow)
+          deliverables: [], // TODO: can extract from task results
+          executionResults: task.result, // Store task execution results
+          category: categories[0] // For backward compatibility, keep single category
         },
         relatedQuestions
       };
 
       const agent = await this.createAgent(createRequest);
-      logger.info(`从任务创建Agent成功: ${agent.id} (${agent.name}) - 状态: ${status}`);
+      logger.info(`Successfully created Agent from task: ${agent.id} (${agent.name}) - Status: ${status}`);
       
       return agent;
     } catch (error) {
-      logger.error(`从任务创建Agent失败 [TaskID: ${taskId}]:`, error);
+      logger.error(`Failed to create Agent from task [TaskID: ${taskId}]:`, error);
       throw error;
     }
   }
 
   /**
-   * 从MCP工作流中提取分类
+   * Extract category list from MCP workflow
    */
-  private extractCategoryFromMCPs(mcpWorkflow?: any): string {
+  private extractCategoriesFromMCPs(mcpWorkflow?: any): string[] {
     if (!mcpWorkflow?.mcps || mcpWorkflow.mcps.length === 0) {
-      return 'general';
+      return ['General'];
     }
 
-    // 根据使用的MCP工具推断分类
-    const mcpNames = mcpWorkflow.mcps.map((mcp: any) => mcp.name.toLowerCase());
+    // Extract categories directly from MCP category field
+    const categories = new Set<string>();
     
-    if (mcpNames.some((name: string) => name.includes('github'))) {
-      return 'development';
-    }
-    if (mcpNames.some((name: string) => name.includes('coingecko') || name.includes('coinmarketcap'))) {
-      return 'crypto';
-    }
-    if (mcpNames.some((name: string) => name.includes('playwright') || name.includes('web'))) {
-      return 'automation';
-    }
-    if (mcpNames.some((name: string) => name.includes('x-mcp') || name.includes('twitter'))) {
-      return 'social';
-    }
-    if (mcpNames.some((name: string) => name.includes('notion'))) {
-      return 'productivity';
+    mcpWorkflow.mcps.forEach((mcp: any) => {
+      if (mcp.category) {
+        categories.add(mcp.category);
+      }
+    });
+
+    // If no categories extracted from category field, infer from MCP names
+    if (categories.size === 0) {
+      const mcpNames = mcpWorkflow.mcps.map((mcp: any) => mcp.name.toLowerCase());
+      
+      if (mcpNames.some((name: string) => name.includes('github'))) {
+        categories.add('Development Tools');
+      }
+      if (mcpNames.some((name: string) => name.includes('coingecko') || name.includes('coinmarketcap'))) {
+        categories.add('Market Data');
+      }
+      if (mcpNames.some((name: string) => name.includes('playwright') || name.includes('web'))) {
+        categories.add('Automation');
+      }
+      if (mcpNames.some((name: string) => name.includes('x-mcp') || name.includes('twitter'))) {
+        categories.add('Social');
+      }
+      if (mcpNames.some((name: string) => name.includes('notion'))) {
+        categories.add('Productivity');
+      }
+
+      // If still no categories, add default
+      if (categories.size === 0) {
+        categories.add('General');
+      }
     }
 
-    return 'general';
+    return Array.from(categories);
   }
 
   /**
-   * 检查Agent工作流中涉及的MCP认证状态
+   * Check MCP authentication status for Agent workflow
    */
   private async checkAgentMCPAuth(agent: Agent, userId: string): Promise<MCPAuthCheckResult> {
     try {
@@ -709,10 +865,10 @@ Agent信息：
         authParams?: Record<string, any>;
       }> = [];
 
-      // 检查每个需要认证的MCP
+      // Check each MCP that requires authentication
       for (const mcp of mcpWorkflow.mcps) {
         if (mcp.authRequired) {
-          // 检查用户是否已经验证了这个MCP
+          // Check if user has verified this MCP
           const authData = await this.mcpAuthService.getUserMCPAuth(userId, mcp.name);
           if (!authData || !authData.isVerified) {
             missingAuth.push({
@@ -738,7 +894,7 @@ Agent信息：
           message: 'All MCP servers have been authenticated'
         };
     } catch (error) {
-      logger.error(`检查Agent MCP认证状态失败 [Agent: ${agent.id}]:`, error);
+      logger.error(`Failed to check Agent MCP authentication status [Agent: ${agent.id}]:`, error);
       return {
         needsAuth: true,
         missingAuth: [],
@@ -748,77 +904,347 @@ Agent信息：
   }
 
   /**
-   * 使用Agent执行任务
+   * Start multi-turn conversation with Agent
+   * Now uses dedicated AgentConversationService
    */
   async tryAgent(request: TryAgentRequest): Promise<TryAgentResponse> {
     try {
-      const { agentId, taskContent, userId } = request;
-
-      // 获取Agent信息
-      const agent = await agentDao.getAgentById(agentId);
-      if (!agent) {
+      // Check if TaskExecutorService is available
+      if (!this.taskExecutorService) {
         return {
           success: false,
-          message: 'Agent not found'
+          message: 'Task executor service not available'
         };
       }
 
-      // 检查Agent是否为公开或属于当前用户
-      if (agent.status === 'private' && agent.userId !== userId) {
-        return {
-          success: false,
-          message: 'Access denied: This is a private Agent'
-        };
-      }
+      // Import AgentConversationService dynamically to avoid circular dependency
+      const { getAgentConversationService } = await import('./agentConversationService.js');
+      
+      // Get AgentConversationService instance
+      const agentConversationService = getAgentConversationService(this.taskExecutorService);
+      
+      // Delegate to dedicated Agent conversation service
+      return await agentConversationService.startAgentTrial(request);
+    } catch (error) {
+      logger.error(`Start Agent trial failed [Agent: ${request.agentId}]:`, error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to start Agent trial'
+      };
+    }
+  }
 
-      // 检查MCP认证状态
-      const authCheck = await this.checkAgentMCPAuth(agent, userId);
-      if (authCheck.needsAuth) {
-        return {
-          success: false,
-          needsAuth: true,
-          missingAuth: authCheck.missingAuth,
-          message: authCheck.message
-        };
+  /**
+   * 处理Agent试用会话中的消息
+   */
+  async handleAgentTrialMessage(conversationId: string, content: string, agent: Agent, userId: string): Promise<void> {
+    try {
+      // 使用AI分析用户意图
+      const intent = await this.analyzeUserIntent(content, agent);
+      
+      if (intent.type === 'task') {
+        // 用户想要执行任务，使用Agent的工作流
+        const response = await this.executeAgentTask(content, agent, userId, conversationId);
+        
+        await messageDao.createMessage({
+          conversationId,
+          content: response,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK
+        });
+      } else {
+        // 用户想要对话，进行普通聊天
+        const response = await this. chatWithAgent(content, agent);
+        
+        await messageDao.createMessage({
+          conversationId,
+          content: response,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.CHAT
+        });
       }
+    } catch (error) {
+      logger.error(`Handle agent trial message failed:`, error);
+      
+      // 发送错误消息
+      await messageDao.createMessage({
+        conversationId,
+        content: 'Sorry, I encountered an error while processing your request. Please try again.',
+        type: MessageType.ASSISTANT,
+        intent: MessageIntent.CHAT
+      });
+    }
+  }
 
-      // 创建临时任务来执行Agent的工作流
+  /**
+   * 分析用户意图：对话 vs 任务
+   */
+  private async analyzeUserIntent(content: string, agent: Agent): Promise<{ type: 'chat' | 'task'; confidence: number }> {
+    try {
+      const prompt = `Analyze the user's intent based on their message and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? JSON.stringify(agent.mcpWorkflow.mcps?.map(m => m.name)) : 'general'}
+
+User message: "${content}"
+
+Determine if the user wants to:
+1. "task" - Execute a specific task using the agent's workflow capabilities
+2. "chat" - Have a general conversation
+
+TASK INDICATORS (classify as "task"):
+- Action requests: "Help me...", "Show me...", "Create...", "Generate...", "Analyze...", "Get...", "Find...", "Execute..."
+- Imperative statements: "Do this...", "Make a...", "Build...", "Search for...", "Retrieve..."
+- Task-oriented requests related to the agent's capabilities
+- Questions that expect the agent to perform actions or use its tools
+- Requests for the agent to demonstrate its functionality
+
+CHAT INDICATORS (classify as "chat"):
+- General conversation: "Hello", "How are you?", "Nice to meet you"
+- Philosophical discussions or opinions
+- Casual small talk
+- Questions about the agent's nature or feelings (not capabilities)
+
+Look for action words, specific requests, or task-oriented language.
+If the user's message relates to using the agent's capabilities or tools, classify as "task".
+If the user's message is asking the agent to perform any action, classify as "task".
+
+Respond with ONLY a JSON object:
+{"type": "chat" | "task", "confidence": 0.0-1.0, "reasoning": "brief explanation"}`;
+
+      const response = await this.llm.invoke([{ role: 'user', content: prompt }]);
+      const result = JSON.parse(response.content as string);
+      
+      return {
+        type: result.type,
+        confidence: result.confidence
+      };
+    } catch (error) {
+      logger.error('Analyze user intent failed:', error);
+      // 默认为对话
+      return { type: 'chat', confidence: 0.5 };
+    }
+  }
+
+  /**
+   * 执行Agent任务
+   */
+  private async executeAgentTask(content: string, agent: Agent, userId: string, conversationId: string): Promise<string> {
+    try {
+      // 创建任务
       const taskService = getTaskService();
       const task = await taskService.createTask({
         userId,
-        title: `Try Agent: ${agent.name}`,
-        content: taskContent,
-        conversationId: undefined
+        title: content.length > 30 ? content.substring(0, 30) + '...' : content,
+        content: content,
+        conversationId
       });
 
-      // 更新任务的工作流信息
-      await taskService.updateTask(task.id, {
-        mcpWorkflow: agent.mcpWorkflow,
-        status: 'completed' // 设置为已完成状态，因为分析已由Agent提供
-      });
+      // 应用Agent的工作流
+      if (agent.mcpWorkflow) {
+        await taskService.updateTask(task.id, {
+          mcpWorkflow: agent.mcpWorkflow,
+          status: 'created'
+        });
+        
+        logger.info(`Applied Agent workflow to task [Agent: ${agent.name}, Task: ${task.id}]`);
+      }
 
-      // 记录Agent使用
-      await this.recordAgentUsage(agentId, userId, task.id);
+      // 检查是否有TaskExecutorService
+      if (!this.taskExecutorService) {
+        logger.warn('TaskExecutorService not available, returning task creation confirmation');
+        return `Task created with ${agent.name}'s capabilities: "${task.title}"\n\nTask ID: ${task.id}\n\n*Note: Task execution service not available. Task has been queued for execution.*`;
+      }
 
-      // 返回成功响应，包含任务ID用于后续跟踪
+      // 执行任务使用Agent的工作流
+      try {
+        logger.info(`Executing task with Agent workflow [Agent: ${agent.name}, Task: ${task.id}]`);
+        
+        const executionSuccess = await this.taskExecutorService.executeTaskStream(task.id, (data) => {
+          // Silent execution for non-streaming context
+          logger.debug(`Task execution progress: ${JSON.stringify(data)}`);
+        });
+
+        if (executionSuccess) {
+          // 获取完成后的任务结果
+          const completedTask = await taskService.getTaskById(task.id);
+          
+          const successMessage = `✅ Task completed successfully using ${agent.name}'s capabilities!
+
+**Task**: ${task.title}
+**Agent**: ${agent.name}
+**Status**: ${completedTask?.status || 'completed'}
+
+I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
+
+          return successMessage;
+        } else {
+          return `⚠️ Task execution completed with warnings using ${agent.name}'s capabilities.
+
+**Task**: ${task.title}
+**Agent**: ${agent.name}
+**Task ID**: ${task.id}
+
+The task has been processed, but some steps may have encountered issues. Please check the task details for more information.`;
+        }
+      } catch (executionError) {
+        logger.error(`Agent task execution failed [Task: ${task.id}]:`, executionError);
+        return `❌ Task execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}
+
+**Task**: ${task.title}
+**Agent**: ${agent.name}
+**Task ID**: ${task.id}
+
+I encountered an error while executing this task. Please try again or check the task configuration.`;
+      }
+    } catch (error) {
+      logger.error('Execute agent task failed:', error);
+      return 'Sorry, I encountered an error while trying to execute that task. Please try again or rephrase your request.';
+    }
+  }
+
+  /**
+   * 与Agent聊天
+   */
+  private async chatWithAgent(content: string, agent: Agent): Promise<string> {
+    try {
+      const prompt = `You are ${agent.name}, an AI agent with the following characteristics:
+
+Description: ${agent.description}
+
+Your capabilities include: ${agent.mcpWorkflow ? 
+        agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
+        'general assistance'}
+
+Respond to the user's message in a helpful and friendly manner, staying in character as this agent. 
+If they ask about your capabilities, mention what you can help with based on your description and tools.
+
+User message: "${content}"
+
+Respond naturally and helpfully:`;
+
+      const response = await this.llm.invoke([{ role: 'user', content: prompt }]);
+      return response.content as string;
+    } catch (error) {
+      logger.error('Chat with agent failed:', error);
+      return `Hello! I'm ${agent.name}. I'd be happy to help you. Could you tell me more about what you need assistance with?`;
+    }
+  }
+
+  /**
+   * 添加收藏
+   */
+  async addFavorite(userId: string, agentId: string): Promise<FavoriteAgentResponse> {
+    try {
+      // 检查Agent是否存在且为公开状态
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        throw new Error('Agent不存在');
+      }
+      
+      if (agent.status !== 'public') {
+        throw new Error('只能收藏公开的Agent');
+      }
+      
+      // 检查是否已收藏
+      const isFavorited = await agentDao.isFavorited(userId, agentId);
+      if (isFavorited) {
+        return {
+          success: true,
+          message: '已经收藏过此Agent',
+          agentId,
+          isFavorited: true
+        };
+      }
+      
+      // 添加收藏
+      await agentDao.addFavorite(userId, agentId);
+      
       return {
         success: true,
-        executionResult: {
-          taskId: task.id,
-          message: 'Task created successfully. Agent workflow is ready to execute.',
-          agentName: agent.name,
-          agentDescription: agent.description,
-          mcpWorkflow: agent.mcpWorkflow
-        }
+        message: '收藏成功',
+        agentId,
+        isFavorited: true
       };
     } catch (error) {
-      logger.error(`Try Agent失败 [Agent: ${request.agentId}]:`, error);
+      logger.error('添加收藏失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 取消收藏
+   */
+  async removeFavorite(userId: string, agentId: string): Promise<FavoriteAgentResponse> {
+    try {
+      // 检查Agent是否存在
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        throw new Error('Agent不存在');
+      }
+      
+      // 取消收藏
+      const success = await agentDao.removeFavorite(userId, agentId);
+      
+      if (!success) {
+        return {
+          success: true,
+          message: '您还没有收藏此Agent',
+          agentId,
+          isFavorited: false
+        };
+      }
+      
       return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to try Agent'
+        success: true,
+        message: '取消收藏成功',
+        agentId,
+        isFavorited: false
       };
+    } catch (error) {
+      logger.error('取消收藏失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 检查收藏状态
+   */
+  async checkFavoriteStatus(userId: string, agentId: string): Promise<boolean> {
+    try {
+      return await agentDao.isFavorited(userId, agentId);
+    } catch (error) {
+      logger.error('检查收藏状态失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取用户收藏的Agent列表
+   */
+  async getFavoriteAgents(userId: string, offset: number = 0, limit: number = 20): Promise<{ agents: Agent[]; total: number }> {
+    try {
+      return await agentDao.getFavoriteAgents(userId, offset, limit);
+    } catch (error) {
+      logger.error('获取收藏Agent列表失败:', error);
+      throw error;
     }
   }
 }
 
+// 单例实例
+let agentServiceInstance: AgentService | null = null;
+
+/**
+ * 获取AgentService实例
+ */
+export function getAgentService(taskExecutorService?: TaskExecutorService): AgentService {
+  if (!agentServiceInstance) {
+    agentServiceInstance = new AgentService(taskExecutorService);
+  }
+  return agentServiceInstance;
+}
+
+// 向后兼容的导出（不建议使用，因为没有TaskExecutorService）
 export const agentService = new AgentService(); 

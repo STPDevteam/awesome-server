@@ -105,7 +105,7 @@ class JWTService {
       const decoded = jwt.verify(token, this.accessTokenSecret) as JWTPayload;
       return decoded;
     } catch (error) {
-      console.error('访问令牌验证失败:', error);
+      console.error(`[${new Date().toLocaleString()}] 访问令牌验证失败:`, error);
       return null;
     }
   }
@@ -179,7 +179,7 @@ class JWTService {
       
       return result.rowCount !== null && result.rowCount > 0;
     } catch (error) {
-      console.error('撤销刷新令牌失败:', error);
+      console.error(`[${new Date().toLocaleString()}] 撤销刷新令牌失败:`, error);
       return false;
     }
   }
@@ -195,7 +195,7 @@ class JWTService {
         WHERE user_id = $1 AND is_revoked = false
       `, [userId]);
     } catch (error) {
-      console.error('撤销用户所有令牌失败:', error);
+      console.error(`[${new Date().toLocaleString()}] 撤销用户所有令牌失败:`, error);
     }
   }
 
@@ -228,7 +228,7 @@ class JWTService {
         activeRefreshTokens: parseInt(result.rows[0].count)
       };
     } catch (error) {
-      console.error('获取令牌统计失败:', error);
+      console.error(`[${new Date().toLocaleString()}] 获取令牌统计失败:`, error);
       return {
         activeRefreshTokens: 0
       };
@@ -250,7 +250,7 @@ class JWTService {
         console.log(`清理了 ${result.rowCount} 个过期的刷新令牌`);
       }
     } catch (error) {
-      console.error('清理过期令牌失败:', error);
+      console.error(`[${new Date().toLocaleString()}] 清理过期令牌失败:`, error);
     }
   }
 
@@ -287,7 +287,7 @@ class JWTService {
         // 如果是令牌冲突，让调用者重试
         throw error;
       }
-      console.error('存储刷新令牌失败:', error);
+      console.error(`[${new Date().toLocaleString()}] 存储刷新令牌失败:`, error);
       throw error;
     }
   }

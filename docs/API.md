@@ -6,6 +6,45 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 
 **基础URL**: `http://localhost:3001`
 
+## 架构更新 (v2.1)
+
+从v2.1开始，Agent对话系统已完全解耦，具有以下重要变更：
+
+### Agent对话系统解耦
+
+- **独立服务**: 新增 `AgentConversationService` 专门处理Agent多轮对话
+- **专用路由**: 新增 `/api/agent-conversation/` 路由处理Agent对话请求
+- **完全分离**: Agent对话逻辑与传统任务执行对话完全分离
+- **向后兼容**: 传统对话和任务执行功能保持不变
+
+### 新的Agent对话流程
+
+1. **Agent试用**: 使用 `POST /api/agent/:id/try` 开始Agent对话
+2. **后续消息**: 使用 `POST /api/agent-conversation/:conversationId/message` 发送消息
+3. **流式处理**: 使用 `POST /api/agent-conversation/:conversationId/message/stream` 获得实时响应
+4. **对话管理**: 使用 `GET /api/agent-conversation/:conversationId` 获取对话详情
+5. **记忆管理**: 使用 `DELETE /api/agent-conversation/:conversationId/memory` 清除记忆
+
+### Agent MCP认证验证系统 (v2.1.1)
+
+从v2.1.1开始，Agent系统引入了完整的MCP认证验证流程：
+
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **独立认证API**: 提供专门的Agent MCP认证API (`/api/agent/mcp/verify-auth`)
+- **状态查询API**: 支持批量查询MCP认证状态 (`/api/agent/mcp/auth-status`)
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **前端友好**: 返回结构化的认证信息供前端引导用户
+
+### 重要说明
+
+- **路由变更**: Agent对话不再使用 `/api/conversation/` 路由
+- **功能增强**: Agent对话支持真正的工作流执行和智能意图识别
+- **性能优化**: 专门优化的Agent对话处理逻辑
+- **错误处理**: 更好的Agent特定错误处理和用户引导
+- **认证保障**: 确保Agent任务执行时所需的MCP服务都已正确认证
+
 ## 认证
 
 本API使用JWT (JSON Web Token) 进行认证。大部分端点需要在请求头中包含有效的访问令牌：
@@ -2789,7 +2828,382 @@ data: [DONE]
 
 Agent系统允许用户将完成的任务工作流保存为可重用的Agent，支持私有和公开两种模式。Agent包含自动生成的名称、描述和相关问题，用户可以尝试使用Agent来执行类似的任务。
 
-### 1. 从任务预览Agent
+### Agent MCP认证验证系统
+
+从v2.1.1开始，Agent系统引入了完整的MCP认证验证流程，确保Agent在试用和使用过程中能够正确连接所需的MCP服务：
+
+#### 认证验证特性
+
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理，确保数据安全
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **前端友好**: 返回结构化的认证信息供前端引导用户完成认证
+
+#### 认证验证流程
+
+1. **Agent试用检查**: 用户尝试使用Agent时，系统自动检查Agent所需的MCP认证状态
+2. **认证状态返回**: 如果存在未认证的MCP，返回详细的认证信息给前端
+3. **用户认证**: 用户根据返回的信息完成MCP认证
+4. **重新尝试**: 认证完成后，用户可以重新尝试使用Agent
+5. **消息处理验证**: 在Agent对话过程中，每次消息处理前都会验证MCP认证状态
+
+### Agent对话系统架构
+
+从v2.1开始，Agent对话系统已完全解耦，拥有独立的服务和路由：
+
+- **独立服务**: `AgentConversationService` 专门处理Agent多轮对话
+- **专用路由**: `/api/agent-conversation/` 路由专门处理Agent对话请求
+- **完全解耦**: 与传统任务执行对话完全分离，避免代码耦合
+- **智能识别**: 自动识别用户意图（聊天vs任务执行）
+- **工作流集成**: 任务时自动使用Agent的MCP工作流执行真实任务
+- **上下文记忆**: 维持完整的对话上下文和Agent专属记忆
+
+### Agent MCP认证验证API
+
+从v2.1.1开始，Agent系统提供了专门的MCP认证验证API，允许用户为Agent使用独立认证MCP服务，无需依赖特定任务。
+
+#### 1. 验证Agent MCP认证
+
+**端点**: `POST /api/agent/mcp/verify-auth`
+
+**描述**: 为Agent使用验证MCP认证信息，独立于任务系统。用户可以预先认证Agent所需的MCP服务，确保Agent试用时能够正常工作。
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "mcpName": "coingecko-server",
+  "authData": {
+    "COINGECKO_API_KEY": "your_api_key_here"
+  },
+  "saveAuth": true
+}
+```
+
+**参数说明**:
+- `mcpName`: MCP服务器名称（必需）
+- `authData`: 认证数据对象（必需）
+- `saveAuth`: 是否保存认证信息供后续使用（可选，默认true）
+
+**成功响应**:
+```json
+{
+  "success": true,
+  "message": "MCP authentication verified successfully",
+  "data": {
+    "verified": true,
+    "mcpName": "coingecko-server",
+    "userId": "user_123",
+    "details": "API key is valid and permissions are correct"
+  }
+}
+```
+
+**失败响应**:
+```json
+{
+  "success": false,
+  "error": "VERIFICATION_FAILED",
+  "message": "Invalid API key or insufficient permissions"
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 缺少必需字段或字段格式错误
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误或MCP认证服务不可用
+
+---
+
+#### 2. 获取用户MCP认证状态
+
+**端点**: `GET /api/agent/mcp/auth-status`
+
+**描述**: 获取当前用户对指定MCP服务的认证状态，用于检查Agent所需MCP的认证情况。
+
+**认证**: 需要访问令牌
+
+**查询参数**:
+- `mcpNames`: MCP名称列表，用逗号分隔（必需）
+
+**请求示例**:
+```bash
+GET /api/agent/mcp/auth-status?mcpNames=coingecko-server,github-mcp-server
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "userId": "user_123",
+    "authStatuses": [
+      {
+        "mcpName": "coingecko-server",
+        "isAuthenticated": true,
+        "hasAuthData": true
+      },
+      {
+        "mcpName": "github-mcp-server",
+        "isAuthenticated": false,
+        "hasAuthData": false
+      }
+    ]
+  }
+}
+```
+
+**字段说明**:
+- `userId`: 用户ID
+- `authStatuses`: 认证状态数组
+  - `mcpName`: MCP服务器名称
+  - `isAuthenticated`: 是否已认证且验证通过
+  - `hasAuthData`: 是否存在认证数据
+
+**错误响应**:
+- `400 Bad Request`: 缺少必需的查询参数
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+#### Agent MCP认证使用流程
+
+1. **检查认证状态**:
+   ```bash
+   curl -X GET "http://localhost:3001/api/agent/mcp/auth-status?mcpNames=coingecko-server,github-mcp-server" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+   ```
+
+2. **认证未验证的MCP**:
+   ```bash
+   curl -X POST "http://localhost:3001/api/agent/mcp/verify-auth" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "mcpName": "coingecko-server",
+       "authData": {
+         "COINGECKO_API_KEY": "your_api_key_here"
+       }
+     }'
+   ```
+
+3. **尝试使用Agent**:
+   ```bash
+   curl -X POST "http://localhost:3001/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Get me the current Bitcoin price"}'
+   ```
+
+#### 认证验证特性
+
+- **独立认证**: 不依赖特定任务，可以预先为Agent使用认证MCP
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **状态检查**: 支持批量检查多个MCP的认证状态
+- **自动保存**: 认证信息自动保存，供后续Agent使用
+- **安全验证**: 实际调用MCP服务验证认证信息的有效性
+- **详细反馈**: 提供详细的认证失败原因和建议
+
+#### 与任务MCP认证的区别
+
+| 特性 | Agent MCP认证 | 任务MCP认证 |
+|------|---------------|-------------|
+| **端点** | `/api/agent/mcp/verify-auth` | `/api/task/:id/verify-auth` |
+| **依赖** | 无需特定任务 | 需要特定任务ID |
+| **用途** | Agent使用预认证 | 任务执行认证 |
+| **权限** | 仅需用户认证 | 需要任务所有权 |
+| **适用场景** | Agent试用前准备 | 任务执行前验证 |
+
+### Agent数据模型
+
+Agent实体包含以下字段：
+
+- **id**: Agent的唯一标识符
+- **userId**: 创建者的用户ID
+- **username**: 创建者的用户名（从users表同步）
+- **avatar**: 创建者的头像URL（从users表同步）
+- **agentAvatar**: Agent专属头像URL（使用DiceBear API自动生成）
+- **name**: Agent的名称（最多50字符）
+- **description**: Agent的描述（最多280字符）
+- **status**: Agent的状态（`private`/`public`/`draft`）
+- **taskId**: 来源任务的ID（可选）
+- **categories**: Agent所属的类别列表（从MCP工作流中提取）
+- **mcpWorkflow**: 完整的MCP工作流配置
+- **metadata**: 元数据信息（如所需MCP、步骤数、预计时间等）
+- **relatedQuestions**: 相关问题列表（帮助用户理解使用场景）
+- **usageCount**: 使用次数统计
+- **createdAt**: 创建时间
+- **updatedAt**: 更新时间
+
+### Agent头像系统
+
+Agent头像系统使用DiceBear API自动为每个Agent生成独特的头像：
+
+#### 头像生成机制
+- **自动生成**: 创建Agent时基于Agent名称自动生成头像
+- **唯一性**: 每个Agent名称对应唯一的头像样式
+- **URL格式**: `https://api.dicebear.com/9.x/bottts-neutral/svg?seed={seed}`
+- **种子生成**: 使用Agent名称的清理版本作为种子值
+
+#### 头像样式规则
+- **默认样式**: 使用`bottts-neutral`风格，适合技术类Agent
+- **智能推荐**: 根据Agent类别推荐不同样式：
+  - `Development Tools` → `bottts-neutral`
+  - `Market Data` → `avataaars-neutral`
+  - `Social` → `adventurer-neutral`
+  - 其他类别 → `bottts-neutral`
+
+#### 种子值处理
+- **字符清理**: 移除特殊字符，仅保留字母、数字、连字符和下划线
+- **空格处理**: 将空格替换为连字符
+- **大小写**: 转换为小写
+- **示例**: `"My Test Agent!"` → `"my-test-agent"`
+
+#### 头像URL示例
+- Agent名称: `"Bitcoin Price Analyzer"`
+- 生成种子: `"bitcoin-price-analyzer"`
+- 头像URL: `"https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoin-price-analyzer"`
+
+### Agent状态说明
+
+- **private**: 私有Agent，仅创建者可见和使用
+- **public**: 公开Agent，在Agent市场中对所有用户可见
+- **draft**: 草稿状态，仅创建者可见，用于编辑中的Agent
+
+### 1. 创建Agent（通用接口）
+
+**端点**: `POST /api/agent`
+
+**描述**: 通用的Agent创建接口，允许用户从零开始创建Agent或基于现有配置创建
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "name": "Bitcoin Price Analyzer",
+  "description": "A comprehensive cryptocurrency price analysis agent",
+  "status": "private",
+  "taskId": "task_123456",
+  "username": "CryptoTrader",
+  "avatar": "https://example.com/avatar.png",
+  "categories": ["Market Data", "Trading"],
+  "mcpWorkflow": {
+    "mcps": [
+      {
+        "name": "coingecko-server",
+        "description": "CoinGecko API integration",
+        "authRequired": true,
+        "category": "Market Data"
+      }
+    ],
+    "workflow": [
+      {
+        "step": 1,
+        "mcp": "coingecko-server",
+        "action": "Get cryptocurrency prices",
+        "input": {}
+      }
+    ]
+  },
+  "metadata": {
+    "requiredMcps": ["coingecko-server"],
+    "totalSteps": 1,
+    "estimatedTime": "30 seconds"
+  },
+  "relatedQuestions": [
+    "How to get crypto prices?",
+    "What cryptocurrencies are supported?",
+    "Can I track price changes?"
+  ]
+}
+```
+
+**必需字段**:
+- `name`: Agent名称（字符串，最多50字符）
+- `description`: Agent描述（字符串，最多280字符）
+- `status`: Agent状态（`private`/`public`/`draft`）
+
+**可选字段**:
+- `taskId`: 关联的任务ID（可选）
+- `username`: 用户名（可选，默认从当前用户获取）
+- `avatar`: 头像URL（可选，默认从当前用户获取）
+- `categories`: 分类列表（可选，字符串数组）
+- `mcpWorkflow`: MCP工作流配置（可选）
+- `metadata`: 元数据信息（可选）
+- `relatedQuestions`: 相关问题列表（可选，字符串数组）
+
+**字段验证**:
+- `categories`: 必须是字符串数组
+- `relatedQuestions`: 必须是字符串数组
+- `status`: 必须是 `private`、`public` 或 `draft` 之一
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "agent_123456",
+    "userId": "user_123",
+    "username": "CryptoTrader",
+    "avatar": "https://example.com/avatar.png",
+    "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoin-price-analyzer",
+    "name": "Bitcoin Price Analyzer",
+    "description": "A comprehensive cryptocurrency price analysis agent",
+    "status": "private",
+    "taskId": "task_123456",
+    "categories": ["Market Data", "Trading"],
+    "mcpWorkflow": {...},
+    "metadata": {...},
+    "relatedQuestions": [...],
+    "usageCount": 0,
+    "createdAt": "2023-06-20T08:00:00.000Z",
+    "updatedAt": "2023-06-20T08:00:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `400 Bad Request`: 缺少必需字段或字段格式错误
+- `401 Unauthorized`: 无效的访问令牌
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 2. 生成Agent信息
+
+**端点**: `POST /api/agent/generate-info/:taskId`
+
+**描述**: 生成Agent的name和description供前端显示，用户可以在此基础上编辑后创建Agent
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `taskId`: 任务ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "name": "BitcoinPriceAnalyzer",
+    "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data."
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: User not authenticated
+- `404 Not Found`: Task not found or access denied
+- `400 Bad Request`: Task is not completed
+- `500 Internal Server Error`: Failed to generate Agent info
+
+---
+
+### 2. 从任务预览Agent
 
 **端点**: `GET /api/agent/preview/:taskId`
 
@@ -2805,18 +3219,21 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 {
   "success": true,
   "data": {
-    "name": "BitcoinPriceAnalyzer",
-    "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
+    "suggestedName": "BitcoinPriceAnalyzer",
+    "suggestedDescription": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
     "relatedQuestions": [
       "How do I get real-time cryptocurrency prices?",
       "What market data can this agent provide?",
       "Can this agent analyze other cryptocurrencies?"
     ],
-    "taskId": "task_123456",
-    "metadata": {
-      "requiredMcps": ["coingecko-server"],
-      "totalSteps": 1,
-      "estimatedTime": "30 seconds"
+    "taskInfo": {
+      "title": "Get Bitcoin current price and market analysis",
+      "content": "Help me get Bitcoin's current price and analyze market trends",
+      "status": "completed"
+    },
+    "mcpWorkflow": {
+      "mcps": [...],
+      "workflow": [...]
     }
   }
 }
@@ -2830,11 +3247,11 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 2. 从任务创建Agent
+### 4. 从任务创建Agent
 
 **端点**: `POST /api/agent/create/:taskId`
 
-**描述**: 从指定任务创建Agent，支持私有和公开模式
+**描述**: 从指定任务创建Agent，支持私有和公开模式，可选择使用自定义的name和description
 
 **认证**: 需要访问令牌
 
@@ -2844,13 +3261,30 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 **请求体**:
 ```json
 {
-  "status": "private"
+  "status": "private",
+  "name": "自定义Agent名称（可选）",
+  "description": "自定义Agent描述（可选）",
+  "username": "用户名（可选）",
+  "avatar": "头像URL（可选）",
+  "categories": ["Market Data", "Trading"],
+  "relatedQuestions": [
+    "How to get real-time crypto prices?",
+    "What market data is available?",
+    "Can I analyze other cryptocurrencies?"
+  ]
 }
 ```
 
-**状态说明**:
-- `private`: 私有Agent，仅创建者可见和使用
-- `public`: 公开Agent，在Agent市场中对所有用户可见
+**参数说明**:
+- `status`: Agent状态（必需）
+  - `private`: 私有Agent，仅创建者可见和使用
+  - `public`: 公开Agent，在Agent市场中对所有用户可见
+- `name`: 自定义Agent名称（可选）。如果不提供，系统会自动生成
+- `description`: 自定义Agent描述（可选）。如果不提供，系统会自动生成
+- `username`: 用户名（可选）。如果不提供，会从当前用户信息中自动获取
+- `avatar`: 头像URL（可选）。如果不提供，会从当前用户信息中自动获取
+- `categories`: 分类列表（可选，字符串数组）。如果不提供，会从MCP工作流中自动提取
+- `relatedQuestions`: 相关问题列表（可选，字符串数组）。如果不提供，系统会自动生成
 
 **响应**:
 ```json
@@ -2859,6 +3293,10 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
   "data": {
     "agent": {
       "id": "agent_123456",
+      "userId": "user_123",
+      "username": "CryptoTrader",
+      "avatar": "https://example.com/avatar.png",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
       "name": "BitcoinPriceAnalyzer",
       "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
       "relatedQuestions": [
@@ -2866,9 +3304,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "What market data can this agent provide?",
         "Can this agent analyze other cryptocurrencies?"
       ],
-      "userId": "user_123",
       "status": "private",
       "taskId": "task_123456",
+      "categories": ["Market Data", "Trading"],
       "mcpWorkflow": {
         "mcps": [
           {
@@ -2894,6 +3332,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "totalSteps": 1,
         "estimatedTime": "30 seconds"
       },
+      "usageCount": 25,
       "createdAt": "2023-06-20T08:00:00.000Z",
       "updatedAt": "2023-06-20T08:00:00.000Z"
     }
@@ -2909,21 +3348,28 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 3. 获取Agent列表
+### 5. 获取Agent列表（统一接口）
 
 **端点**: `GET /api/agent`
 
-**描述**: 获取Agent列表，支持按状态和用户筛选
+**描述**: 统一的Agent列表接口，支持多种查询类型并返回收藏状态
 
 **认证**: 需要访问令牌
 
 **查询参数**:
-- `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
-- `userId`: 用户ID筛选（可选）
-- `limit`: 每页数量（默认10）
+
+- `queryType`: 查询类型 (`public`, `my-private`, `my-saved`, `all`)，默认为 `all`
+  - `public`: 公开的Agent
+  - `my-private`: 我的私有Agent
+  - `my-saved`: 我收藏的Agent
+  - `all`: 所有可见的Agent（我的私有 + 公开的）
+- `status`: Agent状态筛选 (`private`, `public`)（可选）
+- `search`: 搜索关键词（可选）
+- `category`: 按类别筛选（可选）
+- `orderBy`: 排序字段（默认 `created_at`）
+- `order`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+- `limit`: 每页数量（默认20）
 - `offset`: 偏移量（默认0）
-- `sortBy`: 排序字段（默认 `created_at`）
-- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
 
 **响应**:
 ```json
@@ -2933,6 +3379,10 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
     "agents": [
       {
         "id": "agent_123456",
+        "userId": "user_123",
+        "username": "CryptoTrader",
+        "avatar": "https://example.com/avatar.png",
+        "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
         "relatedQuestions": [
@@ -2940,25 +3390,54 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
           "What market data can this agent provide?",
           "Can this agent analyze other cryptocurrencies?"
         ],
-        "userId": "user_123",
         "status": "public",
         "taskId": "task_123456",
+        "categories": ["Market Data", "Trading"],
         "metadata": {
           "requiredMcps": ["coingecko-server"],
           "totalSteps": 1,
-          "estimatedTime": "30 seconds"
+          "estimatedTime": "30 seconds",
+          "category": "crypto"
         },
         "usageCount": 25,
+        "isFavorited": true,
         "createdAt": "2023-06-20T08:00:00.000Z",
         "updatedAt": "2023-06-20T08:00:00.000Z"
       }
     ],
     "total": 1,
-    "limit": 10,
-    "offset": 0
+    "limit": 20,
+    "offset": 0,
+    "categories": [
+      {
+        "name": "Market Data",
+        "count": 15
+      },
+      {
+        "name": "Development Tools",
+        "count": 8
+      },
+      {
+        "name": "Trading",
+        "count": 6
+      },
+      {
+        "name": "Social",
+        "count": 4
+      }
+    ]
   }
 }
 ```
+
+**字段说明**:
+- `agents`: Agent列表数组
+- `total`: 符合条件的Agent总数
+- `limit`: 每页数量
+- `offset`: 偏移量
+- `categories`: 当前查询结果中的分类统计（基于返回的Agent列表计算）
+  - `name`: 分类名称
+  - `count`: 该分类在当前结果中的Agent数量
 
 **错误响应**:
 - `401 Unauthorized`: 无效的访问令牌
@@ -2966,7 +3445,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 4. 获取Agent详情
+### 6. 获取Agent详情
 
 **端点**: `GET /api/agent/:id`
 
@@ -2984,6 +3463,10 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
   "data": {
     "agent": {
       "id": "agent_123456",
+      "userId": "user_123",
+      "username": "CryptoTrader",
+      "avatar": "https://example.com/avatar.png",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
       "name": "BitcoinPriceAnalyzer",
       "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis including price trends, market cap, and technical indicators using CoinGecko data.",
       "relatedQuestions": [
@@ -2991,9 +3474,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "What market data can this agent provide?",
         "Can this agent analyze other cryptocurrencies?"
       ],
-      "userId": "user_123",
       "status": "public",
       "taskId": "task_123456",
+      "categories": ["Market Data", "Trading"],
       "mcpWorkflow": {
         "mcps": [
           {
@@ -3039,11 +3522,11 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 5. 尝试使用Agent
+### 7. 尝试使用Agent
 
 **端点**: `POST /api/agent/:id/try`
 
-**描述**: 尝试使用Agent执行任务，支持3步流程：输入内容 → 验证MCP认证 → 执行任务
+**描述**: 开始与Agent的多轮对话，支持聊天和任务执行，Agent会智能识别用户意图并相应处理。此接口会创建Agent专属对话并返回对话ID，后续消息通过Agent对话API进行处理。
 
 **认证**: 需要访问令牌
 
@@ -3053,7 +3536,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 **请求体**:
 ```json
 {
-  "content": "I want to get the current Bitcoin price and analyze the market trends for the next week"
+  "content": "Hello, can you help me get the current Bitcoin price?"
 }
 ```
 
@@ -3062,67 +3545,72 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 {
   "success": true,
   "data": {
-    "agent": {
-      "id": "agent_123456",
-      "name": "BitcoinPriceAnalyzer",
-      "description": "An intelligent agent that retrieves Bitcoin's current price...",
-      "status": "public"
-    },
-    "task": {
-      "id": "task_789012",
-      "title": "Get Bitcoin Price and Market Analysis",
-      "content": "I want to get the current Bitcoin price and analyze the market trends for the next week",
-      "status": "created",
-      "mcpWorkflow": {
-        "mcps": [...],
-        "workflow": [...]
+    "conversation": {
+      "id": "conv_1234567890",
+      "title": "[AGENT:agent_123456] Try BitcoinPriceAnalyzer",
+      "agentInfo": {
+        "id": "agent_123456",
+        "name": "BitcoinPriceAnalyzer",
+        "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis..."
       }
     },
-    "authStatus": {
-      "allVerified": true,
-      "verifiedMcps": ["coingecko-server"],
-      "requiresAuth": []
-    },
-    "message": "Agent executed successfully. Task created and ready for execution."
+    "message": "Agent trial conversation started successfully. Use /api/agent-conversation/:conversationId/message for subsequent messages."
   }
 }
 ```
 
-**需要认证的响应**:
+**需要认证的响应**（状态码200）:
 ```json
 {
   "success": false,
-  "error": "Authentication Required",
-  "message": "Some MCP servers require authentication before execution",
-  "data": {
-    "agent": {
-      "id": "agent_123456",
-      "name": "BitcoinPriceAnalyzer",
-      "description": "An intelligent agent that retrieves Bitcoin's current price...",
-      "status": "public"
-    },
-    "authStatus": {
-      "allVerified": false,
-      "verifiedMcps": [],
-      "requiresAuth": [
-        {
-          "mcpName": "coingecko-server",
-          "description": "CoinGecko官方MCP服务器",
-          "authParams": {
-            "COINGECKO_API_KEY": {
-              "type": "string",
-              "description": "CoinGecko API Key",
-              "required": true
-            }
-          },
-          "authUrl": "https://www.coingecko.com/en/api/pricing"
+  "error": "MCP_AUTH_REQUIRED",
+  "needsAuth": true,
+  "missingAuth": [
+    {
+      "mcpName": "coingecko-server",
+      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+      "authRequired": true,
+      "authVerified": false,
+      "authParams": {
+        "COINGECKO_API_KEY": {
+          "type": "string",
+          "description": "CoinGecko API密钥",
+          "required": true
         }
-      ]
-    },
-    "message": "Please authenticate with the required MCP servers before using this agent."
-  }
+      }
+    }
+  ],
+  "message": "请先完成所有相关MCP服务器的认证验证"
 }
 ```
+
+**重要说明**: 需要MCP认证时返回200状态码，因为这是正常的业务状态而非权限错误。
+
+**MCP认证验证流程**:
+
+1. **自动检查**: Agent试用时自动检查所需MCP的认证状态
+2. **多用户隔离**: 每个用户的MCP认证状态独立管理
+3. **详细信息**: 返回未认证MCP的详细信息和认证参数
+4. **前端引导**: 前端可根据返回信息引导用户完成认证
+
+**认证参数说明**:
+- `mcpName`: MCP服务器名称
+- `description`: MCP服务器描述
+- `authRequired`: 是否需要认证
+- `authVerified`: 当前用户是否已认证
+- `authParams`: 认证参数详情，包含参数名称、类型、描述和是否必需
+
+**MCP认证完成后的使用流程**:
+
+1. **完成MCP认证**: 使用 `/api/agent/mcp/verify-auth` 接口完成所需MCP的认证
+2. **重新尝试Agent**: 重新调用 `/api/agent/:id/try` 接口
+3. **开始对话**: 认证通过后即可开始与Agent对话
+4. **后续消息**: 使用 `/api/agent-conversation/:conversationId/message` 发送消息
+
+**注意事项**:
+- 不同用户需要分别完成MCP认证
+- MCP认证状态会影响Agent的任务执行能力
+- 建议在Agent试用前引导用户完成必要的认证设置
 
 **错误响应**:
 - `400 Bad Request`: 请求参数无效
@@ -3131,9 +3619,468 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 - `404 Not Found`: Agent不存在
 - `500 Internal Server Error`: 服务器内部错误
 
+### Agent多轮对话流程
+
+1. **开始Agent试用**:
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Hello, what can you help me with?"}'
+   ```
+
+2. **继续对话**（使用返回的会话ID和专用Agent对话接口）:
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent-conversation/conv_1234567890/message" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Can you get me the current Bitcoin price?"}'
+   ```
+
+3. **流式对话**（推荐使用）:
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent-conversation/conv_1234567890/message/stream" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Can you get me the current Bitcoin price?"}'
+   ```
+
+4. **Agent智能处理**:
+   - **对话意图**: Agent会进行自然对话，回答问题、提供建议
+   - **任务意图**: Agent会识别任务请求，使用其MCP工作流执行具体任务
+   - **自动识别**: 基于消息内容和Agent能力智能判断用户意图
+
+### Agent流式对话特性
+
+- **🧠 智能意图识别**: 自动区分对话和任务请求
+- **💬 上下文记忆**: 维持整个对话的上下文，理解前后关联
+- **⚡ 工作流集成**: 任务时自动使用Agent的MCP工作流
+- **💫 自然对话**: 非任务时进行友好的聊天交流
+- **🔧 错误处理**: 优雅处理执行错误和异常情况
+
+### Agent对话示例
+
+**场景1 - 对话交流**:
+```
+用户: "Hello, what can you do?"
+Agent: "Hi! I'm BitcoinPriceAnalyzer. I can help you get real-time Bitcoin prices, analyze market trends, and provide cryptocurrency insights. What would you like to know?"
+```
+
+**场景2 - 任务执行**:
+```
+用户: "Get me the current Bitcoin price"
+Agent: "I'll help you get the current Bitcoin price. Let me fetch that information for you..."
+[Agent执行工作流，调用CoinGecko API]
+Agent: "The current Bitcoin price is $43,250.75 USD (as of 2023-06-20 14:30:00 UTC)..."
+```
+
+**场景3 - 混合对话**:
+```
+用户: "What's Bitcoin's performance this week?"
+Agent: "Let me analyze Bitcoin's performance for you this week..."
+[执行任务]
+Agent: "Based on the data, Bitcoin has gained 5.2% this week..."
+用户: "Is that good compared to other cryptocurrencies?"
+Agent: "Yes, that's quite good! Bitcoin's 5.2% gain outperformed many other major cryptocurrencies..."
+```
+
 ---
 
-### 6. 更新Agent
+## Agent对话 API
+
+Agent对话系统提供了专门的API端点来处理Agent多轮对话，完全独立于传统的任务执行对话。
+
+### 1. 发送Agent对话消息
+
+**端点**: `POST /api/agent-conversation/:conversationId/message`
+
+**描述**: 向Agent对话发送消息，支持聊天和任务执行，Agent会智能识别用户意图并相应处理。
+
+**重要更新**: 从v2.1.1开始，Agent消息处理时会自动进行MCP认证验证，确保任务执行时所需的MCP服务都已正确认证。
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: Agent对话ID（通过 `/api/agent/:id/try` 获得）
+
+**请求体**:
+```json
+{
+  "content": "Can you get me the current Bitcoin price and analyze the market trends?"
+}
+```
+
+**成功响应（认证已验证）**:
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": {
+      "id": "msg_123456",
+      "conversationId": "conv_1234567890",
+      "content": "Can you get me the current Bitcoin price and analyze the market trends?",
+      "type": "user",
+      "intent": "task",
+      "createdAt": "2023-06-20T08:00:00.000Z"
+    },
+    "assistantMessage": {
+      "id": "msg_123457",
+      "conversationId": "conv_1234567890",
+      "content": "I'll help you get the current Bitcoin price and analyze market trends. Let me fetch that information for you...",
+      "type": "assistant",
+      "intent": "task",
+      "taskId": "task_789",
+      "createdAt": "2023-06-20T08:00:05.000Z"
+    },
+    "intent": "task",
+    "taskId": "task_789"
+  }
+}
+```
+
+**需要认证的响应**（状态码200）:
+```json
+{
+  "success": false,
+  "error": "MCP_AUTH_REQUIRED",
+  "needsAuth": true,
+  "missingAuth": [
+    {
+      "mcpName": "coingecko-server",
+      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+      "authRequired": true,
+      "authVerified": false,
+      "authParams": {
+        "COINGECKO_API_KEY": {
+          "type": "string",
+          "description": "CoinGecko API密钥",
+          "required": true
+        }
+      }
+    }
+  ],
+  "message": "请先完成所有相关MCP服务器的认证验证"
+}
+```
+
+**重要说明**: 需要MCP认证时返回200状态码，因为这是正常的业务状态而非权限错误。
+
+**MCP认证验证特性**:
+- **自动检查**: 消息处理时自动检查Agent所需MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **实时验证**: 在任务执行前进行MCP连接验证
+- **详细反馈**: 提供未认证MCP的详细信息和认证参数
+
+**错误响应**:
+- `400 Bad Request`: 请求参数无效
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent对话
+- `404 Not Found`: Agent对话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 2. 发送Agent对话消息（流式版本）
+
+**端点**: `POST /api/agent-conversation/:conversationId/message/stream`
+
+**描述**: 向Agent对话发送消息的流式版本，实时返回Agent处理过程和响应。包含完整的MCP认证验证流程。
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: Agent对话ID
+
+**请求体**:
+```json
+{
+  "content": "Can you get me the current Bitcoin price?"
+}
+```
+
+**流式响应事件**:
+
+**Agent检测和加载**:
+```
+data: {"event":"agent_detection","data":{"agentId":"agent_123456","agentName":"BitcoinPriceAnalyzer"}}
+
+data: {"event":"agent_loading","data":{"status":"loading"}}
+
+data: {"event":"agent_loaded","data":{"agentId":"agent_123456","agentName":"BitcoinPriceAnalyzer","agentDescription":"An intelligent agent that retrieves Bitcoin's current price..."}}
+```
+
+**Agent意图分析**:
+```
+data: {"event":"agent_intent_analysis","data":{"status":"analyzing","message":"Analyzing user intent based on Agent capabilities..."}}
+
+data: {"event":"agent_intent_analysis","data":{"status":"completed","intent":"task","confidence":0.92,"reasoning":"User is requesting specific task execution that matches Agent's capabilities"}}
+```
+
+**Agent MCP认证验证**:
+```
+data: {"event":"mcp_auth_check","data":{"message":"Checking MCP authentication status..."}}
+
+data: {"event":"mcp_auth_verified","data":{"message":"All required MCPs are authenticated","mcpCount":2}}
+
+data: {"event":"mcp_connection_start","data":{"message":"Establishing MCP connections..."}}
+
+data: {"event":"mcp_connection_success","data":{"message":"MCP connections established successfully","connectedMcps":["coingecko-server"]}}
+```
+
+**Agent任务执行**（真正的工作流执行）:
+```
+data: {"event":"task_creation_start","data":{"message":"Creating task based on Agent workflow..."}}
+
+data: {"event":"task_created","data":{"taskId":"task_789","title":"Get Bitcoin current price","message":"Task created"}}
+
+data: {"event":"workflow_applying","data":{"message":"Applying Agent workflow configuration..."}}
+
+data: {"event":"workflow_applied","data":{"message":"Agent workflow applied successfully","mcpCount":2}}
+
+data: {"event":"task_execution_start","data":{"message":"Starting task execution with Agent workflow..."}}
+
+data: {"event":"task_execution_progress","data":{"step":"calling_coingecko_api","status":"in_progress","message":"Fetching Bitcoin price from CoinGecko..."}}
+
+data: {"event":"task_execution_complete","data":{"message":"Task execution completed successfully","taskId":"task_789","success":true}}
+
+data: {"event":"task_response_complete","data":{"responseId":"resp_456","taskId":"task_789","message":"Task processing completed","executionSuccess":true}}
+```
+
+**Agent聊天响应**:
+```
+data: {"event":"agent_chat_response","data":{"content":"Hi! I'm BitcoinPriceAnalyzer."}}
+
+data: {"event":"agent_chat_response","data":{"content":" I can help you get real-time Bitcoin prices"}}
+
+data: {"event":"agent_chat_response","data":{"content":" and analyze market trends. What would you like to know?"}}
+```
+
+**处理完成**:
+```
+data: {"event":"agent_processing_complete","data":{"messageId":"msg_456","responseId":"msg_457","intent":"task","taskId":"task_789","agentId":"agent_123456"}}
+
+data: [DONE]
+```
+
+**Agent流式事件类型**:
+- `agent_detection`: 检测到Agent试用对话
+- `agent_loading`: Agent信息加载中
+- `agent_loaded`: Agent信息加载完成
+- `agent_intent_analysis`: Agent意图分析（考虑Agent能力）
+- `mcp_auth_check`: MCP认证状态检查
+- `mcp_auth_verified`: MCP认证验证完成
+- `mcp_connection_start`: MCP连接开始
+- `mcp_connection_success`: MCP连接成功
+- `task_creation_start`: 任务创建开始
+- `task_created`: 任务创建完成
+- `workflow_applying`: 工作流应用中
+- `workflow_applied`: 工作流应用完成
+- `task_execution_start`: 任务执行开始
+- `task_execution_progress`: 任务执行进度
+- `task_execution_complete`: 任务执行完成
+- `task_response_complete`: 任务响应完成
+- `agent_chat_response`: Agent聊天响应流式输出
+- `agent_processing_complete`: Agent处理完成
+
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
+
+---
+
+### 3. 获取Agent对话详情
+
+**端点**: `GET /api/agent-conversation/:conversationId`
+
+**描述**: 获取Agent对话的详细信息和消息历史
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: Agent对话ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_1234567890",
+      "userId": "user_123",
+      "title": "[AGENT:agent_123456] Try BitcoinPriceAnalyzer",
+      "lastMessageContent": "Bitcoin price: $45,230.50 USD (+2.3% in 24h)...",
+      "lastMessageAt": "2023-06-20T08:05:30.000Z",
+      "taskCount": 1,
+      "messageCount": 6,
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:05:30.000Z"
+    },
+    "messages": [
+      {
+        "id": "msg_1",
+        "conversationId": "conv_1234567890",
+        "content": "Can you get me the current Bitcoin price?",
+        "type": "user",
+        "intent": "task",
+        "taskId": "task_789",
+        "createdAt": "2023-06-20T08:00:00.000Z"
+      },
+      {
+        "id": "msg_2",
+        "conversationId": "conv_1234567890",
+        "content": "I'll help you get the current Bitcoin price. Let me fetch that information for you...",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_789",
+        "createdAt": "2023-06-20T08:00:05.000Z"
+      },
+      {
+        "id": "msg_3",
+        "conversationId": "conv_1234567890",
+        "content": "Bitcoin price: $45,230.50 USD (+2.3% in 24h). Market cap: $890.2B. Trading volume: $28.5B. Technical analysis shows bullish momentum with RSI at 65.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_789",
+        "createdAt": "2023-06-20T08:05:30.000Z"
+      }
+    ],
+    "agentInfo": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer"
+    }
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent对话
+- `404 Not Found`: Agent对话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 4. 清除Agent对话记忆
+
+**端点**: `DELETE /api/agent-conversation/:conversationId/memory`
+
+**描述**: 清除Agent对话的上下文记忆，保留消息历史但重置对话上下文
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: Agent对话ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "conv_1234567890",
+    "message": "Agent conversation memory cleared successfully",
+    "clearedAt": "2023-06-20T09:00:00.000Z"
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent对话
+- `404 Not Found`: Agent对话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### Agent对话系统特性
+
+#### 1. 完全解耦
+- **独立服务**: 使用专门的 `AgentConversationService` 处理Agent对话
+- **专用路由**: `/api/agent-conversation/` 路由与传统对话路由完全分离
+- **避免耦合**: 不影响传统任务执行对话的逻辑
+
+#### 2. 智能意图识别
+- **上下文感知**: 基于Agent能力和对话历史进行意图分析
+- **自动判断**: 智能区分聊天请求和任务执行请求
+- **置信度评分**: 提供意图识别的置信度和决策理由
+
+#### 3. MCP认证验证
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **认证引导**: 为未认证的MCP提供详细的认证指导
+
+#### 4. 真实任务执行
+- **工作流集成**: 任务时自动使用Agent的MCP工作流
+- **真实执行**: 调用TaskExecutorService执行完整的任务流程
+- **实时反馈**: 提供任务创建、执行和完成的实时进度
+
+#### 5. 上下文记忆
+- **对话记忆**: 维护Agent对话的完整上下文
+- **多轮理解**: 支持基于历史对话的语义理解
+- **记忆管理**: 支持清除记忆但保留消息历史
+
+#### 6. 流式处理
+- **实时响应**: 支持流式消息处理和实时反馈
+- **事件驱动**: 提供详细的事件类型用于前端状态管理
+- **错误处理**: 优雅处理各种异常情况
+
+---
+
+### 8. Agent对话使用流程
+
+从v2.1开始，Agent对话系统已完全解耦，使用专门的Agent对话API。以下是完整的使用流程：
+
+#### 完整Agent对话流程
+
+1. **开始Agent试用** (创建Agent对话):
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent/agent_123/try" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Hello"}'
+   ```
+
+2. **使用专用Agent对话接口继续对话**:
+   ```bash
+   curl -X POST "http://localhost:3000/api/agent-conversation/conv_1234567890/message/stream" \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "Get me the current Bitcoin price"}'
+   ```
+
+3. **获取Agent对话详情**:
+   ```bash
+   curl -X GET "http://localhost:3000/api/agent-conversation/conv_1234567890" \
+     -H "Authorization: Bearer YOUR_TOKEN"
+   ```
+
+4. **清除Agent对话记忆**（可选）:
+   ```bash
+   curl -X DELETE "http://localhost:3000/api/agent-conversation/conv_1234567890/memory" \
+     -H "Authorization: Bearer YOUR_TOKEN"
+   ```
+
+#### 前端集成建议
+
+1. **使用专用路由**: 始终使用 `/api/agent-conversation/` 路由处理Agent对话
+2. **监听Agent事件**: 监听 `agent_` 前缀的流式事件进行UI优化
+3. **处理认证**: 在Agent试用前检查并完成必要的MCP认证
+4. **展示Agent信息**: 利用Agent信息优化用户体验
+5. **记忆管理**: 提供清除记忆功能让用户重置对话上下文
+
+#### 架构优势
+
+- **完全解耦**: Agent对话与传统对话完全分离
+- **专用优化**: 针对Agent特性进行的专门优化
+- **真实执行**: 支持真正的任务工作流执行
+- **智能识别**: 基于Agent能力的智能意图识别
+- **上下文记忆**: 专门的Agent对话记忆管理
+
+---
+
+### 9. 更新Agent
 
 **端点**: `PUT /api/agent/:id`
 
@@ -3159,6 +4106,13 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 }
 ```
 
+**支持的字段**:
+- `name`: Agent名称（可选）
+- `description`: Agent描述（可选）
+- `status`: Agent状态（可选）
+- `metadata`: 元数据信息（可选）
+- `relatedQuestions`: 相关问题列表（可选，字符串数组）
+
 **响应**:
 ```json
 {
@@ -3166,6 +4120,10 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
   "data": {
     "agent": {
       "id": "agent_123456",
+      "userId": "user_123",
+      "username": "CryptoTrader",
+      "avatar": "https://example.com/avatar.png",
+      "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=enhanced-bitcoin-price-analyzer",
       "name": "Enhanced Bitcoin Price Analyzer",
       "description": "An enhanced intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis...",
       "relatedQuestions": [
@@ -3174,9 +4132,9 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
         "Can this agent analyze other cryptocurrencies?",
         "How accurate are the price predictions?"
       ],
-      "userId": "user_123",
       "status": "public",
       "taskId": "task_123456",
+      "categories": ["Market Data", "Trading"],
       "mcpWorkflow": {...},
       "metadata": {...},
       "usageCount": 25,
@@ -3195,7 +4153,7 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 7. 删除Agent
+### 9. 删除Agent
 
 **端点**: `DELETE /api/agent/:id`
 
@@ -3226,43 +4184,85 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 8. 获取用户创建的Agent
+### 10. 收藏Agent
 
-**端点**: `GET /api/agent/my-agents`
+**端点**: `POST /api/agent/:id/favorite`
 
-**描述**: 获取当前用户创建的所有Agent
+**描述**: 收藏指定的公开Agent
 
 **认证**: 需要访问令牌
 
-**查询参数**:
-- `status`: Agent状态筛选 (`private`, `public`, `all`)，默认为 `all`
-- `limit`: 每页数量（默认10）
-- `offset`: 偏移量（默认0）
-- `sortBy`: 排序字段（默认 `created_at`）
-- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+**路径参数**:
+- `id`: Agent ID
 
 **响应**:
 ```json
 {
   "success": true,
   "data": {
-    "agents": [
-      {
-        "id": "agent_123456",
-        "name": "BitcoinPriceAnalyzer",
-        "description": "An intelligent agent that retrieves Bitcoin's current price...",
-        "relatedQuestions": [...],
-        "status": "public",
-        "taskId": "task_123456",
-        "metadata": {...},
-        "usageCount": 25,
-        "createdAt": "2023-06-20T08:00:00.000Z",
-        "updatedAt": "2023-06-20T08:00:00.000Z"
-      }
-    ],
-    "total": 1,
-    "limit": 10,
-    "offset": 0
+    "message": "收藏成功",
+    "agentId": "agent_123456",
+    "isFavorited": true
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `400 Bad Request`: 只能收藏公开的Agent
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 11. 取消收藏Agent
+
+**端点**: `DELETE /api/agent/:id/favorite`
+
+**描述**: 取消收藏指定的Agent
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "取消收藏成功",
+    "agentId": "agent_123456",
+    "isFavorited": false
+  }
+}
+```
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 12. 检查Agent收藏状态
+
+**端点**: `GET /api/agent/:id/favorite/status`
+
+**描述**: 检查指定Agent的收藏状态
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agentId": "agent_123456",
+    "isFavorited": true
   }
 }
 ```
@@ -3273,47 +4273,91 @@ Agent系统允许用户将完成的任务工作流保存为可重用的Agent，�
 
 ---
 
-### 9. 获取公开Agent列表
+### 13. 获取Agent分类列表
 
-**端点**: `GET /api/agent/public`
+**端点**: `GET /api/agent/categories`
 
-**描述**: 获取所有公开的Agent，用于Agent市场展示
+**描述**: 获取所有可用的Agent分类及其Agent数量统计
 
-**认证**: 可选
+**认证**: 不需要认证
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "name": "Market Data",
+      "count": 15
+    },
+    {
+      "name": "Development Tools", 
+      "count": 8
+    },
+    {
+      "name": "Trading",
+      "count": 6
+    },
+    {
+      "name": "Social",
+      "count": 4
+    }
+  ]
+}
+```
+
+**字段说明**:
+- `name`: 分类名称
+- `count`: 该分类下的Agent数量
+
+**错误响应**:
+- `500 Internal Server Error`: 服务器内部错误
+
+---
+
+### 14. 按分类获取Agent列表
+
+**端点**: `GET /api/agent/category/:category`
+
+**描述**: 获取指定分类下的所有公开Agent
+
+**认证**: 不需要认证
+
+**路径参数**:
+- `category`: 分类名称（如：Market Data、Development Tools等）
 
 **查询参数**:
-- `category`: 按类别筛选（可选）
 - `search`: 搜索关键词（可选）
-- `limit`: 每页数量（默认10）
-- `offset`: 偏移量（默认0）
-- `sortBy`: 排序字段（默认 `usage_count`）
-- `sortDir`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+- `orderBy`: 排序字段（可选，默认 `usage_count`）
+- `order`: 排序方向（`asc` 或 `desc`，默认 `desc`）
+- `limit`: 每页数量（可选，默认10）
+- `offset`: 偏移量（可选，默认0）
 
 **响应**:
 ```json
 {
   "success": true,
   "data": {
+    "category": "Market Data",
     "agents": [
       {
         "id": "agent_123456",
+        "userId": "user_123",
+        "username": "CryptoTrader",
+        "avatar": "https://example.com/avatar.png",
+        "agentAvatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=bitcoinpriceanalyzer",
         "name": "BitcoinPriceAnalyzer",
         "description": "An intelligent agent that retrieves Bitcoin's current price...",
         "relatedQuestions": [...],
-        "userId": "user_123",
         "status": "public",
-        "metadata": {
-          "requiredMcps": ["coingecko-server"],
-          "totalSteps": 1,
-          "estimatedTime": "30 seconds",
-          "category": "Market Data"
-        },
+        "categories": ["Market Data", "Trading"],
+        "metadata": {...},
         "usageCount": 25,
         "createdAt": "2023-06-20T08:00:00.000Z",
         "updatedAt": "2023-06-20T08:00:00.000Z"
       }
     ],
-    "total": 1,
+    "total": 15,
     "limit": 10,
     "offset": 0
   }
@@ -3353,66 +4397,204 @@ curl -X POST http://localhost:3001/api/tasks/task_123456/execute-stream \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-#### 2. 预览Agent内容
+#### 2. 生成Agent信息
+
+```bash
+curl -X POST http://localhost:3001/api/agent/generate-info/task_123456 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### 3. 预览Agent内容
 
 ```bash
 curl -X GET http://localhost:3001/api/agent/preview/task_123456 \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
-#### 3. 创建Agent
+#### 4. 创建Agent
 
 ```bash
+# 使用自动生成的名称和描述
 curl -X POST http://localhost:3001/api/agent/create/task_123456 \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   -d '{"status":"public"}'
+
+# 使用自定义的名称和描述
+curl -X POST http://localhost:3001/api/agent/create/task_123456 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "status": "public",
+    "name": "Bitcoin Market Analyzer Pro",
+    "description": "Advanced Bitcoin price analysis tool with comprehensive market insights and trend predictions."
+  }'
 ```
 
-#### 4. 其他用户尝试使用Agent
+#### 5. 其他用户尝试使用Agent
 
 ```bash
+# 首先检查Agent所需MCP的认证状态
+curl -X GET "http://localhost:3001/api/agent/mcp/auth-status?mcpNames=coingecko-server,github-mcp-server" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN"
+
+# 如果有未认证的MCP，先完成认证
+curl -X POST http://localhost:3001/api/agent/mcp/verify-auth \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
+  -d '{
+    "mcpName": "coingecko-server",
+    "authData": {
+      "COINGECKO_API_KEY": "your_api_key_here"
+    },
+    "saveAuth": true
+  }'
+
+# 认证完成后尝试使用Agent
+curl -X POST http://localhost:3001/api/agent/agent_123456/try \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
+  -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
+
+# 如果Agent试用时仍然返回需要认证的响应，根据返回的missingAuth信息进行认证
+# 然后重新尝试使用Agent
 curl -X POST http://localhost:3001/api/agent/agent_123456/try \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer OTHER_USER_ACCESS_TOKEN" \
   -d '{"content":"I want to check the current Bitcoin price and get market analysis"}'
 ```
 
+#### 5. 收藏和管理Agent
+
+```bash
+# 收藏Agent
+curl -X POST http://localhost:3001/api/agent/agent_123456/favorite \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 取消收藏Agent
+curl -X DELETE http://localhost:3001/api/agent/agent_123456/favorite \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 检查收藏状态
+curl -X GET http://localhost:3001/api/agent/agent_123456/favorite/status \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### 6. 使用统一接口获取不同类型的Agent
+
+```bash
+# 获取公开的Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=public&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取我的私有Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=my-private&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取我收藏的Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=my-saved&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取所有可见的Agent（默认）
+curl -X GET "http://localhost:3001/api/agent?queryType=all&limit=10" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 搜索公开Agent
+curl -X GET "http://localhost:3001/api/agent?queryType=public&search=bitcoin&category=crypto" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
 ### Agent系统特性
 
 #### 1. 自动内容生成
-- **AI生成名称**: 使用OpenAI自动生成符合X平台用户名规范的Agent名称（最多50字符）
-- **智能描述**: 基于任务内容生成详细的Agent描述（最多280字符）
+- **AI生成名称**: 使用AI自动生成符合平台规范的Agent名称（最多50字符，仅包含字母、数字和下划线）
+- **智能描述**: 基于任务内容生成详细的Agent描述（最多280字符，英文描述）
 - **相关问题**: 自动生成3个相关问题，帮助用户理解Agent的使用场景
+- **灵活定制**: 支持用户自定义Agent名称和描述，也支持使用AI生成的内容
 
 #### 2. 权限管理
 - **私有Agent**: 仅创建者可见和使用
 - **公开Agent**: 在Agent市场中对所有用户可见
 - **访问控制**: 完整的权限验证系统
 
-#### 3. 认证验证
-- **MCP认证检查**: 尝试使用Agent时自动检查所需MCP的认证状态
-- **认证引导**: 为未认证的MCP提供详细的认证指导
-- **认证参数**: 清晰展示每个MCP所需的认证参数
+#### 3. MCP认证验证系统
+- **预检查机制**: Agent试用时自动检查所需MCP的认证状态
+- **独立认证API**: 提供专门的Agent MCP认证API，无需依赖特定任务
+- **状态查询**: 支持批量查询多个MCP的认证状态
+- **多用户隔离**: 每个用户的MCP认证状态独立管理
+- **实时验证**: 消息处理时自动进行MCP认证验证
+- **详细反馈**: 提供未认证MCP的完整信息和认证参数
+- **认证引导**: 为未认证的MCP提供详细的认证指导和参数说明
+- **前端友好**: 返回结构化的认证信息供前端引导用户完成认证
+- **错误处理**: 优雅处理认证失败和MCP连接异常情况
 
-#### 4. 使用追踪
+#### 4. 用户信息同步
+- **用户名同步**: 自动同步创建者的用户名到Agent记录
+- **头像同步**: 自动同步创建者的头像到Agent记录
+- **直接获取**: 无需联表查询即可获取Agent创建者信息
+- **数据一致性**: 创建Agent时实时同步用户信息
+
+#### 5. 分类管理
+- **类别提取**: 自动从MCP工作流中提取类别信息
+- **多类别支持**: 支持Agent属于多个类别
+- **高效查询**: 通过categories字段实现高效的类别过滤
+
+#### 6. 使用追踪
 - **使用统计**: 追踪Agent的使用次数
 - **排序优化**: 支持按使用次数排序，突出热门Agent
 
-#### 5. 任务集成
+#### 7. 任务集成
 - **无缝集成**: Agent基于已完成的任务工作流创建
 - **工作流保存**: 完整保存MCP工作流配置
 - **一键执行**: 用户可以一键使用Agent执行类似任务
+
+#### 8. 头像生成
+- **自动生成**: 每个Agent都有独特的DiceBear头像
+- **基于名称**: 头像基于Agent名称生成，确保一致性
+- **样式适配**: 根据Agent类别自动选择合适的头像风格
+- **URL稳定**: 头像URL基于名称生成，重复生成结果一致
+
+### 数据库迁移
+
+从v2.0开始，Agent系统引入了重要的数据库结构变更：
+
+#### 新增字段
+- **username**: 创建者用户名（从users表同步）
+- **avatar**: 创建者头像URL（从users表同步）
+- **agentAvatar**: Agent专属头像URL（使用DiceBear API自动生成）
+- **categories**: Agent类别列表（JSONB格式，从MCP工作流中提取）
+
+#### 迁移脚本
+数据库迁移脚本会自动：
+1. 添加新字段到agents表（username、avatar、agentAvatar、categories）
+2. 为categories字段创建GIN索引以提高查询性能
+3. 从现有的mcp_workflow数据中提取类别信息
+4. 同步用户信息到Agent记录
+5. 为现有Agent自动生成头像URL
+6. 确保所有Agent都有至少一个类别
+
+#### 迁移命令
+```bash
+# 运行数据库迁移
+npm run migrate up
+```
 
 ### 最佳实践
 
 #### 1. Agent创建
 - **完整任务**: 确保基础任务已完全执行成功
+- **内容生成**: 使用 `/api/agent/generate-info/:taskId` 接口预先生成Agent信息
+- **内容编辑**: 基于AI生成的内容进行适当编辑，确保名称和描述准确反映Agent功能
 - **描述清晰**: 使用清晰的描述帮助其他用户理解Agent功能
 - **适当公开**: 对有价值的Agent选择公开状态
+- **头像预览**: Agent头像会根据名称自动生成，建议预览头像效果
 
 #### 2. Agent使用
 - **认证准备**: 在使用Agent前准备好所需的MCP认证信息
+- **认证流程**: 遵循Agent试用 → MCP认证 → 重新试用的完整流程
+- **多用户认证**: 理解每个用户需要独立完成MCP认证
+- **认证状态检查**: 定期检查和更新MCP认证状态
 - **内容适配**: 根据Agent的功能调整输入内容
 - **结果验证**: 验证Agent执行结果是否符合预期
 
@@ -3420,6 +4602,17 @@ curl -X POST http://localhost:3001/api/agent/agent_123456/try \
 - **定期更新**: 根据反馈和使用情况更新Agent信息
 - **状态管理**: 合理设置Agent的公开/私有状态
 - **性能监控**: 关注Agent的使用情况和执行效果
+
+#### 4. 数据库性能
+- **索引利用**: 充分利用categories字段的GIN索引进行类别过滤
+- **查询优化**: 使用categories字段而非联表查询获取类别信息
+- **缓存策略**: 对于频繁访问的Agent数据考虑使用缓存
+
+#### 5. 头像性能
+- **CDN缓存**: DiceBear头像支持CDN缓存，提高加载速度
+- **懒加载**: 在列表页面可以考虑对头像进行懒加载
+- **尺寸优化**: 可以在URL中添加size参数控制头像大小
+- **格式选择**: 支持SVG格式，矢量图形适合各种尺寸显示
 
 ---
 

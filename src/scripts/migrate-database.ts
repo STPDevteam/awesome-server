@@ -1008,6 +1008,194 @@ class MigrationService {
         await db.query('DROP TABLE IF EXISTS agents CASCADE');
         console.log('✅ Dropped agents and agent_usage tables');
       }
+    },
+    {
+      version: 19,
+      name: 'add_categories_to_agents',
+      up: async () => {
+        // 添加categories字段，存储JSON数组格式的类别列表
+        await db.query(`
+          ALTER TABLE agents ADD COLUMN categories JSONB DEFAULT '[]'::jsonb
+        `);
+
+        // 为categories字段添加GIN索引，提高查询性能
+        await db.query(`
+          CREATE INDEX idx_agents_categories ON agents USING GIN (categories)
+        `);
+
+        // 为现有Agent数据填充categories字段
+        // 基于现有的mcp_workflow字段来推断categories
+        await db.query(`
+          UPDATE agents 
+          SET categories = CASE 
+            WHEN mcp_workflow IS NULL OR mcp_workflow = 'null' THEN '["General"]'::jsonb
+            ELSE (
+              SELECT jsonb_agg(DISTINCT category)
+              FROM (
+                SELECT CASE 
+                  WHEN mcp->>'category' IS NOT NULL THEN mcp->>'category'
+                  WHEN lower(mcp->>'name') LIKE '%github%' THEN 'Development Tools'
+                  WHEN lower(mcp->>'name') LIKE '%coingecko%' OR lower(mcp->>'name') LIKE '%coinmarketcap%' THEN 'Market Data'
+                  WHEN lower(mcp->>'name') LIKE '%playwright%' OR lower(mcp->>'name') LIKE '%web%' THEN 'Automation'
+                  WHEN lower(mcp->>'name') LIKE '%x-mcp%' OR lower(mcp->>'name') LIKE '%twitter%' THEN 'Social'
+                  WHEN lower(mcp->>'name') LIKE '%notion%' THEN 'Productivity'
+                  ELSE 'General'
+                END as category
+                FROM jsonb_array_elements(mcp_workflow->'mcps') as mcp
+              ) as categories
+              WHERE category IS NOT NULL
+            )
+          END
+          WHERE categories = '[]'::jsonb
+        `);
+
+        // 确保所有Agent至少有一个类别
+        await db.query(`
+          UPDATE agents 
+          SET categories = '["General"]'::jsonb
+          WHERE categories = '[]'::jsonb OR categories IS NULL
+        `);
+
+        // 添加NOT NULL约束
+        await db.query(`
+          ALTER TABLE agents ALTER COLUMN categories SET NOT NULL
+        `);
+
+        console.log('✅ Added categories field to agents table');
+      },
+      down: async () => {
+        // 删除categories字段相关的索引和字段
+        await db.query('DROP INDEX IF EXISTS idx_agents_categories');
+        await db.query('ALTER TABLE agents DROP COLUMN IF EXISTS categories');
+        console.log('✅ Removed categories field from agents table');
+      }
+    },
+    {
+      version: 20,
+      name: 'add_username_avatar_to_agents',
+      up: async () => {
+        // 添加username和avatar字段到agents表
+        await db.query(`
+          ALTER TABLE agents 
+          ADD COLUMN username VARCHAR(255),
+          ADD COLUMN avatar TEXT
+        `);
+
+        // 从users表同步用户信息到agents表
+        await db.query(`
+          UPDATE agents 
+          SET username = u.username, avatar = u.avatar
+          FROM users u
+          WHERE agents.user_id = u.id
+        `);
+
+        console.log('✅ Added username and avatar fields to agents table');
+      },
+      down: async () => {
+        // 删除username和avatar字段
+        await db.query(`
+          ALTER TABLE agents 
+          DROP COLUMN IF EXISTS username,
+          DROP COLUMN IF EXISTS avatar
+        `);
+        console.log('✅ Removed username and avatar fields from agents table');
+      }
+    },
+    {
+      version: 21,
+      name: 'create_agent_favorites_table',
+      up: async () => {
+        // 创建agent_favorites表
+        await db.query(`
+          CREATE TABLE IF NOT EXISTS agent_favorites (
+            id VARCHAR(255) PRIMARY KEY,
+            user_id VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            agent_id VARCHAR(255) NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, agent_id)
+          )
+        `);
+
+        // 创建索引
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_user_id 
+          ON agent_favorites(user_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_agent_id 
+          ON agent_favorites(agent_id)
+        `);
+
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_created_at 
+          ON agent_favorites(created_at)
+        `);
+
+        // 复合索引：用户ID + 创建时间（用于排序）
+        await db.query(`
+          CREATE INDEX IF NOT EXISTS idx_agent_favorites_user_created_at 
+          ON agent_favorites(user_id, created_at DESC)
+        `);
+
+        console.log('✅ Created agent_favorites table');
+      },
+      down: async () => {
+        await db.query('DROP TABLE IF EXISTS agent_favorites CASCADE');
+        console.log('✅ Dropped agent_favorites table');
+      }
+    },
+    {
+      version: 22,
+      name: 'add_agent_avatar_field',
+      up: async () => {
+        // 检查agent_avatar列是否已存在
+        const columnCheck = await db.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'agents' 
+          AND column_name = 'agent_avatar'
+        `);
+
+        // 如果列不存在，则添加它
+        if (columnCheck.rows.length === 0) {
+          await db.query(`
+            ALTER TABLE agents ADD COLUMN agent_avatar TEXT
+          `);
+          console.log('✅ Added agent_avatar column to agents table');
+          
+          // 只在新增列时为现有Agent数据生成头像
+          // 使用简单的字符串拼接而不是digest函数
+          const updateResult = await db.query(`
+            UPDATE agents 
+            SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || 
+                             lower(
+                               regexp_replace(
+                                 regexp_replace(name, '[^a-zA-Z0-9\-_\s]', '', 'g'),
+                                 '\s+', '-', 'g'
+                               )
+                             )
+            WHERE agent_avatar IS NULL OR agent_avatar = ''
+          `);
+
+          if (updateResult.rowCount && updateResult.rowCount > 0) {
+            console.log(`✅ Updated ${updateResult.rowCount} agents with generated avatars`);
+          } else {
+            console.log('ℹ️  No agents needed avatar updates');
+          }
+        } else {
+          console.log('ℹ️  agent_avatar column already exists, skipping migration entirely');
+        }
+
+        console.log('✅ agent_avatar field migration completed');
+      },
+      down: async () => {
+        // 删除agent_avatar字段
+        await db.query(`
+          ALTER TABLE agents DROP COLUMN IF EXISTS agent_avatar
+        `);
+        console.log('✅ Removed agent_avatar field from agents table');
+      }
     }
   ];
 
