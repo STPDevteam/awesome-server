@@ -212,6 +212,407 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 });
 
 /**
+ * Get Agent Statistics
+ * GET /api/agent/stats
+ */
+router.get('/stats', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const stats = await agentService.getAgentStats(userId);
+
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    logger.error('Failed to get Agent statistics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get Agent statistics'
+    });
+  }
+});
+
+/**
+ * Get All Agent Categories List
+ * GET /api/agent/categories
+ */
+router.get('/categories', async (req: Request, res: Response) => {
+  try {
+    // Use statistics endpoint to get category information (does not require user authentication for global stats)
+    const marketplace = await agentService.getAgentMarketplace({
+      limit: 1 // Only need category statistics, not specific Agent data
+    });
+
+    // Extract all categories from public Agents
+    const categories = new Set<string>();
+    // Note: Need to add logic to get all categories in agentService
+    // Temporarily return empty array, need to implement in service layer
+    const categoryList: Array<{name: string, count: number}> = [];
+
+    res.json({
+      success: true,
+      data: categoryList,
+      message: 'Category list functionality is under development'
+    });
+  } catch (error) {
+    logger.error('Failed to get Agent categories:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get Agent categories'
+    });
+  }
+});
+
+/**
+ * Generate Agent Name
+ * POST /api/agent/generate-name
+ */
+router.post('/generate-name', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { taskTitle, taskContent, mcpWorkflow } = req.body;
+
+    if (!taskTitle || !taskContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required fields: taskTitle, taskContent'
+      });
+    }
+
+    const generateRequest: GenerateAgentNameRequest = {
+      taskTitle,
+      taskContent,
+      mcpWorkflow
+    };
+
+    const generatedName = await agentService.generateAgentName(generateRequest);
+
+    res.json({
+      success: true,
+      data: {
+        name: generatedName
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to generate Agent name:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to generate Agent name'
+    });
+  }
+});
+
+/**
+ * Generate Agent Description
+ * POST /api/agent/generate-description
+ */
+router.post('/generate-description', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { name, taskTitle, taskContent, mcpWorkflow } = req.body;
+
+    if (!name || !taskTitle || !taskContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required fields: name, taskTitle, taskContent'
+      });
+    }
+
+    const generateRequest: GenerateAgentDescriptionRequest = {
+      name,
+      taskTitle,
+      taskContent,
+      mcpWorkflow
+    };
+
+    const generatedDescription = await agentService.generateAgentDescription(generateRequest);
+
+    res.json({
+      success: true,
+      data: {
+        description: generatedDescription
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to generate Agent description:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to generate Agent description'
+    });
+  }
+});
+
+/**
+ * Generate Agent Related Questions
+ * POST /api/agent/generate-questions
+ */
+router.post('/generate-questions', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { taskTitle, taskContent, mcpWorkflow } = req.body;
+
+    if (!taskTitle || !taskContent) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required fields: taskTitle, taskContent'
+      });
+    }
+
+    const relatedQuestions = await agentService.generateRelatedQuestions(
+      taskTitle,
+      taskContent,
+      mcpWorkflow
+    );
+
+    res.json({
+      success: true,
+      data: {
+        relatedQuestions
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to generate Agent related questions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to generate Agent related questions'
+    });
+  }
+});
+
+/**
+ * Verify MCP Authentication for Agent Usage
+ * POST /api/agent/mcp/verify-auth
+ */
+router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { mcpName, authData, saveAuth = true } = req.body;
+
+    // Validate required fields
+    if (!mcpName || !authData) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required fields: mcpName, authData'
+      });
+    }
+
+    logger.info(`🔐 Agent MCP authentication request - User: ${userId}, MCP: ${mcpName}`);
+
+    // Agent MCP认证逻辑：不依赖任务，直接为用户验证和保存MCP认证信息
+    const verificationResult = await verifyAgentMCPAuth(userId, mcpName, authData);
+
+    if (verificationResult.success) {
+      logger.info(`✅ Agent MCP authentication successful - User: ${userId}, MCP: ${mcpName}`);
+      
+      res.json({
+        success: true,
+        message: verificationResult.message,
+        data: {
+          verified: true,
+          mcpName,
+          userId,
+          details: verificationResult.details
+        }
+      });
+    } else {
+      logger.warn(`❌ Agent MCP authentication failed - User: ${userId}, MCP: ${mcpName}: ${verificationResult.message}`);
+      
+      res.json({
+        success: false,
+        error: 'VERIFICATION_FAILED',
+        message: verificationResult.message
+      });
+    }
+  } catch (error) {
+    logger.error(`Agent MCP authentication error:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to verify MCP authentication'
+    });
+  }
+});
+
+/**
+ * Get User's MCP Authentication Status
+ * GET /api/agent/mcp/auth-status
+ */
+router.get('/mcp/auth-status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const { mcpNames } = req.query;
+    
+    if (!mcpNames) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required query parameter: mcpNames'
+      });
+    }
+
+    // Parse MCP names (comma-separated)
+    const mcpNameList = (mcpNames as string).split(',').map(name => name.trim());
+    
+    // Get authentication status for each MCP
+    const authStatuses = await Promise.all(
+      mcpNameList.map(async (mcpName) => {
+        const authData = await mcpAuthService.getUserMCPAuth(userId, mcpName);
+        return {
+          mcpName,
+          isAuthenticated: authData && authData.isVerified,
+          hasAuthData: !!authData?.authData
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        userId,
+        authStatuses
+      }
+    });
+  } catch (error) {
+    logger.error(`Get Agent MCP auth status error:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get MCP authentication status'
+    });
+  }
+});
+
+/**
+ * Get Agent List by Category
+ * GET /api/agent/category/:category
+ */
+router.get('/category/:category', async (req: Request, res: Response) => {
+  try {
+    const category = req.params.category;
+    const query: AgentMarketplaceQuery = {
+      category,
+      search: req.query.search as string,
+      orderBy: req.query.orderBy as any,
+      order: req.query.order as any,
+      offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined
+    };
+
+    const result = await agentService.getAgentMarketplace(query);
+
+    res.json({
+      success: true,
+      data: {
+        category,
+        ...result
+      }
+    });
+  } catch (error) {
+    logger.error(`Failed to get Agents by category [Category: ${req.params.category}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get Agents by category'
+    });
+  }
+});
+
+/**
+ * Get Agent by Task ID
+ * GET /api/agent/task/:taskId
+ */
+router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const taskId = req.params.taskId;
+    const agents = await agentService.getAgentsByTaskId(taskId);
+
+    // Filter to return only Agents that user can access
+    const accessibleAgents = agents.filter(agent => 
+      agent.userId === userId || agent.status === 'public'
+    );
+
+    res.json({
+      success: true,
+      data: accessibleAgents
+    });
+  } catch (error) {
+    logger.error(`Failed to get Agent by task ID [TaskID: ${req.params.taskId}]:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get Agent by task ID'
+    });
+  }
+});
+
+/**
  * Generate Agent name and description (for frontend display)
  * POST /api/agent/generate-info/:taskId
  */
@@ -571,152 +972,6 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * Generate Agent Name
- * POST /api/agent/generate-name
- */
-router.post('/generate-name', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const { taskTitle, taskContent, mcpWorkflow } = req.body;
-
-    if (!taskTitle || !taskContent) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_REQUIRED_FIELDS',
-        message: 'Missing required fields: taskTitle, taskContent'
-      });
-    }
-
-    const generateRequest: GenerateAgentNameRequest = {
-      taskTitle,
-      taskContent,
-      mcpWorkflow
-    };
-
-    const generatedName = await agentService.generateAgentName(generateRequest);
-
-    res.json({
-      success: true,
-      data: {
-        name: generatedName
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to generate Agent name:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to generate Agent name'
-    });
-  }
-});
-
-/**
- * Generate Agent Description
- * POST /api/agent/generate-description
- */
-router.post('/generate-description', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const { name, taskTitle, taskContent, mcpWorkflow } = req.body;
-
-    if (!name || !taskTitle || !taskContent) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_REQUIRED_FIELDS',
-        message: 'Missing required fields: name, taskTitle, taskContent'
-      });
-    }
-
-    const generateRequest: GenerateAgentDescriptionRequest = {
-      name,
-      taskTitle,
-      taskContent,
-      mcpWorkflow
-    };
-
-    const generatedDescription = await agentService.generateAgentDescription(generateRequest);
-
-    res.json({
-      success: true,
-      data: {
-        description: generatedDescription
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to generate Agent description:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to generate Agent description'
-    });
-  }
-});
-
-/**
- * Generate Agent Related Questions
- * POST /api/agent/generate-questions
- */
-router.post('/generate-questions', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const { taskTitle, taskContent, mcpWorkflow } = req.body;
-
-    if (!taskTitle || !taskContent) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_REQUIRED_FIELDS',
-        message: 'Missing required fields: taskTitle, taskContent'
-      });
-    }
-
-    const relatedQuestions = await agentService.generateRelatedQuestions(
-      taskTitle,
-      taskContent,
-      mcpWorkflow
-    );
-
-    res.json({
-      success: true,
-      data: {
-        relatedQuestions
-      }
-    });
-  } catch (error) {
-    logger.error('Failed to generate Agent related questions:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to generate Agent related questions'
-    });
-  }
-});
-
-/**
  * Publish Agent as Public
  * POST /api/agent/:id/publish
  */
@@ -802,107 +1057,6 @@ router.post('/:id/private', requireAuth, async (req: Request, res: Response) => 
   }
 });
 
-// Removed /api/agent/marketplace endpoint
-// Use unified GET /api/agent?queryType=public endpoint instead
-
-/**
- * Get Agent Statistics
- * GET /api/agent/stats
- */
-router.get('/stats', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const stats = await agentService.getAgentStats(userId);
-
-    res.json({
-      success: true,
-      data: stats
-    });
-  } catch (error) {
-    logger.error('Failed to get Agent statistics:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to get Agent statistics'
-    });
-  }
-});
-
-/**
- * Get All Agent Categories List
- * GET /api/agent/categories
- */
-router.get('/categories', async (req: Request, res: Response) => {
-  try {
-    // Use statistics endpoint to get category information (does not require user authentication for global stats)
-    const marketplace = await agentService.getAgentMarketplace({
-      limit: 1 // Only need category statistics, not specific Agent data
-    });
-
-    // Extract all categories from public Agents
-    const categories = new Set<string>();
-    // Note: Need to add logic to get all categories in agentService
-    // Temporarily return empty array, need to implement in service layer
-    const categoryList: Array<{name: string, count: number}> = [];
-
-    res.json({
-      success: true,
-      data: categoryList,
-      message: 'Category list functionality is under development'
-    });
-  } catch (error) {
-    logger.error('Failed to get Agent categories:', error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to get Agent categories'
-    });
-  }
-});
-
-/**
- * Get Agent List by Category
- * GET /api/agent/category/:category
- */
-router.get('/category/:category', async (req: Request, res: Response) => {
-  try {
-    const category = req.params.category;
-    const query: AgentMarketplaceQuery = {
-      category,
-      search: req.query.search as string,
-      orderBy: req.query.orderBy as any,
-      order: req.query.order as any,
-      offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined
-    };
-
-    const result = await agentService.getAgentMarketplace(query);
-
-    res.json({
-      success: true,
-      data: {
-        category,
-        ...result
-      }
-    });
-  } catch (error) {
-    logger.error(`Failed to get Agents by category [Category: ${req.params.category}]:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to get Agents by category'
-    });
-  }
-});
-
 /**
  * Record Agent Usage
  * POST /api/agent/:id/usage
@@ -951,43 +1105,6 @@ router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to record Agent usage'
-    });
-  }
-});
-
-/**
- * Get Agent by Task ID
- * GET /api/agent/task/:taskId
- */
-router.get('/task/:taskId', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const taskId = req.params.taskId;
-    const agents = await agentService.getAgentsByTaskId(taskId);
-
-    // Filter to return only Agents that user can access
-    const accessibleAgents = agents.filter(agent => 
-      agent.userId === userId || agent.status === 'public'
-    );
-
-    res.json({
-      success: true,
-      data: accessibleAgents
-    });
-  } catch (error) {
-    logger.error(`Failed to get Agent by task ID [TaskID: ${req.params.taskId}]:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to get Agent by task ID'
     });
   }
 });
@@ -1195,69 +1312,6 @@ router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Respon
       success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to check Agent favorite status'
-    });
-  }
-});
-
-/**
- * Verify MCP Authentication for Agent Usage
- * POST /api/agent/mcp/verify-auth
- */
-router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const { mcpName, authData, saveAuth = true } = req.body;
-
-    // Validate required fields
-    if (!mcpName || !authData) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_REQUIRED_FIELDS',
-        message: 'Missing required fields: mcpName, authData'
-      });
-    }
-
-    logger.info(`🔐 Agent MCP authentication request - User: ${userId}, MCP: ${mcpName}`);
-
-    // Agent MCP认证逻辑：不依赖任务，直接为用户验证和保存MCP认证信息
-    const verificationResult = await verifyAgentMCPAuth(userId, mcpName, authData);
-
-    if (verificationResult.success) {
-      logger.info(`✅ Agent MCP authentication successful - User: ${userId}, MCP: ${mcpName}`);
-      
-      res.json({
-        success: true,
-        message: verificationResult.message,
-        data: {
-          verified: true,
-          mcpName,
-          userId,
-          details: verificationResult.details
-        }
-      });
-    } else {
-      logger.warn(`❌ Agent MCP authentication failed - User: ${userId}, MCP: ${mcpName}: ${verificationResult.message}`);
-      
-      res.json({
-        success: false,
-        error: 'VERIFICATION_FAILED',
-        message: verificationResult.message
-      });
-    }
-  } catch (error) {
-    logger.error(`Agent MCP authentication error:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to verify MCP authentication'
     });
   }
 });
@@ -1527,62 +1581,5 @@ async function validateTwitterAuth(authData: Record<string, string>): Promise<{ 
     };
   }
 }
-
-/**
- * Get User's MCP Authentication Status
- * GET /api/agent/mcp/auth-status
- */
-router.get('/mcp/auth-status', requireAuth, async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'User not authenticated'
-      });
-    }
-
-    const { mcpNames } = req.query;
-    
-    if (!mcpNames) {
-      return res.status(400).json({
-        success: false,
-        error: 'MISSING_REQUIRED_FIELDS',
-        message: 'Missing required query parameter: mcpNames'
-      });
-    }
-
-    // Parse MCP names (comma-separated)
-    const mcpNameList = (mcpNames as string).split(',').map(name => name.trim());
-    
-    // Get authentication status for each MCP
-    const authStatuses = await Promise.all(
-      mcpNameList.map(async (mcpName) => {
-        const authData = await mcpAuthService.getUserMCPAuth(userId, mcpName);
-        return {
-          mcpName,
-          isAuthenticated: authData && authData.isVerified,
-          hasAuthData: !!authData?.authData
-        };
-      })
-    );
-
-    res.json({
-      success: true,
-      data: {
-        userId,
-        authStatuses
-      }
-    });
-  } catch (error) {
-    logger.error(`Get Agent MCP auth status error:`, error);
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to get MCP authentication status'
-    });
-  }
-});
 
 export default router; 
