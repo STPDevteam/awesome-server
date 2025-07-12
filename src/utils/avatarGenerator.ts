@@ -7,10 +7,10 @@
 /**
  * 生成Agent头像URL
  * @param seed 种子值，通常使用Agent名称
- * @param style DiceBear样式，默认为bottts-neutral
+ * @param style DiceBear样式，默认为bottts
  * @returns 头像URL
  */
-export function generateAgentAvatarUrl(seed: string, style: string = 'bottts-neutral'): string {
+export function generateAgentAvatarUrl(seed: string, style: string = 'bottts'): string {
   // 清理种子值：移除特殊字符，确保URL安全
   const cleanSeed = encodeURIComponent(seed.replace(/[^a-zA-Z0-9\-_]/g, ''));
   
@@ -38,7 +38,7 @@ export function generateAgentAvatarUrlWithOptions(
   } = {}
 ): string {
   const {
-    style = 'bottts-neutral',
+    style = 'bottts',
     format = 'svg',
     ...otherOptions
   } = options;
@@ -87,8 +87,8 @@ export function generateAvatarSeed(agentName: string): string {
  * 预定义的Agent头像样式列表
  */
 export const AGENT_AVATAR_STYLES = [
-  'bottts-neutral',  // 默认推荐样式
-  'bottts',
+  'bottts',          // 默认推荐样式
+  'bottts-neutral',
   'avataaars-neutral',
   'avataaars',
   'adventurer-neutral',
@@ -106,12 +106,12 @@ export type AgentAvatarStyle = typeof AGENT_AVATAR_STYLES[number];
 export function getRecommendedAvatarStyle(categories: string[] = []): AgentAvatarStyle {
   // 根据类别推荐不同的头像样式
   if (categories.includes('Development Tools')) {
-    return 'bottts-neutral';
+    return 'bottts';
   } else if (categories.includes('Market Data')) {
     return 'avataaars-neutral';
   } else if (categories.includes('Social')) {
     return 'adventurer-neutral';
   } else {
-    return 'bottts-neutral'; // 默认样式
+    return 'bottts'; // 默认样式
   }
 } 

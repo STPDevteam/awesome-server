@@ -562,25 +562,27 @@ Respond with ONLY a JSON object:
           // Get the completed task with results
           const completedTask = await taskService.getTaskById(task.id);
           
-          const successResponse = `✅ Task completed successfully using ${agent.name}'s capabilities!
+          // 🔧 新增：获取实际的执行结果并格式化
+          const formattedResponse = await this.formatTaskResultWithLLM(
+            completedTask,
+            agent,
+            content
+          );
 
-**Task**: ${task.title}
-**Agent**: ${agent.name}
-**Status**: ${completedTask?.status || 'completed'}
-
-I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
-
-          return { response: successResponse, taskId: task.id };
+          return { response: formattedResponse, taskId: task.id };
         } else {
-          const warningResponse = `⚠️ Task execution completed with warnings using ${agent.name}'s capabilities.
+          // Get the completed task to check for partial results
+          const completedTask = await taskService.getTaskById(task.id);
+          
+          // 尝试格式化部分结果
+          const partialResponse = await this.formatTaskResultWithLLM(
+            completedTask,
+            agent,
+            content,
+            true // 标记为部分成功
+          );
 
-**Task**: ${task.title}
-**Agent**: ${agent.name}
-**Task ID**: ${task.id}
-
-The task has been processed, but some steps may have encountered issues. Please check the task details for more information.`;
-
-          return { response: warningResponse, taskId: task.id };
+          return { response: partialResponse, taskId: task.id };
         }
       } catch (executionError) {
         logger.error(`Agent task execution failed [Task: ${task.id}]:`, executionError);
@@ -598,6 +600,99 @@ I encountered an error while executing this task. Please try again or check the 
     } catch (error) {
       logger.error('Execute Agent task failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 🔧 新增：使用LLM格式化任务执行结果为Markdown
+   */
+  private async formatTaskResultWithLLM(
+    task: any,
+    agent: Agent,
+    originalRequest: string,
+    isPartialSuccess: boolean = false
+  ): Promise<string> {
+    try {
+      // 提取任务结果
+      const taskResult = task?.result;
+      
+      if (!taskResult) {
+        return `✅ Task completed using ${agent.name}'s capabilities!
+
+**Task**: ${task?.title || 'Unknown'}
+**Agent**: ${agent.name}
+**Status**: ${task?.status || 'completed'}
+
+The task has been processed successfully, but no detailed results are available.`;
+      }
+
+      // 构建结果内容用于LLM处理
+      let resultContent = '';
+      
+      if (taskResult.summary) {
+        resultContent += `Summary: ${taskResult.summary}\n\n`;
+      }
+      
+      if (taskResult.finalResult) {
+        resultContent += `Final Result: ${taskResult.finalResult}\n\n`;
+      }
+      
+      if (taskResult.steps && Array.isArray(taskResult.steps)) {
+        resultContent += 'Execution Steps:\n';
+        taskResult.steps.forEach((step: any, index: number) => {
+          if (step.success && step.result) {
+            resultContent += `Step ${index + 1}: ${step.result}\n`;
+          }
+        });
+      }
+
+      if (!resultContent.trim()) {
+        resultContent = JSON.stringify(taskResult, null, 2);
+      }
+
+      // 使用LLM格式化结果
+      const systemPrompt = `You are ${agent.name}, an AI agent specialized in presenting task execution results in a clear, professional Markdown format.
+
+Your role is to:
+1. Present the execution results in a user-friendly way
+2. Use proper Markdown formatting for better readability
+3. Highlight key information and findings
+4. Maintain the agent's personality while being informative
+5. Include relevant details while keeping the response concise and well-structured
+
+Agent Description: ${agent.description}
+Agent Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
+  'general assistance'}`;
+
+      const userPrompt = `I requested: "${originalRequest}"
+
+The task execution ${isPartialSuccess ? 'completed with some warnings' : 'completed successfully'} with the following results:
+
+${resultContent}
+
+Please format this into a clear, professional response that shows what was accomplished. Use Markdown formatting to make it easy to read and highlight the key results. Start with a success indicator and include the most important findings prominently.`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(userPrompt)
+      ]);
+
+      return response.content.toString();
+    } catch (error) {
+      logger.error('Failed to format task result with LLM:', error);
+      
+      // 降级处理：返回基本的格式化结果
+      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
+      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
+      
+      return `${statusIcon} Task ${statusText} using ${agent.name}'s capabilities!
+
+**Task**: ${task?.title || 'Unknown'}
+**Agent**: ${agent.name}
+**Status**: ${task?.status || 'completed'}
+
+The task has been processed, and results are available. However, I encountered an issue formatting the detailed results for display.`;
     }
   }
 
@@ -727,22 +822,36 @@ I encountered an error while executing this task. Please try again or check the 
 **Task ID**: ${task.id}
 
 I encountered an error while executing this task. Please try again or check the task configuration.`;
-      } else if (executionSuccess) {
-        assistantContent = `✅ Task completed successfully using ${agent.name}'s capabilities!
-
-**Task**: ${task.title}
-**Agent**: ${agent.name}
-**Task ID**: ${task.id}
-
-I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
       } else {
-        assistantContent = `⚠️ Task execution completed with warnings using ${agent.name}'s capabilities.
+        // 🔧 新增：获取实际的执行结果并格式化
+        streamCallback({
+          event: 'formatting_results',
+          data: { message: 'Formatting execution results...' }
+        });
+
+        try {
+          const completedTask = await taskService.getTaskById(task.id);
+          assistantContent = await this.formatTaskResultWithLLM(
+            completedTask,
+            agent,
+            content,
+            !executionSuccess // 如果executionSuccess为false，则标记为部分成功
+          );
+        } catch (formatError) {
+          logger.error('Failed to format task results:', formatError);
+          
+          // 降级处理
+          const statusIcon = executionSuccess ? '✅' : '⚠️';
+          const statusText = executionSuccess ? 'completed successfully' : 'completed with warnings';
+          
+          assistantContent = `${statusIcon} Task ${statusText} using ${agent.name}'s capabilities!
 
 **Task**: ${task.title}
 **Agent**: ${agent.name}
 **Task ID**: ${task.id}
 
-The task has been processed, but some steps may have encountered issues. Please check the task details for more information.`;
+The task has been processed, but I encountered an issue formatting the detailed results for display.`;
+        }
       }
 
       const assistantMessage = await messageDao.createMessage({
