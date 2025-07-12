@@ -20,7 +20,16 @@ const router = Router();
 let agentService: ReturnType<typeof getAgentService>;
 const mcpAuthService = new MCPAuthService();
 
-// Middleware: Ensure agentService is initialized
+// 添加一个健康检查路由来验证服务是否正常 - 在中间件之前
+router.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Agent routes are working',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Simplified middleware: Get agentService from app context
 router.use((req, res, next) => {
   if (!agentService) {
     // Get TaskExecutorService instance from app
