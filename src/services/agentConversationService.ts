@@ -626,52 +626,38 @@ I encountered an error while executing this task. Please try again or check the 
 The task has been processed successfully, but no detailed results are available.`;
       }
 
-      // 构建结果内容用于LLM处理
+      // 只格式化最终结果，避免token超限
       let resultContent = '';
       
-      if (taskResult.summary) {
-        resultContent += `Summary: ${taskResult.summary}\n\n`;
-      }
-      
+      // 优先使用最终结果
       if (taskResult.finalResult) {
-        resultContent += `Final Result: ${taskResult.finalResult}\n\n`;
-      }
-      
-      if (taskResult.steps && Array.isArray(taskResult.steps)) {
-        resultContent += 'Execution Steps:\n';
-        taskResult.steps.forEach((step: any, index: number) => {
-          if (step.success && step.result) {
-            resultContent += `Step ${index + 1}: ${step.result}\n`;
-          }
-        });
+        resultContent = taskResult.finalResult;
+      } else if (taskResult.summary) {
+        resultContent = taskResult.summary;
+      } else {
+        // 如果没有最终结果，只提供执行概览，不包含详细步骤
+        const totalSteps = taskResult.steps ? taskResult.steps.length : 0;
+        const successfulSteps = taskResult.steps ? taskResult.steps.filter((step: any) => step.success).length : 0;
+        resultContent = `Task completed with ${successfulSteps}/${totalSteps} steps successful.`;
       }
 
-      if (!resultContent.trim()) {
-        resultContent = JSON.stringify(taskResult, null, 2);
-      }
+      // 使用简化的提示词，减少token消耗
+      const systemPrompt = `You are ${agent.name}. Format the task result into clear Markdown.
 
-      // 使用LLM格式化结果
-      const systemPrompt = `You are ${agent.name}, an AI agent specialized in presenting task execution results in a clear, professional Markdown format.
+Agent: ${agent.description}
+Task Status: ${isPartialSuccess ? 'Completed with warnings' : 'Completed successfully'}
 
-Your role is to:
-1. Present the execution results in a user-friendly way
-2. Use proper Markdown formatting for better readability
-3. Highlight key information and findings
-4. Maintain the agent's personality while being informative
-5. Include relevant details while keeping the response concise and well-structured
+Requirements:
+- Use proper Markdown formatting
+- Highlight key findings
+- Keep response concise but informative
+- Start with success indicator`;
 
-Agent Description: ${agent.description}
-Agent Capabilities: ${agent.mcpWorkflow ? 
-  agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
-  'general assistance'}`;
+      const userPrompt = `Request: "${originalRequest}"
 
-      const userPrompt = `I requested: "${originalRequest}"
+Result: ${resultContent}
 
-The task execution ${isPartialSuccess ? 'completed with some warnings' : 'completed successfully'} with the following results:
-
-${resultContent}
-
-Please format this into a clear, professional response that shows what was accomplished. Use Markdown formatting to make it easy to read and highlight the key results. Start with a success indicator and include the most important findings prominently.`;
+Format this into a professional response showing what was accomplished.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),

@@ -245,11 +245,11 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Failed to get Agent statistics:', error);
     res.status(500).json({
-      success: false,
+          success: false,
       error: 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Failed to get Agent statistics'
-    });
-  }
+        });
+      }
 });
 
 /**
@@ -273,7 +273,7 @@ router.get('/categories', async (req: Request, res: Response) => {
       success: true,
       data: categoryList,
       message: 'Category list functionality is under development'
-    });
+        });
   } catch (error) {
     logger.error('Failed to get Agent categories:', error);
     res.status(500).json({
@@ -463,11 +463,11 @@ router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response)
 
     if (verificationResult.success) {
       logger.info(`✅ Agent MCP authentication successful - User: ${userId}, MCP: ${mcpName}`);
-      
-      res.json({
-        success: true,
+
+    res.json({
+      success: true,
         message: verificationResult.message,
-        data: {
+      data: {
           verified: true,
           mcpName,
           userId,
@@ -509,7 +509,7 @@ router.get('/mcp/auth-status', requireAuth, async (req: Request, res: Response) 
     }
 
     const { mcpNames } = req.query;
-    
+
     if (!mcpNames) {
       return res.status(400).json({
         success: false,
@@ -873,7 +873,7 @@ router.put('/:id', requireAuth, async (req: Request, res: Response) => {
 
     const agentId = req.params.id;
     const { name, description, status, metadata, relatedQuestions } = req.body;
-
+    
     // Validate status value (if provided)
     if (status && !['private', 'public', 'draft'].includes(status)) {
       return res.status(400).json({
@@ -1120,10 +1120,10 @@ router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * Start Multi-turn Conversation with Agent (Streaming)
- * POST /api/agent/:id/try
+ * Initialize Agent Conversation (Prepare Environment)
+ * POST /api/agent/:id/init
  */
-router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
+router.post('/:id/init', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -1135,145 +1135,53 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
     }
 
     const agentId = req.params.id;
-    const { content } = req.body;
 
-    // content can be empty, indicating wanting to start conversation only
-    if (content !== undefined && typeof content !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_CONTENT',
-        message: 'Content must be a string'
-      });
-    }
-
-    // Set up Server-Sent Events
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
+    // Initialize Agent conversation (prepare environment)
+    const result = await agentService.tryAgent({
+      agentId,
+      content: '', // Empty content for initialization only
+      userId
     });
 
-    // Send initial connection message
-    res.write(`data: ${JSON.stringify({ 
-      event: 'connection_established', 
-      data: { agentId, status: 'connected' } 
-    })}\n\n`);
-
-    let processingComplete = false;
-
-    try {
-      // Start multi-turn conversation with Agent (non-streaming first)
-      const result = await agentService.tryAgent({
-        agentId,
-        content: content || '',
-        userId
-      });
-
-      if (result.success && result.conversation) {
-        // Send conversation created event
-        res.write(`data: ${JSON.stringify({ 
-          event: 'conversation_created', 
-          data: { 
-            conversationId: result.conversation.id,
-            agentInfo: result.conversation.agentInfo,
-            message: result.message
-          } 
-        })}\n\n`);
-
-        // If user provided initial content, process it with streaming
-        if (content && content.trim()) {
-          const taskExecutorService = req.app.get('taskExecutorService') as TaskExecutorService;
-          
-          if (!taskExecutorService) {
-            throw new Error('TaskExecutorService not available');
-          }
-          
-          const agentConversationService = getAgentConversationService(taskExecutorService);
-
-          // Process the initial message with streaming
-          const messageResult = await agentConversationService.processAgentMessageStream(
-            result.conversation.id,
-            userId,
-            content,
-            (chunk) => {
-              if (!processingComplete) {
-                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-              }
-            }
-          );
-
-          processingComplete = true;
-
-          // Send final result
-          res.write(`data: ${JSON.stringify({ 
-            event: 'message_processed', 
-            data: messageResult 
-          })}\n\n`);
+    if (result.success && result.conversation) {
+      // Generate welcome message for the agent
+      const welcomeMessage = await agentService.generateAgentWelcomeMessage(agentId);
+      
+      res.json({
+        success: true,
+        data: {
+          conversationId: result.conversation.id,
+          agentInfo: result.conversation.agentInfo,
+          welcomeMessage: welcomeMessage,
+          ready: true
         }
-
-        // Send completion message
-        res.write(`data: ${JSON.stringify({ 
-          event: 'agent_try_complete', 
-          data: { 
-            status: 'completed',
-            conversationId: result.conversation.id
-          } 
-        })}\n\n`);
-
+      });
+    } else {
+      // If authentication is required, return special response format
+      if (result.needsAuth) {
+        res.status(200).json({
+          success: false,
+          error: 'MCP_AUTH_REQUIRED',
+          needsAuth: true,
+          missingAuth: result.missingAuth,
+          message: result.message
+        });
       } else {
-        processingComplete = true;
-        
-        // If authentication is required, send auth required event
-        if (result.needsAuth) {
-          res.write(`data: ${JSON.stringify({ 
-            event: 'auth_required', 
-            data: { 
-              needsAuth: true,
-              missingAuth: result.missingAuth,
-              message: result.message
-            } 
-          })}\n\n`);
-        } else {
-          res.write(`data: ${JSON.stringify({ 
-            event: 'error', 
-            data: { 
-              message: result.message || 'Failed to start Agent conversation'
-            } 
-          })}\n\n`);
-        }
+        res.status(400).json({
+          success: false,
+          error: 'INIT_FAILED',
+          message: result.message || 'Failed to initialize Agent conversation'
+        });
       }
-
-    } catch (streamError) {
-      processingComplete = true;
-      
-      logger.error(`Agent try streaming failed [AgentID: ${agentId}]:`, streamError);
-      
-      // Send error event
-      res.write(`data: ${JSON.stringify({ 
-        event: 'error', 
-        data: { 
-          message: streamError instanceof Error ? streamError.message : 'Streaming failed',
-          agentId 
-        } 
-      })}\n\n`);
     }
-
-    // Send done marker
-    res.write('data: [DONE]\n\n');
-    res.end();
-
   } catch (error) {
-    logger.error(`Failed to setup Agent try streaming [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to initialize Agent conversation [AgentID: ${req.params.id}]:`, error);
     
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        error: 'INTERNAL_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to setup streaming'
-      });
-    }
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to initialize Agent conversation'
+    });
   }
 });
 

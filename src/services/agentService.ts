@@ -1231,6 +1231,36 @@ Respond naturally and helpfully:`;
       throw error;
     }
   }
+
+  /**
+   * 生成Agent欢迎语
+   */
+  async generateAgentWelcomeMessage(agentId: string): Promise<string> {
+    try {
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        throw new Error('Agent not found');
+      }
+
+      const capabilities = agent.mcpWorkflow && agent.mcpWorkflow.mcps 
+        ? agent.mcpWorkflow.mcps.map((m: any) => m.description || m.name).join(', ')
+        : 'general assistance';
+
+      return `Hello! I'm ${agent.name}. ${agent.description}
+
+My capabilities include: ${capabilities}
+
+You can:
+- Chat with me about anything
+- Ask me to help with tasks related to my capabilities
+- Request me to demonstrate my functionality
+
+How can I assist you today?`;
+    } catch (error) {
+      logger.error(`Failed to generate welcome message for agent ${agentId}:`, error);
+      throw error;
+    }
+  }
 }
 
 // 单例实例
