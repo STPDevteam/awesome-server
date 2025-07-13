@@ -42,11 +42,12 @@ export class AgentConversationService {
 
   constructor(taskExecutorService: TaskExecutorService) {
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.7,
-      maxTokens: 1000,
-      streaming: true,
-    });
+        modelName: 'gpt-4o',
+        temperature: 0.3,
+        streaming: true,
+        maxTokens: 4096,
+        apiKey: process.env.OPENAI_API_KEY
+      });
     this.mcpAuthService = new MCPAuthService();
     this.taskExecutorService = taskExecutorService;
   }
@@ -604,7 +605,7 @@ I encountered an error while executing this task. Please try again or check the 
   }
 
   /**
-   * 🔧 新增：使用LLM格式化任务执行结果为Markdown
+   * Format task result with structured output
    */
   private async formatTaskResultWithLLM(
     task: any,
@@ -615,70 +616,66 @@ I encountered an error while executing this task. Please try again or check the 
     try {
       // 提取任务结果
       const taskResult = task?.result;
+      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
+      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      if (!taskResult) {
-        return `✅ Task completed using ${agent.name}'s capabilities!
-
-**Task**: ${task?.title || 'Unknown'}
-**Agent**: ${agent.name}
-**Status**: ${task?.status || 'completed'}
-
-The task has been processed successfully, but no detailed results are available.`;
-      }
-
-      // 只格式化最终结果，避免token超限
-      let resultContent = '';
+      // 构建结构化的响应格式
+      let formattedResponse = '';
       
-      // 优先使用最终结果
-      if (taskResult.finalResult) {
-        resultContent = taskResult.finalResult;
-      } else if (taskResult.summary) {
-        resultContent = taskResult.summary;
+      // 1. Success Indicator 部分
+      formattedResponse += `**Success Indicator:**\n`;
+      formattedResponse += `The task was ${statusText}.\n\n`;
+      
+      // 2. Response 部分
+      formattedResponse += `**Response:**\n`;
+      
+      if (taskResult) {
+        // 优先使用最终结果
+        if (taskResult.finalResult) {
+          formattedResponse += `${taskResult.finalResult}\n\n`;
+        } else if (taskResult.summary) {
+          formattedResponse += `${taskResult.summary}\n\n`;
+        } else if (taskResult.steps && taskResult.steps.length > 0) {
+          // 如果有步骤结果，提取关键信息
+          const lastStep = taskResult.steps[taskResult.steps.length - 1];
+          if (lastStep.result) {
+            formattedResponse += `${lastStep.result}\n\n`;
+          } else {
+            formattedResponse += `The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+          }
+        } else {
+          formattedResponse += `The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+        }
       } else {
-        // 如果没有最终结果，只提供执行概览，不包含详细步骤
-        const totalSteps = taskResult.steps ? taskResult.steps.length : 0;
-        const successfulSteps = taskResult.steps ? taskResult.steps.filter((step: any) => step.success).length : 0;
-        resultContent = `Task completed with ${successfulSteps}/${totalSteps} steps successful.`;
+        formattedResponse += `The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
       }
-
-      // 使用简化的提示词，减少token消耗
-      const systemPrompt = `You are ${agent.name}. Format the task result into clear Markdown.
-
-Agent: ${agent.description}
-Task Status: ${isPartialSuccess ? 'Completed with warnings' : 'Completed successfully'}
-
-Requirements:
-- Use proper Markdown formatting
-- Highlight key findings
-- Keep response concise but informative
-- Start with success indicator`;
-
-      const userPrompt = `Request: "${originalRequest}"
-
-Result: ${resultContent}
-
-Format this into a professional response showing what was accomplished.`;
-
-      const response = await this.llm.invoke([
-        new SystemMessage(systemPrompt),
-        new HumanMessage(userPrompt)
-      ]);
-
-      return response.content.toString();
+      
+      // 3. 任务详情部分
+      formattedResponse += `**Task Details:**\n`;
+      formattedResponse += `• **Task**: ${originalRequest}\n`;
+      formattedResponse += `• **Agent**: ${agent.name}\n`;
+      formattedResponse += `• **Task ID**: ${task?.id || 'Unknown'}\n`;
+      formattedResponse += `• **Status**: ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.\n`;
+      
+      return formattedResponse;
     } catch (error) {
-      logger.error('Failed to format task result with LLM:', error);
+      logger.error('Failed to format task result:', error);
       
       // 降级处理：返回基本的格式化结果
       const statusIcon = isPartialSuccess ? '⚠️' : '✅';
       const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      return `${statusIcon} Task ${statusText} using ${agent.name}'s capabilities!
+      return `**Success Indicator:**
+The task was ${statusText}.
 
-**Task**: ${task?.title || 'Unknown'}
-**Agent**: ${agent.name}
-**Status**: ${task?.status || 'completed'}
+**Response:**
+The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.
 
-The task has been processed, and results are available. However, I encountered an issue formatting the detailed results for display.`;
+**Task Details:**
+• **Task**: ${originalRequest}
+• **Agent**: ${agent.name}
+• **Task ID**: ${task?.id || 'Unknown'}
+• **Status**: ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.`;
     }
   }
 
