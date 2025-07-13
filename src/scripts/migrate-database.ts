@@ -1167,15 +1167,7 @@ class MigrationService {
           // 只在新增列时为现有Agent数据生成头像
           // 使用简单的字符串拼接而不是digest函数
           const updateResult = await db.query(`
-            UPDATE agents 
-            SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || 
-                             lower(
-                               regexp_replace(
-                                 regexp_replace(name, '[^a-zA-Z0-9\-_\s]', '', 'g'),
-                                 '\s+', '-', 'g'
-                               )
-                             )
-            WHERE agent_avatar IS NULL OR agent_avatar = ''
+            UPDATE agents SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9\\-_\\s]', '', 'g'), '\\s+', '-', 'g')) WHERE agent_avatar IS NULL OR agent_avatar = ''
           `);
 
           if (updateResult.rowCount && updateResult.rowCount > 0) {
@@ -1195,6 +1187,28 @@ class MigrationService {
           ALTER TABLE agents DROP COLUMN IF EXISTS agent_avatar
         `);
         console.log('✅ Removed agent_avatar field from agents table');
+      }
+    },
+    {
+      version: 23,
+      name: 'fix_agent_avatar_newlines',
+      up: async () => {
+        // 修复现有Agent数据中包含换行符的agent_avatar字段
+        const updateResult = await db.query(`
+          UPDATE agents SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9\\-_\\s]', '', 'g'), '\\s+', '-', 'g')) WHERE agent_avatar IS NOT NULL AND agent_avatar != '' AND (agent_avatar LIKE '%\\n%' OR agent_avatar LIKE '%\\r%' OR agent_avatar LIKE '% %')
+        `);
+
+        if (updateResult.rowCount && updateResult.rowCount > 0) {
+          console.log(`✅ Fixed ${updateResult.rowCount} agents with malformed avatars`);
+        } else {
+          console.log('ℹ️  No agents needed avatar fixes');
+        }
+
+        console.log('✅ Fixed agent_avatar newlines in existing data');
+      },
+      down: async () => {
+        // 回滚操作 - 这里不需要特殊处理，因为我们只是修复了格式
+        console.log('✅ Rollback completed for agent_avatar newlines fix');
       }
     }
   ];
