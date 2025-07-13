@@ -919,7 +919,7 @@ Please generate 3 questions, one per line, without numbering or other formatting
 
       // Import AgentConversationService dynamically to avoid circular dependency
       const { getAgentConversationService } = await import('./agentConversationService.js');
-      
+
       // Get AgentConversationService instance
       const agentConversationService = getAgentConversationService(this.taskExecutorService);
       
@@ -1043,8 +1043,8 @@ Respond with ONLY a JSON object:
 
       // 应用Agent的工作流
       if (agent.mcpWorkflow) {
-        await taskService.updateTask(task.id, {
-          mcpWorkflow: agent.mcpWorkflow,
+      await taskService.updateTask(task.id, {
+        mcpWorkflow: agent.mcpWorkflow,
           status: 'created'
         });
         

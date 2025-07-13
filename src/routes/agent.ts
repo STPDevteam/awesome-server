@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getAgentService } from '../services/agentService.js';
 import { TaskExecutorService } from '../services/taskExecutorService.js';
 import { MCPAuthService } from '../services/mcpAuthService.js';
+import { getAgentConversationService } from '../services/agentConversationService.js';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { logger } from '../utils/logger.js';
 import { 
@@ -1119,7 +1120,7 @@ router.post('/:id/usage', requireAuth, async (req: Request, res: Response) => {
 });
 
 /**
- * Start Multi-turn Conversation with Agent
+ * Start Multi-turn Conversation with Agent (Streaming)
  * POST /api/agent/:id/try
  */
 router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
@@ -1145,49 +1146,138 @@ router.post('/:id/try', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // Start multi-turn conversation with Agent
-    const result = await agentService.tryAgent({
-      agentId,
-      content: content || '',
-      userId
+    // Set up Server-Sent Events
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
     });
 
-    if (result.success) {
-      res.json({
-        success: true,
-        data: {
-          conversation: result.conversation,
-          message: result.message
-        }
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ 
+      event: 'connection_established', 
+      data: { agentId, status: 'connected' } 
+    })}\n\n`);
+
+    let processingComplete = false;
+
+    try {
+      // Start multi-turn conversation with Agent (non-streaming first)
+      const result = await agentService.tryAgent({
+        agentId,
+        content: content || '',
+        userId
       });
-    } else {
-      // If authentication is required, return special response format with 200 status
-      if (result.needsAuth) {
-        res.status(200).json({
-          success: false,
-          error: 'MCP_AUTH_REQUIRED',
-          needsAuth: true,
-          missingAuth: result.missingAuth,
-          message: result.message
-        });
+
+      if (result.success && result.conversation) {
+        // Send conversation created event
+        res.write(`data: ${JSON.stringify({ 
+          event: 'conversation_created', 
+          data: { 
+            conversationId: result.conversation.id,
+            agentInfo: result.conversation.agentInfo,
+            message: result.message
+          } 
+        })}\n\n`);
+
+        // If user provided initial content, process it with streaming
+        if (content && content.trim()) {
+          const taskExecutorService = req.app.get('taskExecutorService') as TaskExecutorService;
+          
+          if (!taskExecutorService) {
+            throw new Error('TaskExecutorService not available');
+          }
+          
+          const agentConversationService = getAgentConversationService(taskExecutorService);
+
+          // Process the initial message with streaming
+          const messageResult = await agentConversationService.processAgentMessageStream(
+            result.conversation.id,
+            userId,
+            content,
+            (chunk) => {
+              if (!processingComplete) {
+                res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+              }
+            }
+          );
+
+          processingComplete = true;
+
+          // Send final result
+          res.write(`data: ${JSON.stringify({ 
+            event: 'message_processed', 
+            data: messageResult 
+          })}\n\n`);
+        }
+
+        // Send completion message
+        res.write(`data: ${JSON.stringify({ 
+          event: 'agent_try_complete', 
+          data: { 
+            status: 'completed',
+            conversationId: result.conversation.id
+          } 
+        })}\n\n`);
+
       } else {
-        res.status(400).json({
-          success: false,
-          error: 'TRY_AGENT_FAILED',
-          message: result.message
-        });
+        processingComplete = true;
+        
+        // If authentication is required, send auth required event
+        if (result.needsAuth) {
+          res.write(`data: ${JSON.stringify({ 
+            event: 'auth_required', 
+            data: { 
+              needsAuth: true,
+              missingAuth: result.missingAuth,
+              message: result.message
+            } 
+          })}\n\n`);
+        } else {
+          res.write(`data: ${JSON.stringify({ 
+            event: 'error', 
+            data: { 
+              message: result.message || 'Failed to start Agent conversation'
+            } 
+          })}\n\n`);
+        }
       }
+
+    } catch (streamError) {
+      processingComplete = true;
+      
+      logger.error(`Agent try streaming failed [AgentID: ${agentId}]:`, streamError);
+      
+      // Send error event
+      res.write(`data: ${JSON.stringify({ 
+        event: 'error', 
+        data: { 
+          message: streamError instanceof Error ? streamError.message : 'Streaming failed',
+          agentId 
+        } 
+      })}\n\n`);
     }
+
+    // Send done marker
+    res.write('data: [DONE]\n\n');
+    res.end();
+
   } catch (error) {
-    logger.error(`Failed to start Agent conversation [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to setup Agent try streaming [AgentID: ${req.params.id}]:`, error);
     
-    res.status(500).json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to start Agent conversation'
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to setup streaming'
+      });
+    }
   }
 });
+
+
 
 /**
  * Favorite Agent

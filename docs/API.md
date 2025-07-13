@@ -4203,7 +4203,7 @@ data: [DONE]
     "message": "收藏成功",
     "agentId": "agent_123456",
     "isFavorited": true
-  }
+    }
 }
 ```
 
@@ -5182,3 +5182,203 @@ CREATE INDEX idx_task_steps_task_not_deleted ON task_steps(task_id, is_deleted) 
 2. **定期清理**: 可以实现定期清理长期软删除数据的机制
 3. **审计日志**: 可以基于软删除记录实现完整的操作审计
 4. **用户管理**: 管理员可以查看和管理所有用户的软删除数据
+
+## Agent 相关 API
+
+### 试用Agent
+
+**端点**: `POST /api/agent/:id/try`
+
+**描述**: 开始与Agent的多轮对话，支持初始消息的流式处理
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**请求体**:
+```json
+{
+  "content": "可选的初始消息内容"
+}
+```
+
+**流式响应**: Server-Sent Events (SSE) 格式
+
+**响应事件**:
+
+#### 连接建立
+```
+data: {"event":"connection_established","data":{"agentId":"agent_123","status":"connected"}}
+```
+
+#### 对话创建成功
+```
+data: {"event":"conversation_created","data":{"conversationId":"conv_456","agentInfo":{"id":"agent_123","name":"GitHub助手","description":"专业的GitHub操作助手"},"message":"Agent试用对话已成功开始"}}
+```
+
+#### 初始消息处理（如果提供了content）
+```
+data: {"event":"auth_checking","data":{"message":"Checking MCP authentication status..."}}
+
+data: {"event":"auth_verified","data":{"message":"MCP authentication verified"}}
+
+data: {"event":"user_message_created","data":{"messageId":"msg_789"}}
+
+data: {"event":"intent_analysis_start","data":{"message":"Analyzing user intent..."}}
+
+data: {"event":"intent_analysis_complete","data":{"intent":"task","confidence":0.85}}
+
+data: {"event":"task_creation_start","data":{"message":"Creating task based on Agent workflow..."}}
+
+data: {"event":"task_created","data":{"taskId":"task_101","title":"检查GitHub仓库状态","message":"Task created: 检查GitHub仓库状态"}}
+
+data: {"event":"task_execution_start","data":{"message":"Starting task execution with Agent workflow..."}}
+
+data: {"event":"task_execution_progress","data":{"event":"step_start","data":{"step":1,"mcpName":"github-mcp-server","actionName":"list_repositories"}}}
+
+data: {"event":"task_execution_progress","data":{"event":"step_complete","data":{"step":1,"success":true,"result":"Found 5 repositories..."}}}
+
+data: {"event":"task_execution_complete","data":{"message":"Task execution completed successfully","taskId":"task_101","success":true}}
+
+data: {"event":"message_complete","data":{"messageId":"msg_790","content":"✅ 任务已使用GitHub助手的功能成功完成！\n\n**任务**: 检查GitHub仓库状态\n**Agent**: GitHub助手\n**任务ID**: task_101\n\n我已经成功检查了您的GitHub仓库状态，找到了5个仓库。","taskId":"task_101"}}
+```
+
+#### 消息处理完成
+```
+data: {"event":"message_processed","data":{"userMessageId":"msg_789","assistantMessageId":"msg_790","intent":"task","taskId":"task_101"}}
+```
+
+#### Agent试用完成
+```
+data: {"event":"agent_try_complete","data":{"status":"completed","conversationId":"conv_456"}}
+
+data: [DONE]
+```
+
+#### MCP认证需求
+```
+data: {"event":"auth_required","data":{"needsAuth":true,"missingAuth":[{"mcpName":"github-mcp-server","authFields":["GITHUB_TOKEN"]}],"message":"需要认证MCP服务才能使用此Agent"}}
+
+data: [DONE]
+```
+
+#### 错误处理
+```
+data: {"event":"error","data":{"message":"Agent not found","agentId":"agent_123"}}
+
+data: [DONE]
+```
+
+**事件类型说明**:
+
+- `connection_established`: 连接建立
+- `conversation_created`: 对话创建成功
+- `auth_checking`: 检查MCP认证状态
+- `auth_verified`: MCP认证验证通过
+- `auth_required`: 需要MCP认证
+- `user_message_created`: 用户消息创建
+- `intent_analysis_start`: 意图分析开始
+- `intent_analysis_complete`: 意图分析完成
+- `task_creation_start`: 任务创建开始
+- `task_created`: 任务创建完成
+- `task_execution_start`: 任务执行开始
+- `task_execution_progress`: 任务执行进度
+- `task_execution_complete`: 任务执行完成
+- `message_complete`: 消息处理完成
+- `message_processed`: 消息处理结果
+- `agent_try_complete`: Agent试用完成
+- `error`: 错误信息
+
+**前端集成示例**:
+
+```javascript
+// JavaScript/React 前端集成示例
+async function tryAgentWithStreaming(agentId, initialContent) {
+  const response = await fetch(`/api/agent/${agentId}/try`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ content: initialContent })
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') {
+          console.log('Agent try completed');
+          return;
+        }
+
+        try {
+          const event = JSON.parse(data);
+          handleAgentTryEvent(event);
+        } catch (e) {
+          console.error('Failed to parse event:', e);
+        }
+      }
+    }
+  }
+}
+
+function handleAgentTryEvent(event) {
+  switch (event.event) {
+    case 'connection_established':
+      showStatus('连接已建立...');
+      break;
+    
+    case 'conversation_created':
+      showStatus('对话已创建');
+      setConversationId(event.data.conversationId);
+      displayAgentInfo(event.data.agentInfo);
+      break;
+    
+    case 'auth_required':
+      showAuthModal(event.data.missingAuth);
+      break;
+    
+    case 'task_execution_progress':
+      updateTaskProgress(event.data);
+      break;
+    
+    case 'message_complete':
+      displayMessage(event.data.content);
+      break;
+    
+    case 'agent_try_complete':
+      showSuccess('Agent试用完成！');
+      enableContinueChat();
+      break;
+    
+    case 'error':
+      showError(event.data.message);
+      break;
+  }
+}
+```
+
+**使用场景**:
+
+1. **无初始消息**: 仅创建对话，显示Agent欢迎信息
+2. **有初始消息**: 创建对话并立即处理用户的第一条消息
+3. **MCP认证**: 如果Agent需要MCP认证，会返回认证需求信息
+4. **任务执行**: 如果初始消息是任务意图，会自动执行Agent的工作流
+
+**错误响应**:
+- `401 Unauthorized`: 未认证
+- `400 Bad Request`: 请求参数无效
+- `404 Not Found`: Agent不存在
+- `403 Forbidden`: 无权访问私有Agent
+- `500 Internal Server Error`: 服务器内部错误
