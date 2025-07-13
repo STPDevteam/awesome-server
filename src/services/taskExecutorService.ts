@@ -1774,32 +1774,6 @@ Transform the data now:`;
       return false;
     }
   }
-  
-  /**
-   * 判断是否应该使用智能工作流引擎执行
-   * @param taskContent 任务内容
-   * @returns 是否使用智能工作流引擎
-   */
-  private shouldUseIntelligentExecution(taskContent: string): boolean {
-    // 检查任务是否包含需要复杂推理或多步骤处理的关键词
-    const complexTaskKeywords = [
-      '分析', '比较', '对比', '评估', '研究', '调研', 
-      '总结', '整理', '归纳', '综合', '深入', '详细',
-      'analyze', 'compare', 'evaluate', 'research', 
-      'summarize', 'comprehensive', 'detailed', 'investigate'
-    ];
-    
-    const taskLower = taskContent.toLowerCase();
-    const hasComplexKeywords = complexTaskKeywords.some(keyword => 
-      taskLower.includes(keyword.toLowerCase())
-    );
-    
-    // 检查任务长度和复杂度
-    const isComplexTask = taskContent.length > 50 || 
-                         taskContent.split(/[，。,.]/).length > 2;
-    
-    return hasComplexKeywords || isComplexTask;
-  }
 
   /**
    * 使用智能工作流引擎执行任务
