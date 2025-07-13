@@ -209,19 +209,18 @@ router.post('/refresh', async (req: express.Request, res: express.Response) => {
       });
     }
 
-    const newAccessToken = await jwtService.refreshAccessToken(refreshToken, user);
-    if (!newAccessToken) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: '令牌刷新失败'
-      });
-    }
+    // 撤销旧的refresh token
+    await jwtService.revokeRefreshToken(refreshToken);
+
+    // 生成新的token pair（access token + refresh token）
+    const tokenPair = await jwtService.generateTokenPair(user);
 
     res.json({
       success: true,
       data: {
-        accessToken: newAccessToken,
-        expiresIn: 3600
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        expiresIn: tokenPair.expiresIn
       }
     });
   } catch (error) {
