@@ -1167,7 +1167,7 @@ class MigrationService {
           // 只在新增列时为现有Agent数据生成头像
           // 使用简单的字符串拼接而不是digest函数
           const updateResult = await db.query(`
-            UPDATE agents SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9\\-_\\s]', '', 'g'), '\\s+', '-', 'g')) WHERE agent_avatar IS NULL OR agent_avatar = ''
+            UPDATE agents SET agent_avatar = 'https://api.dicebear.com/9.x/bottts/svg?seed=' || lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9\\-_\\s]', '', 'g'), '\\s+', '-', 'g')) WHERE agent_avatar IS NULL OR agent_avatar = ''
           `);
 
           if (updateResult.rowCount && updateResult.rowCount > 0) {
@@ -1195,7 +1195,7 @@ class MigrationService {
       up: async () => {
         // 修复现有Agent数据中包含换行符的agent_avatar字段
         const updateResult = await db.query(`
-          UPDATE agents SET agent_avatar = 'https://api.dicebear.com/9.x/bottts-neutral/svg?seed=' || lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9\\-_\\s]', '', 'g'), '\\s+', '-', 'g')) WHERE agent_avatar IS NOT NULL AND agent_avatar != '' AND (agent_avatar LIKE '%\\n%' OR agent_avatar LIKE '%\\r%' OR agent_avatar LIKE '% %')
+          UPDATE agents SET agent_avatar = 'https://api.dicebear.com/9.x/bottts/svg?seed=' || lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9\\-_\\s]', '', 'g'), '\\s+', '-', 'g')) WHERE agent_avatar IS NOT NULL AND agent_avatar != '' AND (agent_avatar LIKE '%\\n%' OR agent_avatar LIKE '%\\r%' OR agent_avatar LIKE '% %')
         `);
 
         if (updateResult.rowCount && updateResult.rowCount > 0) {
@@ -1209,6 +1209,40 @@ class MigrationService {
       down: async () => {
         // 回滚操作 - 这里不需要特殊处理，因为我们只是修复了格式
         console.log('✅ Rollback completed for agent_avatar newlines fix');
+      }
+    },
+    {
+      version: 24,
+      name: 'update_agent_avatar_to_bottts_style',
+      up: async () => {
+        // 将所有使用 bottts-neutral 的 Agent 头像更新为 bottts 样式
+        const updateResult = await db.query(`
+          UPDATE agents 
+          SET agent_avatar = REPLACE(agent_avatar, '/bottts-neutral/', '/bottts/') 
+          WHERE agent_avatar LIKE '%/bottts-neutral/%'
+        `);
+
+        if (updateResult.rowCount && updateResult.rowCount > 0) {
+          console.log(`✅ Updated ${updateResult.rowCount} agents from bottts-neutral to bottts style`);
+        } else {
+          console.log('ℹ️  No agents needed style updates');
+        }
+
+        console.log('✅ Updated all Agent avatars to use bottts style');
+      },
+      down: async () => {
+        // 回滚操作 - 将 bottts 样式回滚为 bottts-neutral
+        const rollbackResult = await db.query(`
+          UPDATE agents 
+          SET agent_avatar = REPLACE(agent_avatar, '/bottts/', '/bottts-neutral/') 
+          WHERE agent_avatar LIKE '%/bottts/%'
+        `);
+
+        if (rollbackResult.rowCount && rollbackResult.rowCount > 0) {
+          console.log(`✅ Rolled back ${rollbackResult.rowCount} agents to bottts-neutral style`);
+        }
+
+        console.log('✅ Rollback completed for Agent avatar style update');
       }
     }
   ];
