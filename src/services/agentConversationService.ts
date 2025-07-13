@@ -622,12 +622,12 @@ I encountered an error while executing this task. Please try again or check the 
       // 构建结构化的响应格式
       let formattedResponse = '';
       
-      // 1. Success Indicator 部分
-      formattedResponse += `**Success Indicator:**\n`;
-      formattedResponse += `The task was ${statusText}.\n\n`;
+      // 1. Success Indicator 部分 - 使用绿色成功样式
+      formattedResponse += `## ✅ Success Indicator\n`;
+      formattedResponse += `> The task was ${statusText}.\n\n`;
       
-      // 2. Response 部分
-      formattedResponse += `**Response:**\n`;
+      // 2. Response 部分 - 使用二级标题
+      formattedResponse += `## 📋 Response\n`;
       
       if (taskResult) {
         // 优先使用最终结果
@@ -641,21 +641,21 @@ I encountered an error while executing this task. Please try again or check the 
           if (lastStep.result) {
             formattedResponse += `${lastStep.result}\n\n`;
           } else {
-            formattedResponse += `The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+            formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
           }
         } else {
-          formattedResponse += `The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+          formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
         }
       } else {
-        formattedResponse += `The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+        formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
       }
       
-      // 3. 任务详情部分
-      formattedResponse += `**Task Details:**\n`;
-      formattedResponse += `• **Task**: ${originalRequest}\n`;
-      formattedResponse += `• **Agent**: ${agent.name}\n`;
-      formattedResponse += `• **Task ID**: ${task?.id || 'Unknown'}\n`;
-      formattedResponse += `• **Status**: ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.\n`;
+      // 3. 任务详情部分 - 使用无序列表格式，小字标题样式
+      formattedResponse += `---\n\n`;
+      formattedResponse += `- **Task:** ${originalRequest}\n`;
+      formattedResponse += `- **Agent:** ${agent.name}\n`;
+      formattedResponse += `- **Task ID:** ${task?.id || 'Unknown'}\n`;
+      formattedResponse += `- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.\n`;
       
       return formattedResponse;
     } catch (error) {
@@ -665,17 +665,18 @@ I encountered an error while executing this task. Please try again or check the 
       const statusIcon = isPartialSuccess ? '⚠️' : '✅';
       const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      return `**Success Indicator:**
-The task was ${statusText}.
+      return `## ✅ Success Indicator
+> The task was ${statusText}.
 
-**Response:**
-The Agent uses ${agent.name} to effortlessly access the latest information. Stay informed with this efficient tool.
+## 📋 Response
+The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.
 
-**Task Details:**
-• **Task**: ${originalRequest}
-• **Agent**: ${agent.name}
-• **Task ID**: ${task?.id || 'Unknown'}
-• **Status**: ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.`;
+---
+
+- **Task:** ${originalRequest}
+- **Agent:** ${agent.name}
+- **Task ID:** ${task?.id || 'Unknown'}
+- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.`;
     }
   }
 
