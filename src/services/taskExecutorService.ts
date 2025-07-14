@@ -1864,13 +1864,11 @@ IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-c
 
       // 创建流式LLM实例
       const streamingLLM = new ChatOpenAI({
-        model: 'gpt-4o',
+        modelName: 'gpt-4o',
         temperature: 0.3,
         maxTokens: 16384,
         streaming: true,
-        configuration: {
-          httpAgent: agent,
-        },
+        apiKey: process.env.OPENAI_API_KEY
       });
 
       let fullResult = '';
