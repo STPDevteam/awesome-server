@@ -541,7 +541,6 @@ export class MCPManager {
     try {
       const toolsResponse = await mcpClient.client.listTools();
       const tools = toolsResponse.tools || [];
-      logger.info(`【MCP Debug】Retrieved MCP tool list [MCP: ${name}, User: ${userId || 'default'}, Tool count: ${tools.length}]`);
       return tools;
     } catch (error) {
       logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]:`, error);
@@ -595,8 +594,6 @@ export class MCPManager {
         name: actualTool,
         arguments: args,
       });
-      logger.info(`【MCP Debug】MCP tool call successful [MCP: ${name}, Tool: ${actualTool}, User: ${userId || 'default'}]`);
-      logger.info(`【MCP Debug】Call result: ${JSON.stringify(result)}`);
       return result;
     } catch (error) {
       logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${actualTool}, User: ${userId || 'default'}]:`, error);
