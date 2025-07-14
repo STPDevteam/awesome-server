@@ -1710,12 +1710,25 @@ Transform the data now:`;
         // 判断整体执行是否成功
         const overallSuccess = workflowResults.every(result => result.success);
       
-      // 工作流完成
-      stream({ 
-        event: 'workflow_complete', 
-        data: { 
+        // 🔧 新增：发送最终结果给前端
+        if (finalResult) {
+          stream({ 
+            event: 'final_result', 
+            data: { 
+              finalResult,
+              message: 'Final execution result available'
+            } 
+          });
+        }
+      
+        // 🔧 优化：只在workflow_complete事件中返回finalResult，避免重复
+        // 工作流完成
+        stream({ 
+          event: 'workflow_complete', 
+          data: { 
             success: overallSuccess,
-            message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors'
+            message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors',
+            finalResult: finalResult // 🔧 在这里统一返回finalResult
           }
         });
         
@@ -1725,13 +1738,19 @@ Transform the data now:`;
           overallSuccess ? 'completed' : 'failed',
           {
             summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
-        steps: workflowResults,
-        finalResult
+            steps: workflowResults,
+            finalResult
           }
         );
       
-      // 发送任务完成信息
-        stream({ event: 'task_complete', data: { taskId, success: overallSuccess } });
+        // 发送任务完成信息
+        stream({ 
+          event: 'task_complete', 
+          data: { 
+            taskId, 
+            success: overallSuccess
+          } 
+        });
         
         logger.info(`✅ Task execution completed [Task ID: ${taskId}, Success: ${overallSuccess}]`);
         return overallSuccess;
