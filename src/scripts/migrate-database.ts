@@ -35,8 +35,7 @@ async function migrateDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         deleted_at TIMESTAMP,
         is_deleted BOOLEAN DEFAULT FALSE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
       -- 创建任务表
@@ -57,8 +56,7 @@ async function migrateDatabase() {
         deleted_at TIMESTAMP,
         is_deleted BOOLEAN DEFAULT FALSE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
       );
 
       -- 创建任务步骤表
@@ -224,21 +222,7 @@ async function migrateDatabase() {
         END IF;
       END $$;
 
-      -- 添加conversations表的外键约束（如果不存在）
-      DO $$ 
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'conversations_agent_id_fkey') THEN
-          ALTER TABLE conversations ADD CONSTRAINT conversations_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL;
-        END IF;
-      END $$;
 
-      -- 添加tasks表的外键约束（如果不存在）
-      DO $$ 
-      BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'tasks_agent_id_fkey') THEN
-          ALTER TABLE tasks ADD CONSTRAINT tasks_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL;
-        END IF;
-      END $$;
 
     `;
 
