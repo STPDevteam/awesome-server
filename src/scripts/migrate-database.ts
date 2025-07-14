@@ -240,6 +240,12 @@ async function migrateDatabase() {
         END IF;
       END $$;
 
+    `;
+
+    await db.query(addNewFieldsSQL);
+
+    // 单独创建索引，确保列已存在
+    const createIndexesSQL = `
       -- 添加索引（如果不存在）
       CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type);
       CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
@@ -247,7 +253,7 @@ async function migrateDatabase() {
       CREATE INDEX IF NOT EXISTS idx_tasks_agent_id ON tasks(agent_id);
     `;
 
-    await db.query(addNewFieldsSQL);
+    await db.query(createIndexesSQL);
 
     logger.info('Database migration completed successfully!');
   } catch (error) {
@@ -257,7 +263,7 @@ async function migrateDatabase() {
 }
 
 // 如果直接运行此脚本，则执行迁移
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   migrateDatabase()
     .then(() => {
       logger.info('Migration script completed successfully');
