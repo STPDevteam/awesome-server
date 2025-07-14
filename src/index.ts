@@ -17,7 +17,7 @@ import taskRoutes from './routes/task.js';
 import conversationRoutes from './routes/conversation.js';
 import { requireAuth, optionalAuth, generalRateLimit } from './middleware/auth.js';
 import { db } from './config/database.js';
-import { migrateDatabase } from './scripts/migrate-database.js';
+import { migrationService } from './scripts/migrate-database.js';
 import paymentRoutes from './routes/payment.js';
 import { getS3AvatarService } from './services/s3AvatarService.js';
 import { HTTPMCPAdapter } from './services/httpMcpAdapter.js';
@@ -452,7 +452,7 @@ async function startServer() {
     
     // 运行数据库迁移
     console.log('🚀 Running database migrations...');
-    await migrateDatabase();
+    await migrationService.runMigrations();
     console.log('✅ Database migrations completed');
     
     // 验证 S3 配置（如果配置了）
