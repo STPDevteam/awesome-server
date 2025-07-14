@@ -58,10 +58,10 @@ export class TaskExecutorService {
     
     // 初始化ChatOpenAI
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-4o-mini',
+      modelName: 'gpt-4o',
       temperature: 0.3,
       streaming: true,
-      maxTokens: 4096,
+      maxTokens: 16384, // 大幅增加token限制，支持更大的数据处理
       apiKey: process.env.OPENAI_API_KEY
     });
   }
