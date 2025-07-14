@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger.js';
 import { taskDao, TaskDbRow, TaskStepDbRow } from '../dao/taskDao.js';
-import { Task, TaskStatus, TaskStep, TaskStepType } from '../models/task.js';
+import { Task, TaskStatus, TaskStep, TaskStepType, TaskType } from '../models/task.js';
 import { messageDao } from '../dao/messageDao.js';
 import { conversationDao } from '../dao/conversationDao.js';
 import { MessageIntent, MessageType } from '../models/conversation.js';
@@ -13,6 +13,8 @@ export class TaskService {
     userId: string;
     title: string;
     content: string;
+    taskType?: TaskType; // 新增：任务类型，默认为'mcp'
+    agentId?: string; // 新增：Agent ID（如果是Agent任务）
     conversationId?: string; // Associated conversation ID
   }): Promise<Task> {
     try {
@@ -21,12 +23,14 @@ export class TaskService {
         userId: data.userId,
         title: data.title,
         content: data.content,
+        taskType: data.taskType || 'mcp', // 默认为MCP任务
+        agentId: data.agentId,
         conversationId: data.conversationId
       });
       
       // Map database record to application entity
       const task = this.mapTaskFromDb(taskRecord);
-      logger.info(`Task created successfully: ${task.id}`);
+      logger.info(`Task created successfully: ${task.id} (Type: ${task.taskType})`);
       
       // If conversationId is provided, only increment task count (don't create duplicate message)
       if (data.conversationId) {
@@ -140,9 +144,6 @@ export class TaskService {
 
   // 数据库字段映射到应用层实体
   private mapTaskFromDb(row: TaskDbRow): Task {
-    if (!row) {
-      throw new Error('无效的任务数据记录');
-    }
     
     // 处理mcpWorkflow，确保它是一个对象而不是字符串
     let mcpWorkflow = row.mcp_workflow;
@@ -161,9 +162,11 @@ export class TaskService {
       title: row.title,
       content: row.content,
       status: row.status as TaskStatus,
+      taskType: row.task_type as TaskType, // 新增：任务类型映射
       mcpWorkflow: mcpWorkflow,
       result: row.result ? row.result : undefined,
       conversationId: row.conversation_id || undefined,
+      agentId: row.agent_id || undefined, // 新增：Agent ID映射
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
       completedAt: row.completed_at ? new Date(row.completed_at) : undefined,

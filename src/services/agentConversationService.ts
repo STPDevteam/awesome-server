@@ -603,6 +603,8 @@ Respond with ONLY a JSON object:
         userId,
         title: taskTitle,
         content,
+        taskType: 'agent', // 🔧 新增：标记为Agent任务
+        agentId: agent.id, // 🔧 新增：记录Agent ID
         conversationId
       });
 
@@ -769,6 +771,8 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
         userId,
         title: taskTitle,
         content,
+        taskType: 'agent', // 🔧 新增：标记为Agent任务
+        agentId: agent.id, // 🔧 新增：记录Agent ID
         conversationId
       });
 
