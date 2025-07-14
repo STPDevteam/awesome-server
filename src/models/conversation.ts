@@ -17,6 +17,12 @@ export enum MessageIntent {
   UNKNOWN = 'unknown' // Undetermined intent
 }
 
+// 会话类型
+export enum ConversationType {
+  NORMAL = 'normal',   // 正常会话
+  AGENT = 'agent'      // Agent会话
+}
+
 // 新增：消息步骤类型
 export enum MessageStepType {
   ANALYSIS = 'analysis',           // 需求分析
@@ -61,6 +67,8 @@ export interface Conversation {
   id: string;
   userId: string;
   title: string;
+  type: ConversationType;  // 新增：会话类型字段
+  agentId?: string;        // 新增：如果是Agent会话，记录Agent ID
   lastMessageContent?: string;
   lastMessageAt?: Date;
   taskCount: number;
@@ -77,4 +85,5 @@ export interface ConversationSearchOptions {
   offset?: number;
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
+  type?: ConversationType;  // 新增：按会话类型过滤
 } 

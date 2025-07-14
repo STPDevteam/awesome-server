@@ -25,6 +25,8 @@ async function migrateDatabase() {
         id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
         title TEXT NOT NULL,
+        type VARCHAR(50) DEFAULT 'normal', -- 新增：会话类型字段
+        agent_id VARCHAR(255), -- 新增：Agent ID字段（如果是Agent会话）
         last_message_content TEXT,
         last_message_at TIMESTAMP,
         task_count INTEGER DEFAULT 0,
@@ -33,7 +35,8 @@ async function migrateDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         deleted_at TIMESTAMP,
         is_deleted BOOLEAN DEFAULT FALSE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
       );
 
       -- 创建任务表
@@ -159,6 +162,8 @@ async function migrateDatabase() {
       -- 创建索引
       CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
       CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at);
+      CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type); -- 新增：会话类型索引
+      CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id); -- 新增：Agent ID索引
       CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
       CREATE INDEX IF NOT EXISTS idx_tasks_task_type ON tasks(task_type); -- 新增：任务类型索引
@@ -187,6 +192,22 @@ async function migrateDatabase() {
 
     // 检查并添加新字段（如果表已存在但字段不存在）
     const addNewFieldsSQL = `
+      -- 添加conversations表的type字段（如果不存在）
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'conversations' AND column_name = 'type') THEN
+          ALTER TABLE conversations ADD COLUMN type VARCHAR(50) DEFAULT 'normal';
+        END IF;
+      END $$;
+
+      -- 添加conversations表的agent_id字段（如果不存在）
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'conversations' AND column_name = 'agent_id') THEN
+          ALTER TABLE conversations ADD COLUMN agent_id VARCHAR(255);
+        END IF;
+      END $$;
+
       -- 添加task_type字段（如果不存在）
       DO $$ 
       BEGIN
@@ -203,7 +224,15 @@ async function migrateDatabase() {
         END IF;
       END $$;
 
-      -- 添加外键约束（如果不存在）
+      -- 添加conversations表的外键约束（如果不存在）
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'conversations_agent_id_fkey') THEN
+          ALTER TABLE conversations ADD CONSTRAINT conversations_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+
+      -- 添加tasks表的外键约束（如果不存在）
       DO $$ 
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'tasks_agent_id_fkey') THEN
@@ -212,6 +241,8 @@ async function migrateDatabase() {
       END $$;
 
       -- 添加索引（如果不存在）
+      CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type);
+      CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
       CREATE INDEX IF NOT EXISTS idx_tasks_task_type ON tasks(task_type);
       CREATE INDEX IF NOT EXISTS idx_tasks_agent_id ON tasks(agent_id);
     `;

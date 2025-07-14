@@ -1,13 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { Conversation, ConversationSearchOptions } from '../models/conversation.js';
+import { Conversation, ConversationSearchOptions, ConversationType } from '../models/conversation.js';
 
 // Database row record interface
 export interface ConversationDbRow {
   id: string;
   user_id: string;
   title: string;
+  type: string;
+  agent_id?: string;
   last_message_content?: string;
   last_message_at?: string;
   task_count: number;
@@ -28,21 +30,24 @@ export class ConversationDao {
   async createConversation(data: {
     userId: string;
     title: string;
+    type?: ConversationType;
+    agentId?: string;
   }): Promise<Conversation> {
     try {
       const conversationId = uuidv4();
       const now = new Date();
+      const conversationType = data.type || ConversationType.NORMAL;
       
       const result = await db.query<ConversationDbRow>(
         `
-        INSERT INTO conversations (id, user_id, title, task_count, message_count, created_at, updated_at, is_deleted)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO conversations (id, user_id, title, type, agent_id, task_count, message_count, created_at, updated_at, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *
         `,
-        [conversationId, data.userId, data.title, 0, 0, now, now, false]
+        [conversationId, data.userId, data.title, conversationType, data.agentId || null, 0, 0, now, now, false]
       );
 
-      logger.info(`Conversation record created successfully: ${conversationId}`);
+      logger.info(`Conversation record created successfully: ${conversationId} (Type: ${conversationType})`);
       return this.mapConversationFromDb(result.rows[0]);
     } catch (error) {
       logger.error('Failed to create conversation record:', error);
@@ -85,14 +90,25 @@ export class ConversationDao {
       const limit = options?.limit || 10;
       const offset = options?.offset || 0;
 
+      // Build WHERE clause
+      let whereClause = 'WHERE user_id = $1 AND is_deleted = FALSE';
+      const queryParams: any[] = [userId];
+      let paramIndex = 2;
+
+      if (options?.type) {
+        whereClause += ` AND type = $${paramIndex}`;
+        queryParams.push(options.type);
+        paramIndex++;
+      }
+
       // Query total count
       const countResult = await db.query(
         `
         SELECT COUNT(*) as total
         FROM conversations
-        WHERE user_id = $1 AND is_deleted = FALSE
+        ${whereClause}
         `,
-        [userId]
+        queryParams
       );
       
       const total = parseInt(countResult.rows[0].total, 10);
@@ -102,11 +118,11 @@ export class ConversationDao {
         `
         SELECT *
         FROM conversations
-        WHERE user_id = $1 AND is_deleted = FALSE
+        ${whereClause}
         ORDER BY ${sortField} ${sortDirection}
         LIMIT ${limit} OFFSET ${offset}
         `,
-        [userId]
+        queryParams
       );
 
       const conversations = result.rows.map(row => this.mapConversationFromDb(row));
@@ -123,6 +139,8 @@ export class ConversationDao {
    */
   async updateConversation(conversationId: string, updates: {
     title?: string;
+    type?: ConversationType;
+    agentId?: string;
     lastMessageContent?: string;
     lastMessageAt?: Date;
     taskCount?: number;
@@ -137,6 +155,18 @@ export class ConversationDao {
       if (updates.title !== undefined) {
         updateFields.push(`title = $${valueIndex}`);
         values.push(updates.title);
+        valueIndex++;
+      }
+
+      if (updates.type !== undefined) {
+        updateFields.push(`type = $${valueIndex}`);
+        values.push(updates.type);
+        valueIndex++;
+      }
+
+      if (updates.agentId !== undefined) {
+        updateFields.push(`agent_id = $${valueIndex}`);
+        values.push(updates.agentId);
         valueIndex++;
       }
 
@@ -374,6 +404,8 @@ export class ConversationDao {
       id: row.id,
       userId: row.user_id,
       title: row.title,
+      type: row.type as ConversationType,
+      agentId: row.agent_id || undefined,
       lastMessageContent: row.last_message_content,
       lastMessageAt: row.last_message_at ? new Date(row.last_message_at) : undefined,
       taskCount: row.task_count,

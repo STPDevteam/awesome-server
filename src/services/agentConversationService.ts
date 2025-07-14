@@ -20,7 +20,8 @@ import {
   MessageType, 
   MessageIntent, 
   MessageStepType,
-  Conversation 
+  Conversation,
+  ConversationType
 } from '../models/conversation.js';
 import { v4 as uuidv4 } from 'uuid';
 import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
@@ -119,8 +120,8 @@ export class AgentConversationService {
 
       logger.info(`✅ MCP authentication check PASSED for Agent [${agent.name}] by user [${userId}]`);
 
-      // Create Agent conversation
-      const conversation = await this.createAgentConversation(userId, agent);
+      // Create Agent conversation with intelligent title generation
+      const conversation = await this.createAgentConversation(userId, agent, content);
       logger.info(`✅ Agent conversation created [ConversationID: ${conversation.id}]`);
 
       // Send welcome message
@@ -1208,15 +1209,132 @@ Remember the conversation context and provide coherent, helpful responses.`],
   }
 
   /**
-   * Create Agent conversation
+   * Create Agent conversation with intelligent title generation
    */
-  private async createAgentConversation(userId: string, agent: Agent): Promise<Conversation> {
-    const conversation = await conversationDao.createConversation({
-      userId,
-      title: `[AGENT:${agent.id}] Try ${agent.name}`
-    });
+  private async createAgentConversation(userId: string, agent: Agent, userContent?: string): Promise<Conversation> {
+    try {
+      let conversationTitle: string;
 
-    return conversation;
+      // 1. If user provided initial content, generate title based on it
+      if (userContent && userContent.trim()) {
+        logger.info(`Generating Agent conversation title based on user content: "${userContent}"`);
+        
+        try {
+          // Use the same title generation service as regular conversations
+          const { titleGeneratorService } = await import('./llmTasks/titleGenerator.js');
+          
+          // Generate title with Agent context
+          const titlePrompt = `Generate a concise, descriptive title for a conversation with AI Agent "${agent.name}".
+
+Agent Description: ${agent.description}
+User's First Message: "${userContent}"
+
+Requirements:
+- Maximum 50 characters
+- Clear and descriptive
+- Reflects the main topic or request
+- Professional tone
+- No quotes or special formatting
+
+Examples:
+- "Cryptocurrency Price Analysis"
+- "GitHub Repository Setup"
+- "Social Media Content Creation"
+- "Market Trend Research"
+
+Generate ONLY the title text, nothing else:`;
+
+          // Use LLM to generate context-aware title
+          const response = await this.llm.invoke([new SystemMessage(titlePrompt)]);
+          const generatedTitle = response.content.toString().trim();
+          
+          if (generatedTitle && generatedTitle.length <= 50) {
+            conversationTitle = generatedTitle;
+          } else if (generatedTitle && generatedTitle.length > 50) {
+            conversationTitle = generatedTitle.substring(0, 47) + '...';
+          } else {
+            // Fallback to truncated user content
+            conversationTitle = userContent.length > 40 ? userContent.substring(0, 37) + '...' : userContent;
+          }
+          
+          logger.info(`Generated Agent conversation title: "${conversationTitle}"`);
+        } catch (error) {
+          logger.error('Failed to generate Agent conversation title from user content:', error);
+          // Fallback to truncated user content
+          conversationTitle = userContent.length > 40 ? userContent.substring(0, 37) + '...' : userContent;
+        }
+      } else {
+        // 2. If no user content, generate title based on Agent info
+        logger.info(`Generating Agent conversation title based on Agent info: ${agent.name}`);
+        
+        try {
+          const agentTitlePrompt = `Generate a welcoming conversation title for starting a chat with AI Agent "${agent.name}".
+
+Agent Description: ${agent.description}
+Agent Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
+  'general assistance'}
+
+Requirements:
+- Maximum 50 characters
+- Welcoming and inviting tone
+- Reflects the Agent's purpose
+- Professional but friendly
+- No quotes or special formatting
+
+Examples:
+- "Chat with Crypto Analysis Agent"
+- "GitHub Assistant Conversation"
+- "Social Media Content Helper"
+- "Market Research Assistant"
+
+Generate ONLY the title text, nothing else:`;
+
+          const response = await this.llm.invoke([new SystemMessage(agentTitlePrompt)]);
+          const generatedTitle = response.content.toString().trim();
+          
+          if (generatedTitle && generatedTitle.length <= 50) {
+            conversationTitle = generatedTitle;
+          } else if (generatedTitle && generatedTitle.length > 50) {
+            conversationTitle = generatedTitle.substring(0, 47) + '...';
+          } else {
+            // Fallback to simple format
+            conversationTitle = `Chat with ${agent.name}`;
+          }
+          
+          logger.info(`Generated Agent conversation title: "${conversationTitle}"`);
+        } catch (error) {
+          logger.error('Failed to generate Agent conversation title from Agent info:', error);
+          // Fallback to simple format
+          conversationTitle = `Chat with ${agent.name}`;
+        }
+      }
+
+      // 3. Create conversation with Agent type and agentId
+      const conversation = await conversationDao.createConversation({
+        userId,
+        title: conversationTitle,
+        type: ConversationType.AGENT,
+        agentId: agent.id
+      });
+
+      logger.info(`Agent conversation created with title: "${conversationTitle}" [ConversationID: ${conversation.id}]`);
+      return conversation;
+    } catch (error) {
+      logger.error('Failed to create Agent conversation:', error);
+      
+      // Emergency fallback - create conversation with basic title
+      const fallbackTitle = `Chat with ${agent.name}`;
+      const conversation = await conversationDao.createConversation({
+        userId,
+        title: fallbackTitle,
+        type: ConversationType.AGENT,
+        agentId: agent.id
+      });
+      
+      logger.info(`Created Agent conversation with fallback title: "${fallbackTitle}"`);
+      return conversation;
+    }
   }
 
   /**
@@ -2015,9 +2133,20 @@ ${fallbackSummary}`);
     const conversation = await conversationDao.getConversationById(conversationId);
     if (!conversation) return null;
 
-    // Parse Agent ID from title
-    const match = conversation.title.match(/^\[AGENT:([^\]]+)\]/);
-    return match ? match[1] : null;
+    // First try to get Agent ID from the agentId field
+    if (conversation.agentId) {
+      return conversation.agentId;
+    }
+
+    // Fallback: Extract Agent ID from title using the emoji format (for backward compatibility)
+    const emojiMatch = conversation.title.match(/🤖\[([^\]]+)\]$/);
+    if (emojiMatch) {
+      return emojiMatch[1];
+    }
+
+    // Fallback: Parse Agent ID from old title format (for backward compatibility)
+    const oldMatch = conversation.title.match(/^\[AGENT:([^\]]+)\]/);
+    return oldMatch ? oldMatch[1] : null;
   }
 
   /**
@@ -2040,19 +2169,54 @@ ${fallbackSummary}`);
    * Clear conversation memory
    */
   async clearConversationMemory(conversationId: string): Promise<void> {
-    if (this.conversationMemories.has(conversationId)) {
-      const memory = this.conversationMemories.get(conversationId)!;
-      await memory.clear();
-      this.conversationMemories.delete(conversationId);
+    try {
+      // Remove conversation memory from cache
+      if (this.conversationMemories.has(conversationId)) {
+        this.conversationMemories.delete(conversationId);
+        logger.info(`Cleared Agent conversation memory [ConversationID: ${conversationId}]`);
+      }
+    } catch (error) {
+      logger.error(`Failed to clear Agent conversation memory [ID: ${conversationId}]:`, error);
+      throw error;
     }
+  }
+
+  /**
+   * Clean Agent conversation title for display
+   * Removes the Agent identifier from the title for better UX
+   */
+  static cleanAgentConversationTitle(title: string): string {
+    // Remove the Agent identifier: "Title 🤖[agent-id]" -> "Title"
+    const cleanTitle = title.replace(/\s*🤖\[[^\]]+\]$/, '');
+    
+    // Also handle old format: "[AGENT:agent-id] Title" -> "Title"
+    const oldFormatClean = cleanTitle.replace(/^\[AGENT:[^\]]+\]\s*/, '');
+    
+    return oldFormatClean || title; // Return original if cleaning fails
   }
 
   /**
    * Check if conversation is Agent conversation
    */
   async isAgentConversation(conversationId: string): Promise<boolean> {
-    const agentId = await this.extractAgentIdFromConversation(conversationId);
-    return agentId !== null;
+    try {
+      const conversation = await conversationDao.getConversationById(conversationId);
+      if (!conversation) return false;
+
+      // Check if conversation type is Agent
+      if (conversation.type === ConversationType.AGENT) {
+        return true;
+      }
+
+      // Fallback: Check if title contains Agent identifier (for backward compatibility)
+      const hasAgentIdentifier = conversation.title.includes('🤖[') && conversation.title.includes(']');
+      const hasOldIdentifier = conversation.title.startsWith('[AGENT:');
+
+      return hasAgentIdentifier || hasOldIdentifier;
+    } catch (error) {
+      logger.error(`Failed to check if conversation is Agent conversation [ID: ${conversationId}]:`, error);
+      return false;
+    }
   }
 
   /**

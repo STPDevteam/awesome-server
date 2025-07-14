@@ -18,19 +18,29 @@ export class TaskService {
     conversationId?: string; // Associated conversation ID
   }): Promise<Task> {
     try {
-      // Call DAO layer to create task, directly pass conversationId
+      const taskType = data.taskType || 'mcp';
+      
+      // Add appropriate tag prefix to title based on task type
+      let taggedTitle = data.title;
+      if (taskType === 'mcp') {
+        taggedTitle = `【流程】${data.title}`;
+      } else if (taskType === 'agent') {
+        taggedTitle = `【机器人】${data.title}`;
+      }
+      
+      // Call DAO layer to create task, use tagged title
       const taskRecord = await taskDao.createTask({
         userId: data.userId,
-        title: data.title,
+        title: taggedTitle,
         content: data.content,
-        taskType: data.taskType || 'mcp', // 默认为MCP任务
+        taskType: taskType,
         agentId: data.agentId,
         conversationId: data.conversationId
       });
       
       // Map database record to application entity
       const task = this.mapTaskFromDb(taskRecord);
-      logger.info(`Task created successfully: ${task.id} (Type: ${task.taskType})`);
+      logger.info(`Task created successfully: ${task.id} (Type: ${task.taskType}, Title: ${taggedTitle})`);
       
       // If conversationId is provided, only increment task count (don't create duplicate message)
       if (data.conversationId) {

@@ -9,6 +9,7 @@ import { MessageIntent, MessageType } from '../models/conversation.js';
 import { getTaskService } from '../services/taskService.js';
 import { messageDao } from '../dao/messageDao.js';
 import { conversationLimitService } from '../services/conversationLimitService.js';
+import { ConversationType } from '../models/conversation.js';
 
 const router = Router();
 
@@ -286,7 +287,7 @@ router.get('/limit', requireAuth, async (req: Request, res: Response) => {
  */
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { limit, offset, sortBy, sortDir } = req.query;
+    const { limit, offset, sortBy, sortDir, type } = req.query;
     
     // Get user ID
     const userId = req.user?.id || req.query.userId as string;
@@ -305,7 +306,8 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
       limit: limit ? parseInt(limit as string) : undefined,
       offset: offset ? parseInt(offset as string) : undefined,
       sortBy: sortBy as string,
-      sortDir: sortDir as 'asc' | 'desc'
+      sortDir: sortDir as 'asc' | 'desc',
+      type: type as ConversationType
     });
 
     res.json({

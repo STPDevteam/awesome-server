@@ -6,7 +6,7 @@ import { BufferMemory } from 'langchain/memory';
 import { conversationDao } from '../dao/conversationDao.js';
 import { messageDao } from '../dao/messageDao.js';
 import { logger } from '../utils/logger.js';
-import { Conversation, ConversationSearchOptions, Message, MessageType, MessageIntent } from '../models/conversation.js';
+import { Conversation, ConversationSearchOptions, Message, MessageType, MessageIntent, ConversationType } from '../models/conversation.js';
 import { getTaskService } from './taskService.js';
 import { TaskExecutorService } from './taskExecutorService.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
@@ -136,7 +136,8 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       
       return await conversationDao.createConversation({
         userId,
-        title: conversationTitle
+        title: conversationTitle,
+        type: ConversationType.NORMAL
       });
     } catch (error) {
       logger.error('Error creating conversation:', error);
@@ -180,7 +181,8 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       // 2. 创建会话（不处理消息）
       const conversation = await conversationDao.createConversation({
         userId,
-        title: conversationTitle
+        title: conversationTitle,
+        type: ConversationType.NORMAL
       });
       
       logger.info(`Conversation created with ID: ${conversation.id}, Title: ${conversationTitle}`);
@@ -255,7 +257,8 @@ If the user asks about performing specific tasks, you can suggest creating a tas
       
       const conversation = await conversationDao.createConversation({
         userId,
-        title: conversationTitle
+        title: conversationTitle,
+        type: ConversationType.NORMAL
       });
       
       streamCallback({
