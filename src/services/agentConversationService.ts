@@ -1965,10 +1965,10 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       const baseResult = await (this.taskExecutorService as any).formatResultWithLLM(rawResult, mcpName, actionName);
       
       // 在结果前添加Agent标识
-      return `🤖 **${agent.name}** 执行结果：\n\n${baseResult}`;
+      return `🤖 **${agent.name}** execution result\n\n${baseResult}`;
     } catch (error) {
       logger.error(`Failed to format Agent result:`, error);
-      return `🤖 **${agent.name}** 执行结果：\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      return `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
     }
   }
 
@@ -1984,7 +1984,7 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
   ): Promise<string> {
     try {
       // 先发送Agent标识
-      const agentPrefix = `🤖 **${agent.name}** 执行结果：\n\n`;
+      const agentPrefix = `🤖 **${agent.name}** execution result\n\n`;
       streamCallback(agentPrefix);
       
       // 调用TaskExecutorService的formatResultWithLLMStream方法
@@ -1998,7 +1998,7 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       return agentPrefix + result;
     } catch (error) {
       logger.error(`Failed to format Agent result with streaming:`, error);
-      const fallbackResult = `🤖 **${agent.name}** 执行结果：\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      const fallbackResult = `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
       streamCallback(fallbackResult);
       return fallbackResult;
     }
