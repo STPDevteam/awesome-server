@@ -1251,41 +1251,77 @@ class MigrationService {
       up: async () => {
         console.log('🔄 Adding conversation type and Agent support fields...');
         
-        // 1. 为 conversations 表添加 type 和 agent_id 字段
+        // 1. 为 conversations 表添加 type 字段
         try {
           await db.query(`
             ALTER TABLE conversations 
-            ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'normal',
-            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255)
+            ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'normal'
           `);
-          console.log('✅ Added type and agent_id columns to conversations table');
+          console.log('✅ Added type column to conversations table');
         } catch (error) {
-          console.log('ℹ️  Conversations table columns may already exist:', error);
+          console.log('ℹ️  Conversations type column may already exist:', error);
         }
 
-        // 2. 为 tasks 表添加 task_type 和 agent_id 字段
+        // 2. 为 conversations 表添加 agent_id 字段
+        try {
+          await db.query(`
+            ALTER TABLE conversations 
+            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255)
+          `);
+          console.log('✅ Added agent_id column to conversations table');
+        } catch (error) {
+          console.log('ℹ️  Conversations agent_id column may already exist:', error);
+        }
+
+        // 3. 为 tasks 表添加 task_type 字段
         try {
           await db.query(`
             ALTER TABLE tasks 
-            ADD COLUMN IF NOT EXISTS task_type VARCHAR(50) DEFAULT 'mcp',
-            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255)
+            ADD COLUMN IF NOT EXISTS task_type VARCHAR(50) DEFAULT 'mcp'
           `);
-          console.log('✅ Added task_type and agent_id columns to tasks table');
+          console.log('✅ Added task_type column to tasks table');
         } catch (error) {
-          console.log('ℹ️  Tasks table columns may already exist:', error);
+          console.log('ℹ️  Tasks task_type column may already exist:', error);
         }
 
-        // 3. 创建索引以提高查询性能
+        // 4. 为 tasks 表添加 agent_id 字段
         try {
           await db.query(`
-            CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type);
-            CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_tasks_task_type ON tasks(task_type);
-            CREATE INDEX IF NOT EXISTS idx_tasks_agent_id ON tasks(agent_id);
+            ALTER TABLE tasks 
+            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255)
           `);
-          console.log('✅ Created indexes for new fields');
+          console.log('✅ Added agent_id column to tasks table');
         } catch (error) {
-          console.log('ℹ️  Indexes may already exist:', error);
+          console.log('ℹ️  Tasks agent_id column may already exist:', error);
+        }
+
+        // 5. 创建索引以提高查询性能 - 分别执行每个索引创建
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type)`);
+          console.log('✅ Created idx_conversations_type index');
+        } catch (error) {
+          console.log('ℹ️  idx_conversations_type index may already exist:', error);
+        }
+
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id)`);
+          console.log('✅ Created idx_conversations_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  idx_conversations_agent_id index may already exist:', error);
+        }
+
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_tasks_task_type ON tasks(task_type)`);
+          console.log('✅ Created idx_tasks_task_type index');
+        } catch (error) {
+          console.log('ℹ️  idx_tasks_task_type index may already exist:', error);
+        }
+
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_tasks_agent_id ON tasks(agent_id)`);
+          console.log('✅ Created idx_tasks_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  idx_tasks_agent_id index may already exist:', error);
         }
 
         // 4. 数据迁移：识别现有的Agent对话并更新类型
@@ -1335,26 +1371,63 @@ class MigrationService {
       down: async () => {
         console.log('🔄 Rolling back conversation type and Agent support...');
         
-        // 删除索引
-        await db.query(`
-          DROP INDEX IF EXISTS idx_conversations_type;
-          DROP INDEX IF EXISTS idx_conversations_agent_id;
-          DROP INDEX IF EXISTS idx_tasks_task_type;
-          DROP INDEX IF EXISTS idx_tasks_agent_id;
-        `);
+        // 删除索引 - 分别执行
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_type`);
+          console.log('✅ Dropped idx_conversations_type index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_conversations_type:', error);
+        }
+
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_agent_id`);
+          console.log('✅ Dropped idx_conversations_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_conversations_agent_id:', error);
+        }
+
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_task_type`);
+          console.log('✅ Dropped idx_tasks_task_type index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_tasks_task_type:', error);
+        }
+
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_agent_id`);
+          console.log('✅ Dropped idx_tasks_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_tasks_agent_id:', error);
+        }
         
-        // 删除新增的字段
-        await db.query(`
-          ALTER TABLE conversations 
-          DROP COLUMN IF EXISTS type,
-          DROP COLUMN IF EXISTS agent_id
-        `);
-        
-        await db.query(`
-          ALTER TABLE tasks 
-          DROP COLUMN IF EXISTS task_type,
-          DROP COLUMN IF EXISTS agent_id
-        `);
+        // 删除新增的字段 - 分别执行
+        try {
+          await db.query(`ALTER TABLE conversations DROP COLUMN IF EXISTS type`);
+          console.log('✅ Dropped type column from conversations table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping conversations.type:', error);
+        }
+
+        try {
+          await db.query(`ALTER TABLE conversations DROP COLUMN IF EXISTS agent_id`);
+          console.log('✅ Dropped agent_id column from conversations table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping conversations.agent_id:', error);
+        }
+
+        try {
+          await db.query(`ALTER TABLE tasks DROP COLUMN IF EXISTS task_type`);
+          console.log('✅ Dropped task_type column from tasks table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping tasks.task_type:', error);
+        }
+
+        try {
+          await db.query(`ALTER TABLE tasks DROP COLUMN IF EXISTS agent_id`);
+          console.log('✅ Dropped agent_id column from tasks table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping tasks.agent_id:', error);
+        }
         
         console.log('✅ Rollback completed for conversation type and Agent support');
       }
