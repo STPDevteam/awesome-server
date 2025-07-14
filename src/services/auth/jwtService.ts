@@ -146,26 +146,6 @@ class JWTService {
   }
 
   /**
-   * 刷新访问令牌
-   */
-  async refreshAccessToken(refreshToken: string, user: User): Promise<string | null> {
-    const decoded = await this.verifyRefreshToken(refreshToken);
-    if (!decoded || decoded.userId !== user.id) {
-      return null;
-    }
-
-    const payload = {
-      userId: user.id,
-      walletAddress: user.walletAddress,
-      email: user.email
-    };
-
-    return jwt.sign(payload, this.accessTokenSecret, {
-      expiresIn: this.accessTokenExpiry
-    } as jwt.SignOptions);
-  }
-
-  /**
    * 撤销刷新令牌
    */
   async revokeRefreshToken(token: string): Promise<boolean> {

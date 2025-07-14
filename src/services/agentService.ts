@@ -919,7 +919,7 @@ Please generate 3 questions, one per line, without numbering or other formatting
 
       // Import AgentConversationService dynamically to avoid circular dependency
       const { getAgentConversationService } = await import('./agentConversationService.js');
-      
+
       // Get AgentConversationService instance
       const agentConversationService = getAgentConversationService(this.taskExecutorService);
       
@@ -1043,8 +1043,8 @@ Respond with ONLY a JSON object:
 
       // 应用Agent的工作流
       if (agent.mcpWorkflow) {
-        await taskService.updateTask(task.id, {
-          mcpWorkflow: agent.mcpWorkflow,
+      await taskService.updateTask(task.id, {
+        mcpWorkflow: agent.mcpWorkflow,
           status: 'created'
         });
         
@@ -1228,6 +1228,36 @@ Respond naturally and helpfully:`;
       return await agentDao.getFavoriteAgents(userId, offset, limit);
     } catch (error) {
       logger.error('获取收藏Agent列表失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 生成Agent欢迎语
+   */
+  async generateAgentWelcomeMessage(agentId: string): Promise<string> {
+    try {
+      const agent = await agentDao.getAgentById(agentId);
+      if (!agent) {
+        throw new Error('Agent not found');
+      }
+
+      const capabilities = agent.mcpWorkflow && agent.mcpWorkflow.mcps 
+        ? agent.mcpWorkflow.mcps.map((m: any) => m.description || m.name).join(', ')
+        : 'general assistance';
+
+      return `Hello! I'm ${agent.name}. ${agent.description}
+
+My capabilities include: ${capabilities}
+
+You can:
+- Chat with me about anything
+- Ask me to help with tasks related to my capabilities
+- Request me to demonstrate my functionality
+
+How can I assist you today?`;
+    } catch (error) {
+      logger.error(`Failed to generate welcome message for agent ${agentId}:`, error);
       throw error;
     }
   }

@@ -4203,7 +4203,7 @@ data: [DONE]
     "message": "收藏成功",
     "agentId": "agent_123456",
     "isFavorited": true
-  }
+    }
 }
 ```
 
@@ -5182,3 +5182,273 @@ CREATE INDEX idx_task_steps_task_not_deleted ON task_steps(task_id, is_deleted) 
 2. **定期清理**: 可以实现定期清理长期软删除数据的机制
 3. **审计日志**: 可以基于软删除记录实现完整的操作审计
 4. **用户管理**: 管理员可以查看和管理所有用户的软删除数据
+
+## Agent 相关 API
+
+### 初始化Agent对话环境
+
+**端点**: `POST /api/agent/:id/init`
+
+**描述**: 初始化Agent对话环境，创建专属对话会话并返回Agent的欢迎语。此接口不进行MCP权限校验，仅负责环境准备。MCP权限校验将在用户发送消息时进行。
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**请求体**: 无需请求体参数
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversationId": "conversation_id",
+    "agentInfo": {
+      "id": "agent_id",
+      "name": "Agent名称",
+      "description": "Agent描述"
+    },
+    "welcomeMessage": "Hello! I'm Agent名称. Agent描述\n\nMy capabilities include: general assistance\n\nYou can:\n- Chat with me about anything\n- Ask me to help with tasks related to my capabilities\n- Request me to demonstrate my functionality\n\nHow can I assist you today?",
+    "ready": true
+  }
+}
+```
+
+**注意事项**:
+- 此接口不检查MCP权限，仅创建对话环境
+- MCP权限校验在用户发送消息时进行
+- 如果Agent需要MCP权限，会在消息处理时提示用户完成认证
+
+### 发送消息到Agent对话
+
+**端点**: `POST /api/agent-conversation/:conversationId/message/stream`
+
+**描述**: 向已初始化的Agent对话发送消息，支持任务和聊天意图的自动识别，流式返回处理结果。此接口会在消息处理前进行MCP权限校验，确保用户已完成所需的MCP认证。
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `conversationId`: 对话ID（通过初始化接口获得）
+
+**请求体**:
+```json
+{
+  "content": "用户消息内容"
+}
+```
+
+**流式响应**: Server-Sent Events (SSE) 格式
+
+#### MCP权限校验和消息处理流程
+```
+data: {"event":"connection_established","data":{"conversationId":"conv_456","status":"connected"}}
+
+data: {"event":"auth_checking","data":{"message":"Checking MCP authentication status..."}}
+
+# 如果需要MCP认证
+data: {"event":"auth_required","data":{"message":"MCP authentication required","missingAuth":[...]}}
+
+# 如果认证通过
+data: {"event":"auth_verified","data":{"message":"MCP authentication verified"}}
+
+data: {"event":"user_message_created","data":{"messageId":"msg_789"}}
+
+data: {"event":"intent_analysis_start","data":{"message":"Analyzing user intent..."}}
+
+data: {"event":"intent_analysis_complete","data":{"intent":"task","confidence":0.85}}
+```
+
+#### MCP认证提示响应
+如果用户未完成必要的MCP认证，系统会返回认证提示消息：
+```
+data: {"event":"auth_required","data":{"message":"MCP authentication required","missingAuth":[{"mcpName":"github-mcp-server","description":"GitHub MCP服务器","authParams":{"GITHUB_TOKEN":"GitHub访问令牌"},"authInstructions":"To use github-mcp-server, you need to provide authentication credentials.\n\nRequired parameters:\n• GITHUB_TOKEN: GitHub访问令牌 (Required)"}]}}
+
+data: {"event":"message_complete","data":{"messageId":"msg_456","content":"🔐 **Authentication Required**\n\nTo use my capabilities, you need to authenticate the following MCP services: **github-mcp-server**\n\n**1. github-mcp-server**\nGitHub MCP服务器\nTo use github-mcp-server, you need to provide authentication credentials.\n\nRequired authentication parameters:\n✅ **GITHUB_TOKEN**: GitHub访问令牌\n\nPlease use the MCP authentication interface to provide your credentials, then try again..."}}
+```
+
+#### 任务执行流程（如果识别为任务意图）
+```
+data: {"event":"task_creation_start","data":{"message":"Creating task based on Agent workflow..."}}
+
+data: {"event":"task_created","data":{"taskId":"task_101","title":"检查GitHub仓库状态","message":"Task created: 检查GitHub仓库状态"}}
+
+data: {"event":"task_execution_start","data":{"message":"Starting task execution with Agent workflow..."}}
+
+data: {"event":"task_execution_progress","data":{"event":"step_start","data":{"step":1,"mcpName":"github-mcp-server","actionName":"list_repositories"}}}
+
+data: {"event":"task_execution_progress","data":{"event":"step_complete","data":{"step":1,"success":true,"result":"Found 5 repositories..."}}}
+
+data: {"event":"task_execution_complete","data":{"message":"Task execution completed successfully","taskId":"task_101","success":true}}
+
+data: {"event":"message_complete","data":{"messageId":"msg_790","content":"✅ 任务已使用GitHub助手的功能成功完成！\n\n**任务**: 检查GitHub仓库状态\n**Agent**: GitHub助手\n**任务ID**: task_101\n\n我已经成功检查了您的GitHub仓库状态，找到了5个仓库。","taskId":"task_101"}}
+```
+
+#### 聊天流程（如果识别为聊天意图）
+```
+data: {"event":"chat_chunk","data":{"content":"Hello! I'm "}}
+
+data: {"event":"chat_chunk","data":{"content":"GitHub助手"}}
+
+data: {"event":"chat_chunk","data":{"content":"，我可以帮助您..."}}
+
+data: {"event":"message_complete","data":{"messageId":"msg_790","content":"Hello! I'm GitHub助手，我可以帮助您管理GitHub仓库、查看代码统计等。有什么我可以为您做的吗？"}}
+```
+
+#### 完成和错误处理
+```
+data: {"event":"final_result","data":{"userMessageId":"msg_789","assistantMessageId":"msg_790","intent":"task","taskId":"task_101"}}
+
+data: {"event":"stream_complete","data":{"status":"completed"}}
+
+data: [DONE]
+```
+
+**前端集成示例**:
+
+```javascript
+// 1. 初始化Agent对话环境
+// 1. 初始化Agent（不进行MCP权限校验）
+async function initializeAgent(agentId) {
+  try {
+    const response = await fetch(`/api/agent/${agentId}/init`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      return {
+        conversationId: result.data.conversationId,
+        agentInfo: result.data.agentInfo,
+        welcomeMessage: result.data.welcomeMessage,
+        ready: true
+      };
+    } else {
+      throw new Error(result.message);
+    }
+  } catch (error) {
+    console.error('Failed to initialize agent:', error);
+    throw error;
+  }
+}
+
+// 2. 发送消息到Agent
+async function sendMessageToAgent(conversationId, message) {
+  const response = await fetch(`/api/agent-conversation/${conversationId}/message/stream`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ content: message })
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6);
+        if (data === '[DONE]') {
+          console.log('Message processing completed');
+          return;
+        }
+
+        try {
+          const event = JSON.parse(data);
+          handleMessageEvent(event);
+        } catch (e) {
+          console.error('Failed to parse event:', e);
+        }
+      }
+    }
+  }
+}
+
+// 3. 处理消息事件（包括MCP权限校验）
+function handleMessageEvent(event) {
+  switch (event.event) {
+    case 'auth_checking':
+      showAuthCheckingStatus('正在检查MCP认证状态...');
+      break;
+    
+    case 'auth_required':
+      showAuthModal(event.data.missingAuth);
+      break;
+    
+    case 'auth_verified':
+      showAuthVerifiedStatus('MCP认证验证通过');
+      break;
+    
+    case 'intent_analysis_complete':
+      showIntentBadge(event.data.intent);
+      break;
+    
+    case 'task_created':
+      showTaskCard(event.data.taskId, event.data.title);
+      break;
+    
+    case 'task_execution_progress':
+      updateTaskProgress(event.data);
+      break;
+    
+    case 'chat_chunk':
+      appendChatContent(event.data.content);
+      break;
+    
+    case 'message_complete':
+      finalizeMessage(event.data.messageId, event.data.content);
+      break;
+    
+    case 'error':
+      showError(event.data.message);
+      break;
+  }
+}
+
+// 4. 完整的使用流程（新的权限校验流程）
+async function useAgent(agentId, userMessage) {
+  // 初始化Agent环境（不进行MCP权限校验）
+  const initResult = await initializeAgent(agentId);
+  
+  if (!initResult.ready) {
+    throw new Error('Failed to initialize agent');
+  }
+  
+  // 显示Agent信息和欢迎语
+  displayAgentInfo(initResult.agentInfo);
+  displayWelcomeMessage(initResult.welcomeMessage);
+  
+  // 发送用户消息（此时会进行MCP权限校验）
+  await sendMessageToAgent(initResult.conversationId, userMessage);
+}
+```
+
+**使用场景和流程**:
+
+1. **页面初始化**: 用户打开Agent页面时调用初始化接口，获取欢迎语
+2. **环境准备**: 系统创建对话环境，不进行MCP权限校验
+3. **消息处理**: 用户发送消息时，系统首先检查MCP认证状态
+4. **权限校验**: 如果需要MCP认证，提示用户完成认证
+5. **意图识别**: 认证通过后，系统自动识别意图（任务/聊天）
+6. **智能执行**: 根据意图自动执行任务或进行对话
+7. **流式反馈**: 实时显示处理进度和结果
+
+**错误响应**:
+- `401 Unauthorized`: 未认证
+- `400 Bad Request`: 请求参数无效或对话不存在
+- `404 Not Found`: Agent不存在
+- `403 Forbidden`: 无权访问私有Agent
+- `500 Internal Server Error`: 服务器内部错误

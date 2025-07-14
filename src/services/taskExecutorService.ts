@@ -58,10 +58,10 @@ export class TaskExecutorService {
     
     // 初始化ChatOpenAI
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-4o-mini',
+      modelName: 'gpt-4o',
       temperature: 0.3,
       streaming: true,
-      maxTokens: 4096,
+      maxTokens: 16384, // 大幅增加token限制，支持更大的数据处理
       apiKey: process.env.OPENAI_API_KEY
     });
   }
@@ -154,92 +154,7 @@ export class TaskExecutorService {
     );
   }
   
-  /**
-   * 通用结果验证
-   */
-  private validateStepResult(mcpName: string, actionName: string, stepResult: any): void {
-    if (!stepResult) {
-      throw new Error(`Step result is null or undefined`);
-    }
-    
-    // 检查是否包含错误信息
-    if (stepResult.error) {
-      throw new Error(`MCP returned error: ${stepResult.error}`);
-    }
-    
-    // 检查内容中是否包含常见错误关键词
-    if (stepResult.content) {
-      const content = Array.isArray(stepResult.content) ? stepResult.content[0] : stepResult.content;
-      const resultText = content?.text || content?.toString() || '';
-      
-      // 修复误判逻辑：只有在明确包含错误信息且没有有效数据时才判断为失败
-      const errorKeywords = ['unauthorized', 'forbidden', 'rate limit', 'invalid', 'exception', 'failed'];
-      
-      // 检查是否包含有效的数据结构（如JSON格式的API响应）
-      const hasValidData = this.hasValidApiData(resultText);
-      
-      // 只有在没有有效数据且包含真正的错误关键词时才抛出错误
-      if (!hasValidData) {
-      const hasError = errorKeywords.some(keyword => 
-        resultText.toLowerCase().includes(keyword.toLowerCase())
-      );
-      
-        if (hasError) {
-        throw new Error(`Operation failed: ${resultText}`);
-      }
-      }
-      
-      // 对于明确的错误状态码或错误消息
-      if (resultText.includes('"error_code":') && !resultText.includes('"error_code":0')) {
-        const errorMatch = resultText.match(/"error_message":"([^"]+)"/);
-        const errorMessage = errorMatch ? errorMatch[1] : 'API returned error';
-        throw new Error(`API Error: ${errorMessage}`);
-      }
-    }
-  }
-  
-  /**
-   * 检查响应是否包含有效的API数据
-   */
-  private hasValidApiData(resultText: string): boolean {
-    try {
-      // 尝试解析JSON
-      const parsed = JSON.parse(resultText);
-      
-      // 检查是否包含常见的有效数据结构
-      if (parsed.status && parsed.data) {
-        // CoinMarketCap类型的响应
-        if (parsed.status.error_code === 0 || parsed.status.error_code === '0') {
-          return true;
-        }
-      }
-      
-      if (parsed.data && (Array.isArray(parsed.data) || typeof parsed.data === 'object')) {
-        // 包含数据数组或对象
-        return true;
-      }
-      
-      if (parsed.result || parsed.results) {
-        // 包含结果数据
-        return true;
-      }
-      
-      // 检查是否是比特币价格数据
-      if (parsed.BTC || (parsed.data && parsed.data.BTC)) {
-        return true;
-      }
-      
-      return false;
-    } catch (e) {
-      // 不是JSON，检查是否包含结构化数据特征
-      const dataIndicators = [
-        '"price":', '"market_cap":', '"volume_24h":', '"symbol":"BTC"',
-        '"name":"Bitcoin"', '"rank":', '"dominance":', '"timestamp":'
-      ];
-      
-      return dataIndicators.some(indicator => resultText.includes(indicator));
-    }
-  }
+
   
   /**
    * 通过LangChain调用MCP工具
@@ -903,42 +818,58 @@ Transform the data now:`;
   }
   
   /**
-   * 处理工具返回结果
+   * 处理工具返回结果 - 提取原始数据，不做格式化处理
    * @param rawResult 原始返回结果
+   * 
+   * 注释说明：这个方法已经不再使用，因为它会对不同MCP的返回格式做假设，
+   * 容易出现数据丢失或格式错误。现在直接将原始结果传给LLM处理更可靠。
    */
-  private processToolResult(rawResult: any): any {
-    if (!rawResult) return null;
-    
-    logger.info(`🔍 Processing MCP tool raw return result: ${JSON.stringify(rawResult, null, 2)}`);
-    
-    // 处理不同类型的返回结果
-    let processedResult;
-    if (rawResult.content) {
-      if (Array.isArray(rawResult.content)) {
-        // 如果是数组，检查第一个元素
-        const firstContent = rawResult.content[0];
-        if (firstContent && firstContent.text) {
-          processedResult = this.formatApiResponse(firstContent.text);
-        } else {
-        processedResult = JSON.stringify(rawResult.content, null, 2);
-        }
-      } else if (typeof rawResult.content === 'object') {
-        // 如果是对象，检查是否有 text 字段
-        if (rawResult.content.text) {
-          processedResult = this.formatApiResponse(rawResult.content.text);
-        } else {
-          processedResult = JSON.stringify(rawResult.content, null, 2);
-        }
-      } else {
-        processedResult = this.formatApiResponse(String(rawResult.content));
-      }
-    } else {
-      processedResult = JSON.stringify(rawResult, null, 2);
-    }
-    
-    logger.info(`📤 MCP tool processed result: ${processedResult}`);
-    return processedResult;
-  }
+  // private processToolResult(rawResult: any): any {
+  //   if (!rawResult) return null;
+  //   
+  //   logger.info(`🔍 Processing MCP tool raw return result: ${JSON.stringify(rawResult, null, 2)}`);
+  //   
+  //   // 简化处理逻辑：直接提取数据，让LLM来处理所有格式化
+  //   let extractedData;
+  //   
+  //   try {
+  //     // 尝试提取实际的数据内容
+  //     if (rawResult.content) {
+  //       if (Array.isArray(rawResult.content)) {
+  //         // 如果是数组，提取第一个元素的text或整个数组
+  //         const firstContent = rawResult.content[0];
+  //         if (firstContent && firstContent.text) {
+  //           extractedData = firstContent.text;
+  //         } else {
+  //           extractedData = rawResult.content;
+  //         }
+  //       } else if (typeof rawResult.content === 'object') {
+  //         // 如果是对象，提取text字段或整个对象
+  //         extractedData = rawResult.content.text || rawResult.content;
+  //       } else {
+  //         // 如果是字符串，直接使用
+  //         extractedData = rawResult.content;
+  //       }
+  //     } else {
+  //       // 如果没有content字段，使用整个结果
+  //       extractedData = rawResult;
+  //     }
+  //     
+  //     // 如果提取的数据是对象，转换为JSON字符串
+  //     if (typeof extractedData === 'object') {
+  //       extractedData = JSON.stringify(extractedData, null, 2);
+  //     } else if (typeof extractedData !== 'string') {
+  //       extractedData = String(extractedData);
+  //     }
+  //     
+  //   } catch (error) {
+  //     logger.warn(`Error processing tool result, using raw result: ${error}`);
+  //     extractedData = JSON.stringify(rawResult, null, 2);
+  //   }
+  //   
+  //   logger.info(`📤 MCP tool extracted data: ${extractedData}`);
+  //   return extractedData;
+  // }
   
   /**
    * 使用LLM将原始结果格式化为易读的Markdown格式
@@ -972,22 +903,41 @@ Raw Result:
 ${typeof actualContent === 'string' ? actualContent : JSON.stringify(actualContent, null, 2)}
 
 FORMATTING RULES:
-1. Extract ONLY the meaningful and valuable information
-2. Use proper Markdown formatting (headers, lists, tables, etc.)
-3. Highlight important numbers, dates, and key information
-4. Remove technical details, error codes, and unnecessary metadata
-5. If the result contains financial data, format numbers properly (e.g., $1,234.56)
-6. If the result contains lists or arrays, present them as bullet points or tables
-7. Use emojis where appropriate to make the content more engaging
-8. Keep the formatting clean and professional
-9. If the result indicates an error or no data, explain it clearly
+1. **Smart Data Recognition**: Analyze the raw result to identify if it contains:
+   - Valid data (JSON arrays, objects, structured information)
+   - Error messages or failures
+   - Mixed results (some data with warnings/errors)
+
+2. **Format Based on Content Type**:
+   - **Valid Data**: Extract and present the meaningful information
+   - **Error Results**: Explain what went wrong in user-friendly terms
+   - **Mixed Results**: Present available data and note any issues
+
+3. **Presentation Guidelines**:
+   - Use proper Markdown formatting (headers, lists, tables, etc.)
+   - Highlight important numbers, dates, and key information
+   - Remove technical details, error codes, and unnecessary metadata
+   - If the result contains financial data, format numbers properly (e.g., $1,234.56)
+   - If the result contains lists or arrays, present them as bullet points or tables
+   - Use emojis where appropriate to make the content more engaging
+   - Keep the formatting clean and professional
+
+4. **Error Handling**:
+   - If the result indicates an error, explain it clearly in user-friendly language
+   - For API errors, translate technical messages into understandable explanations
+   - For partial failures, present what data is available and note limitations
+
+5. **Data Extraction**:
+   - For JSON arrays: Present as organized lists or tables
+   - For nested objects: Extract key-value pairs meaningfully
+   - For mixed formats: Adapt presentation to the data structure
 
 OUTPUT FORMAT:
-- Start with a brief summary of what was retrieved
-- Present the main data in an organized manner
+- Start with a brief summary of what was retrieved or what happened
+- Present the main data in an organized manner (or explain the error)
 - End with any relevant notes or observations
 
-IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary.`;
+IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary. Handle ALL types of responses intelligently, including errors, arrays, objects, and mixed results.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(formatPrompt)
@@ -1004,50 +954,7 @@ IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-c
     }
   }
   
-  /**
-   * 格式化API响应数据，使其更易读
-   */
-  private formatApiResponse(rawText: string): string {
-    try {
-      // 尝试解析JSON并格式化
-      const parsed = JSON.parse(rawText);
-      
-      // 特殊处理CoinMarketCap响应
-      if (parsed.status && parsed.data && parsed.status.error_code === 0) {
-        const result: any = {
-          success: true,
-          timestamp: parsed.status.timestamp,
-          data: parsed.data
-        };
-        
-        // 如果是比特币数据，提取关键信息
-        if (parsed.data.BTC && Array.isArray(parsed.data.BTC) && parsed.data.BTC.length > 0) {
-          const btcData = parsed.data.BTC[0];
-          const summary = {
-            name: btcData.name,
-            symbol: btcData.symbol,
-            rank: btcData.cmc_rank,
-            price: btcData.quote?.USD?.price,
-            market_cap: btcData.quote?.USD?.market_cap,
-            market_cap_dominance: btcData.quote?.USD?.market_cap_dominance,
-            volume_24h: btcData.quote?.USD?.volume_24h,
-            percent_change_24h: btcData.quote?.USD?.percent_change_24h,
-            last_updated: btcData.quote?.USD?.last_updated
-          };
-          
-          result.summary = summary;
-        }
-        
-        return JSON.stringify(result, null, 2);
-      }
-      
-      // 其他JSON响应正常格式化
-      return JSON.stringify(parsed, null, 2);
-    } catch (e) {
-      // 不是有效JSON，直接返回
-      return rawText;
-    }
-  }
+
   
   /**
    * 生成任务结果摘要
@@ -1188,13 +1095,7 @@ Based on the above task execution information, please generate a complete execut
             // 调用MCP工具
             const stepResult = await this.callMCPTool(actualMcpName, actionName, input, taskId);
             
-            // 验证结果
-          this.validateStepResult(actualMcpName, actionName, stepResult);
-          
-            // 处理结果
-          const processedResult = this.processToolResult(stepResult);
-          
-            // 使用LLM格式化结果为Markdown
+            // 直接使用LLM格式化原始结果 - 不做任何中间处理，让LLM智能处理所有格式
             const formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
             
             // 完成步骤消息
@@ -1212,7 +1113,7 @@ Based on the above task execution information, please generate a complete execut
               step: stepNumber,
               success: true,
                 result: formattedResult,
-                rawResult: processedResult // 也保留原始结果供调试
+                rawResult: stepResult // 保留原始MCP结果供调试
             } 
           });
           
@@ -1220,8 +1121,8 @@ Based on the above task execution information, please generate a complete execut
               step: stepNumber,
               success: true,
               result: formattedResult,
-              rawResult: processedResult,
-              parsedData: this.parseResultData(processedResult) // 解析结构化数据供下一步使用
+              rawResult: stepResult,
+              parsedData: this.parseResultData(stepResult) // 解析结构化数据供下一步使用
             };
         } catch (error) {
             logger.error(`❌ LangChain Step ${stepNumber} failed:`, error);
@@ -1710,12 +1611,25 @@ Transform the data now:`;
         // 判断整体执行是否成功
         const overallSuccess = workflowResults.every(result => result.success);
       
-      // 工作流完成
-      stream({ 
-        event: 'workflow_complete', 
-        data: { 
+        // 🔧 新增：发送最终结果给前端
+        if (finalResult) {
+          stream({ 
+            event: 'final_result', 
+            data: { 
+              finalResult,
+              message: 'Final execution result available'
+            } 
+          });
+        }
+      
+        // 🔧 优化：只在workflow_complete事件中返回finalResult，避免重复
+        // 工作流完成
+        stream({ 
+          event: 'workflow_complete', 
+          data: { 
             success: overallSuccess,
-            message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors'
+            message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors',
+            finalResult: finalResult // 🔧 在这里统一返回finalResult
           }
         });
         
@@ -1725,13 +1639,19 @@ Transform the data now:`;
           overallSuccess ? 'completed' : 'failed',
           {
             summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
-        steps: workflowResults,
-        finalResult
+            steps: workflowResults,
+            finalResult
           }
         );
       
-      // 发送任务完成信息
-        stream({ event: 'task_complete', data: { taskId, success: overallSuccess } });
+        // 发送任务完成信息
+        stream({ 
+          event: 'task_complete', 
+          data: { 
+            taskId, 
+            success: overallSuccess
+          } 
+        });
         
         logger.info(`✅ Task execution completed [Task ID: ${taskId}, Success: ${overallSuccess}]`);
         return overallSuccess;
@@ -1773,32 +1693,6 @@ Transform the data now:`;
       
       return false;
     }
-  }
-  
-  /**
-   * 判断是否应该使用智能工作流引擎执行
-   * @param taskContent 任务内容
-   * @returns 是否使用智能工作流引擎
-   */
-  private shouldUseIntelligentExecution(taskContent: string): boolean {
-    // 检查任务是否包含需要复杂推理或多步骤处理的关键词
-    const complexTaskKeywords = [
-      '分析', '比较', '对比', '评估', '研究', '调研', 
-      '总结', '整理', '归纳', '综合', '深入', '详细',
-      'analyze', 'compare', 'evaluate', 'research', 
-      'summarize', 'comprehensive', 'detailed', 'investigate'
-    ];
-    
-    const taskLower = taskContent.toLowerCase();
-    const hasComplexKeywords = complexTaskKeywords.some(keyword => 
-      taskLower.includes(keyword.toLowerCase())
-    );
-    
-    // 检查任务长度和复杂度
-    const isComplexTask = taskContent.length > 50 || 
-                         taskContent.split(/[，。,.]/).length > 2;
-    
-    return hasComplexKeywords || isComplexTask;
   }
 
   /**

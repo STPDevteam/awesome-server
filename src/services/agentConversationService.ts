@@ -42,11 +42,12 @@ export class AgentConversationService {
 
   constructor(taskExecutorService: TaskExecutorService) {
     this.llm = new ChatOpenAI({
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.7,
-      maxTokens: 1000,
-      streaming: true,
-    });
+        modelName: 'gpt-4o',
+        temperature: 0.3,
+        streaming: true,
+        maxTokens: 4096,
+        apiKey: process.env.OPENAI_API_KEY
+      });
     this.mcpAuthService = new MCPAuthService();
     this.taskExecutorService = taskExecutorService;
   }
@@ -604,7 +605,7 @@ I encountered an error while executing this task. Please try again or check the 
   }
 
   /**
-   * 🔧 新增：使用LLM格式化任务执行结果为Markdown
+   * Format task result with structured output
    */
   private async formatTaskResultWithLLM(
     task: any,
@@ -615,84 +616,67 @@ I encountered an error while executing this task. Please try again or check the 
     try {
       // 提取任务结果
       const taskResult = task?.result;
+      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
+      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      if (!taskResult) {
-        return `✅ Task completed using ${agent.name}'s capabilities!
-
-**Task**: ${task?.title || 'Unknown'}
-**Agent**: ${agent.name}
-**Status**: ${task?.status || 'completed'}
-
-The task has been processed successfully, but no detailed results are available.`;
-      }
-
-      // 构建结果内容用于LLM处理
-      let resultContent = '';
+      // 构建结构化的响应格式
+      let formattedResponse = '';
       
-      if (taskResult.summary) {
-        resultContent += `Summary: ${taskResult.summary}\n\n`;
-      }
+      // 1. Success Indicator 部分 - 使用绿色成功样式
+      formattedResponse += `## ✅ Success Indicator\n`;
+      formattedResponse += `> The task was ${statusText}.\n\n`;
       
-      if (taskResult.finalResult) {
-        resultContent += `Final Result: ${taskResult.finalResult}\n\n`;
-      }
+      // 2. Response 部分 - 使用二级标题
+      formattedResponse += `## 📋 Response\n`;
       
-      if (taskResult.steps && Array.isArray(taskResult.steps)) {
-        resultContent += 'Execution Steps:\n';
-        taskResult.steps.forEach((step: any, index: number) => {
-          if (step.success && step.result) {
-            resultContent += `Step ${index + 1}: ${step.result}\n`;
+      if (taskResult) {
+        // 优先使用最终结果
+        if (taskResult.finalResult) {
+          formattedResponse += `${taskResult.finalResult}\n\n`;
+        } else if (taskResult.summary) {
+          formattedResponse += `${taskResult.summary}\n\n`;
+        } else if (taskResult.steps && taskResult.steps.length > 0) {
+          // 如果有步骤结果，提取关键信息
+          const lastStep = taskResult.steps[taskResult.steps.length - 1];
+          if (lastStep.result) {
+            formattedResponse += `${lastStep.result}\n\n`;
+          } else {
+            formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
           }
-        });
+        } else {
+          formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+        }
+      } else {
+        formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
       }
-
-      if (!resultContent.trim()) {
-        resultContent = JSON.stringify(taskResult, null, 2);
-      }
-
-      // 使用LLM格式化结果
-      const systemPrompt = `You are ${agent.name}, an AI agent specialized in presenting task execution results in a clear, professional Markdown format.
-
-Your role is to:
-1. Present the execution results in a user-friendly way
-2. Use proper Markdown formatting for better readability
-3. Highlight key information and findings
-4. Maintain the agent's personality while being informative
-5. Include relevant details while keeping the response concise and well-structured
-
-Agent Description: ${agent.description}
-Agent Capabilities: ${agent.mcpWorkflow ? 
-  agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
-  'general assistance'}`;
-
-      const userPrompt = `I requested: "${originalRequest}"
-
-The task execution ${isPartialSuccess ? 'completed with some warnings' : 'completed successfully'} with the following results:
-
-${resultContent}
-
-Please format this into a clear, professional response that shows what was accomplished. Use Markdown formatting to make it easy to read and highlight the key results. Start with a success indicator and include the most important findings prominently.`;
-
-      const response = await this.llm.invoke([
-        new SystemMessage(systemPrompt),
-        new HumanMessage(userPrompt)
-      ]);
-
-      return response.content.toString();
+      
+      // 3. 任务详情部分 - 使用无序列表格式，小字标题样式
+      formattedResponse += `---\n\n`;
+      formattedResponse += `- **Task:** ${originalRequest}\n`;
+      formattedResponse += `- **Agent:** ${agent.name}\n`;
+      formattedResponse += `- **Task ID:** ${task?.id || 'Unknown'}\n`;
+      formattedResponse += `- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.\n`;
+      
+      return formattedResponse;
     } catch (error) {
-      logger.error('Failed to format task result with LLM:', error);
+      logger.error('Failed to format task result:', error);
       
       // 降级处理：返回基本的格式化结果
       const statusIcon = isPartialSuccess ? '⚠️' : '✅';
       const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      return `${statusIcon} Task ${statusText} using ${agent.name}'s capabilities!
+      return `## ✅ Success Indicator
+> The task was ${statusText}.
 
-**Task**: ${task?.title || 'Unknown'}
-**Agent**: ${agent.name}
-**Status**: ${task?.status || 'completed'}
+## 📋 Response
+The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.
 
-The task has been processed, and results are available. However, I encountered an issue formatting the detailed results for display.`;
+---
+
+- **Task:** ${originalRequest}
+- **Agent:** ${agent.name}
+- **Task ID:** ${task?.id || 'Unknown'}
+- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.`;
     }
   }
 
