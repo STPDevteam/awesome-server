@@ -81,13 +81,8 @@ export class TaskExecutorService {
       }
 
     // 验证客户端连接状态
-    logger.info(`🔍 Looking for client [MCP: ${mcpName}, User: ${userId || 'undefined'}]`);
     const client = this.mcpManager.getClient(mcpName, userId);
     if (!client) {
-      // 添加调试信息：检查所有已连接的客户端
-      const allConnectedMCPs = this.mcpManager.getConnectedMCPs(); // 不传userId，获取所有连接
-      logger.error(`❌ No client found for MCP: ${mcpName} with user: ${userId}`);
-      logger.error(`🔍 All connected MCPs: ${JSON.stringify(allConnectedMCPs.map(mcp => ({name: mcp.name, hasUserId: !!userId})), null, 2)}`);
       throw new Error(`No client found for MCP: ${mcpName}`);
     }
 

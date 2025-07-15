@@ -603,25 +603,11 @@ export class MCPManager {
 
   getClient(name: string, userId?: string): Client | undefined {
     const connectionKey = this.getConnectionKey(name, userId);
-    logger.info(`🔍 getClient looking for key: "${connectionKey}" (name: ${name}, userId: ${userId || 'undefined'})`);
-    
-    // 调试：列出所有现有的连接密钥
-    const allKeys = Array.from(this.clients.keys());
-    logger.info(`🔍 Available connection keys: [${allKeys.join(', ')}]`);
-    
     const mcpClient = this.clients.get(connectionKey);
     if (mcpClient) {
-      logger.info(`✅ Found client for key: "${connectionKey}"`);
       // 更新最后使用时间
       mcpClient.lastUsed = new Date();
       return mcpClient.client;
-    } else {
-      logger.warn(`❌ No client found for key: "${connectionKey}"`);
-      // 检查是否有相同name但不同userId的连接
-      const nameMatches = allKeys.filter(key => key.endsWith(`:${name}`) || key === name);
-      if (nameMatches.length > 0) {
-        logger.warn(`⚠️ Found connections for same MCP name with different keys: [${nameMatches.join(', ')}]`);
-      }
     }
     return undefined;
   }
