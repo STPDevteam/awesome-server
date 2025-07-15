@@ -977,16 +977,11 @@ The task has been processed, but I encountered an issue formatting the detailed 
 
     // 通过TaskExecutorService访问MCPManager
     const mcpManager = (this.taskExecutorService as any).mcpManager;
-    const requiredMCPs = agent.mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired);
+    const allRequiredMCPs = agent.mcpWorkflow.mcps;
 
-    if (requiredMCPs.length === 0) {
-      logger.info(`Agent ${agent.name} does not require authenticated MCP services`);
-      return;
-    }
+    logger.info(`Ensuring MCP connections for Agent ${agent.name} (User: ${userId}), all MCPs: ${allRequiredMCPs.map((mcp: any) => mcp.name).join(', ')}`);
 
-    logger.info(`Ensuring MCP connections for Agent ${agent.name} (User: ${userId}), required MCPs: ${requiredMCPs.map((mcp: any) => mcp.name).join(', ')}`);
-
-    for (const mcpInfo of requiredMCPs) {
+    for (const mcpInfo of allRequiredMCPs) {
       try {
         // 🔧 重要修复：检查用户特定的MCP连接
         const connectedMCPs = mcpManager.getConnectedMCPs(userId);
@@ -1003,31 +998,35 @@ The task has been processed, but I encountered an issue formatting the detailed 
             throw new Error(`MCP ${mcpInfo.name} configuration not found`);
           }
 
-          // 获取用户认证信息
-          const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
-          if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
-            throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
-          }
+          // 处理认证信息（只有需要认证的MCP才需要处理）
+          let dynamicEnv = { ...mcpConfig.env };
+          
+          if (mcpInfo.authRequired) {
+            // 获取用户认证信息
+            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
+            if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
+              throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
+            }
 
-          // 动态注入认证信息
-          const dynamicEnv = { ...mcpConfig.env };
-          if (mcpConfig.env) {
-            for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                dynamicEnv[envKey] = userAuth.authData[envKey];
-                logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+            // 动态注入认证信息
+            if (mcpConfig.env) {
+              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+                }
               }
             }
           }
 
-          // 创建带认证信息的MCP配置
-          const authenticatedMcpConfig = {
+          // 创建MCP配置（带或不带认证信息）
+          const finalMcpConfig = {
             ...mcpConfig,
             env: dynamicEnv
           };
 
           // 🔧 重要修复：连接MCP时传递用户ID实现多用户隔离
-          const connected = await mcpManager.connectPredefined(authenticatedMcpConfig, userId);
+          const connected = await mcpManager.connectPredefined(finalMcpConfig, userId);
           if (!connected) {
             throw new Error(`Failed to connect to MCP ${mcpInfo.name} for user ${userId}`);
           }
@@ -1628,8 +1627,8 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         const workflowResults: any[] = [];
         let finalResult = null;
         
-        // 从chainResult中提取步骤结果
-        for (let i = 1; i <= mcpWorkflow.workflow.length; i++) {
+        // 动态计算实际执行的步骤数
+        for (let i = 1; i <= 50; i++) { // 最多检查10步
           const stepResult = chainResult[`step${i}`];
           if (stepResult) {
             workflowResults.push(stepResult);
@@ -1810,9 +1809,19 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
             // 标准化MCP名称
             const actualMcpName = this.normalizeMCPName(mcpName);
             
-            // 调用MCP工具
-            const stepResult = await this.callAgentMCPTool(actualMcpName, actionName, input, taskId);
+
+            // Get user ID from task
+            const taskService = getTaskService();
+            const taskInfo = await taskService.getTaskById(taskId);
+            const userId = taskInfo?.userId;
             
+            if (!userId) {
+              throw new Error(`Cannot get user ID from task ${taskId}`);
+            }
+            
+            // Call MCP tool with user context
+            const stepResult = await this.callAgentMCPToolWithUser(actualMcpName, actionName, input, taskId, userId);
+
             // 🔧 关键修复：为每个步骤都添加流式格式化响应
             let formattedResult: string;
             if (stepNumber === workflow.length) {
@@ -1935,6 +1944,40 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
   private async callAgentMCPTool(mcpName: string, toolNameOrObjective: string, input: any, taskId?: string): Promise<any> {
     // 复制TaskExecutorService的callMCPTool逻辑，但添加Agent特定的处理
     return await (this.taskExecutorService as any).callMCPTool(mcpName, toolNameOrObjective, input, taskId);
+  }
+
+  /**
+   * 🔧 新增：Agent专用的MCP工具调用方法（带用户上下文）
+   */
+  private async callAgentMCPToolWithUser(mcpName: string, toolNameOrObjective: string, input: any, taskId: string, userId: string): Promise<any> {
+    try {
+      logger.info(`🔧 Agent MCP tool call [MCP: ${mcpName}, Tool: ${toolNameOrObjective}, User: ${userId}]`);
+      logger.info(`📥 Input parameters: ${JSON.stringify(input, null, 2)}`);
+
+      // 确保MCP已连接（带用户上下文）
+      const mcpManager = (this.taskExecutorService as any).mcpManager;
+      const connectedMCPs = mcpManager.getConnectedMCPs(userId);
+      const isConnected = connectedMCPs.some((mcp: any) => mcp.name === mcpName);
+      
+      if (!isConnected) {
+        logger.warn(`MCP ${mcpName} not connected for user ${userId}, attempting auto-connection...`);
+        
+        // 使用TaskExecutorService的autoConnectMCP方法
+        await (this.taskExecutorService as any).autoConnectMCP(mcpName, taskId, userId);
+        
+        // 验证连接成功
+        const connectedAfterAttempt = mcpManager.getConnectedMCPs(userId).some((mcp: any) => mcp.name === mcpName);
+        if (!connectedAfterAttempt) {
+          throw new Error(`Failed to connect MCP ${mcpName} for user ${userId}`);
+        }
+      }
+
+      // 使用TaskExecutorService的方法调用MCP工具，但传递用户ID
+      return await (this.taskExecutorService as any).callMCPToolWithLangChain(mcpName, toolNameOrObjective, input, userId);
+    } catch (error) {
+      logger.error(`Agent MCP tool call failed [MCP: ${mcpName}, Tool: ${toolNameOrObjective}, User: ${userId}]:`, error);
+      throw error;
+    }
   }
 
   /**
