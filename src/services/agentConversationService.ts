@@ -609,7 +609,7 @@ Respond with ONLY a JSON object:
         conversationId
       });
 
-      // Apply Agent's workflow to the task
+      // Apply Agent's workflow to the task (keeping original structure for compatibility)
       if (agent.mcpWorkflow) {
         await taskService.updateTask(task.id, {
           mcpWorkflow: agent.mcpWorkflow,
@@ -1542,27 +1542,29 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         logger.warn(`Task ${taskId} has no associated conversation, execution messages will not be stored`);
       }
       
-      // 获取Agent的工作流
-      const mcpWorkflow = agent.mcpWorkflow;
-      if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
-        logger.error(`❌ Agent task execution failed: No valid workflow [Task ID: ${taskId}, Agent: ${agent.name}]`);
+      // 🔧 根据用户输入动态生成工作流，而不是使用Agent预定义的工作流
+      logger.info(`🔄 Generating dynamic workflow based on user input: "${task.content}"`);
+      const dynamicWorkflow = await this.generateDynamicWorkflowForAgent(task.content, agent);
+      
+      if (!dynamicWorkflow || dynamicWorkflow.length === 0) {
+        logger.error(`❌ Failed to generate dynamic workflow for Agent task [Task ID: ${taskId}, Agent: ${agent.name}]`);
         
         stream({ 
           event: 'error', 
           data: { 
-            message: 'Agent task execution failed: No valid workflow',
-            details: 'Agent workflow is not configured properly'
+            message: 'Failed to generate workflow for user request',
+            details: 'Could not determine appropriate actions for the given input'
           } 
         });
         
         await taskExecutorDao.updateTaskResult(taskId, 'failed', {
-          error: 'Agent task execution failed: No valid workflow configured'
+          error: 'Failed to generate workflow for user request'
         });
         
         return false;
       }
       
-      logger.info(`📋 Agent workflow structure: ${JSON.stringify(mcpWorkflow, null, 2)}`);
+      logger.info(`📋 Generated dynamic workflow: ${JSON.stringify(dynamicWorkflow, null, 2)}`);
       
       // 检查 mcpManager 是否已初始化
       if (!this.mcpManager) {
@@ -1586,7 +1588,7 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       if (conversationId) {
         const executionStartMessage = await messageDao.createMessage({
           conversationId,
-          content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s workflow with ${mcpWorkflow.workflow.length} steps...`,
+          content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s capabilities with ${dynamicWorkflow.length} steps...`,
           type: MessageType.ASSISTANT,
           intent: MessageIntent.TASK,
           taskId,
@@ -1594,7 +1596,7 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
             stepType: MessageStepType.EXECUTION,
             stepName: 'Agent Execution Start',
             taskPhase: 'execution',
-            totalSteps: mcpWorkflow.workflow.length,
+            totalSteps: dynamicWorkflow.length,
             agentName: agent.name,
             isComplete: true
           }
@@ -1605,10 +1607,10 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       }
       
       try {
-        // 🔧 使用Agent专用的LangChain工作流链
-        logger.info(`🔗 Building Agent-specific LangChain workflow chain for ${mcpWorkflow.workflow.length} steps`);
+        // 🔧 使用动态生成的工作流构建LangChain链
+        logger.info(`🔗 Building Agent-specific LangChain workflow chain for ${dynamicWorkflow.length} dynamic steps`);
         const workflowChain = await this.buildAgentWorkflowChain(
-          mcpWorkflow.workflow,
+          dynamicWorkflow,
           taskId,
           conversationId,
           agent,
@@ -1616,7 +1618,7 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         );
         
         // 执行链式调用，初始输入包含任务内容和Agent信息
-        logger.info(`▶️ Executing Agent workflow chain`);
+        logger.info(`▶️ Executing Agent workflow chain with user input`);
         const chainResult = await workflowChain.invoke({
           taskContent: task.content,
           taskId: taskId,
@@ -1629,13 +1631,13 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         let finalResult = null;
         
         // 从chainResult中提取步骤结果
-        for (let i = 1; i <= mcpWorkflow.workflow.length; i++) {
+        for (let i = 1; i <= dynamicWorkflow.length; i++) {
           const stepResult = chainResult[`step${i}`];
           if (stepResult) {
             workflowResults.push(stepResult);
           
             // 最后一步的结果作为最终结果
-            if (i === mcpWorkflow.workflow.length && stepResult.success) {
+            if (i === dynamicWorkflow.length && stepResult.success) {
               finalResult = stepResult.result;
             }
           }
@@ -1726,6 +1728,172 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       
       return false;
     }
+  }
+
+  /**
+   * 🔧 新增：根据用户输入动态生成Agent工作流
+   * @param userInput 用户输入内容
+   * @param agent Agent对象
+   * @returns 动态生成的工作流
+   */
+  private async generateDynamicWorkflowForAgent(
+    userInput: string,
+    agent: Agent
+  ): Promise<Array<{ step: number; mcp: string; action: string; input?: any }>> {
+    try {
+      logger.info(`🔄 Generating dynamic workflow for Agent [${agent.name}] based on user input: "${userInput}"`);
+      
+      // 获取Agent可用的MCP工具
+      const availableMCPs = agent.mcpWorkflow?.mcps || [];
+      if (availableMCPs.length === 0) {
+        logger.warn(`Agent [${agent.name}] has no available MCP tools`);
+        return [];
+      }
+      
+      logger.info(`📋 Available MCPs for Agent [${agent.name}]: ${availableMCPs.map(m => m.name).join(', ')}`);
+      
+      // 使用LLM分析用户输入并生成合适的工作流
+      const workflowPrompt = `You are a workflow generation expert. Based on the user's request and available MCP tools, generate a dynamic workflow to fulfill the user's needs.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+
+Available MCP Tools:
+${availableMCPs.map(mcp => `- ${mcp.name}: ${mcp.description || 'No description'}`).join('\n')}
+
+User Request: "${userInput}"
+
+Please analyze the user's request and generate a workflow that uses the available MCP tools to fulfill their needs. 
+
+IMPORTANT GUIDELINES:
+1. Only use MCPs that are available for this Agent
+2. Generate 1-3 steps maximum (keep it simple and focused)
+3. Each step should have a clear action that directly relates to the user's request
+4. Use objective-based actions (describe what to achieve, not specific tool names)
+5. Consider the logical flow: what needs to be done first, second, etc.
+
+For each step, provide:
+- step: sequential number starting from 1
+- mcp: exact MCP name from the available list
+- action: clear, objective-based description of what to accomplish
+- input: optional input parameters (use the user's specific request as context)
+
+Examples of good actions:
+- "Search for current cryptocurrency prices based on user query"
+- "Retrieve GitHub repository information for the specified repo"
+- "Get market data for the requested tokens"
+- "Search web for information about the topic mentioned by user"
+
+Return ONLY a JSON array of workflow steps, no other text:`;
+
+      const response = await this.llm.invoke([new SystemMessage(workflowPrompt)]);
+      const workflowText = response.content.toString().trim();
+      
+      let workflow: Array<{ step: number; mcp: string; action: string; input?: any }>;
+      
+      try {
+        workflow = JSON.parse(workflowText);
+      } catch (parseError) {
+        logger.error(`Failed to parse LLM-generated workflow:`, parseError);
+        logger.error(`Raw LLM response: ${workflowText}`);
+        
+        // 降级处理：如果LLM返回的不是JSON，尝试生成简单的单步工作流
+        const firstAvailableMCP = availableMCPs[0];
+        workflow = [{
+          step: 1,
+          mcp: firstAvailableMCP.name,
+          action: `Handle user request: ${userInput}`,
+          input: { query: userInput, request: userInput }
+        }];
+        
+        logger.info(`Generated fallback workflow using ${firstAvailableMCP.name}`);
+      }
+      
+      // 验证和清理生成的工作流
+      const validatedWorkflow = this.validateAndCleanWorkflow(workflow, availableMCPs, userInput);
+      
+      logger.info(`✅ Generated dynamic workflow with ${validatedWorkflow.length} steps`);
+      return validatedWorkflow;
+      
+    } catch (error) {
+      logger.error(`Failed to generate dynamic workflow for Agent [${agent.name}]:`, error);
+      
+      // 最后的降级处理：使用第一个可用的MCP创建基本工作流
+      const availableMCPs = agent.mcpWorkflow?.mcps || [];
+      if (availableMCPs.length > 0) {
+        const fallbackWorkflow = [{
+          step: 1,
+          mcp: availableMCPs[0].name,
+          action: `Process user request: ${userInput}`,
+          input: { query: userInput, request: userInput }
+        }];
+        
+        logger.info(`Using fallback workflow with ${availableMCPs[0].name}`);
+        return fallbackWorkflow;
+      }
+      
+      return [];
+    }
+  }
+
+  /**
+   * 🔧 新增：验证和清理生成的工作流
+   */
+  private validateAndCleanWorkflow(
+    workflow: any[],
+    availableMCPs: any[],
+    userInput: string
+  ): Array<{ step: number; mcp: string; action: string; input?: any }> {
+    const availableMCPNames = availableMCPs.map(mcp => mcp.name);
+    const validatedSteps: Array<{ step: number; mcp: string; action: string; input?: any }> = [];
+    
+    for (let i = 0; i < workflow.length; i++) {
+      const step = workflow[i];
+      
+      // 验证步骤结构
+      if (!step || typeof step !== 'object') {
+        continue;
+      }
+      
+      // 验证MCP是否可用
+      if (!step.mcp || !availableMCPNames.includes(step.mcp)) {
+        logger.warn(`Skipping step with invalid MCP: ${step.mcp}`);
+        continue;
+      }
+      
+      // 验证action是否存在
+      if (!step.action || typeof step.action !== 'string') {
+        logger.warn(`Skipping step with invalid action: ${step.action}`);
+        continue;
+      }
+      
+      // 标准化步骤
+      const validatedStep = {
+        step: validatedSteps.length + 1,
+        mcp: step.mcp,
+        action: step.action,
+        input: step.input || { query: userInput, request: userInput }
+      };
+      
+      validatedSteps.push(validatedStep);
+      
+      // 限制最多3步
+      if (validatedSteps.length >= 3) {
+        break;
+      }
+    }
+    
+    // 如果没有有效步骤，创建一个基本步骤
+    if (validatedSteps.length === 0 && availableMCPs.length > 0) {
+      validatedSteps.push({
+        step: 1,
+        mcp: availableMCPs[0].name,
+        action: `Process user request: ${userInput}`,
+        input: { query: userInput, request: userInput }
+      });
+    }
+    
+    return validatedSteps;
   }
 
   /**
