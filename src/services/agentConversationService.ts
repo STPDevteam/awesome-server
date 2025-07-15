@@ -1972,8 +1972,8 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         }
       }
 
-      // 使用TaskExecutorService的方法调用MCP工具，但传递用户ID
-      return await (this.taskExecutorService as any).callMCPToolWithLangChain(mcpName, toolNameOrObjective, input, userId);
+      // 使用TaskExecutorService的方法调用MCP工具，传递taskId（方法内部会自动获取userId）
+      return await (this.taskExecutorService as any).callMCPToolWithLangChain(mcpName, toolNameOrObjective, input, taskId);
     } catch (error) {
       logger.error(`Agent MCP tool call failed [MCP: ${mcpName}, Tool: ${toolNameOrObjective}, User: ${userId}]:`, error);
       throw error;
