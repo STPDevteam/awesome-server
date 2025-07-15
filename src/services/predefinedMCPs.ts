@@ -105,7 +105,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'defillama-mcp',
         description: 'DeFiLlama DeFi protocol data and TVL analytics - provides protocol TVL, chain data, token prices, and stablecoin information (LOCAL BUILD)',
         command: 'node',
-        args: [`/home/ubuntu/mcp-tools/mcp-server-defillama/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/mcp-server-defillama/dist/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',

@@ -763,6 +763,14 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
     streamCallback: (chunk: any) => void
   ): Promise<{ assistantMessageId: string; taskId: string }> {
     try {
+<<<<<<< Updated upstream
+=======
+      streamCallback({
+        event: 'task_creation_start',
+        data: { message: 'Creating task based on Agent workflow...' }
+      });
+
+>>>>>>> Stashed changes
       // Generate appropriate task title using LLM
       const taskTitle = await this.generateTaskTitle(content, agent);
       
