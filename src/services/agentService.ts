@@ -1062,13 +1062,17 @@ Respond with ONLY a JSON object:
         return `Task created with ${agent.name}'s capabilities: "${task.title}"\n\nTask ID: ${task.id}\n\n*Note: Task execution service not available. Task has been queued for execution.*`;
       }
 
-      // 执行任务使用Agent的工作流
+      // 执行任务使用Agent的动态工作流
       try {
-        logger.info(`Executing task with Agent workflow [Agent: ${agent.name}, Task: ${task.id}]`);
+        logger.info(`Executing task with Agent dynamic workflow [Agent: ${agent.name}, Task: ${task.id}, User input: "${content}"]`);
         
-        const executionSuccess = await this.taskExecutorService.executeTaskStream(task.id, (data) => {
+        // 使用Agent专用执行器，动态处理用户输入
+        const { getAgentConversationService } = await import('./agentConversationService.js');
+        const agentConversationService = getAgentConversationService(this.taskExecutorService);
+        
+        const executionSuccess = await (agentConversationService as any).executeAgentTaskDedicated(task.id, agent, (data: any) => {
           // Silent execution for non-streaming context
-          logger.debug(`Task execution progress: ${JSON.stringify(data)}`);
+          logger.debug(`Agent task execution progress: ${JSON.stringify(data)}`);
         });
 
         if (executionSuccess) {
@@ -1081,7 +1085,7 @@ Respond with ONLY a JSON object:
 **Agent**: ${agent.name}
 **Status**: ${completedTask?.status || 'completed'}
 
-I've successfully executed this task using my specialized tools and workflow. The task has been completed and the results are available.`;
+I've successfully executed this task using my specialized tools and dynamic workflow based on your request: "${content}". The task has been completed and the results are available.`;
 
           return successMessage;
         } else {
