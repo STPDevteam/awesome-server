@@ -156,7 +156,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'feargreed-mcp',
         description: 'Fear & Greed Index cryptocurrency market sentiment',
-        command: 'uv',
+        command: '/home/ubuntu/venvs/mcp-env/bin/uv',
         args: [ 
             "--directory", "/home/ubuntu/mcp-tools/crypto-feargreed-mcp", 
             "run", 
