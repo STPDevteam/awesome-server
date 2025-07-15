@@ -394,7 +394,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'hyperliquid-mcp',
         description: 'Hyperliquid decentralized perpetuals trading',
         command: 'npx',
-        args: ['-y', '@mektigboy/server-hyperliquid'],
+        args: ['-y', '@overdosed/server-hyperliquid@latest'],
         env: {},
         connected: false,
         category: 'Trading',
