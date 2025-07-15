@@ -1803,7 +1803,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
           step: 1,
           mcp: firstAvailableMCP.name,
           action: `Handle user request: ${userInput}`,
-          input: { query: userInput, request: userInput }
+          input: userInput // 🔧 让TaskExecutorService的LLM智能转换参数格式
         }];
         
         logger.info(`Generated fallback workflow using ${firstAvailableMCP.name}`);
@@ -1825,7 +1825,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
           step: 1,
           mcp: availableMCPs[0].name,
           action: `Process user request: ${userInput}`,
-          input: { query: userInput, request: userInput }
+          input: userInput // 🔧 让TaskExecutorService的LLM智能转换参数格式
         }];
         
         logger.info(`Using fallback workflow with ${availableMCPs[0].name}`);
@@ -1872,7 +1872,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
         step: validatedSteps.length + 1,
         mcp: step.mcp,
         action: step.action,
-        input: step.input || { query: userInput, request: userInput }
+        input: step.input || userInput // 🔧 让TaskExecutorService的LLM智能转换参数格式
       };
       
       validatedSteps.push(validatedStep);
@@ -1889,7 +1889,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
         step: 1,
         mcp: availableMCPs[0].name,
         action: `Process user request: ${userInput}`,
-        input: { query: userInput, request: userInput }
+        input: userInput // 🔧 让TaskExecutorService的LLM智能转换参数格式
       });
     }
     
