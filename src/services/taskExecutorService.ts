@@ -157,6 +157,48 @@ export class TaskExecutorService {
 
   
   /**
+   * 🔧 新增：根据schema自动创建参数
+   */
+  private createParamsFromSchema(userInput: string, schema: any): any {
+    const params: any = {};
+    
+    if (schema.properties) {
+      for (const [key, value] of Object.entries(schema.properties)) {
+        const fieldSchema = value as any;
+        
+        // 对于字符串类型参数，尝试从用户输入中提取
+        if (fieldSchema.type === 'string') {
+          if (key.toLowerCase().includes('protocol') || key.toLowerCase().includes('name')) {
+            // 尝试从用户输入中提取协议名称
+            const protocolMatch = userInput.match(/\b([A-Za-z][A-Za-z0-9\s]*)\s+protocol/i);
+            if (protocolMatch) {
+              params[key] = protocolMatch[1].trim();
+            } else {
+              // 从用户输入中提取第一个大写开头的单词作为协议名
+              const nameMatch = userInput.match(/\b([A-Z][a-z]+)/);
+              if (nameMatch) {
+                params[key] = nameMatch[1];
+              } else {
+                params[key] = userInput.split(' ')[0]; // 使用第一个单词作为降级
+              }
+            }
+          } else {
+            params[key] = userInput; // 默认使用整个用户输入
+          }
+        } else if (fieldSchema.type === 'number' || fieldSchema.type === 'integer') {
+          params[key] = 1; // 默认数值
+        } else if (fieldSchema.type === 'boolean') {
+          params[key] = true; // 默认布尔值
+        } else {
+          params[key] = userInput; // 默认使用用户输入
+        }
+      }
+    }
+    
+    return params;
+  }
+
+  /**
    * 通过LangChain调用MCP工具
    */
   private async callMCPToolWithLangChain(mcpName: string, toolName: string, input: any, taskId?: string): Promise<any> {
@@ -232,7 +274,21 @@ For cryptocurrency tools:
           ]);
 
           try {
-            const convertedInput = JSON.parse(conversionResponse.content.toString().trim());
+            // 🔧 改进JSON解析，先清理LLM响应中的额外内容
+            let responseText = conversionResponse.content.toString().trim();
+            
+            // 移除Markdown代码块标记
+            responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+            
+            // 尝试提取JSON对象
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              responseText = jsonMatch[0];
+            }
+            
+            console.log(`🧹 Cleaned LLM response: ${responseText}`);
+            
+            const convertedInput = JSON.parse(responseText);
             console.log(`🔄 Converted input: ${JSON.stringify(convertedInput, null, 2)}`);
             logger.info(`🔄 Attempting tool call with converted input: ${JSON.stringify(convertedInput)}`);
             
@@ -240,7 +296,23 @@ For cryptocurrency tools:
             console.log(`✅ Tool call succeeded with converted input`);
           } catch (conversionError) {
             logger.error(`❌ Parameter conversion failed: ${conversionError}`);
-            throw schemaError; // 抛出原始错误
+            logger.error(`❌ Raw LLM response: ${conversionResponse.content.toString()}`);
+            
+            // 🔧 添加更智能的降级处理
+            if (input && typeof input === 'string' && targetTool.inputSchema) {
+              try {
+                // 尝试根据 schema 自动创建参数
+                const autoParams = this.createParamsFromSchema(input, targetTool.inputSchema);
+                console.log(`🚨 Attempting auto-generated params: ${JSON.stringify(autoParams, null, 2)}`);
+                result = await langchainTool.invoke(autoParams);
+                console.log(`✅ Tool call succeeded with auto-generated params`);
+              } catch (autoError) {
+                logger.error(`❌ Auto-generated params also failed: ${autoError}`);
+                throw schemaError; // 抛出原始错误
+              }
+            } else {
+              throw schemaError; // 抛出原始错误
+            }
           }
         } else {
           throw schemaError;
