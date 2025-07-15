@@ -103,14 +103,14 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'defillama-mcp',
-        description: 'DeFiLlama DeFi protocol data and TVL analytics - comprehensive DeFi data including protocols, chains, tokens, and pools',
-        command: 'npx',
-        args: ['-y', '@0xbohu/defillama-mcp-mirror'],
+        description: 'DeFiLlama DeFi protocol data and TVL analytics - provides protocol TVL, chain data, token prices, and stablecoin information (LOCAL BUILD)',
+        command: 'node',
+        args: [`/home/ubuntu/mcp-tools/mcp-server-defillama/build/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png',
-        githubUrl: 'https://github.com/demcp/defillama-mcp',
+        githubUrl: 'https://github.com/dcSpark/mcp-server-defillama',
         authRequired: false,
         authParams: {}
     },
