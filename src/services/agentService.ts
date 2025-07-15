@@ -1032,12 +1032,17 @@ Respond with ONLY a JSON object:
    */
   private async executeAgentTask(content: string, agent: Agent, userId: string, conversationId: string): Promise<string> {
     try {
+      // 生成合适的任务标题
+      const taskTitle = await this.generateTaskTitle(content, agent);
+      
       // 创建任务
       const taskService = getTaskService();
       const task = await taskService.createTask({
         userId,
-        title: content.length > 30 ? content.substring(0, 30) + '...' : content,
+        title: taskTitle,
         content: content,
+        taskType: 'agent', // 🔧 新增：标记为Agent任务
+        agentId: agent.id, // 🔧 新增：记录Agent ID
         conversationId
       });
 
@@ -1101,6 +1106,58 @@ I encountered an error while executing this task. Please try again or check the 
     } catch (error) {
       logger.error('Execute agent task failed:', error);
       return 'Sorry, I encountered an error while trying to execute that task. Please try again or rephrase your request.';
+    }
+  }
+
+  /**
+   * 生成合适的任务标题
+   */
+  private async generateTaskTitle(content: string, agent: Agent): Promise<string> {
+    try {
+      const prompt = `Generate a concise, descriptive title for a task based on the user's request and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
+  'general assistance'}
+
+User Request: "${content}"
+
+Requirements:
+- Maximum 60 characters
+- Clear and descriptive
+- Reflects the main action or goal
+- Professional tone
+- No quotes or special formatting
+
+Examples:
+- "Search cryptocurrency prices"
+- "Generate GitHub repository analysis"
+- "Create social media content"
+- "Analyze market trends"
+
+Generate ONLY the title text, nothing else:`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(prompt)
+      ]);
+      
+      const generatedTitle = response.content.toString().trim();
+      
+      // Ensure title length and fallback if needed
+      if (generatedTitle && generatedTitle.length <= 60) {
+        return generatedTitle;
+      } else if (generatedTitle && generatedTitle.length > 60) {
+        return generatedTitle.substring(0, 57) + '...';
+      } else {
+        // Fallback to truncated content if LLM fails
+        return content.length > 50 ? content.substring(0, 47) + '...' : content;
+      }
+    } catch (error) {
+      logger.error('Failed to generate task title with LLM:', error);
+      // Fallback to truncated content
+      return content.length > 50 ? content.substring(0, 47) + '...' : content;
     }
   }
 

@@ -19,9 +19,17 @@ import {
   Message, 
   MessageType, 
   MessageIntent, 
-  Conversation 
+  MessageStepType,
+  Conversation,
+  ConversationType
 } from '../models/conversation.js';
 import { v4 as uuidv4 } from 'uuid';
+import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
+import { taskExecutorDao } from '../dao/taskExecutorDao.js';
+import { MCPManager } from './mcpManager.js';
+import { MCPToolAdapter } from './mcpToolAdapter.js';
+import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
+
 
 /**
  * Agent Conversation Service - Dedicated service for Agent multi-turn conversations
@@ -39,6 +47,11 @@ export class AgentConversationService {
   private mcpAuthService: MCPAuthService;
   private taskExecutorService: TaskExecutorService;
   private conversationMemories: Map<string, BufferMemory> = new Map();
+  
+  // 🔧 新增：Agent专用的任务执行组件
+  private mcpManager: MCPManager;
+  private mcpToolAdapter: MCPToolAdapter;
+  private intelligentWorkflowEngine: IntelligentWorkflowEngine;
 
   constructor(taskExecutorService: TaskExecutorService) {
     this.llm = new ChatOpenAI({
@@ -50,6 +63,11 @@ export class AgentConversationService {
       });
     this.mcpAuthService = new MCPAuthService();
     this.taskExecutorService = taskExecutorService;
+    
+    // 🔧 初始化Agent专用的任务执行组件
+    this.mcpManager = (taskExecutorService as any).mcpManager;
+    this.mcpToolAdapter = (taskExecutorService as any).mcpToolAdapter;
+    this.intelligentWorkflowEngine = (taskExecutorService as any).intelligentWorkflowEngine;
   }
 
   /**
@@ -102,8 +120,8 @@ export class AgentConversationService {
 
       logger.info(`✅ MCP authentication check PASSED for Agent [${agent.name}] by user [${userId}]`);
 
-      // Create Agent conversation
-      const conversation = await this.createAgentConversation(userId, agent);
+      // Create Agent conversation with intelligent title generation
+      const conversation = await this.createAgentConversation(userId, agent, content);
       logger.info(`✅ Agent conversation created [ConversationID: ${conversation.id}]`);
 
       // Send welcome message
@@ -463,6 +481,55 @@ export class AgentConversationService {
   }
 
   /**
+   * Generate appropriate task title using LLM
+   */
+  private async generateTaskTitle(content: string, agent: Agent): Promise<string> {
+    try {
+      const prompt = `Generate a concise, descriptive title for a task based on the user's request and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
+  'general assistance'}
+
+User Request: "${content}"
+
+Requirements:
+- Maximum 60 characters
+- Clear and descriptive
+- Reflects the main action or goal
+- Professional tone
+- No quotes or special formatting
+
+Examples:
+- "Search cryptocurrency prices"
+- "Generate GitHub repository analysis"
+- "Create social media content"
+- "Analyze market trends"
+
+Generate ONLY the title text, nothing else:`;
+
+      const response = await this.llm.invoke([new SystemMessage(prompt)]);
+      const generatedTitle = response.content.toString().trim();
+      
+      // Ensure title length and fallback if needed
+      if (generatedTitle && generatedTitle.length <= 60) {
+        return generatedTitle;
+      } else if (generatedTitle && generatedTitle.length > 60) {
+        return generatedTitle.substring(0, 57) + '...';
+      } else {
+        // Fallback to truncated content if LLM fails
+        return content.length > 50 ? content.substring(0, 47) + '...' : content;
+      }
+    } catch (error) {
+      logger.error('Failed to generate task title with LLM:', error);
+      // Fallback to truncated content
+      return content.length > 50 ? content.substring(0, 47) + '...' : content;
+    }
+  }
+
+  /**
    * Analyze user intent for Agent conversations
    */
   private async analyzeAgentUserIntent(
@@ -528,12 +595,17 @@ Respond with ONLY a JSON object:
     conversationId: string
   ): Promise<{ response: string; taskId: string }> {
     try {
+      // Generate appropriate task title using LLM
+      const taskTitle = await this.generateTaskTitle(content, agent);
+      
       // Create task based on Agent's workflow
       const taskService = getTaskService();
       const task = await taskService.createTask({
         userId,
-        title: content.length > 50 ? content.substring(0, 50) + '...' : content,
+        title: taskTitle,
         content,
+        taskType: 'agent', // 🔧 新增：标记为Agent任务
+        agentId: agent.id, // 🔧 新增：记录Agent ID
         conversationId
       });
 
@@ -550,11 +622,11 @@ Respond with ONLY a JSON object:
         await this.ensureAgentMCPsConnected(agent, userId, task.id);
       }
 
-      // Execute the task using Agent's workflow
+      // 🔧 使用新的专用Agent任务执行器
       try {
-        logger.info(`Executing Agent task [Agent: ${agent.name}, Task: ${task.id}]`);
+        logger.info(`Executing Agent task using dedicated executor [Agent: ${agent.name}, Task: ${task.id}]`);
         
-        const executionSuccess = await this.taskExecutorService.executeTaskStream(task.id, (data) => {
+        const executionSuccess = await this.executeAgentTaskDedicated(task.id, agent, (data) => {
           // Silent execution for non-streaming context
           logger.debug(`Agent task execution progress: ${JSON.stringify(data)}`);
         });
@@ -588,7 +660,7 @@ Respond with ONLY a JSON object:
       } catch (executionError) {
         logger.error(`Agent task execution failed [Task: ${task.id}]:`, executionError);
         
-        const errorResponse = `❌ Task execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}
+        const errorResponse = `❌ ${agent.name} task execution failed: ${executionError instanceof Error ? executionError.message : 'Unknown error'}
 
 **Task**: ${task.title}
 **Agent**: ${agent.name}
@@ -691,17 +763,17 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
     streamCallback: (chunk: any) => void
   ): Promise<{ assistantMessageId: string; taskId: string }> {
     try {
-      streamCallback({
-        event: 'task_creation_start',
-        data: { message: 'Creating task based on Agent workflow...' }
-      });
-
+      // Generate appropriate task title using LLM
+      const taskTitle = await this.generateTaskTitle(content, agent);
+      
       // Create task based on Agent's workflow
       const taskService = getTaskService();
       const task = await taskService.createTask({
         userId,
-        title: content.length > 50 ? content.substring(0, 50) + '...' : content,
+        title: taskTitle,
         content,
+        taskType: 'agent', // 🔧 新增：标记为Agent任务
+        agentId: agent.id, // 🔧 新增：记录Agent ID
         conversationId
       });
 
@@ -710,7 +782,8 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
         data: { 
           taskId: task.id,
           title: task.title,
-          message: `Task created: ${task.title}`
+          agentName: agent.name,
+          message: `Task created: ${task.title} (Agent: ${agent.name})`
         }
       });
 
@@ -718,7 +791,10 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
       if (agent.mcpWorkflow) {
         streamCallback({
           event: 'workflow_applying',
-          data: { message: 'Applying Agent workflow configuration...' }
+          data: { 
+            message: `Applying ${agent.name}'s workflow configuration...`,
+            agentName: agent.name
+          }
         });
 
         await taskService.updateTask(task.id, {
@@ -729,59 +805,75 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
         streamCallback({
           event: 'workflow_applied',
           data: { 
-            message: 'Agent workflow applied successfully',
-            mcpCount: agent.mcpWorkflow.mcps?.length || 0
+            message: `${agent.name}'s workflow applied successfully`,
+            agentName: agent.name
           }
         });
         
         // 🔧 关键修复：在任务执行前验证和预连接所需的MCP
         streamCallback({
           event: 'mcp_connection_start',
-          data: { message: 'Verifying and connecting required MCP services...' }
+          data: { 
+            message: `Verifying and connecting required MCP services for ${agent.name}...`,
+            agentName: agent.name
+          }
         });
         
         try {
           await this.ensureAgentMCPsConnected(agent, userId, task.id);
           streamCallback({
             event: 'mcp_connection_success',
-            data: { message: 'All required MCP services connected successfully' }
+            data: { 
+              message: `All required MCP services connected successfully for ${agent.name}`,
+              agentName: agent.name
+            }
           });
         } catch (mcpError) {
           streamCallback({
             event: 'mcp_connection_error',
             data: { 
-              message: 'Failed to connect required MCP services',
-              error: mcpError instanceof Error ? mcpError.message : 'Unknown error'
+              message: `Failed to connect required MCP services for ${agent.name}`,
+              error: mcpError instanceof Error ? mcpError.message : 'Unknown error',
+              agentName: agent.name
             }
           });
           throw mcpError;
         }
       }
 
-      // Execute the task using Agent's workflow
+      // 🔧 使用新的专用Agent任务执行器
       let executionSuccess = false;
       let executionError: Error | null = null;
 
       try {
         streamCallback({
           event: 'task_execution_start',
-          data: { message: 'Starting task execution with Agent workflow...' }
+          data: { 
+            message: `Starting task execution with ${agent.name}'s workflow...`,
+            agentName: agent.name
+          }
         });
 
-        executionSuccess = await this.taskExecutorService.executeTaskStream(task.id, (executionData) => {
-          // Forward task execution events to the client
+        executionSuccess = await this.executeAgentTaskDedicated(task.id, agent, (executionData) => {
+          // Forward Agent task execution events to the client
           streamCallback({
             event: 'task_execution_progress',
-            data: executionData
+            data: {
+              ...executionData,
+              agentName: agent.name
+            }
           });
         });
 
         streamCallback({
           event: 'task_execution_complete',
           data: { 
-            message: executionSuccess ? 'Task execution completed successfully' : 'Task execution completed with warnings',
+            message: executionSuccess ? 
+              `${agent.name} task execution completed successfully` : 
+              `${agent.name} task execution completed with warnings`,
             taskId: task.id,
-            success: executionSuccess
+            success: executionSuccess,
+            agentName: agent.name
           }
         });
       } catch (error) {
@@ -789,9 +881,10 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
         streamCallback({
           event: 'task_execution_error',
           data: { 
-            message: 'Task execution failed',
+            message: `${agent.name} task execution failed`,
             error: executionError.message,
-            taskId: task.id
+            taskId: task.id,
+            agentName: agent.name
           }
         });
       }
@@ -799,7 +892,7 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
       // Create assistant message based on execution result
       let assistantContent: string;
       if (executionError) {
-        assistantContent = `❌ Task execution failed: ${executionError.message}
+        assistantContent = `❌ ${agent.name} task execution failed: ${executionError.message}
 
 **Task**: ${task.title}
 **Agent**: ${agent.name}
@@ -810,7 +903,10 @@ I encountered an error while executing this task. Please try again or check the 
         // 🔧 新增：获取实际的执行结果并格式化
         streamCallback({
           event: 'formatting_results',
-          data: { message: 'Formatting execution results...' }
+          data: { 
+            message: `Formatting ${agent.name} execution results...`,
+            agentName: agent.name
+          }
         });
 
         try {
@@ -822,13 +918,13 @@ I encountered an error while executing this task. Please try again or check the 
             !executionSuccess // 如果executionSuccess为false，则标记为部分成功
           );
         } catch (formatError) {
-          logger.error('Failed to format task results:', formatError);
+          logger.error(`Failed to format ${agent.name} task results:`, formatError);
           
           // 降级处理
           const statusIcon = executionSuccess ? '✅' : '⚠️';
           const statusText = executionSuccess ? 'completed successfully' : 'completed with warnings';
           
-          assistantContent = `${statusIcon} Task ${statusText} using ${agent.name}'s capabilities!
+          assistantContent = `${statusIcon} ${agent.name} task ${statusText}!
 
 **Task**: ${task.title}
 **Agent**: ${agent.name}
@@ -850,7 +946,8 @@ The task has been processed, but I encountered an issue formatting the detailed 
         data: { 
           messageId: assistantMessage.id,
           content: assistantContent,
-          taskId: task.id
+          taskId: task.id,
+          agentName: agent.name
         }
       });
 
@@ -859,7 +956,7 @@ The task has been processed, but I encountered an issue formatting the detailed 
         taskId: task.id 
       };
     } catch (error) {
-      logger.error('Execute Agent task stream failed:', error);
+      logger.error(`Execute ${agent.name} task stream failed:`, error);
       throw error;
     }
   }
@@ -1112,15 +1209,132 @@ Remember the conversation context and provide coherent, helpful responses.`],
   }
 
   /**
-   * Create Agent conversation
+   * Create Agent conversation with intelligent title generation
    */
-  private async createAgentConversation(userId: string, agent: Agent): Promise<Conversation> {
-    const conversation = await conversationDao.createConversation({
-      userId,
-      title: `[AGENT:${agent.id}] Try ${agent.name}`
-    });
+  private async createAgentConversation(userId: string, agent: Agent, userContent?: string): Promise<Conversation> {
+    try {
+      let conversationTitle: string;
 
-    return conversation;
+      // 1. If user provided initial content, generate title based on it
+      if (userContent && userContent.trim()) {
+        logger.info(`Generating Agent conversation title based on user content: "${userContent}"`);
+        
+        try {
+          // Use the same title generation service as regular conversations
+          const { titleGeneratorService } = await import('./llmTasks/titleGenerator.js');
+          
+          // Generate title with Agent context
+          const titlePrompt = `Generate a concise, descriptive title for a conversation with AI Agent "${agent.name}".
+
+Agent Description: ${agent.description}
+User's First Message: "${userContent}"
+
+Requirements:
+- Maximum 50 characters
+- Clear and descriptive
+- Reflects the main topic or request
+- Professional tone
+- No quotes or special formatting
+
+Examples:
+- "Cryptocurrency Price Analysis"
+- "GitHub Repository Setup"
+- "Social Media Content Creation"
+- "Market Trend Research"
+
+Generate ONLY the title text, nothing else:`;
+
+          // Use LLM to generate context-aware title
+          const response = await this.llm.invoke([new SystemMessage(titlePrompt)]);
+          const generatedTitle = response.content.toString().trim();
+          
+          if (generatedTitle && generatedTitle.length <= 50) {
+            conversationTitle = generatedTitle;
+          } else if (generatedTitle && generatedTitle.length > 50) {
+            conversationTitle = generatedTitle.substring(0, 47) + '...';
+          } else {
+            // Fallback to truncated user content
+            conversationTitle = userContent.length > 40 ? userContent.substring(0, 37) + '...' : userContent;
+          }
+          
+          logger.info(`Generated Agent conversation title: "${conversationTitle}"`);
+        } catch (error) {
+          logger.error('Failed to generate Agent conversation title from user content:', error);
+          // Fallback to truncated user content
+          conversationTitle = userContent.length > 40 ? userContent.substring(0, 37) + '...' : userContent;
+        }
+      } else {
+        // 2. If no user content, generate title based on Agent info
+        logger.info(`Generating Agent conversation title based on Agent info: ${agent.name}`);
+        
+        try {
+          const agentTitlePrompt = `Generate a welcoming conversation title for starting a chat with AI Agent "${agent.name}".
+
+Agent Description: ${agent.description}
+Agent Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
+  'general assistance'}
+
+Requirements:
+- Maximum 50 characters
+- Welcoming and inviting tone
+- Reflects the Agent's purpose
+- Professional but friendly
+- No quotes or special formatting
+
+Examples:
+- "Chat with Crypto Analysis Agent"
+- "GitHub Assistant Conversation"
+- "Social Media Content Helper"
+- "Market Research Assistant"
+
+Generate ONLY the title text, nothing else:`;
+
+          const response = await this.llm.invoke([new SystemMessage(agentTitlePrompt)]);
+          const generatedTitle = response.content.toString().trim();
+          
+          if (generatedTitle && generatedTitle.length <= 50) {
+            conversationTitle = generatedTitle;
+          } else if (generatedTitle && generatedTitle.length > 50) {
+            conversationTitle = generatedTitle.substring(0, 47) + '...';
+          } else {
+            // Fallback to simple format
+            conversationTitle = `Chat with ${agent.name}`;
+          }
+          
+          logger.info(`Generated Agent conversation title: "${conversationTitle}"`);
+        } catch (error) {
+          logger.error('Failed to generate Agent conversation title from Agent info:', error);
+          // Fallback to simple format
+          conversationTitle = `Chat with ${agent.name}`;
+        }
+      }
+
+      // 3. Create conversation with Agent type and agentId
+      const conversation = await conversationDao.createConversation({
+        userId,
+        title: conversationTitle,
+        type: ConversationType.AGENT,
+        agentId: agent.id
+      });
+
+      logger.info(`Agent conversation created with title: "${conversationTitle}" [ConversationID: ${conversation.id}]`);
+      return conversation;
+    } catch (error) {
+      logger.error('Failed to create Agent conversation:', error);
+      
+      // Emergency fallback - create conversation with basic title
+      const fallbackTitle = `Chat with ${agent.name}`;
+      const conversation = await conversationDao.createConversation({
+        userId,
+        title: fallbackTitle,
+        type: ConversationType.AGENT,
+        agentId: agent.id
+      });
+      
+      logger.info(`Created Agent conversation with fallback title: "${fallbackTitle}"`);
+      return conversation;
+    }
   }
 
   /**
@@ -1280,15 +1494,659 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
   }
 
   /**
+   * 🔧 新增：Agent专用的任务执行方法 - 完全复制TaskExecutorService的流程
+   * @param taskId 任务ID
+   * @param agent Agent对象
+   * @param stream 流式回调
+   * @returns 执行是否成功
+   */
+  private async executeAgentTaskDedicated(
+    taskId: string, 
+    agent: Agent, 
+    stream: (data: any) => void
+  ): Promise<boolean> {
+    try {
+      logger.info(`🤖 Starting dedicated Agent task execution [Task ID: ${taskId}, Agent: ${agent.name}]`);
+      
+      // 发送执行开始信息
+      stream({ 
+        event: 'execution_start', 
+        data: { 
+          taskId, 
+          agentName: agent.name,
+          timestamp: new Date().toISOString() 
+        } 
+      });
+      
+      // 获取任务详情
+      const taskService = getTaskService();
+      const task = await taskService.getTaskById(taskId);
+      if (!task) {
+        logger.error(`❌ Task not found [ID: ${taskId}]`);
+        stream({ event: 'error', data: { message: 'Task not found' } });
+        return false;
+      }
+      
+      // 更新任务状态
+      await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
+      stream({ event: 'status_update', data: { status: 'in_progress' } });
+      
+      // 获取会话ID用于存储消息
+      const conversationId = task.conversationId;
+      if (!conversationId) {
+        logger.warn(`Task ${taskId} has no associated conversation, execution messages will not be stored`);
+      }
+      
+      // 获取Agent的工作流
+      const mcpWorkflow = agent.mcpWorkflow;
+      if (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0) {
+        logger.error(`❌ Agent task execution failed: No valid workflow [Task ID: ${taskId}, Agent: ${agent.name}]`);
+        
+        stream({ 
+          event: 'error', 
+          data: { 
+            message: 'Agent task execution failed: No valid workflow',
+            details: 'Agent workflow is not configured properly'
+          } 
+        });
+        
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          error: 'Agent task execution failed: No valid workflow configured'
+        });
+        
+        return false;
+      }
+      
+      logger.info(`📋 Agent workflow structure: ${JSON.stringify(mcpWorkflow, null, 2)}`);
+      
+      // 检查 mcpManager 是否已初始化
+      if (!this.mcpManager) {
+        logger.error(`❌ mcpManager not initialized, cannot execute Agent task [Task ID: ${taskId}]`);
+        stream({ 
+          event: 'error', 
+          data: { 
+            message: 'Agent task execution failed: MCP manager not initialized',
+            details: 'Server configuration error, please contact administrator'
+          } 
+        });
+        
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          error: 'Agent task execution failed: MCP manager not initialized'
+        });
+        
+        return false;
+      }
+      
+      // 创建执行开始的消息
+      if (conversationId) {
+        const executionStartMessage = await messageDao.createMessage({
+          conversationId,
+          content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s workflow with ${mcpWorkflow.workflow.length} steps...`,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.EXECUTION,
+            stepName: 'Agent Execution Start',
+            taskPhase: 'execution',
+            totalSteps: mcpWorkflow.workflow.length,
+            agentName: agent.name,
+            isComplete: true
+          }
+        });
+        
+        // 增量会话消息计数
+        await conversationDao.incrementMessageCount(conversationId);
+      }
+      
+      try {
+        // 🔧 使用Agent专用的LangChain工作流链
+        logger.info(`🔗 Building Agent-specific LangChain workflow chain for ${mcpWorkflow.workflow.length} steps`);
+        const workflowChain = await this.buildAgentWorkflowChain(
+          mcpWorkflow.workflow,
+          taskId,
+          conversationId,
+          agent,
+          stream
+        );
+        
+        // 执行链式调用，初始输入包含任务内容和Agent信息
+        logger.info(`▶️ Executing Agent workflow chain`);
+        const chainResult = await workflowChain.invoke({
+          taskContent: task.content,
+          taskId: taskId,
+          agentName: agent.name,
+          agentDescription: agent.description
+        });
+        
+        // 收集所有步骤的结果
+        const workflowResults: any[] = [];
+        let finalResult = null;
+        
+        // 从chainResult中提取步骤结果
+        for (let i = 1; i <= mcpWorkflow.workflow.length; i++) {
+          const stepResult = chainResult[`step${i}`];
+          if (stepResult) {
+            workflowResults.push(stepResult);
+          
+            // 最后一步的结果作为最终结果
+            if (i === mcpWorkflow.workflow.length && stepResult.success) {
+              finalResult = stepResult.result;
+            }
+          }
+        }
+        
+        // 判断整体执行是否成功
+        const overallSuccess = workflowResults.every(result => result.success);
+
+        // Agent工作流完成
+        stream({ 
+          event: 'workflow_complete', 
+          data: { 
+            success: overallSuccess,
+            message: overallSuccess ? 
+              `${agent.name} task execution completed successfully` : 
+              `${agent.name} task execution completed with errors`,
+            finalResult: finalResult,
+            agentName: agent.name
+          }
+        });
+        
+        // 更新任务状态
+        await taskExecutorDao.updateTaskResult(
+          taskId, 
+          overallSuccess ? 'completed' : 'failed',
+          {
+            summary: overallSuccess ? 
+              `${agent.name} task execution completed successfully` : 
+              `${agent.name} task execution completed with some failures`,
+            steps: workflowResults,
+            finalResult,
+            agentName: agent.name,
+            agentId: agent.id
+          }
+        );
+      
+        // 发送任务完成信息
+        stream({ 
+          event: 'task_complete', 
+          data: { 
+            taskId, 
+            success: overallSuccess,
+            agentName: agent.name
+          } 
+        });
+        
+        logger.info(`✅ Agent task execution completed [Task ID: ${taskId}, Agent: ${agent.name}, Success: ${overallSuccess}]`);
+        return overallSuccess;
+        
+      } catch (chainError) {
+        logger.error(`❌ Agent workflow execution failed:`, chainError);
+        
+        // 发送链式调用错误信息
+        stream({ 
+          event: 'error', 
+          data: { 
+            message: `${agent.name} workflow execution failed`,
+            details: chainError instanceof Error ? chainError.message : String(chainError)
+          }
+        });
+        
+        await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+          error: `${agent.name} workflow execution failed: ${chainError instanceof Error ? chainError.message : String(chainError)}`,
+          agentName: agent.name,
+          agentId: agent.id
+        });
+        
+        return false;
+      }
+      
+    } catch (error) {
+      logger.error(`Error occurred during Agent task execution [Task ID: ${taskId}, Agent: ${agent.name}]:`, error);
+      
+      await taskExecutorDao.updateTaskResult(taskId, 'failed', {
+        error: error instanceof Error ? error.message : String(error),
+        agentName: agent.name,
+        agentId: agent.id
+      });
+      
+      // 发送错误信息
+      stream({ 
+        event: 'error', 
+        data: { 
+          message: `${agent.name} task execution failed`, 
+          details: error instanceof Error ? error.message : String(error)
+        } 
+      });
+      
+      return false;
+    }
+  }
+
+  /**
+   * 🔧 新增：构建Agent专用的LangChain工作流链（简化版本）
+   * @param workflow 工作流配置
+   * @param taskId 任务ID
+   * @param conversationId 会话ID
+   * @param agent Agent对象
+   * @param stream 流式回调
+   * @returns 工作流链
+   */
+  private async buildAgentWorkflowChain(
+    workflow: Array<{ step: number; mcp: string; action: string; input?: any }>,
+    taskId: string,
+    conversationId: string | undefined,
+    agent: Agent,
+    stream: (data: any) => void
+  ): Promise<RunnableSequence> {
+    logger.info(`🔗 Building Agent-specific LangChain workflow chain for ${workflow.length} steps`);
+    
+    // 复制TaskExecutorService的工作流链构建逻辑
+    const runnables = workflow.map((step) => {
+      return RunnablePassthrough.assign({
+        [`step${step.step}`]: async (previousResults: any) => {
+          const stepNumber = step.step;
+          const mcpName = step.mcp;
+          const actionName = step.action;
+          
+          // 处理输入：优先使用上一步的结果，如果没有则使用配置的输入
+          let input = step.input;
+          
+          // 如果是第一步之后的步骤，尝试使用前一步的结果
+          if (stepNumber > 1 && previousResults[`step${stepNumber - 1}`]) {
+            const prevResult = previousResults[`step${stepNumber - 1}`];
+            // 智能提取前一步结果中的有用数据
+            input = await this.extractUsefulDataFromAgentResult(prevResult, actionName);
+          }
+          
+          // 确保输入格式正确
+          input = this.processAgentStepInput(input || {});
+          
+          logger.info(`📍 Agent LangChain Step ${stepNumber}: ${mcpName} - ${actionName}`);
+          logger.info(`📥 Agent step input: ${JSON.stringify(input, null, 2)}`);
+          
+          // 创建步骤消息（流式）
+          let stepMessageId: string | undefined;
+          if (conversationId) {
+            const stepMessage = await messageDao.createStreamingMessage({
+              conversationId,
+              content: `🤖 ${agent.name} executing step ${stepNumber}: ${actionName}...`,
+              type: MessageType.ASSISTANT,
+              intent: MessageIntent.TASK,
+              taskId,
+              metadata: {
+                stepType: MessageStepType.EXECUTION,
+                stepNumber,
+                stepName: actionName,
+                totalSteps: workflow.length,
+                taskPhase: 'execution',
+                agentName: agent.name
+              }
+            });
+            stepMessageId = stepMessage.id;
+        
+            // 增量会话消息计数
+            await conversationDao.incrementMessageCount(conversationId);
+          }
+        
+          // 发送步骤开始信息
+          stream({ 
+            event: 'step_start', 
+            data: { 
+              step: stepNumber,
+              mcpName,
+              actionName,
+              agentName: agent.name,
+              input: typeof input === 'object' ? JSON.stringify(input) : input
+            } 
+          });
+        
+          try {
+            // 标准化MCP名称
+            const actualMcpName = this.normalizeMCPName(mcpName);
+            
+            // 调用MCP工具
+            const stepResult = await this.callAgentMCPTool(actualMcpName, actionName, input, taskId);
+            
+            // 🔧 关键修复：为每个步骤都添加流式格式化响应
+            let formattedResult: string;
+            if (stepNumber === workflow.length) {
+              // 最后一步使用流式格式化，并发送final_result_chunk事件
+              formattedResult = await this.formatAgentResultWithLLMStream(
+                stepResult, 
+                actualMcpName, 
+                actionName,
+                agent,
+                (chunk: string) => {
+                  // 发送流式final_result块
+                  stream({
+                    event: 'final_result_chunk',
+                    data: { 
+                      chunk,
+                      agentName: agent.name
+                    }
+                  });
+                }
+              );
+            } else {
+              // 🔧 修复：中间步骤也使用流式格式化，发送step_result_chunk事件
+              formattedResult = await this.formatAgentResultWithLLMStream(
+                stepResult, 
+                actualMcpName, 
+                actionName,
+                agent,
+                (chunk: string) => {
+                  // 发送流式步骤结果块
+                  stream({
+                    event: 'step_result_chunk',
+                    data: { 
+                      step: stepNumber,
+                      chunk,
+                      agentName: agent.name
+                    }
+                  });
+                }
+              );
+            }
+            
+            // 完成步骤消息
+            if (stepMessageId) {
+              await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
+            }
+            
+            // 保存步骤结果（保存格式化后的结果）
+            await taskExecutorDao.saveStepResult(taskId, stepNumber, true, formattedResult);
+          
+            // 发送步骤完成信息（发送格式化后的结果）
+            stream({ 
+              event: 'step_complete', 
+              data: { 
+                step: stepNumber,
+                success: true,
+                result: formattedResult,
+                rawResult: stepResult, // 保留原始MCP结果供调试
+                agentName: agent.name
+              } 
+            });
+          
+            return {
+              step: stepNumber,
+              success: true,
+              result: formattedResult,
+              rawResult: stepResult,
+              parsedData: this.parseAgentResultData(stepResult) // 解析结构化数据供下一步使用
+            };
+          } catch (error) {
+            logger.error(`❌ Agent LangChain Step ${stepNumber} failed:`, error);
+            const errorMsg = error instanceof Error ? error.message : String(error);
+          
+            // 完成步骤消息（错误状态）
+            if (stepMessageId) {
+              await messageDao.completeStreamingMessage(stepMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
+            }
+            
+            // 保存错误结果
+            await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
+          
+            // 发送步骤错误信息
+            stream({ 
+              event: 'step_error', 
+              data: { 
+                step: stepNumber,
+                error: errorMsg,
+                agentName: agent.name
+              } 
+            });
+            
+            return {
+              step: stepNumber,
+              success: false,
+              error: errorMsg
+            };
+          }
+        }
+      });
+    });
+    
+    // 使用pipe方法创建链式调用
+    if (runnables.length === 0) {
+      throw new Error('Agent workflow must have at least one step');
+    }
+    
+    // 使用reduce创建链式调用
+    const chain = runnables.reduce((prev, current, index) => {
+      if (index === 0) {
+        return current;
+      }
+      return prev.pipe(current);
+    }, runnables[0] as any);
+    
+    return chain as RunnableSequence;
+  }
+
+  /**
+   * 🔧 新增：Agent专用的MCP工具调用方法
+   */
+  private async callAgentMCPTool(mcpName: string, toolNameOrObjective: string, input: any, taskId?: string): Promise<any> {
+    // 复制TaskExecutorService的callMCPTool逻辑，但添加Agent特定的处理
+    return await (this.taskExecutorService as any).callMCPTool(mcpName, toolNameOrObjective, input, taskId);
+  }
+
+  /**
+   * 🔧 新增：Agent专用的输入处理方法
+   */
+  private processAgentStepInput(input: any): any {
+    // 复制TaskExecutorService的processStepInput逻辑
+    return (this.taskExecutorService as any).processStepInput(input);
+  }
+
+  /**
+   * 🔧 新增：Agent专用的MCP名称标准化方法
+   */
+  private normalizeMCPName(mcpName: string): string {
+    // 复制TaskExecutorService的normalizeMCPName逻辑
+    return (this.taskExecutorService as any).normalizeMCPName(mcpName);
+  }
+
+  /**
+   * 🔧 新增：从Agent结果中提取有用数据
+   */
+  private async extractUsefulDataFromAgentResult(prevResult: any, nextAction: string): Promise<any> {
+    // 复制TaskExecutorService的extractUsefulDataFromResult逻辑
+    return await (this.taskExecutorService as any).extractUsefulDataFromResult(prevResult, nextAction);
+  }
+
+  /**
+   * 🔧 新增：Agent专用的结果格式化方法
+   */
+  private async formatAgentResultWithLLM(rawResult: any, mcpName: string, actionName: string, agent: Agent): Promise<string> {
+    try {
+      // 调用TaskExecutorService的formatResultWithLLM方法，但添加Agent信息
+      const baseResult = await (this.taskExecutorService as any).formatResultWithLLM(rawResult, mcpName, actionName);
+      
+      // 在结果前添加Agent标识
+      return `🤖 **${agent.name}** execution result\n\n${baseResult}`;
+    } catch (error) {
+      logger.error(`Failed to format Agent result:`, error);
+      return `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+    }
+  }
+
+  /**
+   * 🔧 新增：Agent专用的流式结果格式化方法
+   */
+  private async formatAgentResultWithLLMStream(
+    rawResult: any, 
+    mcpName: string, 
+    actionName: string, 
+    agent: Agent,
+    streamCallback: (chunk: string) => void
+  ): Promise<string> {
+    try {
+      // 先发送Agent标识
+      const agentPrefix = `🤖 **${agent.name}** execution result\n\n`;
+      streamCallback(agentPrefix);
+      
+      // 调用TaskExecutorService的formatResultWithLLMStream方法
+      const result = await (this.taskExecutorService as any).formatResultWithLLMStream(
+        rawResult, 
+        mcpName, 
+        actionName,
+        streamCallback
+      );
+      
+      return agentPrefix + result;
+    } catch (error) {
+      logger.error(`Failed to format Agent result with streaming:`, error);
+      const fallbackResult = `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      streamCallback(fallbackResult);
+      return fallbackResult;
+    }
+  }
+
+  /**
+   * 🔧 新增：Agent专用的结果数据解析方法
+   */
+  private parseAgentResultData(result: any): any {
+    // 复制TaskExecutorService的parseResultData逻辑
+    return (this.taskExecutorService as any).parseResultData(result);
+  }
+
+  /**
+   * 🔧 新增：生成Agent任务执行结果摘要
+   * @param originalRequest 原始任务内容
+   * @param workflowResults 工作流执行结果
+   * @param agent Agent对象
+   * @param streamCallback 流式回调
+   * @param messageId 摘要消息ID（如果需要更新）
+   */
+  private async generateAgentResultSummary(
+    originalRequest: string, 
+    workflowResults: any[], 
+    agent: Agent, 
+    streamCallback: (chunk: string) => void, 
+    messageId?: string
+  ): Promise<void> {
+    try {
+      logger.info(`🤖 Generating Agent execution summary for ${agent.name}`);
+      
+      // 计算成功和失败步骤数
+      const successSteps = workflowResults.filter(step => step.success).length;
+      const failedSteps = workflowResults.length - successSteps;
+      
+      // 准备步骤结果详情
+      const stepDetails = workflowResults.map(step => {
+        if (step.success) {
+          const resultPreview = typeof step.result === 'string' ? 
+            step.result.replace(/\n/g, ' ').substring(0, 100) : 
+            JSON.stringify(step.result).substring(0, 100);
+          return `步骤${step.step}: 成功执行 - ${resultPreview}${resultPreview.length >= 100 ? '...' : ''}`;
+        } else {
+          return `步骤${step.step}: 执行失败 - ${step.error}`;
+        }
+      }).join('\n');
+      
+      // 创建流式LLM实例
+      const streamingLlm = new ChatOpenAI({
+        modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
+        temperature: 0.7,
+        openAIApiKey: process.env.OPENAI_API_KEY,
+        streaming: true
+      });
+      
+      // 创建消息
+      const messages = [
+        new SystemMessage(`You are a professional Agent task summary specialist. Generate a comprehensive execution report for Agent "${agent.name}".
+
+Agent Information:
+- Name: ${agent.name}
+- Description: ${agent.description}
+- Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.description).join(', ') : 
+  'general assistance'}
+
+Please generate a detailed report including:
+1. Agent execution overview - total steps, successful steps, failed steps
+2. Successfully completed operations and results achieved by the Agent
+3. If any steps failed, detailed explanation of the failure reasons and impacts
+4. Overall task outcomes and value delivered by the Agent
+5. Agent-specific insights and recommendations
+
+Use friendly language and emphasize the Agent's role in delivering results.`),
+        new HumanMessage(`Agent: ${agent.name}
+Task: ${originalRequest}
+
+Execution statistics:
+- Total steps: ${workflowResults.length}
+- Successful steps: ${successSteps}
+- Failed steps: ${failedSteps}
+
+Step details:
+${stepDetails}
+
+Generate a comprehensive Agent execution report focusing on what ${agent.name} accomplished and delivered.`)
+      ];
+      
+      // 获取流
+      const stream = await streamingLlm.stream(messages);
+      
+      // 累积完整的摘要内容
+      let fullSummary = '';
+      
+      // 处理流的内容
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          const chunkText = typeof chunk.content === 'string' 
+            ? chunk.content 
+            : JSON.stringify(chunk.content);
+          
+          fullSummary += chunkText;
+          streamCallback(chunkText);
+        }
+      }
+      
+      // 完成摘要消息
+      if (messageId) {
+        await messageDao.completeStreamingMessage(messageId, `## 🤖 ${agent.name} 执行摘要
+
+${fullSummary}`);
+      }
+    } catch (error) {
+      logger.error(`Failed to generate Agent execution summary:`, error);
+      const fallbackSummary = `🤖 ${agent.name} 任务执行完成，共执行了${workflowResults.length}个步骤，成功${workflowResults.filter(s => s.success).length}个，失败${workflowResults.filter(s => !s.success).length}个。`;
+      
+      streamCallback(fallbackSummary);
+      
+      // 完成摘要消息（降级处理）
+      if (messageId) {
+        await messageDao.completeStreamingMessage(messageId, `## 🤖 ${agent.name} 执行摘要
+
+${fallbackSummary}`);
+      }
+    }
+  }
+
+  /**
    * Extract Agent ID from conversation
    */
   private async extractAgentIdFromConversation(conversationId: string): Promise<string | null> {
     const conversation = await conversationDao.getConversationById(conversationId);
     if (!conversation) return null;
 
-    // Parse Agent ID from title
-    const match = conversation.title.match(/^\[AGENT:([^\]]+)\]/);
-    return match ? match[1] : null;
+    // First try to get Agent ID from the agentId field
+    if (conversation.agentId) {
+      return conversation.agentId;
+    }
+
+    // Fallback: Extract Agent ID from title using the emoji format (for backward compatibility)
+    const emojiMatch = conversation.title.match(/🤖\[([^\]]+)\]$/);
+    if (emojiMatch) {
+      return emojiMatch[1];
+    }
+
+    // Fallback: Parse Agent ID from old title format (for backward compatibility)
+    const oldMatch = conversation.title.match(/^\[AGENT:([^\]]+)\]/);
+    return oldMatch ? oldMatch[1] : null;
   }
 
   /**
@@ -1311,19 +2169,54 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
    * Clear conversation memory
    */
   async clearConversationMemory(conversationId: string): Promise<void> {
-    if (this.conversationMemories.has(conversationId)) {
-      const memory = this.conversationMemories.get(conversationId)!;
-      await memory.clear();
-      this.conversationMemories.delete(conversationId);
+    try {
+      // Remove conversation memory from cache
+      if (this.conversationMemories.has(conversationId)) {
+        this.conversationMemories.delete(conversationId);
+        logger.info(`Cleared Agent conversation memory [ConversationID: ${conversationId}]`);
+      }
+    } catch (error) {
+      logger.error(`Failed to clear Agent conversation memory [ID: ${conversationId}]:`, error);
+      throw error;
     }
+  }
+
+  /**
+   * Clean Agent conversation title for display
+   * Removes the Agent identifier from the title for better UX
+   */
+  static cleanAgentConversationTitle(title: string): string {
+    // Remove the Agent identifier: "Title 🤖[agent-id]" -> "Title"
+    const cleanTitle = title.replace(/\s*🤖\[[^\]]+\]$/, '');
+    
+    // Also handle old format: "[AGENT:agent-id] Title" -> "Title"
+    const oldFormatClean = cleanTitle.replace(/^\[AGENT:[^\]]+\]\s*/, '');
+    
+    return oldFormatClean || title; // Return original if cleaning fails
   }
 
   /**
    * Check if conversation is Agent conversation
    */
   async isAgentConversation(conversationId: string): Promise<boolean> {
-    const agentId = await this.extractAgentIdFromConversation(conversationId);
-    return agentId !== null;
+    try {
+      const conversation = await conversationDao.getConversationById(conversationId);
+      if (!conversation) return false;
+
+      // Check if conversation type is Agent
+      if (conversation.type === ConversationType.AGENT) {
+        return true;
+      }
+
+      // Fallback: Check if title contains Agent identifier (for backward compatibility)
+      const hasAgentIdentifier = conversation.title.includes('🤖[') && conversation.title.includes(']');
+      const hasOldIdentifier = conversation.title.startsWith('[AGENT:');
+
+      return hasAgentIdentifier || hasOldIdentifier;
+    } catch (error) {
+      logger.error(`Failed to check if conversation is Agent conversation [ID: ${conversationId}]:`, error);
+      return false;
+    }
   }
 
   /**

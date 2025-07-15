@@ -37,6 +37,51 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 - **详细反馈**: 提供未认证MCP的完整信息和认证参数
 - **前端友好**: 返回结构化的认证信息供前端引导用户
 
+### Agent专用执行器流式响应修复 (v2.1.2)
+
+从v2.1.2开始，Agent专用执行器的流式响应得到了重要修复：
+
+- **全步骤流式响应**: 所有工作流步骤都支持流式结果格式化，不仅仅是最后一步
+- **新增事件类型**: 增加了 `step_result_chunk` 事件，用于中间步骤的流式结果块
+- **改进用户体验**: 用户可以实时看到每个步骤的格式化结果，而不是等待步骤完成后一次性显示
+- **一致的事件系统**: 统一的流式事件处理，所有步骤都提供相同的流式体验
+- **性能感知优化**: 减少用户等待时的焦虑，提供更好的任务执行反馈
+
+#### 修复详情
+
+**修复前问题**:
+- 只有最后一步使用流式格式化（`formatAgentResultWithLLMStream`）
+- 中间步骤使用普通格式化（`formatAgentResultWithLLM`），结果一次性返回
+- 用户无法实时看到中间步骤的进展
+
+**修复后改进**:
+- 所有步骤都使用流式格式化（`formatAgentResultWithLLMStream`）
+- 中间步骤发送 `step_result_chunk` 事件
+- 最后一步发送 `final_result_chunk` 事件
+- 提供完整的实时执行体验
+
+**新增流式事件**:
+```typescript
+// 中间步骤的流式结果块
+{
+  event: 'step_result_chunk',
+  data: {
+    step: number,
+    chunk: string,
+    agentName: string
+  }
+}
+
+// 最后一步的流式结果块
+{
+  event: 'final_result_chunk',
+  data: {
+    chunk: string,
+    agentName: string
+  }
+}
+```
+
 ### 重要说明
 
 - **路由变更**: Agent对话不再使用 `/api/conversation/` 路由
@@ -3841,6 +3886,12 @@ data: {"event":"task_execution_start","data":{"message":"Starting task execution
 
 data: {"event":"task_execution_progress","data":{"step":"calling_coingecko_api","status":"in_progress","message":"Fetching Bitcoin price from CoinGecko..."}}
 
+data: {"event":"step_result_chunk","data":{"step":1,"chunk":"Bitcoin price: $45,230.50 USD","agentName":"BitcoinPriceAnalyzer"}}
+
+data: {"event":"step_result_chunk","data":{"step":1,"chunk":" (+2.3% in 24h). Market cap: $890.2B","agentName":"BitcoinPriceAnalyzer"}}
+
+data: {"event":"final_result_chunk","data":{"chunk":"Based on the latest data, Bitcoin is showing strong bullish momentum...","agentName":"BitcoinPriceAnalyzer"}}
+
 data: {"event":"task_execution_complete","data":{"message":"Task execution completed successfully","taskId":"task_789","success":true}}
 
 data: {"event":"task_response_complete","data":{"responseId":"resp_456","taskId":"task_789","message":"Task processing completed","executionSuccess":true}}
@@ -3877,6 +3928,8 @@ data: [DONE]
 - `workflow_applied`: 工作流应用完成
 - `task_execution_start`: 任务执行开始
 - `task_execution_progress`: 任务执行进度
+- `step_result_chunk`: 步骤结果流式块（**v2.1.2新增**）
+- `final_result_chunk`: 最终结果流式块
 - `task_execution_complete`: 任务执行完成
 - `task_response_complete`: 任务响应完成
 - `agent_chat_response`: Agent聊天响应流式输出
@@ -5224,7 +5277,8 @@ CREATE INDEX idx_task_steps_task_not_deleted ON task_steps(task_id, is_deleted) 
 
 **端点**: `POST /api/agent-conversation/:conversationId/message/stream`
 
-**描述**: 向已初始化的Agent对话发送消息，支持任务和聊天意图的自动识别，流式返回处理结果。此接口会在消息处理前进行MCP权限校验，确保用户已完成所需的MCP认证。
+**描述**: 向已初始化的Agent对话发送消息，支持任务和聊天意图的自动识别，流式返回处理结果。
+此接口会在消息处理前进行MCP权限校验，确保用户已完成所需的MCP认证。
 
 **认证**: 需要访问令牌
 
@@ -5404,6 +5458,14 @@ function handleMessageEvent(event) {
       updateTaskProgress(event.data);
       break;
     
+    case 'step_result_chunk':
+      appendStepResultChunk(event.data.step, event.data.chunk, event.data.agentName);
+      break;
+    
+    case 'final_result_chunk':
+      appendFinalResultChunk(event.data.chunk, event.data.agentName);
+      break;
+    
     case 'chat_chunk':
       appendChatContent(event.data.content);
       break;
@@ -5452,3 +5514,73 @@ async function useAgent(agentId, userMessage) {
 - `404 Not Found`: Agent不存在
 - `403 Forbidden`: 无权访问私有Agent
 - `500 Internal Server Error`: 服务器内部错误
+
+---
+
+## 重要技术更新
+
+### Agent专用执行器流式响应修复 (v2.1.2)
+
+#### 背景
+在Agent专用执行器的初始实现中，存在一个影响用户体验的问题：只有工作流的最后一步支持流式响应，中间步骤的结果都是一次性返回的。这导致用户在多步骤任务执行过程中无法实时看到中间步骤的进展。
+
+#### 修复内容
+
+**核心修改**:
+```typescript
+// 修复前：中间步骤使用普通格式化
+if (stepNumber === workflow.length) {
+  // 只有最后一步使用流式格式化
+  formattedResult = await this.formatAgentResultWithLLMStream(/*...*/);
+} else {
+  // 中间步骤使用普通格式化 - 没有流式响应
+  formattedResult = await this.formatAgentResultWithLLM(/*...*/);
+}
+
+// 修复后：所有步骤都使用流式格式化
+if (stepNumber === workflow.length) {
+  // 最后一步发送 final_result_chunk 事件
+  formattedResult = await this.formatAgentResultWithLLMStream(/*...*/);
+} else {
+  // 中间步骤发送 step_result_chunk 事件
+  formattedResult = await this.formatAgentResultWithLLMStream(/*...*/);
+}
+```
+
+**新增事件类型**:
+1. `step_result_chunk`: 中间步骤的流式结果块
+2. `final_result_chunk`: 最后一步的流式结果块
+
+**修复效果**:
+- ✅ **完整的流式体验**: 所有步骤都提供实时格式化结果
+- ✅ **更好的用户反馈**: 用户可以实时看到每个步骤的进展
+- ✅ **一致的事件系统**: 统一的流式事件处理
+- ✅ **改进的性能感知**: 减少用户等待时的焦虑
+
+#### 前端集成建议
+
+```javascript
+// 处理新的流式事件
+function handleAgentStreamingEvents(event) {
+  switch (event.event) {
+    case 'step_result_chunk':
+      // 处理中间步骤的流式结果
+      updateStepProgress(event.data.step, event.data.chunk, event.data.agentName);
+      break;
+    
+    case 'final_result_chunk':
+      // 处理最终结果的流式块
+      updateFinalResult(event.data.chunk, event.data.agentName);
+      break;
+    
+    // ... 其他事件处理
+  }
+}
+```
+
+#### 兼容性
+- **向后兼容**: 现有的流式事件处理逻辑保持不变
+- **渐进增强**: 前端可以选择性地处理新的事件类型
+- **优雅降级**: 不处理新事件类型的前端仍然可以正常工作
+
+这个修复显著改善了Agent任务执行的用户体验，特别是对于包含多个步骤的复杂工作流。

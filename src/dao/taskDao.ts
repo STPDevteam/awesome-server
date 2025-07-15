@@ -10,6 +10,8 @@ export interface TaskDbRow {
   title: string;
   content: string;
   status: string;
+  task_type: string; // 新增：任务类型字段
+  agent_id?: string; // 新增：Agent ID字段
   mcp_workflow?: any;
   result?: any;
   conversation_id?: string;
@@ -46,20 +48,22 @@ export class TaskDao {
     userId: string;
     title: string;
     content: string;
+    taskType: string; // 新增：任务类型
+    agentId?: string; // 新增：Agent ID
     conversationId?: string;
   }): Promise<TaskDbRow> {
     try {
       const taskId = uuidv4();
       const result = await db.query<TaskDbRow>(
         `
-        INSERT INTO tasks (id, user_id, title, content, status, conversation_id, is_deleted)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO tasks (id, user_id, title, content, status, task_type, agent_id, conversation_id, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING *
         `,
-        [taskId, data.userId, data.title, data.content, 'created', data.conversationId || null, false]
+        [taskId, data.userId, data.title, data.content, 'created', data.taskType, data.agentId || null, data.conversationId || null, false]
       );
 
-      logger.info(`任务记录创建成功: ${taskId}`);
+      logger.info(`任务记录创建成功: ${taskId} (类型: ${data.taskType})`);
       return result.rows[0];
     } catch (error) {
       logger.error('创建任务记录失败:', error);
