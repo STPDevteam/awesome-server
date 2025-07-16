@@ -1762,7 +1762,20 @@ Return ONLY a JSON array of workflow steps, no other text:`;
       let workflow: Array<{ step: number; mcp: string; action: string; input?: any }>;
       
       try {
-        workflow = JSON.parse(workflowText);
+        // 🔧 修复：正确处理Markdown代码块包装的JSON
+        let cleanedText = workflowText;
+        
+        // 移除Markdown代码块标记
+        cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        
+        // 尝试提取JSON数组
+        const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          cleanedText = jsonMatch[0];
+        }
+        
+        workflow = JSON.parse(cleanedText);
+        logger.info(`✅ Successfully parsed LLM-generated workflow with ${workflow.length} steps`);
       } catch (parseError) {
         logger.error(`Failed to parse LLM-generated workflow:`, parseError);
         logger.error(`Raw LLM response: ${workflowText}`);
