@@ -1350,11 +1350,11 @@ class MigrationService {
             console.log(`✅ Updated ${agentTasksResult.rowCount} existing tasks to agent type`);
           }
 
-          // 根据标题中的【流程】标识来识别MCP任务
+          // 根据标题中的【MCP】标识来识别MCP任务
           const mcpTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'mcp' 
-            WHERE title LIKE '%【流程】%'
+            WHERE title LIKE '%【MCP】%'
               AND task_type = 'mcp'
           `);
           
