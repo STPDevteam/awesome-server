@@ -1469,6 +1469,31 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
   }
 
   /**
+   * 🔧 新增：清理和解析LLM返回的JSON（处理markdown代码块）
+   */
+  private parseCleanJson(content: string): any {
+    try {
+      let jsonText = content.trim();
+      
+      // 移除markdown代码块标记
+      jsonText = jsonText.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+      jsonText = jsonText.replace(/```\s*/g, '').replace(/```\s*$/g, '');
+      
+      // 查找JSON内容
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[0];
+      }
+      
+      return JSON.parse(jsonText);
+    } catch (error) {
+      logger.error(`Failed to parse JSON: ${error}`);
+      logger.error(`Original content: ${content}`);
+      throw error;
+    }
+  }
+
+  /**
    * 🔧 新增：Agent专用的任务执行方法 - 完全复制TaskExecutorService的流程
    * @param taskId 任务ID
    * @param agent Agent对象
@@ -1762,20 +1787,23 @@ Return ONLY a JSON array of workflow steps, no other text:`;
       let workflow: Array<{ step: number; mcp: string; action: string; input?: any }>;
       
       try {
-        // 🔧 修复：正确处理Markdown代码块包装的JSON
-        let cleanedText = workflowText;
+        // 🔧 修复：正确处理可能的markdown代码块格式
+        let cleanedWorkflowText = workflowText.trim();
         
-        // 移除Markdown代码块标记
-        cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        // 移除markdown代码块标记
+        cleanedWorkflowText = cleanedWorkflowText.replace(/```json\s*/g, '');
+        cleanedWorkflowText = cleanedWorkflowText.replace(/```\s*$/g, '');
+        cleanedWorkflowText = cleanedWorkflowText.trim();
         
-        // 尝试提取JSON数组
-        const jsonMatch = cleanedText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          cleanedText = jsonMatch[0];
+        // 如果没有找到JSON数组/对象，尝试提取
+        if (!cleanedWorkflowText.startsWith('[') && !cleanedWorkflowText.startsWith('{')) {
+          const jsonMatch = cleanedWorkflowText.match(/[\[\{][\s\S]*[\]\}]/);
+          if (jsonMatch) {
+            cleanedWorkflowText = jsonMatch[0];
+          }
         }
         
-        workflow = JSON.parse(cleanedText);
-        logger.info(`✅ Successfully parsed LLM-generated workflow with ${workflow.length} steps`);
+        workflow = this.parseCleanJson(workflowText);
       } catch (parseError) {
         logger.error(`Failed to parse LLM-generated workflow:`, parseError);
         logger.error(`Raw LLM response: ${workflowText}`);
