@@ -103,9 +103,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'defillama-mcp',
-        description: 'DeFiLlama DeFi protocol data and TVL analytics',
-        command: 'npx',
-        args: ['-y', 'mcp-server-defillama'],
+        description: 'DeFiLlama DeFi protocol data and TVL analytics - provides protocol TVL, chain data, token prices, and stablecoin information (LOCAL BUILD)',
+        command: 'node',
+        args: [`/home/ubuntu/mcp-tools/mcp-server-defillama/dist/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
@@ -156,8 +156,12 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'feargreed-mcp',
         description: 'Fear & Greed Index cryptocurrency market sentiment',
-        command: 'npx',
-        args: ['-y', 'crypto-feargreed-mcp'],
+        command: '/home/ubuntu/venvs/mcp-env/bin/uv',
+        args: [ 
+            "--directory", "/home/ubuntu/mcp-tools/crypto-feargreed-mcp", 
+            "run", 
+            "main.py" 
+        ],
         env: {},
         connected: false,
         category: 'Market Data',

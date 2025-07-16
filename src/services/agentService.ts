@@ -304,10 +304,10 @@ export class AgentService {
    */
   async generateAgentName(request: GenerateAgentNameRequest): Promise<string> {
     try {
-      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || 'None';
-      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
+      // 获取MCP的实际工具能力
+      const mcpCapabilities = await this.getMCPToolCapabilities(request.mcpWorkflow);
       
-      const systemPrompt = `You are a professional Agent naming expert. You need to generate a concise, professional name for an AI Agent based on task information.
+      const systemPrompt = `You are a professional Agent naming expert. You need to generate a concise, professional name for an AI Agent based on task information and available MCP tool capabilities.
 
 Naming rules:
 - Only use letters (A-Z), numbers (0-9), and underscores (_)
@@ -315,18 +315,32 @@ Naming rules:
 - Name should be concise and clear, reflecting the Agent's functionality
 - Avoid overly generic names
 - Use English only
+- Focus on what the Agent can actually do with its available tools
 
 Task information:
 - Task title: ${request.taskTitle}
 - Task content: ${request.taskContent}
-- MCP tools used: ${mcpNames}
-- Workflow actions: ${workflowActions}
+
+Available MCP Tools and Capabilities:
+${mcpCapabilities.map(cap => `
+MCP: ${cap.mcpName}
+Description: ${cap.description}
+Available Tools:
+${cap.tools.map(tool => `  - ${tool.name}: ${tool.description}`).join('\n')}
+`).join('\n')}
+
+Based on these specific tool capabilities, generate a name that reflects what this Agent can actually accomplish.
+For example:
+- If it has GitHub tools: "GitHub_Repository_Analyzer" or "Code_Review_Assistant"
+- If it has crypto tools: "Crypto_Price_Monitor" or "Market_Data_Agent"
+- If it has social media tools: "Social_Media_Manager" or "Tweet_Generator"
+- If it has web automation tools: "Web_Automation_Agent" or "Data_Extraction_Bot"
 
 Please generate a suitable name for this Agent. Return only the name itself, no other explanation.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('Please generate an Agent name')
+        new HumanMessage('Please generate an Agent name based on the available MCP tools')
       ]);
 
       let generatedName = response.content.toString().trim();
@@ -339,9 +353,9 @@ Please generate a suitable name for this Agent. Return only the name itself, no 
         generatedName = generatedName.substring(0, 50);
       }
 
-      // If name is empty or only underscores, provide default name
+      // If name is empty or only underscores, provide default name based on capabilities
       if (!generatedName || generatedName.replace(/_/g, '').length === 0) {
-        generatedName = 'Custom_Agent_' + Date.now();
+        generatedName = this.generateDefaultAgentName(mcpCapabilities);
       }
 
       logger.info(`Auto-generated Agent name: ${generatedName}`);
@@ -358,10 +372,10 @@ Please generate a suitable name for this Agent. Return only the name itself, no 
    */
   async generateAgentDescription(request: GenerateAgentDescriptionRequest): Promise<string> {
     try {
-      const mcpNames = request.mcpWorkflow?.mcps?.map(mcp => mcp.name).join(', ') || 'None';
-      const workflowActions = request.mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
+      // 获取MCP的实际工具能力
+      const mcpCapabilities = await this.getMCPToolCapabilities(request.mcpWorkflow);
       
-      const systemPrompt = `You are a professional Agent description generation expert. You need to generate an attractive description for an AI Agent based on task information.
+      const systemPrompt = `You are a professional Agent description generation expert. You need to generate an attractive description for an AI Agent based on task information and available MCP tool capabilities.
 
 Description rules:
 - Maximum 280 characters
@@ -369,19 +383,35 @@ Description rules:
 - Use English, language should be professional and easy to understand
 - Avoid overly technical terms
 - Focus on what problems the Agent can solve or what services it provides
+- Emphasize the specific capabilities the Agent has through its available tools
 
 Agent information:
 - Agent name: ${request.name}
 - Original task title: ${request.taskTitle}
 - Original task content: ${request.taskContent}
-- MCP tools used: ${mcpNames}
-- Workflow actions: ${workflowActions}
+
+Available MCP Tools and Capabilities:
+${mcpCapabilities.map(cap => `
+MCP: ${cap.mcpName}
+Description: ${cap.description}
+Available Tools:
+${cap.tools.map(tool => `  - ${tool.name}: ${tool.description}`).join('\n')}
+`).join('\n')}
+
+Based on these specific tool capabilities, generate a description that clearly explains what this Agent can do for users.
+Focus on the value proposition and practical use cases enabled by the available tools.
+
+For example:
+- For GitHub tools: "Analyze repositories, track commits, manage issues, and automate code review workflows"
+- For crypto tools: "Monitor cryptocurrency prices, track market trends, and provide real-time trading insights"
+- For social media tools: "Create engaging tweets, manage social presence, and analyze social media trends"
+- For web automation tools: "Extract web data, automate repetitive tasks, and perform intelligent web searches"
 
 Please generate a suitable description for this Agent. Return only the description itself, no other explanation.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('Please generate an Agent description')
+        new HumanMessage('Please generate an Agent description based on the available MCP tools')
       ]);
 
       let generatedDescription = response.content.toString().trim();
@@ -391,9 +421,9 @@ Please generate a suitable description for this Agent. Return only the descripti
         generatedDescription = generatedDescription.substring(0, 280);
       }
 
-      // If description is empty, provide default description
+      // If description is empty, provide default description based on capabilities
       if (!generatedDescription) {
-        generatedDescription = 'This is an intelligent Agent that can help you complete various tasks.';
+        generatedDescription = this.generateDefaultAgentDescription(request.name, mcpCapabilities);
       }
 
       logger.info(`Auto-generated Agent description: ${generatedDescription}`);
@@ -410,8 +440,8 @@ Please generate a suitable description for this Agent. Return only the descripti
    */
   async generateRelatedQuestions(taskTitle: string, taskContent: string, mcpWorkflow?: Agent['mcpWorkflow']): Promise<string[]> {
     try {
-      const mcpNames = mcpWorkflow?.mcps?.map(mcp => `${mcp.name} (${mcp.description})`).join(', ') || 'None';
-      const workflowActions = mcpWorkflow?.workflow?.map(step => step.action).join(', ') || 'None';
+      // 获取MCP的实际工具能力
+      const mcpCapabilities = await this.getMCPToolCapabilities(mcpWorkflow);
       
       const systemPrompt = `You are a professional product manager skilled at designing user guidance questions to help users understand product functionality.
 
@@ -432,15 +462,23 @@ Question requirements:
 Agent information:
 - Task title: ${taskTitle}
 - Task content: ${taskContent}
-- MCP tools used: ${mcpNames}
-- Workflow actions: ${workflowActions}
 
-Generate 3 task-oriented requests that users can directly execute with this Agent.
+Available MCP Tools and Capabilities:
+${mcpCapabilities.map(cap => `
+MCP: ${cap.mcpName}
+Description: ${cap.description}
+Available Tools:
+${cap.tools.map(tool => `  - ${tool.name}: ${tool.description}`).join('\n')}
+`).join('\n')}
+
+Based on these specific tool capabilities, generate 3 task-oriented requests that users can directly execute with this Agent.
+Focus on what the Agent can actually do with its available tools.
+
 Please generate 3 questions, one per line, without numbering or other formatting, return the question text directly.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(systemPrompt),
-        new HumanMessage('Please generate 3 related task requests')
+        new HumanMessage('Please generate 3 related task requests based on the available MCP tools')
       ]);
 
       const questionsText = response.content.toString().trim();
@@ -452,13 +490,9 @@ Please generate 3 questions, one per line, without numbering or other formatting
         .filter(q => q.length > 0 && q.length <= 100)
         .slice(0, 3); // Ensure only 3 questions
 
-      // If not enough questions generated, add default task-oriented questions
+      // If not enough questions generated, add default task-oriented questions based on MCP capabilities
       while (questions.length < 3) {
-        const defaultQuestions = [
-          `Help me with ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 30)}`,
-          `Show me how to use this Agent's capabilities`,
-          `Execute a task similar to ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 25)}`
-        ];
+        const defaultQuestions = this.generateDefaultQuestionsFromCapabilities(taskTitle, mcpCapabilities);
         
         for (const defaultQ of defaultQuestions) {
           if (questions.length < 3 && !questions.includes(defaultQ)) {
@@ -478,6 +512,178 @@ Please generate 3 questions, one per line, without numbering or other formatting
         `Show me what this Agent can do`
       ];
     }
+  }
+
+  /**
+   * 获取MCP工具的实际能力
+   */
+  private async getMCPToolCapabilities(mcpWorkflow?: Agent['mcpWorkflow']): Promise<Array<{
+    mcpName: string;
+    description: string;
+    tools: Array<{
+      name: string;
+      description: string;
+      parameters?: any;
+    }>;
+  }>> {
+    const capabilities: Array<{
+      mcpName: string;
+      description: string;
+      tools: Array<{
+        name: string;
+        description: string;
+        parameters?: any;
+      }>;
+    }> = [];
+
+    if (!mcpWorkflow?.mcps || mcpWorkflow.mcps.length === 0) {
+      logger.info('No MCP workflow provided, returning empty capabilities');
+      return capabilities;
+    }
+
+    // 动态导入MCPManager以避免循环依赖
+    try {
+      const { MCPManager } = await import('./mcpManager.js');
+      const mcpManager = new MCPManager();
+
+      for (const mcp of mcpWorkflow.mcps) {
+        try {
+          logger.info(`Getting tools for MCP: ${mcp.name}`);
+          
+          // 检查MCP是否已连接
+          const connectedMCPs = mcpManager.getConnectedMCPs();
+          const isConnected = connectedMCPs.some(connectedMcp => connectedMcp.name === mcp.name);
+          
+          if (!isConnected) {
+            logger.warn(`MCP ${mcp.name} is not connected, using basic info from workflow`);
+            // 如果MCP未连接，使用工作流中的基本信息
+            capabilities.push({
+              mcpName: mcp.name,
+              description: mcp.description || `MCP Service: ${mcp.name}`,
+              tools: [
+                {
+                  name: 'general_capability',
+                  description: mcp.description || `General capabilities of ${mcp.name}`
+                }
+              ]
+            });
+            continue;
+          }
+
+          // 获取MCP的实际工具列表
+          const mcpTools = await mcpManager.getTools(mcp.name);
+          logger.info(`Found ${mcpTools.length} tools for MCP ${mcp.name}`);
+
+          const toolsInfo = mcpTools.map(tool => ({
+            name: tool.name,
+            description: tool.description || `Tool: ${tool.name}`,
+            parameters: tool.inputSchema
+          }));
+
+          capabilities.push({
+            mcpName: mcp.name,
+            description: mcp.description || `MCP Service: ${mcp.name}`,
+            tools: toolsInfo
+          });
+
+          logger.info(`Successfully gathered capabilities for MCP ${mcp.name}: ${toolsInfo.map(t => t.name).join(', ')}`);
+
+        } catch (error) {
+          logger.error(`Failed to get tools for MCP ${mcp.name}:`, error);
+          // 回退到使用工作流中的基本信息
+          capabilities.push({
+            mcpName: mcp.name,
+            description: mcp.description || `MCP Service: ${mcp.name}`,
+            tools: [
+              {
+                name: 'general_capability',
+                description: mcp.description || `General capabilities of ${mcp.name}`
+              }
+            ]
+          });
+        }
+      }
+    } catch (importError) {
+      logger.error('Failed to import MCPManager:', importError);
+      // 回退到使用工作流中的基本信息
+      for (const mcp of mcpWorkflow.mcps) {
+        capabilities.push({
+          mcpName: mcp.name,
+          description: mcp.description || `MCP Service: ${mcp.name}`,
+          tools: [
+            {
+              name: 'general_capability',
+              description: mcp.description || `General capabilities of ${mcp.name}`
+            }
+          ]
+        });
+      }
+    }
+
+    logger.info(`Total MCP capabilities gathered: ${capabilities.length}`);
+    return capabilities;
+  }
+
+  /**
+   * 基于MCP能力生成默认问题
+   */
+  private generateDefaultQuestionsFromCapabilities(
+    taskTitle: string, 
+    capabilities: Array<{
+      mcpName: string;
+      description: string;
+      tools: Array<{ name: string; description: string; }>;
+    }>
+  ): string[] {
+    const defaultQuestions: string[] = [];
+
+    // 基于具体的MCP能力生成问题
+    for (const cap of capabilities) {
+      const mcpName = cap.mcpName.toLowerCase();
+      
+      if (mcpName.includes('github')) {
+        defaultQuestions.push('Analyze this GitHub repository for me');
+        defaultQuestions.push('Show me recent commits and issues');
+      } else if (mcpName.includes('coingecko') || mcpName.includes('coinmarketcap')) {
+        defaultQuestions.push('Get current cryptocurrency prices');
+        defaultQuestions.push('Show me market trends for Bitcoin');
+      } else if (mcpName.includes('x-mcp') || mcpName.includes('twitter')) {
+        defaultQuestions.push('Create a tweet about this topic');
+        defaultQuestions.push('Get recent tweets from my timeline');
+      } else if (mcpName.includes('playwright') || mcpName.includes('web')) {
+        defaultQuestions.push('Search and extract web information');
+        defaultQuestions.push('Automate this web task for me');
+      } else if (mcpName.includes('notion')) {
+        defaultQuestions.push('Create a new Notion page');
+        defaultQuestions.push('Search my Notion workspace');
+      } else if (mcpName.includes('google')) {
+        defaultQuestions.push('Search for information on this topic');
+        defaultQuestions.push('Find relevant articles and resources');
+      } else {
+        // 通用的基于工具功能的问题
+        if (cap.tools.length > 0) {
+          const firstTool = cap.tools[0];
+          if (firstTool.description.includes('search') || firstTool.description.includes('get')) {
+            defaultQuestions.push(`Search for information using ${cap.mcpName}`);
+          } else if (firstTool.description.includes('create') || firstTool.description.includes('post')) {
+            defaultQuestions.push(`Create content using ${cap.mcpName}`);
+          } else {
+            defaultQuestions.push(`Use ${cap.mcpName} capabilities`);
+          }
+        }
+      }
+    }
+
+    // 如果没有生成任何问题，使用通用问题
+    if (defaultQuestions.length === 0) {
+      defaultQuestions.push(
+        `Help me with ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 30)}`,
+        `Show me how to use this Agent's capabilities`,
+        `Execute a task similar to ${taskTitle.replace(/[^\w\s]/g, '').substring(0, 25)}`
+      );
+    }
+
+    return defaultQuestions;
   }
 
   /**
@@ -1032,12 +1238,17 @@ Respond with ONLY a JSON object:
    */
   private async executeAgentTask(content: string, agent: Agent, userId: string, conversationId: string): Promise<string> {
     try {
+      // 生成合适的任务标题
+      const taskTitle = await this.generateTaskTitle(content, agent);
+      
       // 创建任务
       const taskService = getTaskService();
       const task = await taskService.createTask({
         userId,
-        title: content.length > 30 ? content.substring(0, 30) + '...' : content,
+        title: taskTitle,
         content: content,
+        taskType: 'agent', // 🔧 新增：标记为Agent任务
+        agentId: agent.id, // 🔧 新增：记录Agent ID
         conversationId
       });
 
@@ -1101,6 +1312,58 @@ I encountered an error while executing this task. Please try again or check the 
     } catch (error) {
       logger.error('Execute agent task failed:', error);
       return 'Sorry, I encountered an error while trying to execute that task. Please try again or rephrase your request.';
+    }
+  }
+
+  /**
+   * 生成合适的任务标题
+   */
+  private async generateTaskTitle(content: string, agent: Agent): Promise<string> {
+    try {
+      const prompt = `Generate a concise, descriptive title for a task based on the user's request and the agent's capabilities.
+
+Agent: ${agent.name}
+Description: ${agent.description}
+Capabilities: ${agent.mcpWorkflow ? 
+  agent.mcpWorkflow.mcps?.map((m: any) => m.name).join(', ') : 
+  'general assistance'}
+
+User Request: "${content}"
+
+Requirements:
+- Maximum 60 characters
+- Clear and descriptive
+- Reflects the main action or goal
+- Professional tone
+- No quotes or special formatting
+
+Examples:
+- "Search cryptocurrency prices"
+- "Generate GitHub repository analysis"
+- "Create social media content"
+- "Analyze market trends"
+
+Generate ONLY the title text, nothing else:`;
+
+      const response = await this.llm.invoke([
+        new SystemMessage(prompt)
+      ]);
+      
+      const generatedTitle = response.content.toString().trim();
+      
+      // Ensure title length and fallback if needed
+      if (generatedTitle && generatedTitle.length <= 60) {
+        return generatedTitle;
+      } else if (generatedTitle && generatedTitle.length > 60) {
+        return generatedTitle.substring(0, 57) + '...';
+      } else {
+        // Fallback to truncated content if LLM fails
+        return content.length > 50 ? content.substring(0, 47) + '...' : content;
+      }
+    } catch (error) {
+      logger.error('Failed to generate task title with LLM:', error);
+      // Fallback to truncated content
+      return content.length > 50 ? content.substring(0, 47) + '...' : content;
     }
   }
 
@@ -1260,6 +1523,91 @@ How can I assist you today?`;
       logger.error(`Failed to generate welcome message for agent ${agentId}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * 基于MCP能力生成默认Agent名称
+   */
+  private generateDefaultAgentName(capabilities: Array<{
+    mcpName: string;
+    description: string;
+    tools: Array<{ name: string; description: string; }>;
+  }>): string {
+    if (capabilities.length === 0) {
+      return 'Custom_Agent_' + Date.now();
+    }
+
+    // 基于主要MCP能力生成名称
+    const primaryMcp = capabilities[0];
+    const mcpName = primaryMcp.mcpName.toLowerCase();
+    
+    if (mcpName.includes('github')) {
+      return 'GitHub_Assistant';
+    } else if (mcpName.includes('coingecko') || mcpName.includes('coinmarketcap')) {
+      return 'Crypto_Monitor';
+    } else if (mcpName.includes('x-mcp') || mcpName.includes('twitter')) {
+      return 'Social_Media_Agent';
+    } else if (mcpName.includes('playwright') || mcpName.includes('web')) {
+      return 'Web_Automation_Bot';
+    } else if (mcpName.includes('notion')) {
+      return 'Notion_Helper';
+    } else if (mcpName.includes('google')) {
+      return 'Search_Assistant';
+    } else {
+      // 基于工具功能生成名称
+      const firstTool = primaryMcp.tools[0];
+      if (firstTool && firstTool.description.includes('search')) {
+        return 'Search_Agent';
+      } else if (firstTool && firstTool.description.includes('create')) {
+        return 'Content_Creator';
+      } else {
+        return `${primaryMcp.mcpName.replace(/[^A-Za-z0-9]/g, '_')}_Agent`;
+      }
+    }
+  }
+
+  /**
+   * 基于MCP能力生成默认Agent描述
+   */
+  private generateDefaultAgentDescription(name: string, capabilities: Array<{
+    mcpName: string;
+    description: string;
+    tools: Array<{ name: string; description: string; }>;
+  }>): string {
+    if (capabilities.length === 0) {
+      return 'This is an intelligent Agent that can help you complete various tasks.';
+    }
+
+    const capabilityDescriptions: string[] = [];
+    
+    capabilities.forEach(cap => {
+      const mcpName = cap.mcpName.toLowerCase();
+      
+      if (mcpName.includes('github')) {
+        capabilityDescriptions.push('analyze GitHub repositories and manage code workflows');
+      } else if (mcpName.includes('coingecko') || mcpName.includes('coinmarketcap')) {
+        capabilityDescriptions.push('monitor cryptocurrency prices and market trends');
+      } else if (mcpName.includes('x-mcp') || mcpName.includes('twitter')) {
+        capabilityDescriptions.push('manage social media content and interactions');
+      } else if (mcpName.includes('playwright') || mcpName.includes('web')) {
+        capabilityDescriptions.push('automate web tasks and extract data');
+      } else if (mcpName.includes('notion')) {
+        capabilityDescriptions.push('manage Notion workspaces and content');
+      } else if (mcpName.includes('google')) {
+        capabilityDescriptions.push('search for information and resources');
+      } else {
+        // 基于工具功能生成描述
+        if (cap.tools.length > 0) {
+          const toolNames = cap.tools.map(t => t.name).join(', ');
+          capabilityDescriptions.push(`use ${cap.mcpName} tools (${toolNames})`);
+        }
+      }
+    });
+
+    const description = `${name} can ${capabilityDescriptions.join(', ')}. This Agent leverages specialized tools to help you accomplish tasks efficiently.`;
+    
+    // 确保不超过280字符
+    return description.length > 280 ? description.substring(0, 277) + '...' : description;
   }
 }
 

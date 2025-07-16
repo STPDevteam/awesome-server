@@ -157,6 +157,48 @@ export class TaskExecutorService {
 
   
   /**
+   * 🔧 新增：根据schema自动创建参数
+   */
+  private createParamsFromSchema(userInput: string, schema: any): any {
+    const params: any = {};
+    
+    if (schema.properties) {
+      for (const [key, value] of Object.entries(schema.properties)) {
+        const fieldSchema = value as any;
+        
+        // 对于字符串类型参数，尝试从用户输入中提取
+        if (fieldSchema.type === 'string') {
+          if (key.toLowerCase().includes('protocol') || key.toLowerCase().includes('name')) {
+            // 尝试从用户输入中提取协议名称
+            const protocolMatch = userInput.match(/\b([A-Za-z][A-Za-z0-9\s]*)\s+protocol/i);
+            if (protocolMatch) {
+              params[key] = protocolMatch[1].trim();
+            } else {
+              // 从用户输入中提取第一个大写开头的单词作为协议名
+              const nameMatch = userInput.match(/\b([A-Z][a-z]+)/);
+              if (nameMatch) {
+                params[key] = nameMatch[1];
+              } else {
+                params[key] = userInput.split(' ')[0]; // 使用第一个单词作为降级
+              }
+            }
+          } else {
+            params[key] = userInput; // 默认使用整个用户输入
+          }
+        } else if (fieldSchema.type === 'number' || fieldSchema.type === 'integer') {
+          params[key] = 1; // 默认数值
+        } else if (fieldSchema.type === 'boolean') {
+          params[key] = true; // 默认布尔值
+        } else {
+          params[key] = userInput; // 默认使用用户输入
+        }
+      }
+    }
+    
+    return params;
+  }
+
+  /**
    * 通过LangChain调用MCP工具
    */
   private async callMCPToolWithLangChain(mcpName: string, toolName: string, input: any, taskId?: string): Promise<any> {
@@ -232,7 +274,21 @@ For cryptocurrency tools:
           ]);
 
           try {
-            const convertedInput = JSON.parse(conversionResponse.content.toString().trim());
+            // 🔧 改进JSON解析，先清理LLM响应中的额外内容
+            let responseText = conversionResponse.content.toString().trim();
+            
+            // 移除Markdown代码块标记
+            responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+            
+            // 尝试提取JSON对象
+            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              responseText = jsonMatch[0];
+            }
+            
+            console.log(`🧹 Cleaned LLM response: ${responseText}`);
+            
+            const convertedInput = JSON.parse(responseText);
             console.log(`🔄 Converted input: ${JSON.stringify(convertedInput, null, 2)}`);
             logger.info(`🔄 Attempting tool call with converted input: ${JSON.stringify(convertedInput)}`);
             
@@ -240,7 +296,23 @@ For cryptocurrency tools:
             console.log(`✅ Tool call succeeded with converted input`);
           } catch (conversionError) {
             logger.error(`❌ Parameter conversion failed: ${conversionError}`);
-            throw schemaError; // 抛出原始错误
+            logger.error(`❌ Raw LLM response: ${conversionResponse.content.toString()}`);
+            
+            // 🔧 添加更智能的降级处理
+            if (input && typeof input === 'string' && targetTool.inputSchema) {
+              try {
+                // 尝试根据 schema 自动创建参数
+                const autoParams = this.createParamsFromSchema(input, targetTool.inputSchema);
+                console.log(`🚨 Attempting auto-generated params: ${JSON.stringify(autoParams, null, 2)}`);
+                result = await langchainTool.invoke(autoParams);
+                console.log(`✅ Tool call succeeded with auto-generated params`);
+              } catch (autoError) {
+                logger.error(`❌ Auto-generated params also failed: ${autoError}`);
+                throw schemaError; // 抛出原始错误
+              }
+            } else {
+              throw schemaError; // 抛出原始错误
+            }
           }
         } else {
           throw schemaError;
@@ -1095,8 +1167,26 @@ Based on the above task execution information, please generate a complete execut
             // 调用MCP工具
             const stepResult = await this.callMCPTool(actualMcpName, actionName, input, taskId);
             
-            // 直接使用LLM格式化原始结果 - 不做任何中间处理，让LLM智能处理所有格式
-            const formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
+            // 如果是最后一步，使用流式格式化并发送final_result_chunk事件
+            let formattedResult: string;
+            if (stepNumber === workflow.length) {
+              // 最后一步使用流式格式化
+              formattedResult = await this.formatResultWithLLMStream(
+                stepResult, 
+                actualMcpName, 
+                actionName,
+                (chunk: string) => {
+                  // 发送流式final_result块
+                  stream({
+                    event: 'final_result_chunk',
+                    data: { chunk }
+                  });
+                }
+              );
+            } else {
+              // 其他步骤使用普通格式化
+              formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
+            }
             
             // 完成步骤消息
             if (stepMessageId) {
@@ -1623,10 +1713,10 @@ Transform the data now:`;
         }
       
         // 🔧 优化：只在workflow_complete事件中返回finalResult，避免重复
-        // 工作流完成
-        stream({ 
-          event: 'workflow_complete', 
-          data: { 
+      // 工作流完成
+      stream({ 
+        event: 'workflow_complete', 
+        data: { 
             success: overallSuccess,
             message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors',
             finalResult: finalResult // 🔧 在这里统一返回finalResult
@@ -1639,12 +1729,12 @@ Transform the data now:`;
           overallSuccess ? 'completed' : 'failed',
           {
             summary: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with some failures',
-            steps: workflowResults,
-            finalResult
+        steps: workflowResults,
+        finalResult
           }
         );
       
-        // 发送任务完成信息
+      // 发送任务完成信息
         stream({ 
           event: 'task_complete', 
           data: { 
@@ -1769,5 +1859,115 @@ Transform the data now:`;
     };
     
     return mcpNameMapping[mcpName] || mcpName;
+  }
+
+  /**
+   * 使用LLM流式格式化结果
+   * @param rawResult 原始结果
+   * @param mcpName MCP名称
+   * @param actionName 操作名称
+   * @param streamCallback 流式回调函数
+   */
+  private async formatResultWithLLMStream(
+    rawResult: any, 
+    mcpName: string, 
+    actionName: string,
+    streamCallback: (chunk: string) => void
+  ): Promise<string> {
+    try {
+      logger.info(`🤖 Using LLM to format result for ${mcpName}/${actionName} (streaming)`);
+      
+      // 提取实际内容
+      let actualContent = rawResult;
+      if (rawResult && typeof rawResult === 'object' && rawResult.content) {
+        if (Array.isArray(rawResult.content) && rawResult.content.length > 0) {
+          actualContent = rawResult.content[0].text || rawResult.content[0];
+        } else if (rawResult.content.text) {
+          actualContent = rawResult.content.text;
+        } else {
+          actualContent = rawResult.content;
+        }
+      }
+      
+      // 检查内容长度，避免超出限制
+      const contentStr = typeof actualContent === 'string' ? actualContent : JSON.stringify(actualContent, null, 2);
+      const MAX_CONTENT_LENGTH = 50000; // 50k字符限制
+      
+      let processedContent = contentStr;
+      if (contentStr.length > MAX_CONTENT_LENGTH) {
+        processedContent = contentStr.substring(0, MAX_CONTENT_LENGTH) + '\n... (content truncated due to length)';
+        logger.warn(`Content truncated from ${contentStr.length} to ${MAX_CONTENT_LENGTH} characters`);
+      }
+      
+      // 构建格式化提示词
+      const formatPrompt = `You are a professional data presentation specialist. Your task is to extract useful information from raw API/tool responses and present it in a clean, readable Markdown format.
+
+MCP Tool: ${mcpName}
+Action: ${actionName}
+Raw Result:
+${processedContent}
+
+FORMATTING RULES:
+1. **Smart Data Recognition**: Analyze the raw result to identify if it contains:
+   - Valid data (JSON arrays, objects, structured information)
+   - Error messages or failures
+   - Mixed results (some data with warnings/errors)
+
+2. **Format Based on Content Type**:
+   - **Valid Data**: Extract and present the meaningful information
+   - **Error Results**: Explain what went wrong in user-friendly terms
+   - **Mixed Results**: Present available data and note any issues
+
+3. **Presentation Guidelines**:
+   - Use proper Markdown formatting (headers, lists, tables, etc.)
+   - Highlight important numbers, dates, and key information
+   - Remove technical details, error codes, and unnecessary metadata
+   - If the result contains financial data, format numbers properly (e.g., $1,234.56)
+   - Include relevant links, images, or references if available
+   - Structure the information logically with clear sections
+
+4. **Quality Standards**:
+   - Be concise but comprehensive
+   - Focus on user-actionable information
+   - Maintain professional tone
+   - Ensure the output is immediately useful to the end user
+
+IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary. Handle ALL types of responses intelligently, including errors, arrays, objects, and mixed results.`;
+
+      // 创建流式LLM实例
+      const streamingLLM = new ChatOpenAI({
+        modelName: 'gpt-4o',
+        temperature: 0.3,
+        maxTokens: 16384,
+        streaming: true,
+        apiKey: process.env.OPENAI_API_KEY
+      });
+
+      let fullResult = '';
+      
+      // 使用流式调用
+      const stream = await streamingLLM.stream([
+        new SystemMessage(formatPrompt)
+      ]);
+
+      for await (const chunk of stream) {
+        const content = chunk.content.toString();
+        if (content) {
+          fullResult += content;
+          streamCallback(content);
+        }
+      }
+      
+      logger.info(`✅ Result formatted successfully with streaming`);
+      return fullResult.trim();
+      
+    } catch (error) {
+      logger.error(`Failed to format result with LLM (streaming):`, error);
+      
+      // 降级处理：返回基本格式化的结果
+      const fallbackResult = `### ${actionName} 结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      streamCallback(fallbackResult);
+      return fallbackResult;
+    }
   }
 } 

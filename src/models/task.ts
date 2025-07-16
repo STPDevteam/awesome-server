@@ -1,6 +1,9 @@
 // 任务状态类型
 export type TaskStatus = 'created' | 'in_progress' | 'completed' | 'failed';
 
+// 任务类型枚举
+export type TaskType = 'mcp' | 'agent';
+
 // 备选MCP信息类型（与主MCP格式完全一致）
 export interface AlternativeMCP {
   name: string;
@@ -43,9 +46,11 @@ export interface Task {
   title: string;
   content: string;
   status: TaskStatus;
+  taskType: TaskType; // 新增：任务类型字段，区分MCP任务和Agent任务
   mcpWorkflow?: MCPWorkflow;
   result?: any;
   conversationId?: string;  // 任务创建来源的对话ID，一个任务只能来自一个对话
+  agentId?: string; // 新增：如果是Agent任务，记录Agent ID
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;

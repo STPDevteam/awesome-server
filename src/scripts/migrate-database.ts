@@ -1244,6 +1244,193 @@ class MigrationService {
 
         console.log('✅ Rollback completed for Agent avatar style update');
       }
+    },
+    {
+      version: 25,
+      name: 'add_conversation_type_and_agent_support',
+      up: async () => {
+        console.log('🔄 Adding conversation type and Agent support fields...');
+        
+        // 1. 为 conversations 表添加 type 字段
+        try {
+          await db.query(`
+            ALTER TABLE conversations 
+            ADD COLUMN IF NOT EXISTS type VARCHAR(50) DEFAULT 'normal'
+          `);
+          console.log('✅ Added type column to conversations table');
+        } catch (error) {
+          console.log('ℹ️  Conversations type column may already exist:', error);
+        }
+
+        // 2. 为 conversations 表添加 agent_id 字段
+        try {
+          await db.query(`
+            ALTER TABLE conversations 
+            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255)
+          `);
+          console.log('✅ Added agent_id column to conversations table');
+        } catch (error) {
+          console.log('ℹ️  Conversations agent_id column may already exist:', error);
+        }
+
+        // 3. 为 tasks 表添加 task_type 字段
+        try {
+          await db.query(`
+            ALTER TABLE tasks 
+            ADD COLUMN IF NOT EXISTS task_type VARCHAR(50) DEFAULT 'mcp'
+          `);
+          console.log('✅ Added task_type column to tasks table');
+        } catch (error) {
+          console.log('ℹ️  Tasks task_type column may already exist:', error);
+        }
+
+        // 4. 为 tasks 表添加 agent_id 字段
+        try {
+          await db.query(`
+            ALTER TABLE tasks 
+            ADD COLUMN IF NOT EXISTS agent_id VARCHAR(255)
+          `);
+          console.log('✅ Added agent_id column to tasks table');
+        } catch (error) {
+          console.log('ℹ️  Tasks agent_id column may already exist:', error);
+        }
+
+        // 5. 创建索引以提高查询性能 - 分别执行每个索引创建
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_conversations_type ON conversations(type)`);
+          console.log('✅ Created idx_conversations_type index');
+        } catch (error) {
+          console.log('ℹ️  idx_conversations_type index may already exist:', error);
+        }
+
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_conversations_agent_id ON conversations(agent_id)`);
+          console.log('✅ Created idx_conversations_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  idx_conversations_agent_id index may already exist:', error);
+        }
+
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_tasks_task_type ON tasks(task_type)`);
+          console.log('✅ Created idx_tasks_task_type index');
+        } catch (error) {
+          console.log('ℹ️  idx_tasks_task_type index may already exist:', error);
+        }
+
+        try {
+          await db.query(`CREATE INDEX IF NOT EXISTS idx_tasks_agent_id ON tasks(agent_id)`);
+          console.log('✅ Created idx_tasks_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  idx_tasks_agent_id index may already exist:', error);
+        }
+
+        // 4. 数据迁移：识别现有的Agent对话并更新类型
+        try {
+          // 根据标题中的【机器人】标识来识别Agent对话
+          const agentConversationsResult = await db.query(`
+            UPDATE conversations 
+            SET type = 'agent' 
+            WHERE (title LIKE '%机器人%' OR title LIKE '%Agent%' OR title LIKE '%assistant%')
+              AND type = 'normal'
+          `);
+          
+          if (agentConversationsResult.rowCount && agentConversationsResult.rowCount > 0) {
+            console.log(`✅ Updated ${agentConversationsResult.rowCount} existing conversations to agent type`);
+          }
+
+          // 根据标题中的【机器人】标识来识别Agent任务
+          const agentTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'agent' 
+            WHERE (title LIKE '%【机器人】%' OR title LIKE '%Agent%')
+              AND task_type = 'mcp'
+          `);
+          
+          if (agentTasksResult.rowCount && agentTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${agentTasksResult.rowCount} existing tasks to agent type`);
+          }
+
+          // 根据标题中的【流程】标识来识别MCP任务
+          const mcpTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'mcp' 
+            WHERE title LIKE '%【流程】%'
+              AND task_type = 'mcp'
+          `);
+          
+          if (mcpTasksResult.rowCount && mcpTasksResult.rowCount > 0) {
+            console.log(`✅ Confirmed ${mcpTasksResult.rowCount} existing tasks as mcp type`);
+          }
+
+        } catch (error) {
+          console.log('ℹ️  Data migration completed with some issues:', error);
+        }
+
+        console.log('✅ Conversation type and Agent support migration completed');
+      },
+      down: async () => {
+        console.log('🔄 Rolling back conversation type and Agent support...');
+        
+        // 删除索引 - 分别执行
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_type`);
+          console.log('✅ Dropped idx_conversations_type index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_conversations_type:', error);
+        }
+
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_agent_id`);
+          console.log('✅ Dropped idx_conversations_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_conversations_agent_id:', error);
+        }
+
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_task_type`);
+          console.log('✅ Dropped idx_tasks_task_type index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_tasks_task_type:', error);
+        }
+
+        try {
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_agent_id`);
+          console.log('✅ Dropped idx_tasks_agent_id index');
+        } catch (error) {
+          console.log('ℹ️  Error dropping idx_tasks_agent_id:', error);
+        }
+        
+        // 删除新增的字段 - 分别执行
+        try {
+          await db.query(`ALTER TABLE conversations DROP COLUMN IF EXISTS type`);
+          console.log('✅ Dropped type column from conversations table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping conversations.type:', error);
+        }
+
+        try {
+          await db.query(`ALTER TABLE conversations DROP COLUMN IF EXISTS agent_id`);
+          console.log('✅ Dropped agent_id column from conversations table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping conversations.agent_id:', error);
+        }
+
+        try {
+          await db.query(`ALTER TABLE tasks DROP COLUMN IF EXISTS task_type`);
+          console.log('✅ Dropped task_type column from tasks table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping tasks.task_type:', error);
+        }
+
+        try {
+          await db.query(`ALTER TABLE tasks DROP COLUMN IF EXISTS agent_id`);
+          console.log('✅ Dropped agent_id column from tasks table');
+        } catch (error) {
+          console.log('ℹ️  Error dropping tasks.agent_id:', error);
+        }
+        
+        console.log('✅ Rollback completed for conversation type and Agent support');
+      }
     }
   ];
 
