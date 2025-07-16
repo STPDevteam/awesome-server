@@ -754,7 +754,10 @@ Please analyze the user intent and return the result in JSON format:
         conversationId,
         content: '',  // Empty content, will be updated after stream processing
         type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
+        intent: MessageIntent.CHAT,
+        metadata: {
+          contentType: 'chat_response'  // 标识：普通聊天回复
+        }
       });
       
       // Increment conversation message count

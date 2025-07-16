@@ -1287,7 +1287,8 @@ Based on the above task execution information, please generate a complete execut
                 stepNumber,
                 stepName: actionName,
                 totalSteps: workflow.length,
-                taskPhase: 'execution'
+                taskPhase: 'execution',
+                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking'  // 区分思考过程和最终结果
               }
             });
             stepMessageId = stepMessage.id;

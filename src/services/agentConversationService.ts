@@ -197,7 +197,10 @@ export class AgentConversationService {
           conversationId,
           content,
           type: MessageType.USER,
-          intent: MessageIntent.UNKNOWN
+          intent: MessageIntent.UNKNOWN,
+          metadata: {
+            contentType: 'user_input'  // 标识：用户输入
+          }
         });
 
         // 创建认证提示消息
@@ -351,7 +354,10 @@ export class AgentConversationService {
           conversationId,
           content,
           type: MessageType.USER,
-          intent: MessageIntent.UNKNOWN
+          intent: MessageIntent.UNKNOWN,
+          metadata: {
+            contentType: 'user_input'  // 标识：用户输入
+          }
         });
 
         // 创建认证提示消息
@@ -1121,7 +1127,11 @@ Remember the conversation context and provide coherent, helpful responses.`],
         conversationId,
         content: '',  // Empty content, will be updated after stream processing
         type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
+        intent: MessageIntent.CHAT,
+        metadata: {
+          contentType: 'chat_response',  // 标识：Agent聊天回复
+          agentName: agent.name
+        }
       });
       
       // Get conversation memory
@@ -1932,12 +1942,12 @@ Return ONLY a JSON array of workflow steps, no other text:`;
           logger.info(`📍 Agent LangChain Step ${stepNumber}: ${mcpName} - ${actionName}`);
           logger.info(`📥 Agent step input: ${JSON.stringify(input, null, 2)}`);
           
-          // 创建步骤消息（流式）
+          // 创建步骤消息（流式）- 存储完整执行过程
           let stepMessageId: string | undefined;
           if (conversationId) {
             const stepMessage = await messageDao.createStreamingMessage({
               conversationId,
-              content: `🤖 ${agent.name} executing step ${stepNumber}: ${actionName}...`,
+              content: '', // 初始为空，等待流式内容填充
               type: MessageType.ASSISTANT,
               intent: MessageIntent.TASK,
               taskId,
@@ -1947,7 +1957,8 @@ Return ONLY a JSON array of workflow steps, no other text:`;
                 stepName: actionName,
                 totalSteps: workflow.length,
                 taskPhase: 'execution',
-                agentName: agent.name
+                agentName: agent.name,
+                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking'  // 区分思考过程和最终结果
               }
             });
             stepMessageId = stepMessage.id;
@@ -2016,7 +2027,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
               );
             }
             
-            // 完成步骤消息
+            // 完成步骤消息 - 存储完整的执行结果
             if (stepMessageId) {
               await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
             }
@@ -2140,7 +2151,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
   }
 
   /**
-   * 🔧 新增：Agent专用的流式结果格式化方法
+   * 🔧 新增：Agent专用的流式结果格式化方法（累积完整内容用于存储）
    */
   private async formatAgentResultWithLLMStream(
     rawResult: any, 
@@ -2150,19 +2161,29 @@ Return ONLY a JSON array of workflow steps, no other text:`;
     streamCallback: (chunk: string) => void
   ): Promise<string> {
     try {
-      // 先发送Agent标识
+      let fullContent = ''; // 累积完整内容用于最终存储
+      
+      // Agent标识部分
       const agentPrefix = `🤖 **${agent.name}** execution result\n\n`;
+      fullContent += agentPrefix;
       streamCallback(agentPrefix);
       
+      // 创建内部回调，既发送给前端，又累积到fullContent
+      const internalCallback = (chunk: string) => {
+        fullContent += chunk; // 累积完整内容
+        streamCallback(chunk); // 发送给前端
+      };
+      
       // 调用TaskExecutorService的formatResultWithLLMStream方法
-      const result = await (this.taskExecutorService as any).formatResultWithLLMStream(
+      const formattedResult = await (this.taskExecutorService as any).formatResultWithLLMStream(
         rawResult, 
         mcpName, 
         actionName,
-        streamCallback
+        internalCallback
       );
       
-      return agentPrefix + result;
+      // 返回完整的内容用于数据库存储（思考过程+最终结果）
+      return fullContent;
     } catch (error) {
       logger.error(`Failed to format Agent result with streaming:`, error);
       const fallbackResult = `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
