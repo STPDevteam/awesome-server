@@ -23,9 +23,9 @@ export class TaskService {
       // Add appropriate tag prefix to title based on task type
       let taggedTitle = data.title;
       if (taskType === 'mcp') {
-        taggedTitle = `【MCP】${data.title}`;
+        taggedTitle = `【flow】${data.title}`;
       } else if (taskType === 'agent') {
-        taggedTitle = `【Agent】${data.title}`;
+        taggedTitle = `【robot】${data.title}`;
       }
       
       // Call DAO layer to create task, use tagged title
@@ -133,7 +133,7 @@ export class TaskService {
       // 调用DAO层获取任务列表
       const result = await taskDao.getUserTasks(userId, options);
       
-      const tasks = result.rows.map(row => this.mapTaskFromDb(row));
+      const tasks = result.tasks.map(row => this.mapTaskFromDb(row));
       return { tasks, total: result.total };
     } catch (error) {
       logger.error(`获取用户任务列表失败 [UserID: ${userId}]:`, error);

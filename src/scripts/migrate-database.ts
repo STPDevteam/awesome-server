@@ -1431,6 +1431,247 @@ class MigrationService {
         
         console.log('✅ Rollback completed for conversation type and Agent support');
       }
+    },
+    {
+      version: 26,
+      name: 'fix_missing_fields_and_constraints',
+      up: async () => {
+        console.log('🔄 Fixing missing fields and constraints...');
+        
+        // 1. 确保 tasks 表有必要的字段和约束
+        try {
+          // 检查 task_type 字段是否存在
+          const taskTypeCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'tasks' 
+            AND column_name = 'task_type'
+          `);
+
+          if (taskTypeCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE tasks 
+              ADD COLUMN task_type VARCHAR(50) DEFAULT 'mcp'
+            `);
+            console.log('✅ Added task_type column to tasks table');
+          }
+
+          // 检查 agent_id 字段是否存在  
+          const agentIdCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'tasks' 
+            AND column_name = 'agent_id'
+          `);
+
+          if (agentIdCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE tasks 
+              ADD COLUMN agent_id VARCHAR(255)
+            `);
+            console.log('✅ Added agent_id column to tasks table');
+          }
+
+          // 添加约束和索引
+          await db.query(`
+            ALTER TABLE tasks 
+            ADD CONSTRAINT tasks_task_type_check 
+            CHECK (task_type IN ('mcp', 'agent'))
+          `).catch(() => {}); // 忽略已存在的错误
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_tasks_task_type_fixed 
+            ON tasks(task_type)
+          `);
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_tasks_agent_id_fixed 
+            ON tasks(agent_id) 
+            WHERE agent_id IS NOT NULL
+          `);
+
+        } catch (error) {
+          console.log('ℹ️  Tasks table fields may already exist:', error);
+        }
+
+        // 2. 确保 conversations 表有必要的字段
+        try {
+          // 检查 type 字段是否存在
+          const typeCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'conversations' 
+            AND column_name = 'type'
+          `);
+
+          if (typeCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE conversations 
+              ADD COLUMN type VARCHAR(50) DEFAULT 'normal'
+            `);
+            console.log('✅ Added type column to conversations table');
+          }
+
+          // 检查 agent_id 字段是否存在
+          const convAgentIdCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'conversations' 
+            AND column_name = 'agent_id'
+          `);
+
+          if (convAgentIdCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE conversations 
+              ADD COLUMN agent_id VARCHAR(255)
+            `);
+            console.log('✅ Added agent_id column to conversations table');
+          }
+
+          // 添加约束和索引
+          await db.query(`
+            ALTER TABLE conversations 
+            ADD CONSTRAINT conversations_type_check 
+            CHECK (type IN ('normal', 'agent'))
+          `).catch(() => {}); // 忽略已存在的错误
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_conversations_type_fixed 
+            ON conversations(type)
+          `);
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_conversations_agent_id_fixed 
+            ON conversations(agent_id) 
+            WHERE agent_id IS NOT NULL
+          `);
+
+        } catch (error) {
+          console.log('ℹ️  Conversations table fields may already exist:', error);
+        }
+
+        // 3. 确保 agents 表有所有必要字段
+        try {
+          // 检查 categories 字段
+          const categoriesCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'categories'
+          `);
+
+          if (categoriesCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN categories JSONB DEFAULT '[]'::jsonb NOT NULL
+            `);
+            await db.query(`
+              CREATE INDEX IF NOT EXISTS idx_agents_categories_fixed 
+              ON agents USING GIN (categories)
+            `);
+            console.log('✅ Added categories column to agents table');
+          }
+
+          // 检查 username 字段
+          const usernameCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'username'
+          `);
+
+          if (usernameCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN username VARCHAR(255)
+            `);
+            console.log('✅ Added username column to agents table');
+          }
+
+          // 检查 avatar 字段
+          const avatarCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'avatar'
+          `);
+
+          if (avatarCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN avatar TEXT
+            `);
+            console.log('✅ Added avatar column to agents table');
+          }
+
+          // 检查 agent_avatar 字段
+          const agentAvatarCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'agent_avatar'
+          `);
+
+          if (agentAvatarCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN agent_avatar TEXT
+            `);
+            console.log('✅ Added agent_avatar column to agents table');
+          }
+
+        } catch (error) {
+          console.log('ℹ️  Agents table fields may already exist:', error);
+        }
+
+        // 4. 数据修复：确保所有现有数据有正确的默认值
+        try {
+          // 修复 tasks 表的 task_type 字段
+          await db.query(`
+            UPDATE tasks 
+            SET task_type = 'mcp' 
+            WHERE task_type IS NULL
+          `);
+
+          // 修复 conversations 表的 type 字段
+          await db.query(`
+            UPDATE conversations 
+            SET type = 'normal' 
+            WHERE type IS NULL
+          `);
+
+          // 修复 agents 表的 categories 字段
+          await db.query(`
+            UPDATE agents 
+            SET categories = '["General"]'::jsonb 
+            WHERE categories IS NULL OR categories = '[]'::jsonb
+          `);
+
+          console.log('✅ Fixed existing data with proper default values');
+
+        } catch (error) {
+          console.log('ℹ️  Data fix completed with some issues:', error);
+        }
+
+        console.log('✅ Missing fields and constraints fix completed');
+      },
+      down: async () => {
+        console.log('🔄 Rolling back missing fields fix...');
+        
+        // 这个回滚比较复杂，因为我们不想删除可能已经包含重要数据的字段
+        // 只删除我们添加的约束和索引
+        
+        try {
+          await db.query(`ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_task_type_check`);
+          await db.query(`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_type_check`);
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_task_type_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_agent_id_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_type_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_agent_id_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_agents_categories_fixed`);
+          console.log('✅ Removed constraints and indexes');
+        } catch (error) {
+          console.log('ℹ️  Rollback completed with some issues:', error);
+        }
+        
+        console.log('✅ Rollback completed for missing fields fix');
+      }
     }
   ];
 

@@ -369,11 +369,15 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     // Get conversation messages
     const messages = await conversationService.getConversationMessages(conversationId);
     
+    // 🔧 新增：提取lastUsedMcp信息从最后一个任务的工作流中
+    const lastUsedMcp = await conversationService.extractLastUsedMcpFromTasks(conversationId, userId);
+    
     res.json({
       success: true,
       data: {
         conversation,
-        messages
+        messages,
+        lastUsedMcp // 添加lastUsedMcp字段
       }
     });
   } catch (error) {

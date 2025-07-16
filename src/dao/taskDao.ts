@@ -199,65 +199,76 @@ export class TaskDao {
   }
 
   /**
-   * 获取用户的任务列表
+   * 获取用户任务列表（支持agentId筛选）
    */
-  async getUserTasks(userId: string, options?: {
-    status?: string;
-    limit?: number;
-    offset?: number;
-    sortBy?: string;
-    sortDir?: 'asc' | 'desc';
-    conversationId?: string;
-  }): Promise<{ rows: TaskDbRow[]; total: number }> {
+  async getUserTasks(
+    userId: string, 
+    options: {
+      limit?: number;
+      offset?: number;
+      status?: string;
+      sortBy?: string;
+      sortDir?: 'asc' | 'desc';
+      agentId?: string; // 新增：Agent ID筛选
+    } = {}
+  ): Promise<{ tasks: TaskDbRow[], total: number }> {
     try {
-      // 构建查询条件
-      const conditions = ['user_id = $1', 'is_deleted = FALSE'];
-      const values = [userId];
-      let paramIndex = 2;
+      const {
+        limit = 10,
+        offset = 0,
+        status,
+        sortBy = 'created_at',
+        sortDir = 'desc',
+        agentId
+      } = options;
 
-      if (options?.status) {
-        conditions.push(`status = $${paramIndex}`);
-        values.push(options.status);
-        paramIndex++;
+      // 构建WHERE条件
+      const whereConditions = ['user_id = $1', 'is_deleted = FALSE'];
+      const values: any[] = [userId];
+      let valueIndex = 2;
+
+      if (status) {
+        whereConditions.push(`status = $${valueIndex}`);
+        values.push(status);
+        valueIndex++;
       }
 
-      if (options?.conversationId) {
-        conditions.push(`conversation_id = $${paramIndex}`);
-        values.push(options.conversationId);
-        paramIndex++;
+      if (agentId) {
+        whereConditions.push(`agent_id = $${valueIndex}`);
+        values.push(agentId);
+        valueIndex++;
       }
 
-      // 构建排序
-      const sortField = options?.sortBy || 'created_at';
-      const sortDirection = options?.sortDir || 'desc';
-      const sort = `${sortField} ${sortDirection}`;
+      const whereClause = whereConditions.join(' AND ');
+      const orderClause = `ORDER BY ${sortBy} ${sortDir.toUpperCase()}`;
 
-      // 构建分页
-      const limit = options?.limit || 10;
-      const offset = options?.offset || 0;
-
-      // 查询总数
+      // 获取总数
       const countQuery = `
         SELECT COUNT(*) as total
         FROM tasks
-        WHERE ${conditions.join(' AND ')}
+        WHERE ${whereClause}
       `;
       const countResult = await db.query(countQuery, values);
-      const total = parseInt(countResult.rows[0].total, 10);
+      const total = parseInt(countResult.rows[0].total);
 
-      // 查询任务列表
-      const query = `
+      // 获取任务列表
+      const tasksQuery = `
         SELECT *
         FROM tasks
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY ${sort}
-        LIMIT ${limit} OFFSET ${offset}
+        WHERE ${whereClause}
+        ${orderClause}
+        LIMIT $${valueIndex} OFFSET $${valueIndex + 1}
       `;
-      const result = await db.query<TaskDbRow>(query, values);
+      values.push(limit, offset);
 
-      return { rows: result.rows, total };
+      const tasksResult = await db.query<TaskDbRow>(tasksQuery, values);
+
+      return {
+        tasks: tasksResult.rows,
+        total
+      };
     } catch (error) {
-      logger.error(`获取用户任务列表失败 [UserID: ${userId}]:`, error);
+      logger.error(`获取用户任务列表失败 [用户: ${userId}]:`, error);
       throw error;
     }
   }
@@ -280,6 +291,52 @@ export class TaskDao {
       return result.rows;
     } catch (error) {
       logger.error(`获取对话关联任务失败 [对话ID: ${conversationId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取对话相关的最后一个任务的MCP工作流
+   * @param conversationId 对话ID
+   * @param userId 用户ID
+   * @returns MCP工作流信息
+   */
+  async getLastTaskMcpWorkflowByConversation(
+    conversationId: string,
+    userId: string
+  ): Promise<any> {
+    try {
+      const result = await db.query<TaskDbRow>(
+        `
+        SELECT mcp_workflow, created_at
+        FROM tasks
+        WHERE conversation_id = $1 AND user_id = $2 AND is_deleted = FALSE
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [conversationId, userId]
+      );
+      
+      if (result.rows.length === 0) {
+        logger.info(`No tasks found for conversation ${conversationId}`);
+        return null;
+      }
+      
+      const mcpWorkflow = result.rows[0].mcp_workflow;
+      
+      // 如果是字符串，解析为对象
+      if (typeof mcpWorkflow === 'string') {
+        try {
+          return JSON.parse(mcpWorkflow);
+        } catch (parseError) {
+          logger.error(`Failed to parse MCP workflow JSON for conversation ${conversationId}:`, parseError);
+          return null;
+        }
+      }
+      
+      return mcpWorkflow;
+    } catch (error) {
+      logger.error(`获取对话最后任务MCP工作流失败 [对话: ${conversationId}]:`, error);
       throw error;
     }
   }
