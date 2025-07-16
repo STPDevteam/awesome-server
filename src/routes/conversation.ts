@@ -410,17 +410,15 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
             
             // 返回最后一个任务中使用的所有 MCP 的完整信息
             lastUsedMcp = task.mcpWorkflow.mcps.map(mcp => {
-              // 包含完整的 MCP 信息，包括 alternatives
+              // 包含完整的 MCP 信息，匹配用户期望的数据格式
               const mcpData: any = {
                 name: mcp.name,
                 description: mcp.description,
                 category: mcp.category,
                 imageUrl: mcp.imageUrl,
                 githubUrl: mcp.githubUrl,
-                authRequired: mcp.authRequired,
-                authVerified: mcp.authVerified,
-                taskId: message.taskId,
-                usedAt: message.createdAt
+                authRequired: mcp.authRequired || false,
+                authVerified: mcp.authVerified || false
               };
 
               // 添加认证参数（如果需要认证）
@@ -428,9 +426,22 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
                 mcpData.authParams = mcp.authParams;
               }
 
-              // 添加完整的 alternatives 信息
+              // 添加完整的 alternatives 信息，确保每个 alternative 包含完整的字段
               if (mcp.alternatives && Array.isArray(mcp.alternatives)) {
-                mcpData.alternatives = mcp.alternatives;
+                mcpData.alternatives = mcp.alternatives.map(alt => ({
+                  name: alt.name,
+                  description: alt.description,
+                  category: alt.category,
+                  imageUrl: alt.imageUrl,
+                  githubUrl: alt.githubUrl,
+                  authRequired: alt.authRequired || false,
+                  authVerified: alt.authVerified || false,
+                  // 添加认证参数（如果需要认证）
+                  ...(alt.authRequired && alt.authParams ? { authParams: alt.authParams } : {})
+                }));
+              } else {
+                // 如果没有 alternatives 数组，设置为空数组
+                mcpData.alternatives = [];
               }
 
               return mcpData;
