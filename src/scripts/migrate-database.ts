@@ -1431,6 +1431,102 @@ class MigrationService {
         
         console.log('✅ Rollback completed for conversation type and Agent support');
       }
+    },
+    {
+      version: 26,
+      name: 'update_task_title_tags_to_chinese',
+      up: async () => {
+        console.log('🔄 Updating task title tags from English to Chinese...');
+        
+        // 1. 更新任务标题中的英文标签为中文标签
+        try {
+          // 更新 【flow】 为 【流程】
+          const flowTasksResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【flow】', '【流程】')
+            WHERE title LIKE '%【flow】%'
+          `);
+          
+          if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${flowTasksResult.rowCount} tasks from 【flow】 to 【流程】`);
+          }
+
+          // 更新 【robot】 为 【机器人】
+          const robotTasksResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【robot】', '【机器人】')
+            WHERE title LIKE '%【robot】%'
+          `);
+          
+          if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${robotTasksResult.rowCount} tasks from 【robot】 to 【机器人】`);
+          }
+
+          // 2. 确保任务类型正确设置（基于更新后的中文标签）
+          // 根据标题中的【机器人】标识来识别Agent任务
+          const agentTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'agent' 
+            WHERE title LIKE '%【机器人】%'
+              AND task_type != 'agent'
+          `);
+          
+          if (agentTasksResult.rowCount && agentTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【机器人】 tag`);
+          }
+
+          // 根据标题中的【流程】标识来识别MCP任务
+          const mcpTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'mcp' 
+            WHERE title LIKE '%【流程】%'
+              AND task_type != 'mcp'
+          `);
+          
+          if (mcpTasksResult.rowCount && mcpTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【流程】 tag`);
+          }
+
+        } catch (error) {
+          console.log('⚠️  Error during title tag migration:', error);
+          throw error;
+        }
+
+        console.log('✅ Task title tags migration to Chinese completed');
+      },
+      down: async () => {
+        console.log('🔄 Rolling back task title tags to English...');
+        
+        try {
+          // 回滚 【流程】 为 【flow】
+          const flowTasksResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【流程】', '【flow】')
+            WHERE title LIKE '%【流程】%'
+          `);
+          
+          if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
+            console.log(`✅ Rolled back ${flowTasksResult.rowCount} tasks from 【流程】 to 【flow】`);
+          }
+
+          // 回滚 【机器人】 为 【robot】
+          const robotTasksResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【机器人】', '【robot】')
+            WHERE title LIKE '%【机器人】%'
+          `);
+          
+          if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
+            console.log(`✅ Rolled back ${robotTasksResult.rowCount} tasks from 【机器人】 to 【robot】`);
+          }
+
+        } catch (error) {
+          console.log('⚠️  Error during title tag rollback:', error);
+          throw error;
+        }
+        
+        console.log('✅ Rollback completed for task title tags');
+      }
     }
   ];
 

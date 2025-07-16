@@ -369,8 +369,8 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     // Get conversation messages
     const messages = await conversationService.getConversationMessages(conversationId);
     
-    // Extract last used MCP information from messages
-    let lastUsedMcp: any = null;
+    // Extract last used MCP information from messages (返回数组)
+    let lastUsedMcp: any[] = [];
     
     // Iterate through messages in reverse order to find the most recent MCP usage
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -383,32 +383,37 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
           const taskService = getTaskService();
           const task = await taskService.getTaskById(message.taskId);
           
-          if (task && task.mcpWorkflow && task.mcpWorkflow.workflow) {
-            // Find the specific step that corresponds to this message
-            const stepNumber = message.metadata.stepNumber;
-            if (stepNumber) {
-              const workflowStep = task.mcpWorkflow.workflow.find(step => step.step === stepNumber);
-              if (workflowStep) {
-                // Find the MCP info from the mcps array
-                const mcpInfo = task.mcpWorkflow.mcps.find(mcp => mcp.name === workflowStep.mcp);
-                if (mcpInfo) {
-                  lastUsedMcp = {
-                    name: mcpInfo.name,
-                    description: mcpInfo.description,
-                    category: mcpInfo.category,
-                    imageUrl: mcpInfo.imageUrl,
-                    githubUrl: mcpInfo.githubUrl,
-                    action: workflowStep.action,
-                    stepNumber: stepNumber,
-                    taskId: message.taskId,
-                    usedAt: message.createdAt,
-                    authRequired: mcpInfo.authRequired,
-                    authVerified: mcpInfo.authVerified
-                  };
-                  break; // Found the most recent MCP usage, stop searching
-                }
+          if (task && task.mcpWorkflow && task.mcpWorkflow.mcps && Array.isArray(task.mcpWorkflow.mcps)) {
+            // 返回最后一个任务中使用的所有 MCP 的完整信息
+            lastUsedMcp = task.mcpWorkflow.mcps.map(mcp => {
+              // 包含完整的 MCP 信息，包括 alternatives
+              const mcpData: any = {
+                name: mcp.name,
+                description: mcp.description,
+                category: mcp.category,
+                imageUrl: mcp.imageUrl,
+                githubUrl: mcp.githubUrl,
+                authRequired: mcp.authRequired,
+                authVerified: mcp.authVerified,
+                taskId: message.taskId,
+                usedAt: message.createdAt
+              };
+
+              // 添加认证参数（如果需要认证）
+              if (mcp.authRequired && mcp.authParams) {
+                mcpData.authParams = mcp.authParams;
               }
-            }
+
+              // 添加完整的 alternatives 信息
+              if (mcp.alternatives && Array.isArray(mcp.alternatives)) {
+                mcpData.alternatives = mcp.alternatives;
+              }
+
+              return mcpData;
+            });
+            
+            logger.info(`Found lastUsedMcp array with ${lastUsedMcp.length} MCPs for task ${message.taskId}`);
+            break; // Found the most recent task with MCP usage, stop searching
           }
         } catch (taskError) {
           logger.warn(`Failed to get task details for MCP extraction [TaskID: ${message.taskId}]:`, taskError);

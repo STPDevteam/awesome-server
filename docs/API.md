@@ -4957,38 +4957,56 @@ data: [DONE]
         "createdAt": "2023-06-20T08:00:00.000Z"
       }
     ],
-    "lastUsedMcp": {
-      "name": "coingecko-server",
-      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
-      "category": "Market Data",
-      "imageUrl": "https://example.com/coingecko.png",
-      "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
-      "action": "Get Bitcoin current price and market data",
-      "stepNumber": 1,
-      "taskId": "task_123456",
-      "usedAt": "2023-06-20T08:05:30.000Z",
-      "authRequired": true,
-      "authVerified": true
-    }
+    "lastUsedMcp": [
+      {
+        "name": "coingecko-server",
+        "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+        "category": "Market Data",
+        "imageUrl": "https://example.com/coingecko.png",
+        "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+        "taskId": "task_123456",
+        "usedAt": "2023-06-20T08:05:30.000Z",
+        "authRequired": true,
+        "authVerified": true,
+        "authParams": {
+          "COINGECKO_API_KEY": "COINGECKO_API_KEY"
+        },
+        "alternatives": [
+          {
+            "name": "coinmarketcap-mcp",
+            "description": "CoinMarketCap cryptocurrency market data and analytics",
+            "authRequired": true,
+            "authVerified": false,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coinmarketcap.png",
+            "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+            "authParams": {
+              "COINMARKETCAP_API_KEY1": "COINMARKETCAP_API_KEY1",
+              "COINMARKETCAP_API_KEY2": "COINMARKETCAP_API_KEY2"
+            }
+          }
+        ]
+      }
+    ]
   }
 }
 ```
 
 **新增字段说明**:
-- `lastUsedMcp`: 最后一次使用的MCP信息（如果对话中有任务执行）
+- `lastUsedMcp`: 最后一个任务中使用的所有MCP信息数组（如果对话中有任务执行）
   - `name`: MCP服务器名称
   - `description`: MCP服务器描述
   - `category`: MCP类别
   - `imageUrl`: MCP图标URL
   - `githubUrl`: MCP GitHub仓库URL
-  - `action`: 执行的具体操作
-  - `stepNumber`: 在工作流中的步骤编号
   - `taskId`: 关联的任务ID
   - `usedAt`: 最后使用时间
   - `authRequired`: 是否需要认证
   - `authVerified`: 认证状态
+  - `authParams`: 认证参数配置（如果需要认证）
+  - `alternatives`: 备选MCP列表（包含完整的替代选项信息）
 
-**注意**: 如果对话中没有任务执行或未使用MCP，`lastUsedMcp` 字段将为 `null`。
+**注意**: 如果对话中没有任务执行或未使用MCP，`lastUsedMcp` 字段将为空数组 `[]`。
 
 ---
 
