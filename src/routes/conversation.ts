@@ -369,11 +369,60 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     // Get conversation messages
     const messages = await conversationService.getConversationMessages(conversationId);
     
+    // Extract last used MCP information from messages
+    let lastUsedMcp: any = null;
+    
+    // Iterate through messages in reverse order to find the most recent MCP usage
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      
+      // Check if message has task-related metadata with MCP information
+      if (message.metadata && message.metadata.stepType === 'execution' && message.taskId) {
+        // Get the task to extract MCP workflow information
+        try {
+          const taskService = getTaskService();
+          const task = await taskService.getTaskById(message.taskId);
+          
+          if (task && task.mcpWorkflow && task.mcpWorkflow.workflow) {
+            // Find the specific step that corresponds to this message
+            const stepNumber = message.metadata.stepNumber;
+            if (stepNumber) {
+              const workflowStep = task.mcpWorkflow.workflow.find(step => step.step === stepNumber);
+              if (workflowStep) {
+                // Find the MCP info from the mcps array
+                const mcpInfo = task.mcpWorkflow.mcps.find(mcp => mcp.name === workflowStep.mcp);
+                if (mcpInfo) {
+                  lastUsedMcp = {
+                    name: mcpInfo.name,
+                    description: mcpInfo.description,
+                    category: mcpInfo.category,
+                    imageUrl: mcpInfo.imageUrl,
+                    githubUrl: mcpInfo.githubUrl,
+                    action: workflowStep.action,
+                    stepNumber: stepNumber,
+                    taskId: message.taskId,
+                    usedAt: message.createdAt,
+                    authRequired: mcpInfo.authRequired,
+                    authVerified: mcpInfo.authVerified
+                  };
+                  break; // Found the most recent MCP usage, stop searching
+                }
+              }
+            }
+          }
+        } catch (taskError) {
+          logger.warn(`Failed to get task details for MCP extraction [TaskID: ${message.taskId}]:`, taskError);
+          // Continue searching other messages
+        }
+      }
+    }
+    
     res.json({
       success: true,
       data: {
         conversation,
-        messages
+        messages,
+        lastUsedMcp
       }
     });
   } catch (error) {

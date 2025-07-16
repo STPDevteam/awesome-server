@@ -1589,4 +1589,96 @@ async function validateTwitterAuth(authData: Record<string, string>): Promise<{ 
   }
 }
 
+/**
+ * Get Agent Task History
+ * GET /api/agent/:id/tasks
+ */
+router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const agentId = req.params.id;
+    const { limit = '10', offset = '0', status } = req.query;
+
+    // Verify agent exists and user has access
+    const agent = await agentService.getAgentById(agentId, userId);
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'Agent not found'
+      });
+    }
+
+    // Get task service
+    const taskService = req.app.get('taskService') || require('../services/taskService.js').getTaskService();
+    
+    // Get agent tasks with filters
+    const result = await taskService.getUserTasks(userId, {
+      agentId: agentId,
+      taskType: 'agent',
+      status: status as string,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string),
+      sortBy: 'created_at',
+      sortDir: 'desc'
+    });
+
+    // Transform tasks to include agent information
+    const tasksWithAgentInfo = result.rows.map((task: any) => ({
+      ...task,
+      agent: {
+        id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        categories: agent.categories
+      }
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        agentId,
+        agentName: agent.name,
+        tasks: tasksWithAgentInfo,
+        total: result.total,
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string)
+      }
+    });
+  } catch (error) {
+    logger.error(`Failed to get Agent task history [AgentID: ${req.params.id}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('not found') || error.message.includes('does not exist')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('access denied') || error.message.includes('no permission')) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get Agent task history'
+    });
+  }
+});
+
 export default router; 

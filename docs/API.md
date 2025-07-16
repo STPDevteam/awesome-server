@@ -82,6 +82,31 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 }
 ```
 
+### API 新增功能 (v2.1.3)
+
+从v2.1.3开始，新增了以下重要功能：
+
+#### 1. Agent任务历史记录API
+- **端点**: `GET /api/agent/:id/tasks`
+- **功能**: 获取指定Agent的任务执行历史记录
+- **特性**: 
+  - 支持分页和状态筛选
+  - 包含完整的任务详情和Agent信息
+  - 提供任务执行结果和工作流信息
+  - 自动过滤Agent相关任务（task_type = "agent"）
+
+#### 2. 对话最后使用MCP信息
+- **端点**: `GET /api/conversation/:id` （增强功能）
+- **功能**: 在对话详情中返回最后一次使用的MCP信息
+- **特性**:
+  - 自动分析对话中的任务执行历史
+  - 提取最近使用的MCP工具信息
+  - 包含MCP的详细信息（名称、描述、类别、认证状态等）
+  - 记录具体的执行操作和时间
+  - 如果未使用MCP则返回null
+
+这些新功能为用户提供了更好的Agent使用体验和对话管理能力。
+
 ### 重要说明
 
 - **路由变更**: Agent对话不再使用 `/api/conversation/` 路由
@@ -4886,7 +4911,7 @@ data: [DONE]
 
 **端点**: `GET /api/conversation/:id`
 
-**描述**: 获取特定对话的详细信息和所有消息。
+**描述**: 获取特定对话的详细信息和所有消息，包含最后一次使用的MCP信息。
 
 **认证**: 可选（可使用userId参数或访问令牌）
 
@@ -4931,10 +4956,39 @@ data: [DONE]
         "taskId": "task_123456",
         "createdAt": "2023-06-20T08:00:00.000Z"
       }
-    ]
+    ],
+    "lastUsedMcp": {
+      "name": "coingecko-server",
+      "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+      "category": "Market Data",
+      "imageUrl": "https://example.com/coingecko.png",
+      "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+      "action": "Get Bitcoin current price and market data",
+      "stepNumber": 1,
+      "taskId": "task_123456",
+      "usedAt": "2023-06-20T08:05:30.000Z",
+      "authRequired": true,
+      "authVerified": true
+    }
   }
 }
 ```
+
+**新增字段说明**:
+- `lastUsedMcp`: 最后一次使用的MCP信息（如果对话中有任务执行）
+  - `name`: MCP服务器名称
+  - `description`: MCP服务器描述
+  - `category`: MCP类别
+  - `imageUrl`: MCP图标URL
+  - `githubUrl`: MCP GitHub仓库URL
+  - `action`: 执行的具体操作
+  - `stepNumber`: 在工作流中的步骤编号
+  - `taskId`: 关联的任务ID
+  - `usedAt`: 最后使用时间
+  - `authRequired`: 是否需要认证
+  - `authVerified`: 认证状态
+
+**注意**: 如果对话中没有任务执行或未使用MCP，`lastUsedMcp` 字段将为 `null`。
 
 ---
 
@@ -5584,3 +5638,124 @@ function handleAgentStreamingEvents(event) {
 - **优雅降级**: 不处理新事件类型的前端仍然可以正常工作
 
 这个修复显著改善了Agent任务执行的用户体验，特别是对于包含多个步骤的复杂工作流。
+
+---
+
+### 15. 获取Agent任务历史记录
+
+**端点**: `GET /api/agent/:id/tasks`
+
+**描述**: 获取指定Agent的任务执行历史记录，包含任务详情和Agent信息
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**查询参数**:
+- `limit`: 每页数量（可选，默认10）
+- `offset`: 偏移量（可选，默认0）
+- `status`: 任务状态筛选（可选，如：completed、failed、in_progress）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "agentId": "agent_123456",
+    "agentName": "BitcoinPriceAnalyzer",
+    "tasks": [
+      {
+        "id": "task_789",
+        "user_id": "user_123",
+        "title": "【robot】Retrieve the TVL data for Uniswap protocol",
+        "content": "Retrieve the TVL data for Uniswap protocol",
+        "status": "completed",
+        "task_type": "agent",
+        "agent_id": "agent_123456",
+        "mcp_workflow": {
+          "mcps": [
+            {
+              "name": "defillama-mcp",
+              "description": "DeFiLlama DeFi protocol data and TVL analytics",
+              "category": "Market Data",
+              "authRequired": false,
+              "authVerified": true
+            }
+          ],
+          "workflow": [
+            {
+              "step": 1,
+              "mcp": "defillama-mcp",
+              "action": "Retrieve the current Total Value Locked (TVL) data for the Uniswap protocol",
+              "input": {
+                "protocol": "uniswap"
+              }
+            }
+          ]
+        },
+        "result": {
+          "summary": "Task execution completed successfully",
+          "steps": [
+            {
+              "step": 1,
+              "success": true,
+              "result": "Successfully retrieved TVL data for Uniswap protocol..."
+            }
+          ],
+          "finalResult": "Current Uniswap TVL: $4.2B USD..."
+        },
+        "conversation_id": "conv_987",
+        "created_at": "2023-06-20T08:00:00.000Z",
+        "updated_at": "2023-06-20T08:05:00.000Z",
+        "completed_at": "2023-06-20T08:05:00.000Z",
+        "agent": {
+          "id": "agent_123456",
+          "name": "BitcoinPriceAnalyzer",
+          "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis",
+          "categories": ["Market Data", "Trading"]
+        }
+      }
+    ],
+    "total": 25,
+    "limit": 10,
+    "offset": 0
+  }
+}
+```
+
+**字段说明**:
+- `agentId`: Agent的唯一标识符
+- `agentName`: Agent名称
+- `tasks`: 任务历史记录数组
+  - `task_type`: 任务类型，Agent任务标记为 "agent"
+  - `agent_id`: 关联的Agent ID
+  - `agent`: 包含Agent基本信息的对象
+- `total`: 符合条件的任务总数
+- `limit`: 每页数量
+- `offset`: 偏移量
+
+**错误响应**:
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent
+- `404 Not Found`: Agent不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+**使用示例**:
+```bash
+# 获取Agent任务历史（默认参数）
+curl -X GET "http://localhost:3001/api/agent/agent_123456/tasks" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 获取已完成的任务（带过滤条件）
+curl -X GET "http://localhost:3001/api/agent/agent_123456/tasks?status=completed&limit=5" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# 分页获取任务历史
+curl -X GET "http://localhost:3001/api/agent/agent_123456/tasks?limit=10&offset=20" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+### Agent系统特性

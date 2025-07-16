@@ -500,24 +500,8 @@ Transform the data now:`;
       let toolSelection;
       try {
         const responseText = toolSelectionResponse.content.toString().trim();
-        // 🔧 修复：正确处理可能的markdown代码块格式
-        let cleanedText = responseText;
-        
-        // 移除markdown代码块标记
-        cleanedText = cleanedText.replace(/```json\s*/g, '');
-        cleanedText = cleanedText.replace(/```\s*$/g, '');
-        cleanedText = cleanedText.trim();
-        
-        // 如果没有找到JSON对象，尝试提取
-        if (!cleanedText.startsWith('{')) {
-          const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            cleanedText = jsonMatch[0];
-          }
-        }
-        
         // 尝试解析JSON响应
-        toolSelection = JSON.parse(cleanedText);
+        toolSelection = JSON.parse(responseText);
       } catch (parseError) {
         logger.error(`Failed to parse tool selection response: ${toolSelectionResponse.content}`);
         // 回退到简单的工具选择

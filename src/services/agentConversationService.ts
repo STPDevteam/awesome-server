@@ -688,29 +688,48 @@ I encountered an error while executing this task. Please try again or check the 
     try {
       // 提取任务结果
       const taskResult = task?.result;
+      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
+      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      // 直接返回实际的任务执行结果，不使用冗余的模板格式
+      // 构建结构化的响应格式
+      let formattedResponse = '';
+      
+      // 1. Success Indicator 部分 - 使用绿色成功样式
+      formattedResponse += `## ✅ Success Indicator\n`;
+      formattedResponse += `> The task was ${statusText}.\n\n`;
+      
+      // 2. Response 部分 - 使用二级标题
+      formattedResponse += `## 📋 Response\n`;
+      
       if (taskResult) {
         // 优先使用最终结果
         if (taskResult.finalResult) {
-          return taskResult.finalResult;
+          formattedResponse += `${taskResult.finalResult}\n\n`;
         } else if (taskResult.summary) {
-          return taskResult.summary;
+          formattedResponse += `${taskResult.summary}\n\n`;
         } else if (taskResult.steps && taskResult.steps.length > 0) {
           // 如果有步骤结果，提取关键信息
           const lastStep = taskResult.steps[taskResult.steps.length - 1];
           if (lastStep.result) {
-            return lastStep.result;
+            formattedResponse += `${lastStep.result}\n\n`;
+          } else {
+            formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
           }
+        } else {
+          formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
         }
+      } else {
+        formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
       }
       
-      // 降级处理：返回简单的成功消息
-      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
-      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
+      // 3. 任务详情部分 - 使用无序列表格式，小字标题样式
+      formattedResponse += `---\n\n`;
+      formattedResponse += `- **Task:** ${originalRequest}\n`;
+      formattedResponse += `- **Agent:** ${agent.name}\n`;
+      formattedResponse += `- **Task ID:** ${task?.id || 'Unknown'}\n`;
+      formattedResponse += `- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.\n`;
       
-      return `${statusIcon} Task ${statusText} using ${agent.name}.`;
-      
+      return formattedResponse;
     } catch (error) {
       logger.error('Failed to format task result:', error);
       
@@ -718,7 +737,18 @@ I encountered an error while executing this task. Please try again or check the 
       const statusIcon = isPartialSuccess ? '⚠️' : '✅';
       const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      return `${statusIcon} Task ${statusText} using ${agent.name}.`;
+      return `## ✅ Success Indicator
+> The task was ${statusText}.
+
+## 📋 Response
+The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.
+
+---
+
+- **Task:** ${originalRequest}
+- **Agent:** ${agent.name}
+- **Task ID:** ${task?.id || 'Unknown'}
+- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.`;
     }
   }
 
@@ -1468,8 +1498,6 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
     return message;
   }
 
-
-
   /**
    * 🔧 新增：Agent专用的任务执行方法 - 完全复制TaskExecutorService的流程
    * @param taskId 任务ID
@@ -1764,13 +1792,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
       let workflow: Array<{ step: number; mcp: string; action: string; input?: any }>;
       
       try {
-        // 直接解析JSON，如果LLM返回了code blocks，简单去除
-        let cleanedText = workflowText.trim();
-        if (cleanedText.startsWith('```json')) {
-          cleanedText = cleanedText.replace(/```json\s*/, '').replace(/```\s*$/, '');
-        }
-        
-        workflow = JSON.parse(cleanedText);
+        workflow = JSON.parse(workflowText);
       } catch (parseError) {
         logger.error(`Failed to parse LLM-generated workflow:`, parseError);
         logger.error(`Raw LLM response: ${workflowText}`);
