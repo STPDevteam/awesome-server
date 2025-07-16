@@ -1590,10 +1590,10 @@ async function validateTwitterAuth(authData: Record<string, string>): Promise<{ 
 }
 
 /**
- * Get Agent Task History
- * GET /api/agent/:id/tasks
+ * Get Agent Conversation History with Messages
+ * GET /api/agent/:id/conversations
  */
-router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
+router.get('/:id/conversations', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -1605,7 +1605,7 @@ router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
     }
 
     const agentId = req.params.id;
-    const { limit = '10', offset = '0', status } = req.query;
+    const { limit = '10', offset = '0' } = req.query;
 
     // Verify agent exists and user has access
     const agent = await agentService.getAgentById(agentId, userId);
@@ -1617,44 +1617,223 @@ router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
       });
     }
 
-    // Get task service
-    const taskService = req.app.get('taskService') || require('../services/taskService.js').getTaskService();
+    // Get conversation DAO and message DAO
+    const { conversationDao } = await import('../dao/conversationDao.js');
+    const { messageDao } = await import('../dao/messageDao.js');
+    const { taskDao } = await import('../dao/taskDao.js');
     
-    // Get agent tasks with filters
-    const result = await taskService.getUserTasks(userId, {
-      agentId: agentId,
-      taskType: 'agent',
-      status: status as string,
-      limit: parseInt(limit as string),
-      offset: parseInt(offset as string),
-      sortBy: 'created_at',
-      sortDir: 'desc'
-    });
+    // Get all conversations with this agent for the user
+    const { ConversationType } = await import('../models/conversation.js');
+    
+    // Since conversationDao doesn't support agentId filter, we'll manually query
+    const { db } = await import('../config/database.js');
+    
+    // Query total count for agent conversations
+    const countResult = await db.query(
+      `
+      SELECT COUNT(*) as total
+      FROM conversations
+      WHERE user_id = $1 AND agent_id = $2 AND type = $3 AND is_deleted = FALSE
+      `,
+      [userId, agentId, ConversationType.AGENT]
+    );
+    
+    const total = parseInt(countResult.rows[0].total, 10);
 
-    // Transform tasks to include agent information
-    const tasksWithAgentInfo = result.rows.map((task: any) => ({
-      ...task,
-      agent: {
-        id: agent.id,
-        name: agent.name,
-        description: agent.description,
-        categories: agent.categories
-      }
+    // Query agent conversations with pagination
+    const conversationsQuery = await db.query(
+      `
+      SELECT *
+      FROM conversations
+      WHERE user_id = $1 AND agent_id = $2 AND type = $3 AND is_deleted = FALSE
+      ORDER BY updated_at DESC
+      LIMIT $4 OFFSET $5
+      `,
+      [userId, agentId, ConversationType.AGENT, parseInt(limit as string), parseInt(offset as string)]
+    );
+
+    // Map database rows to conversation objects
+    const conversations = conversationsQuery.rows.map((row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      title: row.title,
+      type: row.type,
+      agentId: row.agent_id,
+      lastMessageContent: row.last_message_content,
+      lastMessageAt: row.last_message_at ? new Date(row.last_message_at) : undefined,
+      taskCount: row.task_count,
+      messageCount: row.message_count,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      deletedAt: row.deleted_at ? new Date(row.deleted_at) : undefined,
+      isDeleted: row.is_deleted
     }));
+
+    const conversationsResult = { conversations, total };
+
+    // Get detailed conversation data with messages and MCP usage
+    const conversationsWithDetails = await Promise.all(
+      conversationsResult.conversations.map(async (conversation: any) => {
+        try {
+          // Get all messages from this conversation
+          const messages = await messageDao.getConversationMessages(conversation.id);
+
+          // Transform messages and extract MCP usage
+          let usedMCPs: any[] = [];
+          const messageDetails = await Promise.all(
+            messages.map(async (msg: any) => {
+              let taskDetails = null;
+              
+              // If message is linked to a task, get task details
+              if (msg.taskId) {
+                try {
+                  const task = await taskDao.getTaskById(msg.taskId);
+                  if (task) {
+                                         taskDetails = {
+                       id: task.id,
+                       title: task.title,
+                       status: task.status,
+                       taskType: task.task_type,
+                       result: task.result,
+                       mcpWorkflow: task.mcp_workflow
+                     };
+
+                     // Extract MCPs from task workflow
+                     if (task.mcp_workflow && task.mcp_workflow.mcps) {
+                       const taskMCPs = task.mcp_workflow.mcps.map((mcp: any) => ({
+                        name: mcp.name,
+                        description: mcp.description,
+                        category: mcp.category,
+                        authRequired: mcp.authRequired,
+                        authVerified: mcp.authVerified,
+                        imageUrl: mcp.imageUrl,
+                        githubUrl: mcp.githubUrl,
+                        usedInTaskId: task.id
+                      }));
+
+                      // Add to usedMCPs if not already present
+                      taskMCPs.forEach((taskMcp: any) => {
+                        if (!usedMCPs.find(mcp => mcp.name === taskMcp.name && mcp.usedInTaskId === taskMcp.usedInTaskId)) {
+                          usedMCPs.push(taskMcp);
+                        }
+                      });
+                    }
+
+                    // Extract MCPs from task execution results
+                    if (task.result && task.result.steps) {
+                      const executionMCPs = task.result.steps
+                        .filter((step: any) => step.mcpName)
+                        .map((step: any) => ({
+                          name: step.mcpName,
+                          description: `MCP used in execution`,
+                          category: 'Unknown',
+                          authRequired: false,
+                          authVerified: true,
+                          usedInTaskId: task.id,
+                          executionStep: step.step
+                        }));
+
+                      // Add execution MCPs if not already present
+                      executionMCPs.forEach((execMcp: any) => {
+                        if (!usedMCPs.find(mcp => mcp.name === execMcp.name && mcp.usedInTaskId === execMcp.usedInTaskId)) {
+                          usedMCPs.push(execMcp);
+                        }
+                      });
+                    }
+                  }
+                } catch (taskError) {
+                  logger.warn(`Failed to get task details for message ${msg.id}:`, taskError);
+                }
+              }
+
+              return {
+                id: msg.id,
+                content: msg.content,
+                type: msg.type,
+                intent: msg.intent,
+                taskId: msg.taskId,
+                metadata: msg.metadata,
+                createdAt: msg.createdAt,
+                taskDetails: taskDetails
+              };
+            })
+          );
+
+          return {
+            // Conversation basic info
+            id: conversation.id,
+            title: conversation.title,
+            type: conversation.type,
+            agentId: conversation.agentId,
+            createdAt: conversation.createdAt,
+            updatedAt: conversation.updatedAt,
+            lastMessageAt: conversation.lastMessageAt,
+            messageCount: conversation.messageCount,
+            taskCount: conversation.taskCount,
+            
+            // Agent info
+            agent: {
+              id: agent.id,
+              name: agent.name,
+              description: agent.description,
+              categories: agent.categories
+            },
+            
+            // All messages in this conversation with task details
+            messages: messageDetails,
+            
+            // All MCPs used in this conversation (aggregated from all tasks)
+            usedMCPs: usedMCPs,
+            
+            // Statistics
+            statistics: {
+              totalMessages: messageDetails.length,
+              userMessages: messageDetails.filter(m => m.type === 'user').length,
+              assistantMessages: messageDetails.filter(m => m.type === 'assistant').length,
+              taskMessages: messageDetails.filter(m => m.intent === 'task').length,
+              chatMessages: messageDetails.filter(m => m.intent === 'chat').length,
+              uniqueMCPs: [...new Set(usedMCPs.map(mcp => mcp.name))].length
+            }
+          };
+        } catch (conversationError) {
+          logger.warn(`Failed to get details for conversation ${conversation.id}:`, conversationError);
+          return {
+            id: conversation.id,
+            title: conversation.title,
+            type: conversation.type,
+            agentId: conversation.agentId,
+            createdAt: conversation.createdAt,
+            updatedAt: conversation.updatedAt,
+            error: 'Failed to load conversation details'
+          };
+        }
+      })
+    );
+
+    // Calculate overall statistics
+    const overallStats = {
+      totalConversations: conversationsWithDetails.length,
+      totalMessages: conversationsWithDetails.reduce((sum, conv: any) => sum + (conv.statistics?.totalMessages || 0), 0),
+      totalTaskMessages: conversationsWithDetails.reduce((sum, conv: any) => sum + (conv.statistics?.taskMessages || 0), 0),
+      totalChatMessages: conversationsWithDetails.reduce((sum, conv: any) => sum + (conv.statistics?.chatMessages || 0), 0),
+      allUsedMCPs: [...new Set(conversationsWithDetails.flatMap((conv: any) => conv.usedMCPs?.map((mcp: any) => mcp.name) || []))]
+    };
 
     res.json({
       success: true,
       data: {
         agentId,
         agentName: agent.name,
-        tasks: tasksWithAgentInfo,
-        total: result.total,
+        agentDescription: agent.description,
+        conversations: conversationsWithDetails,
+        total: conversationsResult.total,
         limit: parseInt(limit as string),
-        offset: parseInt(offset as string)
+        offset: parseInt(offset as string),
+        statistics: overallStats
       }
     });
   } catch (error) {
-    logger.error(`Failed to get Agent task history [AgentID: ${req.params.id}]:`, error);
+    logger.error(`Failed to get Agent conversation history [AgentID: ${req.params.id}]:`, error);
     
     if (error instanceof Error) {
       if (error.message.includes('not found') || error.message.includes('does not exist')) {
@@ -1676,7 +1855,7 @@ router.get('/:id/tasks', requireAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to get Agent task history'
+      message: error instanceof Error ? error.message : 'Failed to get Agent conversation history'
     });
   }
 });

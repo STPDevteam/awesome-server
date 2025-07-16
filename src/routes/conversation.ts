@@ -376,14 +376,38 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
       
+      // Parse metadata if it's a string
+      let parsedMetadata: any = null;
+      if (message.metadata) {
+        try {
+          parsedMetadata = typeof message.metadata === 'string' 
+            ? JSON.parse(message.metadata) 
+            : message.metadata;
+        } catch (e) {
+          logger.warn(`Failed to parse message metadata for message ${message.id}:`, e);
+          parsedMetadata = null;
+        }
+      }
+      
       // Check if message has task-related metadata with MCP information
-      if (message.metadata && message.metadata.stepType === 'execution' && message.taskId) {
+      if (parsedMetadata && parsedMetadata.stepType === 'execution' && message.taskId) {
         // Get the task to extract MCP workflow information
         try {
           const taskService = getTaskService();
           const task = await taskService.getTaskById(message.taskId);
           
+          logger.info(`Found execution message [TaskID: ${message.taskId}], checking task workflow...`);
+          
+          if (!task) {
+            logger.warn(`Task not found for TaskID: ${message.taskId}`);
+            continue; // Continue searching other messages
+          }
+          
+          logger.info(`Task found [TaskID: ${message.taskId}], status: ${task.status}, mcpWorkflow: ${task.mcpWorkflow ? 'exists' : 'null'}`);
+          
           if (task && task.mcpWorkflow && task.mcpWorkflow.mcps && Array.isArray(task.mcpWorkflow.mcps)) {
+            logger.info(`Found ${task.mcpWorkflow.mcps.length} MCPs in task workflow for TaskID: ${message.taskId}`);
+            
             // 返回最后一个任务中使用的所有 MCP 的完整信息
             lastUsedMcp = task.mcpWorkflow.mcps.map(mcp => {
               // 包含完整的 MCP 信息，包括 alternatives

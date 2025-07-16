@@ -86,14 +86,16 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 
 从v2.1.3开始，新增了以下重要功能：
 
-#### 1. Agent任务历史记录API
-- **端点**: `GET /api/agent/:id/tasks`
-- **功能**: 获取指定Agent的任务执行历史记录
+#### 1. Agent会话历史记录API
+- **端点**: `GET /api/agent/:id/conversations`
+- **功能**: 获取指定Agent的会话历史记录，从对话角度展示Agent使用情况
 - **特性**: 
   - 支持分页和状态筛选
-  - 包含完整的任务详情和Agent信息
-  - 提供任务执行结果和工作流信息
-  - 自动过滤Agent相关任务（task_type = "agent"）
+  - 包含完整的会话详情、消息历史和Agent信息
+  - 提供任务执行结果和MCP使用详情
+  - 以会话为主线，包含完整的用户与Agent的对话记录
+  - 显示消息与任务的关联关系及执行步骤
+  - 提供Agent使用的统计信息
 
 #### 2. 对话最后使用MCP信息
 - **端点**: `GET /api/conversation/:id` （增强功能）
@@ -5659,11 +5661,11 @@ function handleAgentStreamingEvents(event) {
 
 ---
 
-### 15. 获取Agent任务历史记录
+### 15. 获取Agent会话历史记录
 
-**端点**: `GET /api/agent/:id/tasks`
+**端点**: `GET /api/agent/:id/conversations`
 
-**描述**: 获取指定Agent的任务执行历史记录，包含任务详情和Agent信息
+**描述**: 获取指定Agent的会话历史记录，包含与该Agent相关的所有对话信息、完整的消息历史以及使用的MCP详情。这个接口从会话的角度来获取Agent的历史记录，不是从任务角度，因为消息里面会有任务的类型。
 
 **认证**: 需要访问令牌
 
@@ -5673,7 +5675,7 @@ function handleAgentStreamingEvents(event) {
 **查询参数**:
 - `limit`: 每页数量（可选，默认10）
 - `offset`: 偏移量（可选，默认0）
-- `status`: 任务状态筛选（可选，如：completed、failed、in_progress）
+- `status`: 对话状态筛选（可选）
 
 **响应**:
 ```json
@@ -5682,62 +5684,136 @@ function handleAgentStreamingEvents(event) {
   "data": {
     "agentId": "agent_123456",
     "agentName": "BitcoinPriceAnalyzer",
-    "tasks": [
+    "agentDescription": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis",
+    "conversations": [
       {
-        "id": "task_789",
-        "user_id": "user_123",
-        "title": "【robot】Retrieve the TVL data for Uniswap protocol",
-        "content": "Retrieve the TVL data for Uniswap protocol",
-        "status": "completed",
-        "task_type": "agent",
-        "agent_id": "agent_123456",
-        "mcp_workflow": {
-          "mcps": [
-            {
-              "name": "defillama-mcp",
-              "description": "DeFiLlama DeFi protocol data and TVL analytics",
-              "category": "Market Data",
-              "authRequired": false,
-              "authVerified": true
+        "id": "conv_987654321",
+        "title": "[AGENT:agent_123456] Try BitcoinPriceAnalyzer",
+        "type": "agent",
+        "agentId": "agent_123456",
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "updatedAt": "2023-06-20T08:05:30.000Z",
+        "messageCount": 8,
+        "taskCount": 2,
+        "messages": [
+          {
+            "id": "msg_123456",
+            "conversationId": "conv_987654321",
+            "content": "Can you get me the current Bitcoin price?",
+            "type": "user",
+            "intent": "task",
+            "taskId": "task_789",
+            "createdAt": "2023-06-20T08:00:00.000Z"
+          },
+          {
+            "id": "msg_123457",
+            "conversationId": "conv_987654321",
+            "content": "I'll help you get the current Bitcoin price. Let me fetch that information for you...",
+            "type": "assistant",
+            "intent": "task",
+            "taskId": "task_789",
+            "metadata": {
+              "stepType": "TASK_CREATION",
+              "stepName": "Task Creation",
+              "taskPhase": "analysis",
+              "isComplete": true
+            },
+            "createdAt": "2023-06-20T08:00:05.000Z"
+          },
+          {
+            "id": "msg_123458",
+            "conversationId": "conv_987654321",
+            "content": "Bitcoin price: $45,230.50 USD (+2.3% in 24h). Market cap: $890.2B. Trading volume: $28.5B.",
+            "type": "assistant",
+            "intent": "task",
+            "taskId": "task_789",
+            "metadata": {
+              "stepType": "EXECUTION",
+              "stepNumber": 1,
+              "stepName": "Get Bitcoin current price and market data",
+              "taskPhase": "execution",
+              "isComplete": true
+            },
+            "createdAt": "2023-06-20T08:05:25.000Z"
+          },
+          {
+            "id": "msg_123459",
+            "conversationId": "conv_987654321",
+            "content": "What about Ethereum?",
+            "type": "user",
+            "intent": "chat",
+            "createdAt": "2023-06-20T08:05:30.000Z"
+          }
+        ],
+        "tasksUsed": [
+          {
+            "taskId": "task_789",
+            "title": "【机器人】Get Bitcoin current price",
+            "status": "completed",
+            "taskType": "agent",
+            "result": {
+              "summary": "Task execution completed successfully",
+              "finalResult": "Bitcoin price: $45,230.50 USD (+2.3% in 24h)..."
+            },
+            "mcpWorkflow": {
+              "mcps": [
+                {
+                  "name": "coingecko-server",
+                  "description": "CoinGecko官方MCP服务器",
+                  "category": "Market Data",
+                  "authRequired": true,
+                  "authVerified": true
+                }
+              ],
+              "workflow": [
+                {
+                  "step": 1,
+                  "mcp": "coingecko-server",
+                  "action": "Get Bitcoin current price and market data",
+                  "input": {}
+                }
+              ]
             }
-          ],
-          "workflow": [
-            {
-              "step": 1,
-              "mcp": "defillama-mcp",
-              "action": "Retrieve the current Total Value Locked (TVL) data for the Uniswap protocol",
-              "input": {
-                "protocol": "uniswap"
+          }
+        ],
+        "mcpsUsed": [
+          {
+            "name": "coingecko-server",
+            "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coingecko.png",
+            "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+            "taskId": "task_789",
+            "usedAt": "2023-06-20T08:05:25.000Z",
+            "authRequired": true,
+            "authVerified": true,
+            "authParams": {
+              "COINGECKO_API_KEY": "COINGECKO_API_KEY"
+            },
+            "alternatives": [
+              {
+                "name": "coinmarketcap-mcp",
+                "description": "CoinMarketCap cryptocurrency market data and analytics",
+                "authRequired": true,
+                "authVerified": false,
+                "category": "Market Data",
+                "imageUrl": "https://example.com/coinmarketcap.png",
+                "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp"
               }
-            }
-          ]
-        },
-        "result": {
-          "summary": "Task execution completed successfully",
-          "steps": [
-            {
-              "step": 1,
-              "success": true,
-              "result": "Successfully retrieved TVL data for Uniswap protocol..."
-            }
-          ],
-          "finalResult": "Current Uniswap TVL: $4.2B USD..."
-        },
-        "conversation_id": "conv_987",
-        "created_at": "2023-06-20T08:00:00.000Z",
-        "updated_at": "2023-06-20T08:05:00.000Z",
-        "completed_at": "2023-06-20T08:05:00.000Z",
-        "agent": {
-          "id": "agent_123456",
-          "name": "BitcoinPriceAnalyzer",
-          "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis",
-          "categories": ["Market Data", "Trading"]
-        }
+            ]
+          }
+        ]
       }
     ],
-    "total": 25,
+    "total": 5,
     "limit": 10,
-    "offset": 0
+    "offset": 0,
+    "stats": {
+      "totalConversations": 5,
+      "totalMessages": 32,
+      "totalTasks": 8,
+      "uniqueMcpsUsed": 3
+    }
   }
 }
 ```
@@ -5745,13 +5821,32 @@ function handleAgentStreamingEvents(event) {
 **字段说明**:
 - `agentId`: Agent的唯一标识符
 - `agentName`: Agent名称
-- `tasks`: 任务历史记录数组
-  - `task_type`: 任务类型，Agent任务标记为 "agent"
-  - `agent_id`: 关联的Agent ID
-  - `agent`: 包含Agent基本信息的对象
-- `total`: 符合条件的任务总数
-- `limit`: 每页数量
-- `offset`: 偏移量
+- `agentDescription`: Agent描述
+- `conversations`: 会话历史记录数组
+  - `id`: 会话ID
+  - `title`: 会话标题
+  - `type`: 会话类型（"agent"表示Agent会话）
+  - `messages`: 该会话中的所有消息历史
+    - `type`: 消息类型（user/assistant）
+    - `intent`: 消息意图（chat/task）
+    - `taskId`: 关联的任务ID（如果是任务消息）
+    - `metadata`: 消息元数据（包含步骤类型、阶段等信息）
+  - `tasksUsed`: 该会话中使用的所有任务详情
+  - `mcpsUsed`: 该会话中使用的所有MCP详情（从任务工作流中提取）
+- `total`: 符合条件的会话总数
+- `stats`: 统计信息
+  - `totalConversations`: 总会话数
+  - `totalMessages`: 总消息数
+  - `totalTasks`: 总任务数
+  - `uniqueMcpsUsed`: 使用的不同MCP数量
+
+**接口特性**:
+- **以会话为主线**: 从对话的角度展示Agent的使用历史
+- **完整消息历史**: 包含用户发送的消息和LLM回复的消息
+- **MCP使用详情**: 包含使用的MCP详情、认证状态和备选方案
+- **任务关联**: 显示消息与任务的关联关系
+- **步骤追踪**: 通过metadata字段展示任务执行的详细步骤
+- **统计信息**: 提供Agent使用的总体统计数据
 
 **错误响应**:
 - `401 Unauthorized`: 无效的访问令牌
@@ -5761,16 +5856,16 @@ function handleAgentStreamingEvents(event) {
 
 **使用示例**:
 ```bash
-# 获取Agent任务历史（默认参数）
-curl -X GET "http://localhost:3001/api/agent/agent_123456/tasks" \
+# 获取Agent会话历史（默认参数）
+curl -X GET "http://localhost:3001/api/agent/agent_123456/conversations" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
-# 获取已完成的任务（带过滤条件）
-curl -X GET "http://localhost:3001/api/agent/agent_123456/tasks?status=completed&limit=5" \
+# 分页获取会话历史
+curl -X GET "http://localhost:3001/api/agent/agent_123456/conversations?limit=5&offset=10" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 
-# 分页获取任务历史
-curl -X GET "http://localhost:3001/api/agent/agent_123456/tasks?limit=10&offset=20" \
+# 获取特定状态的会话
+curl -X GET "http://localhost:3001/api/agent/agent_123456/conversations?status=completed&limit=20" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
 
