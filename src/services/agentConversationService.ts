@@ -688,48 +688,29 @@ I encountered an error while executing this task. Please try again or check the 
     try {
       // 提取任务结果
       const taskResult = task?.result;
-      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
-      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      // 构建结构化的响应格式
-      let formattedResponse = '';
-      
-      // 1. Success Indicator 部分 - 使用绿色成功样式
-      formattedResponse += `## ✅ Success Indicator\n`;
-      formattedResponse += `> The task was ${statusText}.\n\n`;
-      
-      // 2. Response 部分 - 使用二级标题
-      formattedResponse += `## 📋 Response\n`;
-      
+      // 直接返回实际的任务执行结果，不使用冗余的模板格式
       if (taskResult) {
         // 优先使用最终结果
         if (taskResult.finalResult) {
-          formattedResponse += `${taskResult.finalResult}\n\n`;
+          return taskResult.finalResult;
         } else if (taskResult.summary) {
-          formattedResponse += `${taskResult.summary}\n\n`;
+          return taskResult.summary;
         } else if (taskResult.steps && taskResult.steps.length > 0) {
           // 如果有步骤结果，提取关键信息
           const lastStep = taskResult.steps[taskResult.steps.length - 1];
           if (lastStep.result) {
-            formattedResponse += `${lastStep.result}\n\n`;
-          } else {
-            formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
+            return lastStep.result;
           }
-        } else {
-          formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
         }
-      } else {
-        formattedResponse += `The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.\n\n`;
       }
       
-      // 3. 任务详情部分 - 使用无序列表格式，小字标题样式
-      formattedResponse += `---\n\n`;
-      formattedResponse += `- **Task:** ${originalRequest}\n`;
-      formattedResponse += `- **Agent:** ${agent.name}\n`;
-      formattedResponse += `- **Task ID:** ${task?.id || 'Unknown'}\n`;
-      formattedResponse += `- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.\n`;
+      // 降级处理：返回简单的成功消息
+      const statusIcon = isPartialSuccess ? '⚠️' : '✅';
+      const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      return formattedResponse;
+      return `${statusIcon} Task ${statusText} using ${agent.name}.`;
+      
     } catch (error) {
       logger.error('Failed to format task result:', error);
       
@@ -737,18 +718,7 @@ I encountered an error while executing this task. Please try again or check the 
       const statusIcon = isPartialSuccess ? '⚠️' : '✅';
       const statusText = isPartialSuccess ? 'completed with warnings' : 'completed successfully';
       
-      return `## ✅ Success Indicator
-> The task was ${statusText}.
-
-## 📋 Response
-The Agent uses **${agent.name}** to effortlessly access the latest information. Stay informed with this efficient tool.
-
----
-
-- **Task:** ${originalRequest}
-- **Agent:** ${agent.name}
-- **Task ID:** ${task?.id || 'Unknown'}
-- **Status:** ${statusIcon} I've successfully executed this task using my specialized tools and workflow. The task has been completed as requested.`;
+      return `${statusIcon} Task ${statusText} using ${agent.name}.`;
     }
   }
 

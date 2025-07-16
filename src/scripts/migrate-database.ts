@@ -1330,7 +1330,7 @@ class MigrationService {
           const agentConversationsResult = await db.query(`
             UPDATE conversations 
             SET type = 'agent' 
-            WHERE (title LIKE '%机器人%' OR title LIKE '%Agent%' OR title LIKE '%assistant%')
+            WHERE (title LIKE '%robot%' OR title LIKE '%Agent%' OR title LIKE '%assistant%')
               AND type = 'normal'
           `);
           
@@ -1342,7 +1342,7 @@ class MigrationService {
           const agentTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'agent' 
-            WHERE (title LIKE '%【机器人】%' OR title LIKE '%Agent%')
+            WHERE (title LIKE '%【robot】%' OR title LIKE '%Agent%')
               AND task_type = 'mcp'
           `);
           

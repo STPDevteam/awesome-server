@@ -248,74 +248,110 @@ export class TaskExecutorService {
       console.log(`Tool Input Schema: ${JSON.stringify(targetTool.inputSchema, null, 2)}`);
       
       let result;
-      try {
-        result = await langchainTool.invoke(input);
-      } catch (schemaError) {
-        if (schemaError instanceof Error && schemaError.message && schemaError.message.includes('schema')) {
-          logger.warn(`Schema validation failed, attempting to convert input parameters...`);
-          console.log(`⚠️ Schema validation failed, attempting parameter conversion...`);
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount <= maxRetries) {
+        try {
+          result = await langchainTool.invoke(input);
           
-          // 使用LLM转换输入参数
-          const conversionPrompt = `Convert the input parameters to match the tool schema.
-
-Tool: ${targetTool.name}
-Description: ${targetTool.description || 'No description'}
-Expected Schema: ${JSON.stringify(targetTool.inputSchema, null, 2)}
-Current Input: ${JSON.stringify(input, null, 2)}
-
-Please respond with ONLY a valid JSON object that matches the expected schema.
-For cryptocurrency tools:
-- Use lowercase coin IDs like "bitcoin", "ethereum"
-- Use "usd" for vs_currency
-- Include boolean flags like include_market_cap: true, include_24hr_change: true`;
-
-          const conversionResponse = await this.llm.invoke([
-            new SystemMessage(conversionPrompt)
-          ]);
-
-          try {
-            // 🔧 改进JSON解析，先清理LLM响应中的额外内容
-            let responseText = conversionResponse.content.toString().trim();
-            
-            // 移除Markdown代码块标记
-            responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-            
-            // 尝试提取JSON对象
-            const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-              responseText = jsonMatch[0];
-            }
-            
-            console.log(`🧹 Cleaned LLM response: ${responseText}`);
-            
-            const convertedInput = JSON.parse(responseText);
-            console.log(`🔄 Converted input: ${JSON.stringify(convertedInput, null, 2)}`);
-            logger.info(`🔄 Attempting tool call with converted input: ${JSON.stringify(convertedInput)}`);
-            
-            result = await langchainTool.invoke(convertedInput);
-            console.log(`✅ Tool call succeeded with converted input`);
-          } catch (conversionError) {
-            logger.error(`❌ Parameter conversion failed: ${conversionError}`);
-            logger.error(`❌ Raw LLM response: ${conversionResponse.content.toString()}`);
-            
-            // 🔧 添加更智能的降级处理
-            if (input && typeof input === 'string' && targetTool.inputSchema) {
-              try {
-                // 尝试根据 schema 自动创建参数
-                const autoParams = this.createParamsFromSchema(input, targetTool.inputSchema);
-                console.log(`🚨 Attempting auto-generated params: ${JSON.stringify(autoParams, null, 2)}`);
-                result = await langchainTool.invoke(autoParams);
-                console.log(`✅ Tool call succeeded with auto-generated params`);
-              } catch (autoError) {
-                logger.error(`❌ Auto-generated params also failed: ${autoError}`);
-                throw schemaError; // 抛出原始错误
-              }
-            } else {
-              throw schemaError; // 抛出原始错误
-            }
+          // 🔧 新增：检查结果是否包含JSON解析错误
+          if (typeof result === 'string' && result.includes('Unexpected end of JSON input')) {
+            throw new Error(`MCP API JSON parsing error: ${result}`);
           }
-        } else {
-          throw schemaError;
+          
+          break; // 成功，跳出重试循环
+          
+        } catch (error) {
+          retryCount++;
+          logger.warn(`Tool call attempt ${retryCount}/${maxRetries + 1} failed:`, error);
+          
+          // 🔧 新增：使用LLM智能处理各种错误类型
+          if (retryCount <= maxRetries) {
+            logger.info(`🤖 Using LLM to fix tool call error and retry...`);
+            
+            let errorType = 'unknown';
+            let errorMessage = error instanceof Error ? error.message : String(error);
+            
+            // 识别错误类型
+            if (errorMessage.includes('schema') || errorMessage.includes('validation')) {
+              errorType = 'schema_validation';
+            } else if (errorMessage.includes('JSON') || errorMessage.includes('parse')) {
+              errorType = 'json_parsing';
+            } else if (errorMessage.includes('timeout') || errorMessage.includes('network')) {
+              errorType = 'network_timeout';
+            } else if (errorMessage.includes('API') || errorMessage.includes('HTTP')) {
+              errorType = 'api_error';
+            }
+            
+            // 🔧 智能错误处理Prompt
+            const errorHandlingPrompt = `You are an expert at fixing MCP tool call errors. 
+
+ERROR CONTEXT:
+- Tool: ${targetTool.name}
+- Description: ${targetTool.description || 'No description'}
+- Expected Schema: ${JSON.stringify(targetTool.inputSchema, null, 2)}
+- Current Input: ${JSON.stringify(input, null, 2)}
+- Error Type: ${errorType}
+- Error Message: ${errorMessage}
+- Attempt: ${retryCount}/${maxRetries + 1}
+
+AVAILABLE FIXES:
+1. **Schema Validation Errors**: Fix parameter names, types, and structure
+2. **JSON Parsing Errors**: Try alternative parameter values or formats
+3. **Network/Timeout Errors**: Use simpler parameters or default values
+4. **API Errors**: Try alternative parameter combinations
+
+SPECIFIC FIXES FOR DEFILLAMA:
+- For "protocol" parameter: try lowercase like "uniswap", "aave", "compound"
+- For network issues: try popular protocols like "ethereum", "polygon"
+- For JSON errors: use simple, well-known protocol names
+
+OUTPUT REQUIREMENTS:
+Return ONLY a valid JSON object with corrected parameters:
+{
+  "protocol": "corrected_value_here"
+}
+
+Fix the error and provide corrected parameters:`;
+
+            try {
+              const fixResponse = await this.llm.invoke([
+                new SystemMessage(errorHandlingPrompt)
+              ]);
+
+              // 解析LLM的修复建议
+              let responseText = fixResponse.content.toString().trim();
+              responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+              
+              const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                responseText = jsonMatch[0];
+              }
+              
+              const correctedInput = JSON.parse(responseText);
+              logger.info(`🔧 LLM suggested fix (attempt ${retryCount}): ${JSON.stringify(correctedInput)}`);
+              
+              // 使用修正后的参数
+              input = correctedInput;
+              
+            } catch (fixError) {
+              logger.error(`Failed to get LLM fix suggestion:`, fixError);
+              
+              // 🔧 最后的fallback：根据错误类型提供硬编码的修复
+              if (errorType === 'json_parsing' && targetTool.name.includes('protocol')) {
+                input = { protocol: 'ethereum' }; // 使用最稳定的协议
+                logger.info(`🚨 Using fallback protocol: ethereum`);
+              }
+            }
+            
+            // 短暂延迟后重试
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            continue;
+          }
+          
+          // 如果重试次数用完，抛出最后的错误
+          throw error;
         }
       }
       
@@ -499,9 +535,21 @@ Transform the data now:`;
 
       let toolSelection;
       try {
-        const responseText = toolSelectionResponse.content.toString().trim();
-        // 尝试解析JSON响应
+        let responseText = toolSelectionResponse.content.toString().trim();
+        
+        // 🔧 修复：正确处理Markdown代码块包装的JSON
+        // 移除Markdown代码块标记
+        responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        
+        // 尝试提取JSON对象
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          responseText = jsonMatch[0];
+        }
+        
+        // 解析JSON响应
         toolSelection = JSON.parse(responseText);
+        logger.info(`🔧 Successfully parsed tool selection: ${toolSelection.toolName}`);
       } catch (parseError) {
         logger.error(`Failed to parse tool selection response: ${toolSelectionResponse.content}`);
         // 回退到简单的工具选择
