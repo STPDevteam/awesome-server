@@ -89,8 +89,6 @@ export class AgentConversationService {
         };
       }
 
-      logger.info(`✅ Agent found [${agent.name}] - Status: ${agent.status}, CreatedBy: ${agent.userId}`);
-
       // Check if Agent is accessible
       if (agent.status === 'private' && agent.userId !== userId) {
         logger.warn(`❌ Access denied for private Agent [${agent.name}] - User [${userId}] is not the owner [${agent.userId}]`);
@@ -100,10 +98,6 @@ export class AgentConversationService {
         };
       }
 
-      logger.info(`✅ Agent access check passed for user [${userId}]`);
-
-      // 🔧 CRITICAL: Check MCP authentication status
-      logger.info(`🔐 Starting MCP authentication check for Agent [${agent.name}] by user [${userId}]`);
       const authCheck = await this.checkAgentMCPAuth(agent, userId);
       
       if (authCheck.needsAuth) {

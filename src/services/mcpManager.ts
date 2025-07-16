@@ -566,6 +566,21 @@ export class MCPManager {
    * @param userId User ID for multi-user isolation
    */
   async callTool(name: string, tool: string, args: any, userId?: string): Promise<any> {
+    // 🔧 新增：记录MCP调用前的内存使用情况
+    const memUsageBefore = process.memoryUsage();
+    const argsSize = JSON.stringify(args).length;
+    
+    console.log(`\n==== 🧠 MCPManager Memory Debug - BEFORE Tool Call ====`);
+    console.log(`Time: ${new Date().toISOString()}`);
+    console.log(`MCP: ${name}, Tool: ${tool}, User: ${userId || 'default'}`);
+    console.log(`Memory Before (MB):`);
+    console.log(`  RSS: ${(memUsageBefore.rss / 1024 / 1024).toFixed(2)}`);
+    console.log(`  Heap Used: ${(memUsageBefore.heapUsed / 1024 / 1024).toFixed(2)}`);
+    console.log(`  Heap Total: ${(memUsageBefore.heapTotal / 1024 / 1024).toFixed(2)}`);
+    console.log(`  External: ${(memUsageBefore.external / 1024 / 1024).toFixed(2)}`);
+    console.log(`Args Size: ${argsSize} bytes (${(argsSize / 1024).toFixed(2)} KB)`);
+    console.log(`Args Preview: ${JSON.stringify(args).substring(0, 200)}...`);
+    
     logger.info(`【MCP Debug】MCPManager.callTool() Starting to call MCP tool [MCP: ${name}, Tool: ${tool}, User: ${userId || 'default'}]`);
     logger.info(`【MCP Debug】Call arguments: ${JSON.stringify(args)}`);
     
@@ -590,12 +605,125 @@ export class MCPManager {
     mcpClient.lastUsed = new Date();
     
     try {
+      // 🔧 新增：记录客户端调用前的内存状态
+      const memBeforeClientCall = process.memoryUsage();
+      console.log(`\n==== 🔧 MCPManager Memory Before Client Call ====`);
+      console.log(`  RSS: ${(memBeforeClientCall.rss / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`  Heap Used: ${(memBeforeClientCall.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`  Heap Total: ${(memBeforeClientCall.heapTotal / 1024 / 1024).toFixed(2)} MB`);
+      
+      console.log(`🚀 CALLING MCP CLIENT: ${name}.${actualTool}...`);
+      console.log(`🔧 Client call details:`);
+      console.log(`   Tool name: ${actualTool}`);
+      console.log(`   Arguments: ${JSON.stringify(args, null, 2)}`);
+      console.log(`   Connection key: ${connectionKey}`);
+      console.log(`   Client exists: ${!!mcpClient.client}`);
+      
       const result = await mcpClient.client.callTool({
         name: actualTool,
         arguments: args,
       });
+      
+      console.log(`✅ MCP CLIENT CALL COMPLETED`);
+      
+      // 🔧 新增：记录客户端调用后的内存状态和结果分析
+      const memAfterClientCall = process.memoryUsage();
+      const resultSize = JSON.stringify(result).length;
+      
+      console.log(`\n==== 🧠 MCPManager Memory Debug - AFTER Client Call ====`);
+      console.log(`  RSS: ${(memAfterClientCall.rss / 1024 / 1024).toFixed(2)} MB (${((memAfterClientCall.rss - memBeforeClientCall.rss) / 1024 / 1024).toFixed(2)} MB delta)`);
+      console.log(`  Heap Used: ${(memAfterClientCall.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterClientCall.heapUsed - memBeforeClientCall.heapUsed) / 1024 / 1024).toFixed(2)} MB delta)`);
+      console.log(`  Heap Total: ${(memAfterClientCall.heapTotal / 1024 / 1024).toFixed(2)} MB (${((memAfterClientCall.heapTotal - memBeforeClientCall.heapTotal) / 1024 / 1024).toFixed(2)} MB delta)`);
+      console.log(`Result Size: ${resultSize} bytes (${(resultSize / 1024).toFixed(2)} KB, ${(resultSize / 1024 / 1024).toFixed(2)} MB)`);
+      console.log(`Result Type: ${typeof result}`);
+      console.log(`Result Structure Analysis:`);
+      
+      if (result && typeof result === 'object') {
+        console.log(`  Result keys: ${Object.keys(result)}`);
+        if (result.content) {
+          console.log(`  Has content field: true`);
+          console.log(`  Content type: ${typeof result.content}`);
+          if (Array.isArray(result.content)) {
+            console.log(`  Content is array with ${result.content.length} items`);
+            console.log(`  First content item: ${JSON.stringify(result.content[0]).substring(0, 200)}...`);
+            
+            // 🔧 分析内容项的大小和类型
+            result.content.forEach((item, index) => {
+              const itemSize = JSON.stringify(item).length;
+              console.log(`  Content[${index}] size: ${itemSize} bytes (${(itemSize / 1024).toFixed(2)} KB)`);
+              console.log(`  Content[${index}] type: ${typeof item}`);
+              if (item && typeof item === 'object') {
+                console.log(`  Content[${index}] keys: ${Object.keys(item)}`);
+                if (item.text && typeof item.text === 'string') {
+                  console.log(`  Content[${index}].text length: ${item.text.length} chars`);
+                  console.log(`  Content[${index}].text preview: ${item.text.substring(0, 100)}...`);
+                }
+              }
+            });
+          } else {
+            console.log(`  Content size: ${JSON.stringify(result.content).length} bytes`);
+            console.log(`  Content preview: ${JSON.stringify(result.content).substring(0, 200)}...`);
+          }
+        } else {
+          console.log(`  Has content field: false`);
+        }
+      } else {
+        console.log(`  Result is not an object`);
+        console.log(`  Result preview: ${String(result).substring(0, 200)}...`);
+      }
+      
+      // 🔧 新增：记录最终内存状态和总体效率
+      const memUsageAfter = process.memoryUsage();
+      
+      console.log(`\n==== 🧠 MCPManager Memory Debug - FINAL STATE ====`);
+      console.log(`Memory After (MB):`);
+      console.log(`  RSS: ${(memUsageAfter.rss / 1024 / 1024).toFixed(2)} (${((memUsageAfter.rss - memUsageBefore.rss) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`  Heap Used: ${(memUsageAfter.heapUsed / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`  Heap Total: ${(memUsageAfter.heapTotal / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapTotal - memUsageBefore.heapTotal) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`  External: ${(memUsageAfter.external / 1024 / 1024).toFixed(2)} (${((memUsageAfter.external - memUsageBefore.external) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`Final Result Size: ${resultSize} bytes (${(resultSize / 1024).toFixed(2)} KB, ${(resultSize / 1024 / 1024).toFixed(2)} MB)`);
+      console.log(`🎯 MCP EFFICIENCY RATIO: ${((resultSize / 1024 / 1024) / Math.max((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024, 0.001)).toFixed(2)} (result MB / heap delta MB)`);
+      
+      // 🔧 检查是否存在内存泄漏迹象
+      const heapDelta = (memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024;
+      const resultMB = resultSize / 1024 / 1024;
+      
+      if (heapDelta > resultMB * 10) {
+        console.log(`⚠️ POTENTIAL MEMORY LEAK DETECTED:`);
+        console.log(`   Heap increased by ${heapDelta.toFixed(2)} MB`);
+        console.log(`   But result is only ${resultMB.toFixed(2)} MB`);
+        console.log(`   Ratio: ${(heapDelta / resultMB).toFixed(2)}x (should be < 10x)`);
+      }
+      
+      if (resultMB > 50) {
+        console.log(`⚠️ LARGE RESULT DETECTED: ${resultMB.toFixed(2)} MB`);
+        console.log(`   This could cause memory issues if not handled properly`);
+      }
+      
+      // 🔧 强制垃圾回收（如果可用）
+      if (global.gc) {
+        console.log(`🗑️ Forcing garbage collection after MCP call...`);
+        const memBeforeGC = process.memoryUsage();
+        global.gc();
+        const memAfterGC = process.memoryUsage();
+        console.log(`Memory after GC: Heap Used ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterGC.heapUsed - memBeforeGC.heapUsed) / 1024 / 1024).toFixed(2)} MB freed)`);
+      } else {
+        console.log(`⚠️ Garbage collection not available (start Node.js with --expose-gc to enable)`);
+      }
+      
       return result;
     } catch (error) {
+      // 🔧 新增：记录错误时的内存状态
+      const memUsageOnError = process.memoryUsage();
+      console.log(`\n==== ❌ MCPManager Memory Debug - ERROR STATE ====`);
+      console.log(`Memory on Error (MB):`);
+      console.log(`  RSS: ${(memUsageOnError.rss / 1024 / 1024).toFixed(2)}`);
+      console.log(`  Heap Used: ${(memUsageOnError.heapUsed / 1024 / 1024).toFixed(2)}`);
+      console.log(`  Heap Total: ${(memUsageOnError.heapTotal / 1024 / 1024).toFixed(2)}`);
+      console.log(`Error Type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+      console.log(`Error Message: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`Error Stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
+      
       logger.error(`【MCP Debug】MCP tool call failed [MCP: ${name}, Tool: ${actualTool}, User: ${userId || 'default'}]:`, error);
       throw error;
     }
