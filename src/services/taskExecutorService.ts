@@ -203,6 +203,21 @@ export class TaskExecutorService {
    */
   private async callMCPToolWithLangChain(mcpName: string, toolName: string, input: any, taskId?: string): Promise<any> {
     try {
+      // 🔧 新增：记录内存使用情况和输入数据大小
+      const memUsageBefore = process.memoryUsage();
+      const inputSize = JSON.stringify(input).length;
+      
+      console.log(`\n==== 🧠 Memory & Data Debug - BEFORE MCP Call ====`);
+      console.log(`Time: ${new Date().toISOString()}`);
+      console.log(`MCP: ${mcpName}, Tool: ${toolName}, Task: ${taskId}`);
+      console.log(`Memory Before (MB):`);
+      console.log(`  RSS: ${(memUsageBefore.rss / 1024 / 1024).toFixed(2)}`);
+      console.log(`  Heap Used: ${(memUsageBefore.heapUsed / 1024 / 1024).toFixed(2)}`);
+      console.log(`  Heap Total: ${(memUsageBefore.heapTotal / 1024 / 1024).toFixed(2)}`);
+      console.log(`  External: ${(memUsageBefore.external / 1024 / 1024).toFixed(2)}`);
+      console.log(`Input Data Size: ${inputSize} bytes (${(inputSize / 1024).toFixed(2)} KB)`);
+      console.log(`Input Data Preview: ${JSON.stringify(input).substring(0, 200)}...`);
+      
       logger.info(`🔍 Calling MCP tool via LangChain [MCP: ${mcpName}, Tool: ${toolName}]`);
       
       // 获取用户ID
@@ -249,11 +264,35 @@ export class TaskExecutorService {
       
       let result;
       try {
+        // 🔧 新增：记录工具调用前的内存状态
+        const memBeforeToolCall = process.memoryUsage();
+        console.log(`\n==== 🔧 Memory Before Tool Invoke ====`);
+        console.log(`  RSS: ${(memBeforeToolCall.rss / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`  Heap Used: ${(memBeforeToolCall.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`  Heap Total: ${(memBeforeToolCall.heapTotal / 1024 / 1024).toFixed(2)} MB`);
+        
+        console.log(`🚀 INVOKING LANGCHAIN TOOL: ${langchainTool.name}...`);
         result = await langchainTool.invoke(input);
+        console.log(`✅ LANGCHAIN TOOL INVOCATION COMPLETED`);
+        
+        // 🔧 新增：记录工具调用后的内存状态和结果大小
+        const memAfterToolCall = process.memoryUsage();
+        const resultSize = typeof result === 'string' ? result.length : JSON.stringify(result).length;
+        
+        console.log(`\n==== 🧠 Memory & Data Debug - AFTER Tool Invoke ====`);
+        console.log(`  RSS: ${(memAfterToolCall.rss / 1024 / 1024).toFixed(2)} MB (${((memAfterToolCall.rss - memBeforeToolCall.rss) / 1024 / 1024).toFixed(2)} MB delta)`);
+        console.log(`  Heap Used: ${(memAfterToolCall.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterToolCall.heapUsed - memBeforeToolCall.heapUsed) / 1024 / 1024).toFixed(2)} MB delta)`);
+        console.log(`  Heap Total: ${(memAfterToolCall.heapTotal / 1024 / 1024).toFixed(2)} MB (${((memAfterToolCall.heapTotal - memBeforeToolCall.heapTotal) / 1024 / 1024).toFixed(2)} MB delta)`);
+        console.log(`Result Data Size: ${resultSize} bytes (${(resultSize / 1024).toFixed(2)} KB, ${(resultSize / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`Result Type: ${typeof result}`);
+        console.log(`Result Preview: ${typeof result === 'string' ? result.substring(0, 500) : JSON.stringify(result).substring(0, 500)}...`);
+        
       } catch (schemaError) {
         if (schemaError instanceof Error && schemaError.message && schemaError.message.includes('schema')) {
           logger.warn(`Schema validation failed, attempting to convert input parameters...`);
           console.log(`⚠️ Schema validation failed, attempting parameter conversion...`);
+          console.log(`⚠️ Schema Error Details: ${schemaError.message}`);
+          console.log(`⚠️ Schema Error Stack: ${schemaError.stack}`);
           
           // 使用LLM转换输入参数
           const conversionPrompt = `Convert the input parameters to match the tool schema.
@@ -277,24 +316,52 @@ For cryptocurrency tools:
             // 🔧 改进JSON解析，先清理LLM响应中的额外内容
             let responseText = conversionResponse.content.toString().trim();
             
+            console.log(`\n==== 📝 LLM Parameter Conversion Debug ====`);
+            console.log(`Raw LLM Response Length: ${responseText.length} chars`);
+            console.log(`Raw LLM Response: ${responseText}`);
+            
             // 移除Markdown代码块标记
             responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+            console.log(`After Markdown Cleanup: ${responseText}`);
             
             // 尝试提取JSON对象
             const jsonMatch = responseText.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               responseText = jsonMatch[0];
+              console.log(`After JSON Extraction: ${responseText}`);
             }
             
-            console.log(`🧹 Cleaned LLM response: ${responseText}`);
+            console.log(`🧹 Final Cleaned LLM response: ${responseText}`);
             
             const convertedInput = JSON.parse(responseText);
             console.log(`🔄 Converted input: ${JSON.stringify(convertedInput, null, 2)}`);
+            console.log(`🔄 Converted input size: ${JSON.stringify(convertedInput).length} bytes`);
             logger.info(`🔄 Attempting tool call with converted input: ${JSON.stringify(convertedInput)}`);
             
+            // 🔧 新增：记录参数转换后的工具调用
+            const memBeforeConvertedCall = process.memoryUsage();
+            console.log(`\n==== 🔧 Memory Before Converted Tool Call ====`);
+            console.log(`  RSS: ${(memBeforeConvertedCall.rss / 1024 / 1024).toFixed(2)} MB`);
+            console.log(`  Heap Used: ${(memBeforeConvertedCall.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+            
+            console.log(`🚀 INVOKING LANGCHAIN TOOL WITH CONVERTED PARAMS: ${langchainTool.name}...`);
             result = await langchainTool.invoke(convertedInput);
-            console.log(`✅ Tool call succeeded with converted input`);
+            console.log(`✅ CONVERTED TOOL CALL SUCCEEDED`);
+            
+            // 🔧 新增：记录转换后调用的内存状态
+            const memAfterConvertedCall = process.memoryUsage();
+            const convertedResultSize = typeof result === 'string' ? result.length : JSON.stringify(result).length;
+            
+            console.log(`\n==== 🧠 Memory After Converted Tool Call ====`);
+            console.log(`  RSS: ${(memAfterConvertedCall.rss / 1024 / 1024).toFixed(2)} MB (${((memAfterConvertedCall.rss - memBeforeConvertedCall.rss) / 1024 / 1024).toFixed(2)} MB delta)`);
+            console.log(`  Heap Used: ${(memAfterConvertedCall.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterConvertedCall.heapUsed - memBeforeConvertedCall.heapUsed) / 1024 / 1024).toFixed(2)} MB delta)`);
+            console.log(`Converted Result Size: ${convertedResultSize} bytes (${(convertedResultSize / 1024).toFixed(2)} KB, ${(convertedResultSize / 1024 / 1024).toFixed(2)} MB)`);
+            
           } catch (conversionError) {
+            console.log(`\n==== ❌ Parameter Conversion Error ====`);
+            console.log(`Conversion Error: ${conversionError}`);
+            console.log(`Conversion Error Message: ${conversionError instanceof Error ? conversionError.message : String(conversionError)}`);
+            console.log(`Conversion Error Stack: ${conversionError instanceof Error ? conversionError.stack : 'No stack'}`);
             logger.error(`❌ Parameter conversion failed: ${conversionError}`);
             logger.error(`❌ Raw LLM response: ${conversionResponse.content.toString()}`);
             
@@ -304,9 +371,19 @@ For cryptocurrency tools:
                 // 尝试根据 schema 自动创建参数
                 const autoParams = this.createParamsFromSchema(input, targetTool.inputSchema);
                 console.log(`🚨 Attempting auto-generated params: ${JSON.stringify(autoParams, null, 2)}`);
+                console.log(`🚨 Auto-generated params size: ${JSON.stringify(autoParams).length} bytes`);
+                
+                const memBeforeAutoCall = process.memoryUsage();
+                console.log(`🔧 Memory Before Auto-Param Call: Heap Used ${(memBeforeAutoCall.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+                
                 result = await langchainTool.invoke(autoParams);
                 console.log(`✅ Tool call succeeded with auto-generated params`);
+                
+                const memAfterAutoCall = process.memoryUsage();
+                console.log(`🔧 Memory After Auto-Param Call: Heap Used ${(memAfterAutoCall.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterAutoCall.heapUsed - memBeforeAutoCall.heapUsed) / 1024 / 1024).toFixed(2)} MB delta)`);
+                
               } catch (autoError) {
+                console.log(`❌ Auto-generated params failed: ${autoError}`);
                 logger.error(`❌ Auto-generated params also failed: ${autoError}`);
                 throw schemaError; // 抛出原始错误
               }
@@ -315,38 +392,108 @@ For cryptocurrency tools:
             }
           }
         } else {
+          console.log(`❌ Non-schema error: ${schemaError}`);
           throw schemaError;
         }
       }
       
+      // 🔧 新增：记录最终结果处理前的状态
+      const memBeforeResultProcessing = process.memoryUsage();
+      console.log(`\n==== 🔧 Memory Before Result Processing ====`);
+      console.log(`  RSS: ${(memBeforeResultProcessing.rss / 1024 / 1024).toFixed(2)} MB`);
+      console.log(`  Heap Used: ${(memBeforeResultProcessing.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+      
       console.log(`\n==== LangChain Tool Call Raw Result ====`);
       console.log(`Raw Result Type: ${typeof result}`);
-      console.log(`Raw Result: ${result}`);
+      console.log(`Raw Result Size: ${typeof result === 'string' ? result.length : JSON.stringify(result).length} bytes`);
+      console.log(`Raw Result Preview: ${typeof result === 'string' ? result.substring(0, 1000) : JSON.stringify(result).substring(0, 1000)}...`);
       
       logger.info(`✅ LangChain tool call successful`);
-      logger.info(`📤 Raw result: ${result}`);
+      logger.info(`📤 Raw result: ${typeof result === 'string' ? result.substring(0, 200) : JSON.stringify(result).substring(0, 200)}...`);
       
       // 尝试解析JSON结果
+      let finalResult;
       try {
+        console.log(`\n==== 📊 JSON Result Processing Debug ====`);
+        console.log(`Starting JSON.parse() on result...`);
+        console.log(`Result to parse (first 500 chars): ${typeof result === 'string' ? result.substring(0, 500) : JSON.stringify(result).substring(0, 500)}...`);
+        
+        // 🔧 新增：记录JSON解析前的内存
+        const memBeforeJSONParse = process.memoryUsage();
+        console.log(`Memory before JSON.parse(): Heap Used ${(memBeforeJSONParse.heapUsed / 1024 / 1024).toFixed(2)} MB`);
+        
         const parsedResult = JSON.parse(result);
+        
+        // 🔧 新增：记录JSON解析后的内存
+        const memAfterJSONParse = process.memoryUsage();
+        console.log(`Memory after JSON.parse(): Heap Used ${(memAfterJSONParse.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterJSONParse.heapUsed - memBeforeJSONParse.heapUsed) / 1024 / 1024).toFixed(2)} MB delta)`);
+        
+        console.log(`✅ JSON.parse() successful`);
+        console.log(`Parsed result type: ${typeof parsedResult}`);
+        console.log(`Parsed result keys: ${typeof parsedResult === 'object' && parsedResult !== null ? Object.keys(parsedResult) : 'Not an object'}`);
+        
         if (parsedResult.content) {
-          return parsedResult;
+          console.log(`Found content field in parsed result`);
+          console.log(`Content type: ${typeof parsedResult.content}`);
+          console.log(`Content size: ${JSON.stringify(parsedResult.content).length} bytes`);
+          finalResult = parsedResult;
+        } else {
+          console.log(`No content field found, wrapping result`);
+          finalResult = {
+            content: [{
+              type: 'text',
+              text: result
+            }]
+          };
         }
-        return {
-          content: [{
-            type: 'text',
-            text: result
-          }]
-        };
-      } catch (e) {
-        return {
+      } catch (parseError) {
+        console.log(`❌ JSON.parse() failed: ${parseError}`);
+        console.log(`Parse error message: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+        console.log(`Creating wrapped result...`);
+        finalResult = {
           content: [{
             type: 'text',
             text: result
           }]
         };
       }
+      
+      // 🔧 新增：记录处理完成后的最终内存状态
+      const memUsageAfter = process.memoryUsage();
+      const finalResultSize = JSON.stringify(finalResult).length;
+      
+      console.log(`\n==== 🧠 Memory & Data Debug - FINAL STATE ====`);
+      console.log(`Memory After (MB):`);
+      console.log(`  RSS: ${(memUsageAfter.rss / 1024 / 1024).toFixed(2)} (${((memUsageAfter.rss - memUsageBefore.rss) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`  Heap Used: ${(memUsageAfter.heapUsed / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`  Heap Total: ${(memUsageAfter.heapTotal / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapTotal - memUsageBefore.heapTotal) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`  External: ${(memUsageAfter.external / 1024 / 1024).toFixed(2)} (${((memUsageAfter.external - memUsageBefore.external) / 1024 / 1024).toFixed(2)} MB total delta)`);
+      console.log(`Final Result Size: ${finalResultSize} bytes (${(finalResultSize / 1024).toFixed(2)} KB, ${(finalResultSize / 1024 / 1024).toFixed(2)} MB)`);
+      console.log(`🎯 MEMORY EFFICIENCY RATIO: ${((finalResultSize / 1024 / 1024) / ((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024)).toFixed(2)} (result MB / heap delta MB)`);
+      
+      // 🔧 强制垃圾回收（如果可用）
+      if (global.gc) {
+        console.log(`🗑️ Forcing garbage collection...`);
+        global.gc();
+        const memAfterGC = process.memoryUsage();
+        console.log(`Memory after GC: Heap Used ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterGC.heapUsed - memUsageAfter.heapUsed) / 1024 / 1024).toFixed(2)} MB freed)`);
+      } else {
+        console.log(`⚠️ Garbage collection not available (start Node.js with --expose-gc to enable)`);
+      }
+      
+      return finalResult;
     } catch (error) {
+      // 🔧 新增：记录错误时的内存状态
+      const memUsageOnError = process.memoryUsage();
+      console.log(`\n==== ❌ Memory Debug - ERROR STATE ====`);
+      console.log(`Memory on Error (MB):`);
+      console.log(`  RSS: ${(memUsageOnError.rss / 1024 / 1024).toFixed(2)}`);
+      console.log(`  Heap Used: ${(memUsageOnError.heapUsed / 1024 / 1024).toFixed(2)}`);
+      console.log(`  Heap Total: ${(memUsageOnError.heapTotal / 1024 / 1024).toFixed(2)}`);
+      console.log(`Error Type: ${error instanceof Error ? error.constructor.name : typeof error}`);
+      console.log(`Error Message: ${error instanceof Error ? error.message : String(error)}`);
+      console.log(`Error Stack: ${error instanceof Error ? error.stack : 'No stack trace'}`);
+      
       logger.error(`❌ LangChain tool call failed:`, error);
       throw error;
     }
@@ -1140,7 +1287,8 @@ Based on the above task execution information, please generate a complete execut
                 stepNumber,
                 stepName: actionName,
                 totalSteps: workflow.length,
-                taskPhase: 'execution'
+                taskPhase: 'execution',
+                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking'  // 区分思考过程和最终结果
               }
             });
             stepMessageId = stepMessage.id;

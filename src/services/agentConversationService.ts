@@ -89,8 +89,6 @@ export class AgentConversationService {
         };
       }
 
-      logger.info(`✅ Agent found [${agent.name}] - Status: ${agent.status}, CreatedBy: ${agent.userId}`);
-
       // Check if Agent is accessible
       if (agent.status === 'private' && agent.userId !== userId) {
         logger.warn(`❌ Access denied for private Agent [${agent.name}] - User [${userId}] is not the owner [${agent.userId}]`);
@@ -100,10 +98,6 @@ export class AgentConversationService {
         };
       }
 
-      logger.info(`✅ Agent access check passed for user [${userId}]`);
-
-      // 🔧 CRITICAL: Check MCP authentication status
-      logger.info(`🔐 Starting MCP authentication check for Agent [${agent.name}] by user [${userId}]`);
       const authCheck = await this.checkAgentMCPAuth(agent, userId);
       
       if (authCheck.needsAuth) {
@@ -125,13 +119,13 @@ export class AgentConversationService {
       logger.info(`✅ Agent conversation created [ConversationID: ${conversation.id}]`);
 
       // Send welcome message
-      const welcomeMessage = await this.generateWelcomeMessage(agent);
-      await messageDao.createMessage({
-        conversationId: conversation.id,
-        content: welcomeMessage,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
-      });
+      // const welcomeMessage = await this.generateWelcomeMessage(agent);
+      // await messageDao.createMessage({
+      //   conversationId: conversation.id,
+      //   content: welcomeMessage,
+      //   type: MessageType.ASSISTANT,
+      //   intent: MessageIntent.CHAT
+      // });
 
       // If user provided initial content, process it
       if (content && content.trim()) {
@@ -203,7 +197,10 @@ export class AgentConversationService {
           conversationId,
           content,
           type: MessageType.USER,
-          intent: MessageIntent.UNKNOWN
+          intent: MessageIntent.UNKNOWN,
+          metadata: {
+            contentType: 'user_input'  // 标识：用户输入
+          }
         });
 
         // 创建认证提示消息
@@ -304,7 +301,7 @@ export class AgentConversationService {
     agent?: Agent
   ): Promise<{
     userMessageId: string;
-    assistantMessageId: string;
+    // assistantMessageId: string;
     intent: MessageIntent;
     taskId?: string;
   }> {
@@ -357,7 +354,10 @@ export class AgentConversationService {
           conversationId,
           content,
           type: MessageType.USER,
-          intent: MessageIntent.UNKNOWN
+          intent: MessageIntent.UNKNOWN,
+          metadata: {
+            contentType: 'user_input'  // 标识：用户输入
+          }
         });
 
         // 创建认证提示消息
@@ -379,7 +379,7 @@ export class AgentConversationService {
 
         return {
           userMessageId: userMessage.id,
-          assistantMessageId: assistantMessage.id,
+          // assistantMessageId: assistantMessage.id,
           intent: MessageIntent.CHAT
         };
       }
@@ -434,16 +434,16 @@ export class AgentConversationService {
       if (intent.type === 'task') {
         // Execute Agent task with streaming
         const taskResult = await this.executeAgentTaskStream(content, agent, userId, conversationId, streamCallback);
-        assistantMessageId = taskResult.assistantMessageId;
+        // assistantMessageId = taskResult.assistantMessageId;
         taskId = taskResult.taskId;
         
         // Link user message to task
-        if (taskId) {
-          await messageDao.linkMessageToTask(userMessage.id, taskId);
-        }
+        // if (taskId) {
+          // await messageDao.linkMessageToTask(userMessage.id, taskId);
+        // }
         
         // Increment task count
-        await conversationDao.incrementTaskCount(conversationId);
+        // await conversationDao.incrementTaskCount(conversationId);
       } else {
         // Chat with Agent using streaming
         const chatResult = await this.chatWithAgentStream(content, agent, conversationId, (chunk) => {
@@ -461,7 +461,7 @@ export class AgentConversationService {
 
       return {
         userMessageId: userMessage.id,
-        assistantMessageId,
+        // assistantMessageId,
         intent: intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT,
         taskId
       };
@@ -761,7 +761,7 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
     userId: string, 
     conversationId: string,
     streamCallback: (chunk: any) => void
-  ): Promise<{ assistantMessageId: string; taskId: string }> {
+  ): Promise<{ taskId: string }> {
     try {
       streamCallback({
         event: 'task_creation_start',
@@ -939,17 +939,17 @@ The task has been processed, but I encountered an issue formatting the detailed 
         }
       }
 
-      const assistantMessage = await messageDao.createMessage({
-        conversationId,
-        content: assistantContent,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.TASK
-      });
+      // const assistantMessage = await messageDao.createMessage({
+      //   conversationId,
+      //   content: assistantContent,
+      //   type: MessageType.ASSISTANT,
+      //   intent: MessageIntent.TASK
+      // });
 
       streamCallback({
         event: 'message_complete',
         data: { 
-          messageId: assistantMessage.id,
+          // messageId: assistantMessage.id,
           content: assistantContent,
           taskId: task.id,
           agentName: agent.name
@@ -957,7 +957,7 @@ The task has been processed, but I encountered an issue formatting the detailed 
       });
 
       return { 
-        assistantMessageId: assistantMessage.id, 
+        // assistantMessageId: assistantMessage.id, 
         taskId: task.id 
       };
     } catch (error) {
@@ -1127,7 +1127,11 @@ Remember the conversation context and provide coherent, helpful responses.`],
         conversationId,
         content: '',  // Empty content, will be updated after stream processing
         type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
+        intent: MessageIntent.CHAT,
+        metadata: {
+          contentType: 'chat_response',  // 标识：Agent聊天回复
+          agentName: agent.name
+        }
       });
       
       // Get conversation memory
@@ -1584,27 +1588,27 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         return false;
       }
       
-      // 创建执行开始的消息
-      if (conversationId) {
-        const executionStartMessage = await messageDao.createMessage({
-          conversationId,
-          content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s capabilities with ${dynamicWorkflow.length} steps...`,
-          type: MessageType.ASSISTANT,
-          intent: MessageIntent.TASK,
-          taskId,
-          metadata: {
-            stepType: MessageStepType.EXECUTION,
-            stepName: 'Agent Execution Start',
-            taskPhase: 'execution',
-            totalSteps: dynamicWorkflow.length,
-            agentName: agent.name,
-            isComplete: true
-          }
-        });
+      // // 创建执行开始的消息
+      // if (conversationId) {
+      //   const executionStartMessage = await messageDao.createMessage({
+      //     conversationId,
+      //     content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s capabilities with ${dynamicWorkflow.length} steps...`,
+      //     type: MessageType.ASSISTANT,
+      //     intent: MessageIntent.TASK,
+      //     taskId,
+      //     metadata: {
+      //       stepType: MessageStepType.EXECUTION,
+      //       stepName: 'Agent Execution Start',
+      //       taskPhase: 'execution',
+      //       totalSteps: dynamicWorkflow.length,
+      //       agentName: agent.name,
+      //       isComplete: true
+      //     }
+      //   });
         
-        // 增量会话消息计数
-        await conversationDao.incrementMessageCount(conversationId);
-      }
+      //   // 增量会话消息计数
+      //   await conversationDao.incrementMessageCount(conversationId);
+      // }
       
       try {
         // 🔧 使用动态生成的工作流构建LangChain链
@@ -1938,12 +1942,15 @@ Return ONLY a JSON array of workflow steps, no other text:`;
           logger.info(`📍 Agent LangChain Step ${stepNumber}: ${mcpName} - ${actionName}`);
           logger.info(`📥 Agent step input: ${JSON.stringify(input, null, 2)}`);
           
-          // 创建步骤消息（流式）
-          let stepMessageId: string | undefined;
+          // 🔧 修改：为每个步骤都创建step_thinking消息，保持消息结构性
+          let stepThinkingMessageId: string | undefined;
+          let finalResultMessageId: string | undefined;
+          
           if (conversationId) {
-            const stepMessage = await messageDao.createStreamingMessage({
+            // 1. 创建step_thinking消息 - 用于存储执行过程
+            const stepThinkingMessage = await messageDao.createStreamingMessage({
               conversationId,
-              content: `🤖 ${agent.name} executing step ${stepNumber}: ${actionName}...`,
+              content: '', // 初始为空，等待流式内容填充
               type: MessageType.ASSISTANT,
               intent: MessageIntent.TASK,
               taskId,
@@ -1953,13 +1960,38 @@ Return ONLY a JSON array of workflow steps, no other text:`;
                 stepName: actionName,
                 totalSteps: workflow.length,
                 taskPhase: 'execution',
-                agentName: agent.name
+                agentName: agent.name,
+                contentType: 'step_thinking'  // 执行过程消息
               }
             });
-            stepMessageId = stepMessage.id;
-        
+            stepThinkingMessageId = stepThinkingMessage.id;
+            
             // 增量会话消息计数
             await conversationDao.incrementMessageCount(conversationId);
+            
+            // 2. 如果是最后一步，同时创建final_result消息
+            if (stepNumber === workflow.length) {
+              const finalResultMessage = await messageDao.createStreamingMessage({
+                conversationId,
+                content: '', // 初始为空，等待流式内容填充
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                                 metadata: {
+                   stepType: MessageStepType.EXECUTION,
+                   stepNumber,
+                   stepName: actionName,
+                   totalSteps: workflow.length,
+                   taskPhase: 'execution',
+                   agentName: agent.name,
+                   contentType: 'final_result'  // 最终结果消息
+                 }
+              });
+              finalResultMessageId = finalResultMessage.id;
+              
+              // 增量会话消息计数
+              await conversationDao.incrementMessageCount(conversationId);
+            }
           }
         
           // 发送步骤开始信息
@@ -2022,9 +2054,14 @@ Return ONLY a JSON array of workflow steps, no other text:`;
               );
             }
             
-            // 完成步骤消息
-            if (stepMessageId) {
-              await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
+            // 完成步骤消息 - 存储完整的执行结果
+            if (stepThinkingMessageId) {
+              await messageDao.completeStreamingMessage(stepThinkingMessageId, formattedResult);
+            }
+            
+            // 如果有final_result消息，也需要完成它
+            if (finalResultMessageId) {
+              await messageDao.completeStreamingMessage(finalResultMessageId, formattedResult);
             }
             
             // 保存步骤结果（保存格式化后的结果）
@@ -2054,8 +2091,13 @@ Return ONLY a JSON array of workflow steps, no other text:`;
             const errorMsg = error instanceof Error ? error.message : String(error);
           
             // 完成步骤消息（错误状态）
-            if (stepMessageId) {
-              await messageDao.completeStreamingMessage(stepMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
+            if (stepThinkingMessageId) {
+              await messageDao.completeStreamingMessage(stepThinkingMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
+            }
+            
+            // 如果有final_result消息，也需要完成它（错误状态）
+            if (finalResultMessageId) {
+              await messageDao.completeStreamingMessage(finalResultMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
             }
             
             // 保存错误结果
@@ -2146,7 +2188,7 @@ Return ONLY a JSON array of workflow steps, no other text:`;
   }
 
   /**
-   * 🔧 新增：Agent专用的流式结果格式化方法
+   * 🔧 新增：Agent专用的流式结果格式化方法（累积完整内容用于存储）
    */
   private async formatAgentResultWithLLMStream(
     rawResult: any, 
@@ -2156,19 +2198,29 @@ Return ONLY a JSON array of workflow steps, no other text:`;
     streamCallback: (chunk: string) => void
   ): Promise<string> {
     try {
-      // 先发送Agent标识
+      let fullContent = ''; // 累积完整内容用于最终存储
+      
+      // Agent标识部分
       const agentPrefix = `🤖 **${agent.name}** execution result\n\n`;
+      fullContent += agentPrefix;
       streamCallback(agentPrefix);
       
+      // 创建内部回调，既发送给前端，又累积到fullContent
+      const internalCallback = (chunk: string) => {
+        fullContent += chunk; // 累积完整内容
+        streamCallback(chunk); // 发送给前端
+      };
+      
       // 调用TaskExecutorService的formatResultWithLLMStream方法
-      const result = await (this.taskExecutorService as any).formatResultWithLLMStream(
+      const formattedResult = await (this.taskExecutorService as any).formatResultWithLLMStream(
         rawResult, 
         mcpName, 
         actionName,
-        streamCallback
+        internalCallback
       );
       
-      return agentPrefix + result;
+      // 返回完整的内容用于数据库存储（思考过程+最终结果）
+      return fullContent;
     } catch (error) {
       logger.error(`Failed to format Agent result with streaming:`, error);
       const fallbackResult = `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
