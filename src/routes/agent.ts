@@ -1136,6 +1136,36 @@ router.post('/:id/init', requireAuth, async (req: Request, res: Response) => {
 
     const agentId = req.params.id;
 
+    // 1. First check if user already has a conversation with this agent
+    const { conversationDao } = await import('../dao/conversationDao.js');
+    const existingConversation = await conversationDao.getUserAgentConversation(userId, agentId);
+
+    if (existingConversation) {
+      // User already has a conversation with this agent, return existing conversation
+      logger.info(`Returning existing conversation for user ${userId} and agent ${agentId}: ${existingConversation.id}`);
+      
+      // Get agent info for response
+      const agent = await agentService.getAgentById(agentId, userId);
+      
+      res.json({
+        success: true,
+        data: {
+          conversationId: existingConversation.id,
+          agentInfo: {
+            id: agent.id,
+            name: agent.name,
+            description: agent.description
+          },
+          ready: true,
+          isExistingConversation: true
+        }
+      });
+      return;
+    }
+
+    // 2. No existing conversation found, create new one
+    logger.info(`Creating new conversation for user ${userId} and agent ${agentId}`);
+    
     // Initialize Agent conversation (prepare environment)
     const result = await agentService.tryAgent({
       agentId,
@@ -1144,16 +1174,13 @@ router.post('/:id/init', requireAuth, async (req: Request, res: Response) => {
     });
 
     if (result.success && result.conversation) {
-      // Generate welcome message for the agent
-      const welcomeMessage = await agentService.generateAgentWelcomeMessage(agentId);
-      
       res.json({
         success: true,
         data: {
           conversationId: result.conversation.id,
           agentInfo: result.conversation.agentInfo,
-          welcomeMessage: welcomeMessage,
-          ready: true
+          ready: true,
+          isExistingConversation: false
         }
       });
     } else {

@@ -438,12 +438,12 @@ export class AgentConversationService {
         taskId = taskResult.taskId;
         
         // Link user message to task
-        if (taskId) {
-          await messageDao.linkMessageToTask(userMessage.id, taskId);
-        }
+        // if (taskId) {
+        //   await messageDao.linkMessageToTask(userMessage.id, taskId);
+        // }
         
         // Increment task count
-        await conversationDao.incrementTaskCount(conversationId);
+        // await conversationDao.incrementTaskCount(conversationId);
       } else {
         // Chat with Agent using streaming
         const chatResult = await this.chatWithAgentStream(content, agent, conversationId, (chunk) => {
