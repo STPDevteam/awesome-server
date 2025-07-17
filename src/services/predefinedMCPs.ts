@@ -456,6 +456,29 @@ export const predefinedMCPs: MCPService[] = [
         authParams: {}
     },
     {
+        name: 'twitter-client-mcp',
+        description: 'Advanced Twitter Client MCP with comprehensive functionality including profile operations, tweet management, search, and relationship operations. Supports secure credential handling with multiple layers of protection (LOCAL BUILD)',
+        command: 'node',
+        args: [`/home/ubuntu/mcp-tools/twitter-client-mcp/dist/index.js`],
+        env: {
+            TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
+            TWITTER_API_SECRET_KEY: process.env.TWITTER_API_SECRET_KEY || '',
+            TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
+            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
+        },
+        connected: false,
+        category: 'Social',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/x-mcp.ico',
+        githubUrl: 'https://github.com/mzkrasner/twitter-client-mcp',
+        authRequired: true,
+        authParams: {
+            TWITTER_API_KEY: "TWITTER_API_KEY",
+            TWITTER_API_SECRET_KEY: "TWITTER_API_SECRET_KEY",
+            TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
+            TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
+        }
+    },
+    {
         name: 'x-mcp',
         description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
         command: 'node',
@@ -535,6 +558,7 @@ export const mcpNameMapping: Record<string, string> = {
     'whale-tracker-mcp-service': 'whale-tracker-mcp',
     'discord-mcp-service': 'mcp-discord',
     'telegram-mcp-service': 'mcp-telegram',
+    'twitter-client-mcp-service': 'twitter-client-mcp',
     'notion-mcp-service': 'notion-mcp-server',
     '12306-mcp-service': '12306-mcp'
 };
