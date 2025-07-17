@@ -203,6 +203,8 @@ export class TaskDao {
    */
   async getUserTasks(userId: string, options?: {
     status?: string;
+    taskType?: string;
+    agentId?: string;
     limit?: number;
     offset?: number;
     sortBy?: string;
@@ -218,6 +220,18 @@ export class TaskDao {
       if (options?.status) {
         conditions.push(`status = $${paramIndex}`);
         values.push(options.status);
+        paramIndex++;
+      }
+
+      if (options?.taskType) {
+        conditions.push(`task_type = $${paramIndex}`);
+        values.push(options.taskType);
+        paramIndex++;
+      }
+
+      if (options?.agentId) {
+        conditions.push(`agent_id = $${paramIndex}`);
+        values.push(options.agentId);
         paramIndex++;
       }
 

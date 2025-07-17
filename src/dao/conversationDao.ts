@@ -397,6 +397,62 @@ export class ConversationDao {
   }
 
   /**
+   * Get existing conversation between user and agent
+   * Returns the most recent conversation if multiple exist (for compatibility with previous behavior)
+   */
+  async getUserAgentConversation(userId: string, agentId: string): Promise<Conversation | null> {
+    try {
+      // First check how many conversations exist for debugging
+      const countResult = await db.query(
+        `
+        SELECT COUNT(*) as total
+        FROM conversations
+        WHERE user_id = $1 
+          AND agent_id = $2 
+          AND type = $3 
+          AND is_deleted = false
+        `,
+        [userId, agentId, ConversationType.AGENT]
+      );
+
+      const totalConversations = parseInt(countResult.rows[0]?.total || '0');
+      logger.info(`Found ${totalConversations} existing conversations between user ${userId} and agent ${agentId}`);
+
+      if (totalConversations === 0) {
+        logger.info(`No existing conversation found between user ${userId} and agent ${agentId}`);
+        return null;
+      }
+
+      // Get the most recent conversation
+      const result = await db.query<ConversationDbRow>(
+        `
+        SELECT *
+        FROM conversations
+        WHERE user_id = $1 
+          AND agent_id = $2 
+          AND type = $3 
+          AND is_deleted = false
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [userId, agentId, ConversationType.AGENT]
+      );
+
+      const conversation = this.mapConversationFromDb(result.rows[0]);
+      logger.info(`Returning most recent conversation between user ${userId} and agent ${agentId}: ${conversation.id} (created: ${conversation.createdAt})`);
+      
+      if (totalConversations > 1) {
+        logger.info(`Note: User has ${totalConversations} total conversations with this agent, returning the most recent one`);
+      }
+
+      return conversation;
+    } catch (error) {
+      logger.error(`Failed to get user-agent conversation [UserId: ${userId}, AgentId: ${agentId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Map database row to conversation object
    */
   private mapConversationFromDb(row: ConversationDbRow): Conversation {

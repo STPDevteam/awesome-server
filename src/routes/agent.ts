@@ -1136,6 +1136,36 @@ router.post('/:id/init', requireAuth, async (req: Request, res: Response) => {
 
     const agentId = req.params.id;
 
+    // 1. First check if user already has a conversation with this agent
+    const { conversationDao } = await import('../dao/conversationDao.js');
+    const existingConversation = await conversationDao.getUserAgentConversation(userId, agentId);
+
+    if (existingConversation) {
+      // User already has a conversation with this agent, return existing conversation
+      logger.info(`Returning existing conversation for user ${userId} and agent ${agentId}: ${existingConversation.id}`);
+      
+      // Get agent info for response
+      const agent = await agentService.getAgentById(agentId, userId);
+      
+      res.json({
+        success: true,
+        data: {
+          conversationId: existingConversation.id,
+          agentInfo: {
+            id: agent.id,
+            name: agent.name,
+            description: agent.description
+          },
+          ready: true,
+          isExistingConversation: true
+        }
+      });
+      return;
+    }
+
+    // 2. No existing conversation found, create new one
+    logger.info(`Creating new conversation for user ${userId} and agent ${agentId}`);
+    
     // Initialize Agent conversation (prepare environment)
     const result = await agentService.tryAgent({
       agentId,
@@ -1144,16 +1174,13 @@ router.post('/:id/init', requireAuth, async (req: Request, res: Response) => {
     });
 
     if (result.success && result.conversation) {
-      // Generate welcome message for the agent
-      const welcomeMessage = await agentService.generateAgentWelcomeMessage(agentId);
-      
       res.json({
         success: true,
         data: {
           conversationId: result.conversation.id,
           agentInfo: result.conversation.agentInfo,
-          welcomeMessage: welcomeMessage,
-          ready: true
+          ready: true,
+          isExistingConversation: false
         }
       });
     } else {
@@ -1588,5 +1615,155 @@ async function validateTwitterAuth(authData: Record<string, string>): Promise<{ 
     };
   }
 }
+
+/**
+ * Get Agent Conversation Details
+ * GET /api/agent/:id/conversations?conversationId=xxx
+ */
+router.get('/:id/conversations', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    const agentId = req.params.id;
+    const { conversationId } = req.query;
+
+    // 检查是否传入了conversationId
+    if (!conversationId) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_CONVERSATION_ID',
+        message: 'conversationId is required as query parameter'
+      });
+    }
+
+    // 验证Agent是否存在和用户权限
+    const agent = await agentService.getAgentById(agentId, userId);
+    if (!agent) {
+      return res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'Agent not found'
+      });
+    }
+
+    // 使用conversationDao获取会话详情
+    const { conversationDao } = await import('../dao/conversationDao.js');
+    
+    // 获取会话基本信息
+    const conversation = await conversationDao.getConversationById(conversationId as string);
+    if (!conversation || conversation.userId !== userId) {
+      return res.status(404).json({
+        success: false,
+        error: 'NOT_FOUND',
+        message: 'Conversation not found'
+      });
+    }
+
+    // 验证会话是否属于该Agent
+    if (conversation.agentId !== agentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'CONVERSATION_AGENT_MISMATCH',
+        message: 'Conversation does not belong to this agent'
+      });
+    }
+
+    // 获取会话的所有消息（使用现有的service方法）
+    const { messageDao } = await import('../dao/messageDao.js');
+    const messages = await messageDao.getConversationMessages(conversationId as string);
+
+    // 获取关联的任务详情
+    const { taskDao } = await import('../dao/taskDao.js');
+    const messageDetails = await Promise.all(
+      messages.map(async (msg: any) => {
+        let taskDetails = null;
+        
+        if (msg.taskId) {
+          try {
+            const task = await taskDao.getTaskById(msg.taskId);
+            if (task) {
+              taskDetails = {
+                id: task.id,
+                title: task.title,
+                status: task.status,
+                taskType: task.task_type,
+                result: task.result,
+                mcpWorkflow: task.mcp_workflow
+              };
+            }
+          } catch (error) {
+            logger.warn(`Failed to get task details for message ${msg.id}:`, error);
+          }
+        }
+
+        return {
+          id: msg.id,
+          content: msg.content,
+          type: msg.type,
+          intent: msg.intent,
+          taskId: msg.taskId,
+          metadata: msg.metadata,
+          createdAt: msg.createdAt,
+          taskDetails: taskDetails
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        conversation: {
+          id: conversation.id,
+          title: conversation.title,
+          type: conversation.type,
+          agentId: conversation.agentId,
+          createdAt: conversation.createdAt,
+          updatedAt: conversation.updatedAt,
+          messageCount: conversation.messageCount,
+          taskCount: conversation.taskCount
+        },
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          description: agent.description,
+          categories: agent.categories
+        },
+        messages: messageDetails
+      }
+    });
+  } catch (error) {
+    logger.error(`Failed to get Agent conversation [AgentID: ${req.params.id}]:`, error);
+    
+    if (error instanceof Error) {
+      if (error.message.includes('not found') || error.message.includes('does not exist')) {
+        return res.status(404).json({
+          success: false,
+          error: 'NOT_FOUND',
+          message: error.message
+        });
+      }
+      if (error.message.includes('access denied') || error.message.includes('no permission')) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: error.message
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Failed to get Agent conversation'
+    });
+  }
+});
 
 export default router; 

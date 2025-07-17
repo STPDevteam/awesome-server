@@ -369,11 +369,100 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     // Get conversation messages
     const messages = await conversationService.getConversationMessages(conversationId);
     
+    // Extract last used MCP information from messages (返回数组)
+    let lastUsedMcp: any[] = [];
+    
+    // Iterate through messages in reverse order to find the most recent MCP usage
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      
+      // Parse metadata if it's a string
+      let parsedMetadata: any = null;
+      if (message.metadata) {
+        try {
+          parsedMetadata = typeof message.metadata === 'string' 
+            ? JSON.parse(message.metadata) 
+            : message.metadata;
+        } catch (e) {
+          logger.warn(`Failed to parse message metadata for message ${message.id}:`, e);
+          parsedMetadata = null;
+        }
+      }
+      
+      // Check if message has task-related metadata with MCP information
+      if (parsedMetadata && parsedMetadata.stepType === 'execution' && message.taskId) {
+        // Get the task to extract MCP workflow information
+        try {
+          const taskService = getTaskService();
+          const task = await taskService.getTaskById(message.taskId);
+          
+          logger.info(`Found execution message [TaskID: ${message.taskId}], checking task workflow...`);
+          
+          if (!task) {
+            logger.warn(`Task not found for TaskID: ${message.taskId}`);
+            continue; // Continue searching other messages
+          }
+          
+          logger.info(`Task found [TaskID: ${message.taskId}], status: ${task.status}, mcpWorkflow: ${task.mcpWorkflow ? 'exists' : 'null'}`);
+          
+          if (task && task.mcpWorkflow && task.mcpWorkflow.mcps && Array.isArray(task.mcpWorkflow.mcps)) {
+            logger.info(`Found ${task.mcpWorkflow.mcps.length} MCPs in task workflow for TaskID: ${message.taskId}`);
+            
+            // 返回最后一个任务中使用的所有 MCP 的完整信息
+            lastUsedMcp = task.mcpWorkflow.mcps.map(mcp => {
+              // 包含完整的 MCP 信息，匹配用户期望的数据格式
+              const mcpData: any = {
+                name: mcp.name,
+                description: mcp.description,
+                category: mcp.category,
+                imageUrl: mcp.imageUrl,
+                githubUrl: mcp.githubUrl,
+                authRequired: mcp.authRequired || false,
+                authVerified: mcp.authVerified || false
+              };
+
+              // 添加认证参数（如果需要认证）
+              if (mcp.authRequired && mcp.authParams) {
+                mcpData.authParams = mcp.authParams;
+              }
+
+              // 添加完整的 alternatives 信息，确保每个 alternative 包含完整的字段
+              if (mcp.alternatives && Array.isArray(mcp.alternatives)) {
+                mcpData.alternatives = mcp.alternatives.map(alt => ({
+                  name: alt.name,
+                  description: alt.description,
+                  category: alt.category,
+                  imageUrl: alt.imageUrl,
+                  githubUrl: alt.githubUrl,
+                  authRequired: alt.authRequired || false,
+                  authVerified: alt.authVerified || false,
+                  // 添加认证参数（如果需要认证）
+                  ...(alt.authRequired && alt.authParams ? { authParams: alt.authParams } : {})
+                }));
+              } else {
+                // 如果没有 alternatives 数组，设置为空数组
+                mcpData.alternatives = [];
+              }
+
+              return mcpData;
+            });
+            
+            logger.info(`Found lastUsedMcp array with ${lastUsedMcp.length} MCPs for task ${message.taskId}`);
+            break; // Found the most recent task with MCP usage, stop searching
+          }
+        } catch (taskError) {
+          logger.warn(`Failed to get task details for MCP extraction [TaskID: ${message.taskId}]:`, taskError);
+          // Continue searching other messages
+        }
+      }
+    }
+    
     res.json({
       success: true,
       data: {
         conversation,
-        messages
+        messages,
+        lastUsedMcp
       }
     });
   } catch (error) {

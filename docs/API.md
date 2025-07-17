@@ -82,6 +82,33 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 }
 ```
 
+### API 新增功能 (v2.1.3)
+
+从v2.1.3开始，新增了以下重要功能：
+
+#### 1. Agent会话历史记录API
+- **端点**: `GET /api/agent/:id/conversations`
+- **功能**: 获取指定Agent的会话历史记录，从对话角度展示Agent使用情况
+- **特性**: 
+  - 支持分页和状态筛选
+  - 包含完整的会话详情、消息历史和Agent信息
+  - 提供任务执行结果和MCP使用详情
+  - 以会话为主线，包含完整的用户与Agent的对话记录
+  - 显示消息与任务的关联关系及执行步骤
+  - 提供Agent使用的统计信息
+
+#### 2. 对话最后使用MCP信息
+- **端点**: `GET /api/conversation/:id` （增强功能）
+- **功能**: 在对话详情中返回最后一次使用的MCP信息
+- **特性**:
+  - 自动分析对话中的任务执行历史
+  - 提取最近使用的MCP工具信息
+  - 包含MCP的详细信息（名称、描述、类别、认证状态等）
+  - 记录具体的执行操作和时间
+  - 如果未使用MCP则返回null
+
+这些新功能为用户提供了更好的Agent使用体验和对话管理能力。
+
 ### 重要说明
 
 - **路由变更**: Agent对话不再使用 `/api/conversation/` 路由
@@ -4886,7 +4913,7 @@ data: [DONE]
 
 **端点**: `GET /api/conversation/:id`
 
-**描述**: 获取特定对话的详细信息和所有消息。
+**描述**: 获取特定对话的详细信息和所有消息，包含最后一次使用的MCP信息。
 
 **认证**: 可选（可使用userId参数或访问令牌）
 
@@ -4931,10 +4958,57 @@ data: [DONE]
         "taskId": "task_123456",
         "createdAt": "2023-06-20T08:00:00.000Z"
       }
+    ],
+    "lastUsedMcp": [
+      {
+        "name": "coingecko-server",
+        "description": "CoinGecko官方MCP服务器，提供全面的加密货币市场数据",
+        "category": "Market Data",
+        "imageUrl": "https://example.com/coingecko.png",
+        "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+        "taskId": "task_123456",
+        "usedAt": "2023-06-20T08:05:30.000Z",
+        "authRequired": true,
+        "authVerified": true,
+        "authParams": {
+          "COINGECKO_API_KEY": "COINGECKO_API_KEY"
+        },
+        "alternatives": [
+          {
+            "name": "coinmarketcap-mcp",
+            "description": "CoinMarketCap cryptocurrency market data and analytics",
+            "authRequired": true,
+            "authVerified": false,
+            "category": "Market Data",
+            "imageUrl": "https://example.com/coinmarketcap.png",
+            "githubUrl": "https://github.com/shinzo-labs/coinmarketcap-mcp",
+            "authParams": {
+              "COINMARKETCAP_API_KEY1": "COINMARKETCAP_API_KEY1",
+              "COINMARKETCAP_API_KEY2": "COINMARKETCAP_API_KEY2"
+            }
+          }
+        ]
+      }
     ]
   }
 }
 ```
+
+**新增字段说明**:
+- `lastUsedMcp`: 最后一个任务中使用的所有MCP信息数组（如果对话中有任务执行）
+  - `name`: MCP服务器名称
+  - `description`: MCP服务器描述
+  - `category`: MCP类别
+  - `imageUrl`: MCP图标URL
+  - `githubUrl`: MCP GitHub仓库URL
+  - `taskId`: 关联的任务ID
+  - `usedAt`: 最后使用时间
+  - `authRequired`: 是否需要认证
+  - `authVerified`: 认证状态
+  - `authParams`: 认证参数配置（如果需要认证）
+  - `alternatives`: 备选MCP列表（包含完整的替代选项信息）
+
+**注意**: 如果对话中没有任务执行或未使用MCP，`lastUsedMcp` 字段将为空数组 `[]`。
 
 ---
 
@@ -5584,3 +5658,205 @@ function handleAgentStreamingEvents(event) {
 - **优雅降级**: 不处理新事件类型的前端仍然可以正常工作
 
 这个修复显著改善了Agent任务执行的用户体验，特别是对于包含多个步骤的复杂工作流。
+
+---
+
+### 15. 获取Agent特定会话详情
+
+**端点**: `GET /api/agent/:id/conversations?conversationId=xxx`
+
+**描述**: 获取指定Agent的特定会话详情，包含完整的消息历史、任务关联关系以及metadata字段（用于前端区分消息阶段）。前端可以根据metadata.contentType字段来区分不同阶段的消息并进行相应的UI展示。
+
+**认证**: 需要访问令牌
+
+**路径参数**:
+- `id`: Agent ID
+
+**查询参数**:
+- `conversationId`: 会话ID（必需）
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": {
+    "conversation": {
+      "id": "conv_987654321",
+      "title": "[AGENT:agent_123456] Try BitcoinPriceAnalyzer",
+      "type": "agent",
+      "agentId": "agent_123456",
+      "createdAt": "2023-06-20T08:00:00.000Z",
+      "updatedAt": "2023-06-20T08:05:30.000Z",
+      "messageCount": 8,
+      "taskCount": 2
+    },
+    "agent": {
+      "id": "agent_123456",
+      "name": "BitcoinPriceAnalyzer",
+      "description": "An intelligent agent that retrieves Bitcoin's current price and provides comprehensive market analysis",
+      "categories": ["Market Data", "Trading"]
+    },
+    "messages": [
+      {
+        "id": "msg_123456",
+        "content": "Can you get me the current Bitcoin price?",
+        "type": "user",
+        "intent": "task",
+        "taskId": "task_789",
+        "metadata": {
+          "contentType": "user_input"
+        },
+        "createdAt": "2023-06-20T08:00:00.000Z",
+        "taskDetails": null
+      },
+      {
+        "id": "msg_123457",
+        "content": "I'll help you get the current Bitcoin price. Let me fetch that information for you...",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_789",
+        "metadata": {
+          "contentType": "step_thinking"
+        },
+        "createdAt": "2023-06-20T08:00:05.000Z",
+        "taskDetails": {
+          "id": "task_789",
+          "title": "【机器人】Get Bitcoin current price",
+          "status": "completed",
+          "taskType": "agent",
+          "result": {
+            "summary": "Task execution completed successfully",
+            "finalResult": "Bitcoin price: $45,230.50 USD (+2.3% in 24h)..."
+          },
+          "mcpWorkflow": {
+            "mcps": [
+              {
+                "name": "coingecko-server",
+                "description": "CoinGecko官方MCP服务器",
+                "category": "Market Data",
+                "authRequired": true,
+                "authVerified": true
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "msg_123458",
+        "content": "Bitcoin price: $45,230.50 USD (+2.3% in 24h). Market cap: $890.2B. Trading volume: $28.5B. Technical analysis shows bullish momentum with RSI at 65.",
+        "type": "assistant",
+        "intent": "task",
+        "taskId": "task_789",
+        "metadata": {
+          "contentType": "final_result"
+        },
+        "createdAt": "2023-06-20T08:05:25.000Z",
+        "taskDetails": {
+          "id": "task_789",
+          "title": "【机器人】Get Bitcoin current price",
+          "status": "completed",
+          "taskType": "agent",
+          "result": {
+            "summary": "Task execution completed successfully",
+            "finalResult": "Bitcoin price: $45,230.50 USD (+2.3% in 24h)..."
+          },
+          "mcpWorkflow": {
+            "mcps": [
+              {
+                "name": "coingecko-server",
+                "description": "CoinGecko官方MCP服务器",
+                "category": "Market Data",
+                "authRequired": true,
+                "authVerified": true
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "msg_123459",
+        "content": "What about Ethereum?",
+        "type": "user",
+        "intent": "chat",
+        "taskId": null,
+        "metadata": {
+          "contentType": "user_input"
+        },
+        "createdAt": "2023-06-20T08:05:30.000Z",
+        "taskDetails": null
+      },
+      {
+        "id": "msg_123460",
+        "content": "I can help you get Ethereum price information as well! Would you like me to fetch the current Ethereum price and market data?",
+        "type": "assistant",
+        "intent": "chat",
+        "taskId": null,
+        "metadata": {
+          "contentType": "chat_response"
+        },
+        "createdAt": "2023-06-20T08:05:35.000Z",
+        "taskDetails": null
+      }
+    ]
+  }
+}
+```
+
+**字段说明**:
+- `conversation`: 会话基本信息
+  - `id`: 会话ID
+  - `title`: 会话标题
+  - `type`: 会话类型（"agent"表示Agent会话）
+  - `agentId`: 关联的Agent ID
+  - `messageCount`: 消息数量
+  - `taskCount`: 任务数量
+- `agent`: Agent基本信息
+  - `id`: Agent ID
+  - `name`: Agent名称
+  - `description`: Agent描述
+  - `categories`: Agent分类
+- `messages`: 消息列表
+  - `id`: 消息ID
+  - `content`: 消息内容
+  - `type`: 消息类型（user/assistant）
+  - `intent`: 消息意图（chat/task）
+  - `taskId`: 关联的任务ID（如果是任务消息）
+  - `metadata`: 消息元数据
+    - `contentType`: 消息内容类型，用于前端区分显示
+      - `user_input`: 用户输入消息
+      - `chat_response`: 普通聊天回复
+      - `step_thinking`: 中间执行步骤（思考过程）
+      - `final_result`: 最终格式化结果
+  - `taskDetails`: 关联任务的详细信息（如果有）
+
+**前端集成建议**:
+根据 `metadata.contentType` 字段可以实现不同的UI展示：
+- `user_input`: 正常显示用户消息
+- `chat_response`: 正常显示聊天回复
+- `step_thinking`: 可以默认折叠，标记为"思考过程"
+- `final_result`: 高亮显示，标记为"最终结果"
+
+**接口特性**:
+- **单一会话详情**: 获取特定会话的完整信息
+- **完整消息历史**: 包含用户发送和助手回复的所有消息
+- **任务关联**: 显示消息与任务的关联关系
+- **元数据支持**: 提供metadata字段供前端进行消息分类展示
+- **任务详情**: 为关联任务的消息提供完整的任务信息
+
+**错误响应**:
+- `400 Bad Request`: 缺少conversationId参数或参数无效
+- `401 Unauthorized`: 无效的访问令牌
+- `403 Forbidden`: 无权访问该Agent或会话
+- `404 Not Found`: Agent不存在或会话不存在
+- `500 Internal Server Error`: 服务器内部错误
+
+**使用示例**:
+```bash
+# 获取指定Agent的特定会话详情
+curl -X GET "http://localhost:3001/api/agent/agent_123456/conversations?conversationId=conv_987654321" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+### Agent系统特性
