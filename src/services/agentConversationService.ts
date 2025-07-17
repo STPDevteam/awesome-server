@@ -301,7 +301,7 @@ export class AgentConversationService {
     agent?: Agent
   ): Promise<{
     userMessageId: string;
-    assistantMessageId: string;
+    // assistantMessageId: string;
     intent: MessageIntent;
     taskId?: string;
   }> {
@@ -379,7 +379,7 @@ export class AgentConversationService {
 
         return {
           userMessageId: userMessage.id,
-          assistantMessageId: assistantMessage.id,
+          // assistantMessageId: assistantMessage.id,
           intent: MessageIntent.CHAT
         };
       }
@@ -434,12 +434,12 @@ export class AgentConversationService {
       if (intent.type === 'task') {
         // Execute Agent task with streaming
         const taskResult = await this.executeAgentTaskStream(content, agent, userId, conversationId, streamCallback);
-        assistantMessageId = taskResult.assistantMessageId;
+        // assistantMessageId = taskResult.assistantMessageId;
         taskId = taskResult.taskId;
         
         // Link user message to task
         // if (taskId) {
-        //   await messageDao.linkMessageToTask(userMessage.id, taskId);
+          // await messageDao.linkMessageToTask(userMessage.id, taskId);
         // }
         
         // Increment task count
@@ -461,7 +461,7 @@ export class AgentConversationService {
 
       return {
         userMessageId: userMessage.id,
-        assistantMessageId,
+        // assistantMessageId,
         intent: intent.type === 'task' ? MessageIntent.TASK : MessageIntent.CHAT,
         taskId
       };
@@ -761,7 +761,7 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
     userId: string, 
     conversationId: string,
     streamCallback: (chunk: any) => void
-  ): Promise<{ assistantMessageId: string; taskId: string }> {
+  ): Promise<{ taskId: string }> {
     try {
       streamCallback({
         event: 'task_creation_start',
@@ -939,17 +939,17 @@ The task has been processed, but I encountered an issue formatting the detailed 
         }
       }
 
-      const assistantMessage = await messageDao.createMessage({
-        conversationId,
-        content: assistantContent,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.TASK
-      });
+      // const assistantMessage = await messageDao.createMessage({
+      //   conversationId,
+      //   content: assistantContent,
+      //   type: MessageType.ASSISTANT,
+      //   intent: MessageIntent.TASK
+      // });
 
       streamCallback({
         event: 'message_complete',
         data: { 
-          messageId: assistantMessage.id,
+          // messageId: assistantMessage.id,
           content: assistantContent,
           taskId: task.id,
           agentName: agent.name
@@ -957,7 +957,7 @@ The task has been processed, but I encountered an issue formatting the detailed 
       });
 
       return { 
-        assistantMessageId: assistantMessage.id, 
+        // assistantMessageId: assistantMessage.id, 
         taskId: task.id 
       };
     } catch (error) {
@@ -1588,27 +1588,27 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
         return false;
       }
       
-      // 创建执行开始的消息
-      if (conversationId) {
-        const executionStartMessage = await messageDao.createMessage({
-          conversationId,
-          content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s capabilities with ${dynamicWorkflow.length} steps...`,
-          type: MessageType.ASSISTANT,
-          intent: MessageIntent.TASK,
-          taskId,
-          metadata: {
-            stepType: MessageStepType.EXECUTION,
-            stepName: 'Agent Execution Start',
-            taskPhase: 'execution',
-            totalSteps: dynamicWorkflow.length,
-            agentName: agent.name,
-            isComplete: true
-          }
-        });
+      // // 创建执行开始的消息
+      // if (conversationId) {
+      //   const executionStartMessage = await messageDao.createMessage({
+      //     conversationId,
+      //     content: `🤖 Executing Agent task "${task.title}" using ${agent.name}'s capabilities with ${dynamicWorkflow.length} steps...`,
+      //     type: MessageType.ASSISTANT,
+      //     intent: MessageIntent.TASK,
+      //     taskId,
+      //     metadata: {
+      //       stepType: MessageStepType.EXECUTION,
+      //       stepName: 'Agent Execution Start',
+      //       taskPhase: 'execution',
+      //       totalSteps: dynamicWorkflow.length,
+      //       agentName: agent.name,
+      //       isComplete: true
+      //     }
+      //   });
         
-        // 增量会话消息计数
-        await conversationDao.incrementMessageCount(conversationId);
-      }
+      //   // 增量会话消息计数
+      //   await conversationDao.incrementMessageCount(conversationId);
+      // }
       
       try {
         // 🔧 使用动态生成的工作流构建LangChain链
