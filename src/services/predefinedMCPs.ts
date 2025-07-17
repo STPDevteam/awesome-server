@@ -457,14 +457,19 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'twitter-client-mcp',
-        description: 'Advanced Twitter Client MCP with comprehensive functionality including profile operations, tweet management, search, and relationship operations. Supports secure credential handling with multiple layers of protection (LOCAL BUILD)',
+        description: 'Advanced Twitter Client MCP with comprehensive functionality including profile operations, tweet management, search, and relationship operations. Uses Twitter API v2 credentials for enhanced functionality and secure access (LOCAL BUILD)',
         command: 'node',
         args: [`/home/ubuntu/mcp-tools/twitter-client-mcp/dist/index.js`],
         env: {
+            // Primary API v2 credentials for advanced functionality
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET_KEY: process.env.TWITTER_API_SECRET_KEY || '',
             TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
+            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || '',
+            // Optional basic auth (leave empty to use API-only mode)
+            TWITTER_USERNAME: process.env.TWITTER_USERNAME || '',
+            TWITTER_PASSWORD: process.env.TWITTER_PASSWORD || '',
+            TWITTER_EMAIL: process.env.TWITTER_EMAIL || ''
         },
         connected: false,
         category: 'Social',
@@ -475,7 +480,10 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_KEY: "TWITTER_API_KEY",
             TWITTER_API_SECRET_KEY: "TWITTER_API_SECRET_KEY",
             TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
-            TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
+            TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET",
+            TWITTER_USERNAME: "TWITTER_USERNAME",
+            TWITTER_PASSWORD: "TWITTER_PASSWORD", 
+            TWITTER_EMAIL: "TWITTER_EMAIL"
         }
     },
     {
