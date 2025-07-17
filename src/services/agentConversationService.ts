@@ -119,13 +119,13 @@ export class AgentConversationService {
       logger.info(`✅ Agent conversation created [ConversationID: ${conversation.id}]`);
 
       // Send welcome message
-      const welcomeMessage = await this.generateWelcomeMessage(agent);
-      await messageDao.createMessage({
-        conversationId: conversation.id,
-        content: welcomeMessage,
-        type: MessageType.ASSISTANT,
-        intent: MessageIntent.CHAT
-      });
+      // const welcomeMessage = await this.generateWelcomeMessage(agent);
+      // await messageDao.createMessage({
+      //   conversationId: conversation.id,
+      //   content: welcomeMessage,
+      //   type: MessageType.ASSISTANT,
+      //   intent: MessageIntent.CHAT
+      // });
 
       // If user provided initial content, process it
       if (content && content.trim()) {
@@ -1942,10 +1942,13 @@ Return ONLY a JSON array of workflow steps, no other text:`;
           logger.info(`📍 Agent LangChain Step ${stepNumber}: ${mcpName} - ${actionName}`);
           logger.info(`📥 Agent step input: ${JSON.stringify(input, null, 2)}`);
           
-          // 创建步骤消息（流式）- 存储完整执行过程
-          let stepMessageId: string | undefined;
+          // 🔧 修改：为每个步骤都创建step_thinking消息，保持消息结构性
+          let stepThinkingMessageId: string | undefined;
+          let finalResultMessageId: string | undefined;
+          
           if (conversationId) {
-            const stepMessage = await messageDao.createStreamingMessage({
+            // 1. 创建step_thinking消息 - 用于存储执行过程
+            const stepThinkingMessage = await messageDao.createStreamingMessage({
               conversationId,
               content: '', // 初始为空，等待流式内容填充
               type: MessageType.ASSISTANT,
@@ -1958,13 +1961,37 @@ Return ONLY a JSON array of workflow steps, no other text:`;
                 totalSteps: workflow.length,
                 taskPhase: 'execution',
                 agentName: agent.name,
-                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking'  // 区分思考过程和最终结果
+                contentType: 'step_thinking'  // 执行过程消息
               }
             });
-            stepMessageId = stepMessage.id;
-        
+            stepThinkingMessageId = stepThinkingMessage.id;
+            
             // 增量会话消息计数
             await conversationDao.incrementMessageCount(conversationId);
+            
+            // 2. 如果是最后一步，同时创建final_result消息
+            if (stepNumber === workflow.length) {
+              const finalResultMessage = await messageDao.createStreamingMessage({
+                conversationId,
+                content: '', // 初始为空，等待流式内容填充
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                                 metadata: {
+                   stepType: MessageStepType.EXECUTION,
+                   stepNumber,
+                   stepName: actionName,
+                   totalSteps: workflow.length,
+                   taskPhase: 'execution',
+                   agentName: agent.name,
+                   contentType: 'final_result'  // 最终结果消息
+                 }
+              });
+              finalResultMessageId = finalResultMessage.id;
+              
+              // 增量会话消息计数
+              await conversationDao.incrementMessageCount(conversationId);
+            }
           }
         
           // 发送步骤开始信息
@@ -2028,8 +2055,13 @@ Return ONLY a JSON array of workflow steps, no other text:`;
             }
             
             // 完成步骤消息 - 存储完整的执行结果
-            if (stepMessageId) {
-              await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
+            if (stepThinkingMessageId) {
+              await messageDao.completeStreamingMessage(stepThinkingMessageId, formattedResult);
+            }
+            
+            // 如果有final_result消息，也需要完成它
+            if (finalResultMessageId) {
+              await messageDao.completeStreamingMessage(finalResultMessageId, formattedResult);
             }
             
             // 保存步骤结果（保存格式化后的结果）
@@ -2059,8 +2091,13 @@ Return ONLY a JSON array of workflow steps, no other text:`;
             const errorMsg = error instanceof Error ? error.message : String(error);
           
             // 完成步骤消息（错误状态）
-            if (stepMessageId) {
-              await messageDao.completeStreamingMessage(stepMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
+            if (stepThinkingMessageId) {
+              await messageDao.completeStreamingMessage(stepThinkingMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
+            }
+            
+            // 如果有final_result消息，也需要完成它（错误状态）
+            if (finalResultMessageId) {
+              await messageDao.completeStreamingMessage(finalResultMessageId, `🤖 ${agent.name} 执行失败: ${errorMsg}`);
             }
             
             // 保存错误结果
