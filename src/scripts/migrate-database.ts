@@ -1479,7 +1479,7 @@ class MigrationService {
           const mcpTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'mcp' 
-            WHERE title LIKE '%【流程】%'
+            WHERE title LIKE '%【flow】%'
               AND task_type != 'mcp'
           `);
           
@@ -1501,8 +1501,8 @@ class MigrationService {
           // 回滚 【流程】 为 【flow】
           const flowTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【流程】', '【flow】')
-            WHERE title LIKE '%【流程】%'
+            SET title = REPLACE(title, '【flow】', '【flow】')
+            WHERE title LIKE '%【flow】%'
           `);
           
           if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
