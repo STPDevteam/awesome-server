@@ -23,9 +23,9 @@ export class TaskService {
       // Add appropriate tag prefix to title based on task type
       let taggedTitle = data.title;
       if (taskType === 'mcp') {
-        taggedTitle = `【流程】${data.title}`;
+        taggedTitle = `【flow】${data.title}`;
       } else if (taskType === 'agent') {
-        taggedTitle = `【机器人】${data.title}`;
+        taggedTitle = `【robot】${data.title}`;
       }
       
       // Call DAO layer to create task, use tagged title
