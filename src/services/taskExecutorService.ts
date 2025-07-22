@@ -1156,13 +1156,37 @@ OUTPUT FORMAT:
 - Present the main data in an organized manner (or explain the error)
 - End with any relevant notes or observations
 
-IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary. Handle ALL types of responses intelligently, including errors, arrays, objects, and mixed results.`;
+🚨 CRITICAL: Return ONLY the raw Markdown content without any code block wrappers. 
+❌ DO NOT wrap your response in \`\`\`markdown \`\`\` or \`\`\` \`\`\` blocks.
+✅ Return the markdown content directly, ready for immediate display.
+
+Example of CORRECT output:
+# Latest Tweets from @username
+Here are the recent tweets...
+
+Example of WRONG output:
+\`\`\`markdown
+# Latest Tweets from @username
+Here are the recent tweets...
+\`\`\`
+
+IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(formatPrompt)
       ]);
       
-      const formattedResult = response.content.toString().trim();
+      let formattedResult = response.content.toString().trim();
+      
+      // 🔧 关键修复：清理可能的markdown代码块包装
+      if (formattedResult.startsWith('```markdown\n') && formattedResult.endsWith('\n```')) {
+        formattedResult = formattedResult.slice(12, -4).trim();
+        logger.info(`🔧 Cleaned markdown code block wrapper`);
+      } else if (formattedResult.startsWith('```\n') && formattedResult.endsWith('\n```')) {
+        formattedResult = formattedResult.slice(4, -4).trim();
+        logger.info(`🔧 Cleaned generic code block wrapper`);
+      }
+      
       logger.info(`✅ Result formatted successfully`);
       
       return formattedResult;
@@ -2080,7 +2104,11 @@ FORMATTING RULES:
    - Maintain professional tone
    - Ensure the output is immediately useful to the end user
 
-IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary. Handle ALL types of responses intelligently, including errors, arrays, objects, and mixed results.`;
+🚨 CRITICAL: Return ONLY the raw Markdown content without any code block wrappers. 
+❌ DO NOT wrap your response in \`\`\`markdown \`\`\` or \`\`\` \`\`\` blocks.
+✅ Return the markdown content directly, ready for immediate display.
+
+IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.`;
 
       // 创建流式LLM实例
       const streamingLLM = new ChatOpenAI({
@@ -2092,6 +2120,8 @@ IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-c
       });
 
       let fullResult = '';
+      let isFirstChunk = true;
+      let hasMarkdownWrapper = false;
       
       // 使用流式调用
       const stream = await streamingLLM.stream([
@@ -2101,9 +2131,35 @@ IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-c
       for await (const chunk of stream) {
         const content = chunk.content.toString();
         if (content) {
-          fullResult += content;
-          streamCallback(content);
+          // 🔧 关键修复：检测并处理markdown代码块包装
+          if (isFirstChunk && content.includes('```markdown')) {
+            hasMarkdownWrapper = true;
+            // 移除开头的```markdown\n
+            const cleanContent = content.replace(/^.*?```markdown\s*\n?/s, '');
+            if (cleanContent) {
+              fullResult += cleanContent;
+              streamCallback(cleanContent);
+            }
+          } else if (hasMarkdownWrapper && content.includes('```')) {
+            // 移除结尾的\n```
+            const cleanContent = content.replace(/\n?```.*$/s, '');
+            if (cleanContent) {
+              fullResult += cleanContent;
+              streamCallback(cleanContent);
+            }
+            hasMarkdownWrapper = false; // 标记包装已结束
+          } else if (!hasMarkdownWrapper || !content.trim().startsWith('```')) {
+            fullResult += content;
+            streamCallback(content);
+          }
+          isFirstChunk = false;
         }
+      }
+      
+      // 🔧 额外清理：如果还有残留的markdown包装
+      if (fullResult.startsWith('```markdown\n') && fullResult.endsWith('\n```')) {
+        fullResult = fullResult.slice(12, -4).trim();
+        logger.info(`🔧 Cleaned residual markdown wrapper in stream`);
       }
       
       logger.info(`✅ Result formatted successfully with streaming`);
