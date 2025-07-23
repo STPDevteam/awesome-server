@@ -1454,12 +1454,12 @@ class MigrationService {
           // 更新 【robot】 为 【机器人】
           const robotTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【robot】', '【robot】')
+            SET title = REPLACE(title, '【robot】', '【机器人】')
             WHERE title LIKE '%【robot】%'
           `);
           
           if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${robotTasksResult.rowCount} tasks from 【robot】 to 【robot】`);
+            console.log(`✅ Updated ${robotTasksResult.rowCount} tasks from 【robot】 to 【机器人】`);
           }
 
           // 2. 确保任务类型正确设置（基于更新后的中文标签）
@@ -1467,19 +1467,19 @@ class MigrationService {
           const agentTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'agent' 
-            WHERE title LIKE '%【robot】%'
+            WHERE title LIKE '%【机器人】%'
               AND task_type != 'agent'
           `);
           
           if (agentTasksResult.rowCount && agentTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【robot】 tag`);
+            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【机器人】 tag`);
           }
 
           // 根据标题中的【流程】标识来识别MCP任务
           const mcpTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'mcp' 
-            WHERE title LIKE '%【flow】%'
+            WHERE title LIKE '%【流程】%'
               AND task_type != 'mcp'
           `);
           
@@ -1501,23 +1501,23 @@ class MigrationService {
           // 回滚 【流程】 为 【flow】
           const flowTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【flow】', '【flow】')
-            WHERE title LIKE '%【flow】%'
+            SET title = REPLACE(title, '【流程】', '【flow】')
+            WHERE title LIKE '%【流程】%'
           `);
           
           if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
-            console.log(`✅ Rolled back ${flowTasksResult.rowCount} tasks from 【flow】 to 【flow】`);
+            console.log(`✅ Rolled back ${flowTasksResult.rowCount} tasks from 【流程】 to 【flow】`);
           }
 
           // 回滚 【机器人】 为 【robot】
           const robotTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【robot】', '【robot】')
-            WHERE title LIKE '%【robot】%'
+            SET title = REPLACE(title, '【机器人】', '【robot】')
+            WHERE title LIKE '%【机器人】%'
           `);
           
           if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
-            console.log(`✅ Rolled back ${robotTasksResult.rowCount} tasks from 【robot】 to 【robot】`);
+            console.log(`✅ Rolled back ${robotTasksResult.rowCount} tasks from 【机器人】 to 【robot】`);
           }
 
         } catch (error) {
