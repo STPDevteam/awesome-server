@@ -199,7 +199,7 @@ export class AgentIntelligentEngine {
             await new Promise(resolve => setTimeout(resolve, 30));
           }
 
-          // 2. 🔧 然后发送LLM格式化后的结果chunks（用于前端美观显示和存储）
+          // 2. 🔧 然后发送LLM格式化后的结果chunks（用于前端美观显示和存储）- 使用step_result_chunk事件
           const formattedResultGenerator = this.formatAndStreamStepResult(
             executionResult.result,
             state.currentPlan!.mcpName || 'unknown',
