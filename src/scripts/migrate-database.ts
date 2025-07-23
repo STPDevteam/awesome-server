@@ -1434,21 +1434,21 @@ class MigrationService {
     },
     {
       version: 26,
-      name: 'update_task_title_tags_to_chinese',
+      name: 'verify_task_title_tags_remain_english',
       up: async () => {
-        console.log('🔄 Updating task title tags from English to Chinese...');
+        console.log('🔄 Verifying task title tags remain in English for international platform...');
         
-        // 1. 更新任务标题中的英文标签为中文标签
+                  // 1. Verify task title tags remain in English (no changes needed)
         try {
-          // 更新 【flow】 为 【流程】
+          // Keep 【flow】 tags in English for international platform
           const flowTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【flow】', '【流程】')
+            SET title = title
             WHERE title LIKE '%【flow】%'
           `);
           
           if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${flowTasksResult.rowCount} tasks from 【flow】 to 【流程】`);
+            console.log(`✅ Verified ${flowTasksResult.rowCount} tasks with 【flow】 tags remain in English`);
           }
 
           // 更新 【robot】 为 【机器人】
@@ -1462,8 +1462,8 @@ class MigrationService {
             console.log(`✅ Updated ${robotTasksResult.rowCount} tasks from 【robot】 to 【robot】`);
           }
 
-          // 2. 确保任务类型正确设置（基于更新后的中文标签）
-          // 根据标题中的【机器人】标识来识别Agent任务
+          // 2. Ensure task types are correctly set based on English tags
+          // Identify Agent tasks based on 【robot】 tags
           const agentTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'agent' 
@@ -1475,7 +1475,7 @@ class MigrationService {
             console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【robot】 tag`);
           }
 
-          // 根据标题中的【流程】标识来识别MCP任务
+          // Identify MCP tasks based on 【flow】 tags (keeping English)
           const mcpTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'mcp' 
@@ -1484,7 +1484,7 @@ class MigrationService {
           `);
           
           if (mcpTasksResult.rowCount && mcpTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【流程】 tag`);
+            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【flow】 tag`);
           }
 
         } catch (error) {
@@ -1492,40 +1492,39 @@ class MigrationService {
           throw error;
         }
 
-        console.log('✅ Task title tags migration to Chinese completed');
+        console.log('✅ Task title tags verification completed (kept in English)');
       },
       down: async () => {
-        console.log('🔄 Rolling back task title tags to English...');
+        console.log('🔄 Rolling back task title tags verification...');
         
         try {
-          // 回滚 【流程】 为 【flow】
+          // No actual rollback needed since tags were kept in English
           const flowTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【flow】', '【flow】')
+            SET title = title
             WHERE title LIKE '%【flow】%'
           `);
           
           if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
-            console.log(`✅ Rolled back ${flowTasksResult.rowCount} tasks from 【flow】 to 【flow】`);
+            console.log(`✅ Verified ${flowTasksResult.rowCount} tasks still have 【flow】 tags`);
           }
 
-          // 回滚 【机器人】 为 【robot】
           const robotTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【robot】', '【robot】')
+            SET title = title
             WHERE title LIKE '%【robot】%'
           `);
           
           if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
-            console.log(`✅ Rolled back ${robotTasksResult.rowCount} tasks from 【robot】 to 【robot】`);
+            console.log(`✅ Verified ${robotTasksResult.rowCount} tasks still have 【robot】 tags`);
           }
 
         } catch (error) {
-          console.log('⚠️  Error during title tag rollback:', error);
+          console.log('⚠️  Error during title tag verification rollback:', error);
           throw error;
         }
         
-        console.log('✅ Rollback completed for task title tags');
+        console.log('✅ Rollback completed for task title tags verification');
       }
     },
     {
@@ -1767,6 +1766,99 @@ class MigrationService {
         }
         
         console.log('✅ Rollback completed for missing fields fix');
+      }
+    },
+    {
+      version: 28,
+      name: 'fix_chinese_task_tags_to_english',
+      up: async () => {
+        console.log('🔄 Converting Chinese task tags back to English for international platform...');
+        
+        try {
+          // Convert any existing Chinese 【流程】 tags back to English 【flow】
+          const flowFixResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【流程】', '【flow】')
+            WHERE title LIKE '%【流程】%'
+          `);
+          
+          if (flowFixResult.rowCount && flowFixResult.rowCount > 0) {
+            console.log(`✅ Fixed ${flowFixResult.rowCount} tasks: 【流程】 → 【flow】`);
+          }
+
+          // Convert any existing Chinese 【机器人】 tags back to English 【robot】
+          const robotFixResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【机器人】', '【robot】')
+            WHERE title LIKE '%【机器人】%'
+          `);
+          
+          if (robotFixResult.rowCount && robotFixResult.rowCount > 0) {
+            console.log(`✅ Fixed ${robotFixResult.rowCount} tasks: 【机器人】 → 【robot】`);
+          }
+
+          // Ensure task types are correctly set based on the English tags
+          const mcpTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'mcp' 
+            WHERE title LIKE '%【flow】%'
+              AND task_type != 'mcp'
+          `);
+          
+          if (mcpTasksResult.rowCount && mcpTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【flow】 tag`);
+          }
+
+          const agentTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'agent' 
+            WHERE title LIKE '%【robot】%'
+              AND task_type != 'agent'
+          `);
+          
+          if (agentTasksResult.rowCount && agentTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【robot】 tag`);
+          }
+
+        } catch (error) {
+          console.log('⚠️  Error during Chinese to English tag conversion:', error);
+          throw error;
+        }
+
+        console.log('✅ Chinese to English task tags conversion completed');
+      },
+      down: async () => {
+        console.log('🔄 Rolling back English to Chinese task tags...');
+        
+        try {
+          // Convert 【flow】 back to 【流程】
+          const flowRollbackResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【flow】', '【流程】')
+            WHERE title LIKE '%【flow】%'
+          `);
+          
+          if (flowRollbackResult.rowCount && flowRollbackResult.rowCount > 0) {
+            console.log(`✅ Rolled back ${flowRollbackResult.rowCount} tasks: 【flow】 → 【流程】`);
+          }
+
+          // Convert 【robot】 back to 【机器人】
+          const robotRollbackResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【robot】', '【机器人】')
+            WHERE title LIKE '%【robot】%'
+          `);
+          
+          if (robotRollbackResult.rowCount && robotRollbackResult.rowCount > 0) {
+            console.log(`✅ Rolled back ${robotRollbackResult.rowCount} tasks: 【robot】 → 【机器人】`);
+          }
+
+        } catch (error) {
+          console.log('⚠️  Error during rollback:', error);
+          throw error;
+        }
+        
+        console.log('✅ Rollback completed for Chinese to English task tags conversion');
       }
     }
   ];

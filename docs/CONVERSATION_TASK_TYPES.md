@@ -38,15 +38,15 @@ interface Conversation {
 
 ## 2. 任务标签
 
-### 标签规则
-- **MCP任务**：标题前添加 `【流程】` 标签
-- **Agent任务**：标题前添加 `【机器人】` 标签
+### Tag Rules
+- **MCP Tasks**: Add `【flow】` tag before title
+- **Agent Tasks**: Add `【robot】` tag before title
 
-### 示例
+### Examples
 ```
-原始标题: "Analyze cryptocurrency prices"
-MCP任务: "【流程】Analyze cryptocurrency prices"
-Agent任务: "【机器人】Analyze cryptocurrency prices"
+Original title: "Analyze cryptocurrency prices"
+MCP Task: "【flow】Analyze cryptocurrency prices"
+Agent Task: "【robot】Analyze cryptocurrency prices"
 ```
 
 ## 3. 前端识别方法
@@ -65,9 +65,9 @@ const isAgentConversation = !!conversation.agentId;
 // 方法1：通过taskType字段
 const isAgentTask = task.taskType === 'agent';
 
-// 方法2：通过标题标签
-const isAgentTask = task.title.startsWith('【机器人】');
-const isMcpTask = task.title.startsWith('【流程】');
+// Method 2: By title tags
+const isAgentTask = task.title.startsWith('【robot】');
+const isMcpTask = task.title.startsWith('【flow】');
 ```
 
 ## 4. API接口更新
@@ -110,13 +110,13 @@ GET /api/conversation              // 获取所有会话
     "tasks": [
       {
         "id": "task-123",
-        "title": "【流程】Analyze market trends",
+        "title": "【flow】Analyze market trends",
         "taskType": "mcp",
         "agentId": null
       },
       {
         "id": "task-456", 
-        "title": "【机器人】Generate crypto report",
+        "title": "【robot】Generate crypto report",
         "taskType": "agent",
         "agentId": "agent-789"
       }
