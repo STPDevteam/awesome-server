@@ -963,11 +963,42 @@ Please return in format:
         throw new Error('Task not found for MCP tool execution');
       }
 
-      // 🔧 关键调试：显示即将传递给MCPToolAdapter的参数
-      logger.info(`🔍 Calling mcpToolAdapter.callTool with: mcpName="${plan.mcpName}", tool="${plan.tool}", userId="${task.userId}"`);
+      // 🔧 关键修复：添加完整的工具验证和智能参数转换机制
+      logger.info(`🔄 Starting intelligent MCP tool execution with parameter conversion and tool validation...`);
+      
+      // 1. 标准化MCP名称
+      const actualMcpName = this.normalizeMCPName(plan.mcpName);
+      if (actualMcpName !== plan.mcpName) {
+        logger.info(`MCP name mapping: '${plan.mcpName}' mapped to '${actualMcpName}'`);
+      }
 
-      // 🔧 使用多用户隔离的MCP工具调用
-      const result = await this.mcpToolAdapter.callTool(plan.mcpName, plan.tool, plan.args, task.userId);
+      // 2. 检查MCP连接状态
+      const connectedMCPs = this.mcpManager.getConnectedMCPs(task.userId);
+      const isConnected = connectedMCPs.some(mcp => mcp.name === actualMcpName);
+      
+      if (!isConnected) {
+        throw new Error(`MCP ${actualMcpName} not connected for user ${task.userId}`);
+      }
+
+      // 3. 🔧 关键步骤：获取MCP的实际可用工具列表
+      const mcpTools = await this.mcpManager.getTools(actualMcpName, task.userId);
+      logger.info(`📋 Available tools in ${actualMcpName}: ${mcpTools.map(t => t.name).join(', ')}`);
+
+      // 4. 🔧 智能参数转换（使用实际工具schemas）
+      const convertedInput = await this.convertParametersWithLLM(plan.tool, plan.args, mcpTools);
+
+      // 5. 🔧 工具验证和重选机制
+      const { finalToolName, finalArgs } = await this.validateAndSelectTool(
+        plan.tool, 
+        convertedInput, 
+        mcpTools, 
+        actualMcpName
+      );
+
+      logger.info(`🔧 Final tool call: ${finalToolName} with converted parameters`);
+
+      // 6. 使用验证后的工具和转换后的参数进行调用
+      const result = await this.mcpToolAdapter.callTool(actualMcpName, finalToolName, finalArgs, task.userId);
       
       logger.info(`✅ Agent ${this.agent.name} MCP tool call successful: ${plan.tool}`);
       return result;
@@ -1267,6 +1298,240 @@ Generate a comprehensive but concise summary:`;
       );
     } catch (error) {
       logger.error(`Failed to save Agent final result:`, error);
+    }
+  }
+
+  /**
+   * 🔧 新增：标准化MCP名称
+   */
+  private normalizeMCPName(mcpName: string): string {
+    const nameMapping: Record<string, string> = {
+      'twitter': 'twitter-client-mcp',
+      'github': 'github-mcp',
+      'coinmarketcap': 'coinmarketcap-mcp',
+      'crypto': 'coinmarketcap-mcp',
+      'web': 'brave-search-mcp',
+      'search': 'brave-search-mcp'
+    };
+
+    return nameMapping[mcpName.toLowerCase()] || mcpName;
+  }
+
+  /**
+   * 🔧 新增：使用LLM智能转换参数
+   */
+  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpTools: any[]): Promise<any> {
+    try {
+      logger.info(`🔄 Converting parameters for tool: ${toolName}`);
+
+      // 构建智能参数转换提示词
+      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform parameters for MCP tool calls.
+
+CONTEXT:
+- Tool to call: ${toolName}
+- Input parameters: ${JSON.stringify(originalArgs, null, 2)}
+- Available tools with their schemas:
+${mcpTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
+
+TRANSFORMATION PRINCIPLES:
+1. **Use exact tool name**: ${toolName}
+2. **Transform parameters**: Convert input into correct format for the tool
+3. **CRITICAL: Use exact parameter names from the schema**: 
+   - ALWAYS check the inputSchema and use the exact parameter names shown
+   - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
+   - Match the exact property names shown in the inputSchema
+4. **Handle missing data intelligently**: Extract from input or use descriptive content
+
+CRITICAL TWITTER RULES:
+- Twitter has a HARD 280 character limit!
+- Count ALL characters including spaces, emojis, URLs, hashtags
+- If content is too long, you MUST:
+  1. Remove URLs (they're not clickable in tweets anyway)
+  2. Use abbreviations (e.g., "w/" for "with")
+  3. Remove less important details
+  4. Keep only the most essential information
+- For threads: First tweet should be <250 chars to leave room for thread numbering
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "toolName": "${toolName}",
+  "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
+  "reasoning": "brief explanation of parameter transformation"
+}
+
+IMPORTANT: Always use exact parameter names from the inputSchema and ensure Twitter content is under 280 characters!
+
+Transform the data now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(conversionPrompt)]);
+
+      let conversion;
+      try {
+        const responseText = response.content.toString().trim();
+        conversion = JSON.parse(responseText);
+      } catch (parseError) {
+        logger.error(`Failed to parse parameter conversion response: ${response.content}`);
+        return originalArgs; // 回退到原始参数
+      }
+
+      const convertedParams = conversion.inputParams || originalArgs;
+      
+      logger.info(`🔧 Parameter conversion successful`);
+      logger.info(`🧠 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
+      
+      return convertedParams;
+
+    } catch (error) {
+      logger.error(`❌ Parameter conversion failed:`, error);
+      return originalArgs; // 回退到原始参数
+    }
+  }
+
+  /**
+   * 🔧 新增：验证工具并在需要时重选
+   */
+  private async validateAndSelectTool(
+    requestedTool: string, 
+    convertedArgs: any, 
+    availableTools: any[], 
+    mcpName: string
+  ): Promise<{ finalToolName: string; finalArgs: any }> {
+    try {
+      // 1. 首先检查请求的工具是否存在
+      let selectedTool = availableTools.find(t => t.name === requestedTool);
+      let finalToolName = requestedTool;
+      let finalArgs = convertedArgs;
+
+      if (!selectedTool) {
+        logger.warn(`Tool ${requestedTool} does not exist in ${mcpName}, attempting tool re-selection...`);
+        
+        // 2. 尝试模糊匹配
+        const fuzzyMatch = availableTools.find(t => 
+          t.name.toLowerCase().includes(requestedTool.toLowerCase()) ||
+          requestedTool.toLowerCase().includes(t.name.toLowerCase())
+        );
+        
+        if (fuzzyMatch) {
+          logger.info(`Found fuzzy match: ${fuzzyMatch.name}`);
+          selectedTool = fuzzyMatch;
+          finalToolName = fuzzyMatch.name;
+        } else {
+          // 3. 让LLM从可用工具中重新选择
+          logger.info(`Using LLM to re-select appropriate tool from available options...`);
+          const reselectionResult = await this.llmReselectionTool(
+            requestedTool, 
+            convertedArgs, 
+            availableTools, 
+            mcpName
+          );
+          
+          selectedTool = availableTools.find(t => t.name === reselectionResult.toolName);
+          if (selectedTool) {
+            finalToolName = reselectionResult.toolName;
+            finalArgs = reselectionResult.inputParams;
+            logger.info(`LLM re-selected tool: ${finalToolName}`);
+          } else {
+            throw new Error(`Cannot find suitable tool in ${mcpName} to execute task: ${requestedTool}. Available tools: ${availableTools.map(t => t.name).join(', ')}`);
+          }
+        }
+      } else {
+        logger.info(`✅ Tool ${requestedTool} found in ${mcpName}`);
+      }
+
+      return { finalToolName, finalArgs };
+
+    } catch (error) {
+      logger.error(`❌ Tool validation and selection failed:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 🔧 新增：LLM重新选择工具
+   */
+  private async llmReselectionTool(
+    originalTool: string,
+    originalArgs: any,
+    availableTools: any[],
+    mcpName: string
+  ): Promise<{ toolName: string; inputParams: any; reasoning: string }> {
+    try {
+      const reselectionPrompt = `You are an expert tool selector. The originally requested tool "${originalTool}" does not exist in MCP service "${mcpName}". Please select the most appropriate alternative tool from the available options.
+
+CONTEXT:
+- Original tool requested: ${originalTool}
+- Original parameters: ${JSON.stringify(originalArgs, null, 2)}
+- MCP Service: ${mcpName}
+- Available tools with their schemas:
+${availableTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
+
+SELECTION PRINCIPLES:
+1. **Choose the most functionally similar tool**: Select the tool that can best accomplish the same objective
+2. **Consider tool descriptions**: Match based on functionality, not just name similarity
+3. **Transform parameters accordingly**: Adapt the parameters to match the selected tool's schema
+4. **Use exact parameter names**: Follow the selected tool's input schema exactly
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "toolName": "exact_tool_name_from_available_list",
+  "inputParams": { /* parameters adapted for the selected tool */ },
+  "reasoning": "why this tool was selected and how parameters were adapted"
+}
+
+Select the best alternative tool now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(reselectionPrompt)]);
+
+      let reselection;
+      try {
+        const responseText = response.content.toString().trim();
+        reselection = JSON.parse(responseText);
+      } catch (parseError) {
+        logger.error(`Failed to parse tool reselection response: ${response.content}`);
+        // 回退到第一个可用工具
+        if (availableTools.length > 0) {
+          return {
+            toolName: availableTools[0].name,
+            inputParams: originalArgs,
+            reasoning: `Fallback to first available tool due to parsing error: ${availableTools[0].name}`
+          };
+        }
+        throw new Error('No available tools and LLM reselection failed');
+      }
+
+      return {
+        toolName: reselection.toolName || (availableTools.length > 0 ? availableTools[0].name : originalTool),
+        inputParams: reselection.inputParams || originalArgs,
+        reasoning: reselection.reasoning || 'No reasoning provided'
+      };
+
+    } catch (error) {
+      logger.error(`LLM tool reselection failed:`, error);
+      // 最终回退
+      if (availableTools.length > 0) {
+        return {
+          toolName: availableTools[0].name,
+          inputParams: originalArgs,
+          reasoning: `Emergency fallback to first available tool: ${availableTools[0].name}`
+        };
+      }
+      throw new Error('No available tools and all reselection methods failed');
     }
   }
 }
