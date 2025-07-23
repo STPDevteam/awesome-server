@@ -208,7 +208,7 @@ export class AgentIntelligentEngine {
           
           for await (const chunk of formattedResultGenerator) {
             yield {
-              event: 'step_thinking_formatted_chunk',
+              event: 'step_result_chunk',
               data: {
                 stepId,
                 chunk,
