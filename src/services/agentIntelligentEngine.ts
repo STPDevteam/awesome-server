@@ -587,7 +587,7 @@ export class AgentIntelligentEngine {
 - Steps completed: ${totalSteps}
 - Available data: ${hasData ? Object.keys(state.dataStore).filter(k => k !== 'lastResult').join(', ') : 'None'}
 - Last step: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? 'Success' : 'Failed'})` : 'None'}
-${lastStepResult?.result ? `- Last result preview: ${JSON.stringify(lastStepResult.result).substring(0, 150)}...` : ''}
+${lastStepResult?.result ? `- Last result: ${typeof lastStepResult.result === 'string' ? lastStepResult.result : JSON.stringify(lastStepResult.result)}` : ''}
 
 **AVAILABLE MCP SERVICES FOR ${this.agent.name.toUpperCase()}**:
 ${availableMCPs.map(mcp => `- MCP Service: ${mcp.mcpName}
@@ -668,7 +668,7 @@ ${lastStep ? `
 Step ${lastStep.stepNumber}: ${lastStep.plan.tool}
 - Status: ${lastStep.success ? 'Success' : 'Failed'}
 - Reasoning: ${lastStep.plan.reasoning}
-- Result: ${lastStep.success ? JSON.stringify(lastStep.result).substring(0, 500) + '...' : lastStep.error}
+- Result: ${lastStep.success ? (typeof lastStep.result === 'string' ? lastStep.result : JSON.stringify(lastStep.result)) : lastStep.error}
 ` : 'No execution history yet'}
 
 ## Agent Data Store
