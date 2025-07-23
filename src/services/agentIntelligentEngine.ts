@@ -178,24 +178,56 @@ export class AgentIntelligentEngine {
         // 🔧 第二步：Agent执行阶段
         const executionResult = await this.agentExecutionPhase(state, stepId);
 
-        // 🔧 Agent格式的流式thinking输出
+        // 🔧 Agent格式的流式thinking输出（原始+格式化双重处理）
         if (executionResult.success && executionResult.result) {
-          const resultText = typeof executionResult.result === 'string' 
+          // 1. 🔧 首先发送原始结果的chunks（用于调试和上下文传递）
+          const originalResultText = typeof executionResult.result === 'string' 
             ? executionResult.result 
             : JSON.stringify(executionResult.result);
           
-          const chunks = resultText.match(/.{1,100}/g) || [resultText];
-          for (const chunk of chunks) {
+          const originalChunks = originalResultText.match(/.{1,100}/g) || [originalResultText];
+          for (const chunk of originalChunks) {
             yield {
-              event: 'step_result_chunk',
+              event: 'step_thinking_chunk',
               data: {
                 stepId,
                 chunk,
-                agentName: this.agent.name
+                agentName: this.agent.name,
+                type: 'original' // 标识为原始数据
               }
             };
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 30));
           }
+
+          // 2. 🔧 然后发送LLM格式化后的结果chunks（用于前端美观显示和存储）
+          const formattedResultGenerator = this.formatAndStreamStepResult(
+            executionResult.result,
+            state.currentPlan!.mcpName || 'unknown',
+            state.currentPlan!.tool
+          );
+          
+          for await (const chunk of formattedResultGenerator) {
+            yield {
+              event: 'step_thinking_formatted_chunk',
+              data: {
+                stepId,
+                chunk,
+                agentName: this.agent.name,
+                type: 'formatted' // 标识为格式化数据
+              }
+            };
+          }
+        }
+
+        // 🔧 获取格式化结果用于存储（但保留原始结果用于传递）
+        let formattedResultForStorage = '';
+        if (executionResult.success && executionResult.result) {
+          // 生成完整的格式化结果（不流式，用于存储）
+          formattedResultForStorage = await this.generateFormattedResult(
+            executionResult.result,
+            state.currentPlan!.mcpName || 'unknown',
+            state.currentPlan!.tool
+          );
         }
 
         // 🔧 Agent格式的step_thinking_complete事件
@@ -205,17 +237,18 @@ export class AgentIntelligentEngine {
             stepId,
             step: stepCounter,
             success: executionResult.success,
-            result: executionResult.result,
+            result: executionResult.result, // 保持原始结果用于下一步传递
+            formattedResult: formattedResultForStorage, // 新增：格式化结果用于存储
             agentName: this.agent.name,
             ...(executionResult.error && { error: executionResult.error })
           }
         };
 
-        // 🔧 保存执行步骤
+        // 🔧 保存执行步骤（使用原始结果用于上下文传递）
         const executionStep: AgentExecutionStep = {
           stepNumber: stepCounter,
           plan: state.currentPlan!,
-          result: executionResult.result,
+          result: executionResult.result, // 保持原始结果用于下一步传递
           success: executionResult.success,
           error: executionResult.error,
           timestamp: new Date(),
@@ -231,7 +264,8 @@ export class AgentIntelligentEngine {
           data: {
             step: stepCounter,
             success: executionResult.success,
-            result: executionResult.result,
+            result: executionResult.result, // 原始结果用于上下文传递
+            formattedResult: formattedResultForStorage, // 格式化结果供前端显示
             rawResult: executionResult.result,
             agentName: this.agent.name,
             message: executionResult.success 
@@ -253,8 +287,8 @@ export class AgentIntelligentEngine {
           };
         }
 
-        // 🔧 保存步骤结果到数据库
-        await this.saveAgentStepResult(taskId, executionStep);
+        // 🔧 保存步骤结果到数据库（使用格式化结果）
+        await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
         // 🔧 第三步：Agent观察阶段 - 判断是否完成
         const observationResult = await this.agentObservationPhase(state);
@@ -1011,6 +1045,92 @@ Execute the task now:`;
   }
 
   /**
+   * 🔧 新增：格式化并流式输出步骤结果
+   */
+  private async *formatAndStreamStepResult(
+    rawResult: any,
+    mcpName: string,
+    toolName: string
+  ): AsyncGenerator<string, void, unknown> {
+    try {
+      // 构建格式化提示词，参考传统agent的格式化方式
+      const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
+
+**Tool Information:**
+- MCP Service: ${mcpName}
+- Tool/Action: ${toolName}
+
+**Raw Result:**
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+
+**Format Requirements:**
+1. Use proper markdown formatting (headers, lists, code blocks, etc.)
+2. Make the content easy to read and understand
+3. Highlight important information
+4. Structure the data logically
+5. If the result contains data, format it in tables or lists
+6. If it's an error, clearly explain what happened
+7. Keep the formatting professional and clean
+
+Format the result now:`;
+
+      // 使用流式LLM生成格式化结果
+      const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
+
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          yield chunk.content as string;
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to format step result:`, error);
+      // 降级处理：返回基本格式化
+      const fallbackResult = `### ${toolName} 执行结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      yield fallbackResult;
+    }
+  }
+
+  /**
+   * 🔧 新增：生成完整的格式化结果（非流式，用于存储）
+   */
+  private async generateFormattedResult(
+    rawResult: any,
+    mcpName: string,
+    toolName: string
+  ): Promise<string> {
+    try {
+      // 构建格式化提示词（与流式版本相同）
+      const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
+
+**Tool Information:**
+- MCP Service: ${mcpName}
+- Tool/Action: ${toolName}
+
+**Raw Result:**
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+
+**Format Requirements:**
+1. Use proper markdown formatting (headers, lists, code blocks, etc.)
+2. Make the content easy to read and understand
+3. Highlight important information
+4. Structure the data logically
+5. If the result contains data, format it in tables or lists
+6. If it's an error, clearly explain what happened
+7. Keep the formatting professional and clean
+
+Format the result now:`;
+
+      // 使用非流式LLM生成格式化结果
+      const response = await this.llm.invoke([new SystemMessage(formatPrompt)]);
+      return response.content as string;
+    } catch (error) {
+      logger.error(`Failed to generate formatted result:`, error);
+      // 降级处理：返回基本格式化
+      return `### ${toolName} 执行结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+    }
+  }
+
+  /**
    * 🔧 新增：流式生成Agent最终结果
    */
   private async *generateAgentFinalResultStream(state: AgentWorkflowState): AsyncGenerator<string, string, unknown> {
@@ -1078,20 +1198,23 @@ Generate a comprehensive but concise summary:`;
   /**
    * 保存Agent步骤结果
    */
-  private async saveAgentStepResult(taskId: string, step: AgentExecutionStep): Promise<void> {
+  private async saveAgentStepResult(taskId: string, step: AgentExecutionStep, formattedResult?: string): Promise<void> {
     try {
+      // 🔧 使用格式化结果进行数据库存储（如果有的话），否则使用原始结果
+      const resultToSave = formattedResult || step.result;
+      
       await taskExecutorDao.saveStepResult(
         taskId,
         step.stepNumber,
         step.success,
-        step.result
+        resultToSave
       );
 
-      // 保存Agent步骤消息到会话
+      // 保存Agent步骤消息到会话（使用格式化结果）
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
         const stepContent = step.success 
-          ? `${this.agent.name} Step ${step.stepNumber}: ${step.plan.tool}\n\n${step.result}`
+          ? `${this.agent.name} Step ${step.stepNumber}: ${step.plan.tool}\n\n${resultToSave}`
           : `${this.agent.name} Step ${step.stepNumber} Failed: ${step.plan.tool}\n\nError: ${step.error}`;
 
         await messageDao.createMessage({
