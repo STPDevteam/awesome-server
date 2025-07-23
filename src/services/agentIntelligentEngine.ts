@@ -56,6 +56,37 @@ export interface AgentWorkflowState {
   currentIteration: number;
   errors: string[];
   lastError: string | null;
+  // 🔧 新增：任务分解和状态跟踪
+  taskBreakdown: TaskComponent[];     // 任务分解结构
+  completedComponents: string[];      // 已完成的组件ID
+  failureHistory: FailureRecord[];    // 失败记录和处理策略
+}
+
+/**
+ * 🔧 新增：任务组件定义
+ */
+export interface TaskComponent {
+  id: string;                    // 组件唯一ID
+  type: 'data_collection' | 'data_processing' | 'action_execution' | 'analysis' | 'output';
+  description: string;           // 组件描述
+  isCompleted: boolean;         // 是否已完成
+  completedStepNumbers: number[]; // 完成此组件的步骤号
+  dependencies: string[];        // 依赖的其他组件ID
+  requiredData: string[];       // 需要的数据类型
+  outputData: string[];         // 产出的数据类型
+}
+
+/**
+ * 🔧 新增：失败记录定义
+ */
+export interface FailureRecord {
+  stepNumber: number;
+  tool: string;
+  error: string;
+  attemptCount: number;
+  lastAttemptTime: Date;
+  suggestedStrategy: 'retry' | 'alternative' | 'skip' | 'manual_intervention';
+  maxRetries: number;
 }
 
 /**
@@ -104,6 +135,9 @@ export class AgentIntelligentEngine {
       }
     };
 
+    // 🔧 新增：初始化任务分解
+    const taskBreakdown = await this.analyzeAndBreakdownTask(query);
+    
     // 初始化Agent工作流状态
     const state: AgentWorkflowState = {
       taskId,
@@ -118,7 +152,11 @@ export class AgentIntelligentEngine {
       maxIterations,
       currentIteration: 0,
       errors: [],
-      lastError: null
+      lastError: null,
+      // 🔧 新增：任务跟踪相关字段
+      taskBreakdown,
+      completedComponents: [],
+      failureHistory: []
     };
 
     let stepCounter = 0;
@@ -134,8 +172,8 @@ export class AgentIntelligentEngine {
 
         logger.info(`🧠 Agent ${this.agent.name} - Iteration ${state.currentIteration}`);
 
-        // 🔧 第一步：Agent智能规划
-        const planResult = await this.agentPlanningPhase(state);
+        // 🔧 第一步：Agent智能规划（增强版）
+        const planResult = await this.agentPlanningPhaseEnhanced(state);
         if (!planResult.success) {
           yield {
             event: 'planning_error',
@@ -258,6 +296,14 @@ export class AgentIntelligentEngine {
 
         state.executionHistory.push(executionStep);
 
+        // 🔧 新增：更新任务组件完成状态
+        await this.updateTaskComponentStatus(state, executionStep);
+
+        // 🔧 新增：记录失败并生成处理策略
+        if (!executionResult.success) {
+          await this.recordFailureAndStrategy(state, executionStep);
+        }
+
         // 🔧 发送Agent格式的step_complete事件
         yield {
           event: 'step_complete',
@@ -270,7 +316,17 @@ export class AgentIntelligentEngine {
             agentName: this.agent.name,
             message: executionResult.success 
               ? `${this.agent.name} completed step ${stepCounter} successfully`
-              : `${this.agent.name} failed at step ${stepCounter}`
+              : `${this.agent.name} failed at step ${stepCounter}`,
+            // 🔧 新增：任务进度信息
+            taskProgress: {
+              completedComponents: state.completedComponents.length,
+              totalComponents: state.taskBreakdown.length,
+              componentDetails: state.taskBreakdown.map(c => ({
+                id: c.id,
+                description: c.description,
+                isCompleted: c.isCompleted
+              }))
+            }
           }
         };
 
@@ -282,7 +338,9 @@ export class AgentIntelligentEngine {
               step: stepCounter,
               error: executionResult.error || 'Unknown error',
               agentName: this.agent.name,
-              message: `${this.agent.name} encountered an error in step ${stepCounter}`
+              message: `${this.agent.name} encountered an error in step ${stepCounter}`,
+              // 🔧 新增：失败处理策略
+              failureStrategy: this.getFailureStrategy(state, executionStep)
             }
           };
         }
@@ -290,8 +348,8 @@ export class AgentIntelligentEngine {
         // 🔧 保存步骤结果到数据库（使用格式化结果）
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
-        // 🔧 第三步：Agent观察阶段 - 判断是否完成
-        const observationResult = await this.agentObservationPhase(state);
+        // 🔧 第三步：Agent观察阶段（增强版） - 判断是否完成
+        const observationResult = await this.agentObservationPhaseEnhanced(state);
         state.isComplete = observationResult.isComplete;
         
         if (observationResult.nextObjective) {
@@ -361,6 +419,115 @@ export class AgentIntelligentEngine {
       };
       
       return false;
+    }
+  }
+
+  /**
+   * 🔧 新增：分析并分解任务
+   */
+  private async analyzeAndBreakdownTask(query: string): Promise<TaskComponent[]> {
+    try {
+      const analysisPrompt = `Analyze the user's task and break it down into logical components.
+
+**User Task**: "${query}"
+
+**Analysis Framework**:
+Identify the major components in this task. Common patterns include:
+
+1. **Data Collection**: Getting information from external sources
+   - Examples: "get tweets from user X", "fetch repository info", "retrieve price data"
+   
+2. **Data Processing**: Analyzing, combining, or transforming collected data
+   - Examples: "summarize the tweets", "compare the data", "analyze trends"
+   
+3. **Action Execution**: Performing actions based on processed data
+   - Examples: "send tweet", "create issue", "post to social media"
+   
+4. **Output Generation**: Creating final deliverables
+   - Examples: "generate report", "create summary", "format results"
+
+**Task Analysis**:
+Look for keywords that indicate multiple components:
+- "and", "then", "also", "after", "subsequently"
+- Multiple verbs: "get... and post...", "analyze... and send..."
+- Multiple targets: "from A and B", "to X and Y"
+
+**Component Dependencies**:
+- Data Collection → Data Processing → Action Execution
+- Some components may run in parallel (collecting from multiple sources)
+- Some components depend on others (can't send summary without data)
+
+**Output Format**:
+Return a JSON array of task components:
+[
+  {
+    "id": "unique_component_id",
+    "type": "data_collection|data_processing|action_execution|analysis|output",
+    "description": "Clear description of what this component does",
+    "dependencies": ["id_of_required_component"],
+    "requiredData": ["type_of_data_needed"],
+    "outputData": ["type_of_data_produced"]
+  }
+]
+
+Analyze the task now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
+      
+      let breakdown: TaskComponent[];
+      try {
+        const responseText = response.content.toString().trim();
+        let cleanedJson = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        const jsonMatch = cleanedJson.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          cleanedJson = jsonMatch[0];
+        }
+        
+        const parsedBreakdown = JSON.parse(cleanedJson);
+        breakdown = parsedBreakdown.map((component: any, index: number) => ({
+          id: component.id || `component_${index + 1}`,
+          type: component.type || 'analysis',
+          description: component.description || `Task component ${index + 1}`,
+          isCompleted: false,
+          completedStepNumbers: [],
+          dependencies: component.dependencies || [],
+          requiredData: component.requiredData || [],
+          outputData: component.outputData || []
+        }));
+        
+        logger.info(`📋 Task breakdown completed: ${breakdown.length} components identified`);
+        breakdown.forEach((comp, i) => {
+          logger.info(`   ${i + 1}. ${comp.description} (${comp.type})`);
+        });
+        
+        return breakdown;
+      } catch (parseError) {
+        logger.warn(`Task breakdown parsing failed: ${parseError}`);
+        // 降级处理：创建简单的单组件任务
+        return [{
+          id: 'main_task',
+          type: 'analysis',
+          description: query,
+          isCompleted: false,
+          completedStepNumbers: [],
+          dependencies: [],
+          requiredData: [],
+          outputData: []
+        }];
+      }
+    } catch (error) {
+      logger.error(`Task breakdown analysis failed:`, error);
+      // 最基础的降级处理
+      return [{
+        id: 'fallback_task',
+        type: 'analysis',
+        description: 'Complete user request',
+        isCompleted: false,
+        completedStepNumbers: [],
+        dependencies: [],
+        requiredData: [],
+        outputData: []
+      }];
     }
   }
 
@@ -504,6 +671,38 @@ export class AgentIntelligentEngine {
   }
 
   /**
+   * 🔧 新增：增强版规划阶段
+   */
+  private async agentPlanningPhaseEnhanced(state: AgentWorkflowState): Promise<{
+    success: boolean;
+    plan?: AgentExecutionPlan;
+    error?: string;
+  }> {
+    try {
+      // 🔧 获取Agent可用的MCP能力
+      const availableMCPs = await this.getAgentAvailableMCPs(state.taskId, state.agentId);
+
+      // 🔧 构建增强版规划提示词
+      const plannerPrompt = this.buildEnhancedAgentPlannerPrompt(state, availableMCPs);
+
+      const response = await this.llm.invoke([new SystemMessage(plannerPrompt)]);
+      const plan = this.parseAgentPlan(response.content as string, state.agentName);
+
+      logger.info(`📋 Agent ${this.agent.name} planned: ${plan.tool} (${plan.toolType})`);
+      logger.info(`💭 Agent reasoning: ${plan.reasoning}`);
+
+      return { success: true, plan };
+
+    } catch (error) {
+      logger.error(`❌ Agent ${this.agent.name} planning failed:`, error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  }
+
+  /**
    * Agent执行阶段
    */
   private async agentExecutionPhase(state: AgentWorkflowState, stepId: string): Promise<{
@@ -547,6 +746,34 @@ export class AgentIntelligentEngine {
   }> {
     try {
       const observerPrompt = this.buildAgentObserverPrompt(state);
+      
+      const response = await this.llm.invoke([
+        new SystemMessage(observerPrompt),
+        new HumanMessage(`Please analyze whether ${this.agent.name} has completed the task successfully`)
+      ]);
+
+      const observation = this.parseAgentObservation(response.content as string);
+      
+      logger.info(`🔍 Agent ${this.agent.name} observation: ${observation.isComplete ? 'Complete' : 'Continue'}`);
+      
+      return observation;
+
+    } catch (error) {
+      logger.error(`❌ Agent ${this.agent.name} observation failed:`, error);
+      // 默认继续执行
+      return { isComplete: false };
+    }
+  }
+
+  /**
+   * 🔧 新增：增强版观察阶段
+   */
+  private async agentObservationPhaseEnhanced(state: AgentWorkflowState): Promise<{
+    isComplete: boolean;
+    nextObjective?: string;
+  }> {
+    try {
+      const observerPrompt = this.buildEnhancedAgentObserverPrompt(state);
       
       const response = await this.llm.invoke([
         new SystemMessage(observerPrompt),
@@ -641,6 +868,112 @@ What is the most logical next step for ${this.agent.name} to take?`;
   }
 
   /**
+   * 🔧 新增：构建增强版规划提示词
+   */
+  private buildEnhancedAgentPlannerPrompt(state: AgentWorkflowState, availableMCPs: any[]): string {
+    const totalSteps = state.executionHistory.length;
+    const hasData = Object.keys(state.dataStore).length > 1;
+    const lastStepResult = totalSteps > 0 ? state.executionHistory[totalSteps - 1] : null;
+    
+    // 🔧 任务组件分析
+    const completedComponents = state.taskBreakdown.filter(c => c.isCompleted);
+    const remainingComponents = state.taskBreakdown.filter(c => !c.isCompleted);
+    
+    // 🔧 失败分析
+    const recentFailures = state.failureHistory.filter(f => f.attemptCount > 0);
+    
+    return `You are **${this.agent.name}**, an intelligent AI assistant with specialized capabilities.
+
+**AGENT IDENTITY**:
+- Name: ${this.agent.name}
+- Description: ${this.agent.description || 'Specialized AI Assistant'}
+- Role: Intelligent workflow executor with access to advanced tools
+
+**USER TASK**: "${state.originalQuery}"
+
+**🔧 ENHANCED TASK ANALYSIS**:
+
+## Task Breakdown Status
+${state.taskBreakdown.map(comp => 
+  `- ${comp.isCompleted ? '✅' : '⏳'} ${comp.description} (${comp.type})`
+).join('\n')}
+
+**Completed Components**: ${completedComponents.length}/${state.taskBreakdown.length}
+**Remaining Components**: ${remainingComponents.map(c => c.description).join(', ')}
+
+## Execution History & Data Analysis
+- Steps completed: ${totalSteps}
+- Available data: ${hasData ? Object.keys(state.dataStore).filter(k => k !== 'lastResult').join(', ') : 'None'}
+- Last step: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? 'Success' : 'Failed'})` : 'None'}
+${lastStepResult?.result ? `- Last result data available: Yes (${typeof lastStepResult.result})` : ''}
+
+## Failure Analysis & Strategy
+${recentFailures.length > 0 ? 
+  recentFailures.map(f => 
+    `- ${f.tool}: Failed ${f.attemptCount} time(s), Strategy: ${f.suggestedStrategy}`
+  ).join('\n') 
+  : '- No recent failures'}
+
+**AVAILABLE MCP SERVICES FOR ${this.agent.name.toUpperCase()}**:
+${availableMCPs.map(mcp => `- MCP Service: ${mcp.mcpName}
+  Description: ${mcp.description || 'General purpose tool'}
+  Available Tools: getUserTweets, sendTweet, searchTweets (examples - use appropriate tool for task)`).join('\n')}
+
+**🔧 ENHANCED PLANNING PRINCIPLES**:
+
+### 1. **Avoid Redundant Work**
+- ✅ DO: Use existing data from completed components
+- ❌ DON'T: Re-collect data that was already successfully obtained
+- 🔍 CHECK: What data is already available in dataStore?
+
+### 2. **Handle Failures Intelligently**
+${recentFailures.length > 0 ? `
+Recent failure analysis:
+${recentFailures.map(f => `- ${f.tool}: ${f.suggestedStrategy === 'alternative' ? 'Try different approach' : f.suggestedStrategy === 'retry' ? 'Retry with modifications' : 'Skip this step'}`).join('\n')}
+` : ''}
+
+### 3. **Focus on Incomplete Components**
+**Next logical step should address**: ${remainingComponents.length > 0 ? remainingComponents[0].description : 'Task completion verification'}
+
+### 4. **Smart Progression Logic**
+Ask yourself:
+- "What component needs to be completed next?"
+- "Do I have all required data for the next step?"
+- "Should I retry a failed step or try an alternative approach?"
+- "Can I skip a problematic step and still achieve the user's goal?"
+
+**DECISION LOGIC as ${this.agent.name}**:
+
+Based on the task breakdown and current progress, determine the most logical next step:
+
+1. **If data collection is incomplete**: Collect missing data
+2. **If data is available but processing is incomplete**: Process/analyze the data  
+3. **If processing is done but action is incomplete**: Execute the final action
+4. **If a step failed**: Apply the suggested failure strategy
+5. **If all components are complete**: Verify completion or conclude
+
+**OUTPUT FORMAT** (JSON only):
+{
+  "tool": "specific-function-name-like-getUserTweets-or-sendTweet",
+  "toolType": "mcp" or "llm",
+  "mcpName": "mcp-service-name-from-list-above",
+  "args": {
+    // Parameters specific to this tool/action
+    // Use available data from dataStore when applicable
+  },
+  "expectedOutput": "What this step should accomplish",
+  "reasoning": "Why ${this.agent.name} chose this specific step (reference task breakdown and avoid redundant work)",
+  "agentContext": "How this relates to completing the remaining task components"
+}
+
+**CRITICAL INSTRUCTIONS**:
+❌ WRONG: {"tool": "twitter-client-mcp", "mcpName": "getUserTweets"}
+✅ CORRECT: {"tool": "getUserTweets", "mcpName": "twitter-client-mcp"}
+
+What is the most logical next step for ${this.agent.name} to take?`;
+  }
+
+  /**
    * 构建Agent专用观察提示词
    */
   private buildAgentObserverPrompt(state: AgentWorkflowState): string {
@@ -694,6 +1027,108 @@ Please return in format:
   "isComplete": true/false,
   "reasoning": "detailed reasoning for ${this.agent.name}'s completion judgment",
   "nextObjective": "next objective for ${this.agent.name} (if not complete)"
+}`;
+  }
+
+  /**
+   * 🔧 新增：构建增强版观察提示词
+   */
+  private buildEnhancedAgentObserverPrompt(state: AgentWorkflowState): string {
+    const lastStep = state.executionHistory[state.executionHistory.length - 1];
+    const completedComponents = state.taskBreakdown.filter(c => c.isCompleted);
+    const totalComponents = state.taskBreakdown.length;
+    
+    return `You are observing the execution progress of **${this.agent.name}** to determine task completion status with enhanced analysis.
+
+## Agent & Task Information
+- **Agent**: ${this.agent.name}
+- **Agent Description**: ${this.agent.description || 'Specialized AI Assistant'}
+- **Original Task**: ${state.originalQuery}
+- **Current Objective**: ${state.currentObjective}
+- **Executed Steps**: ${state.executionHistory.length}
+
+## 🔧 ENHANCED TASK COMPONENT ANALYSIS
+
+### Component Completion Status
+${state.taskBreakdown.map(comp => `
+**Component**: ${comp.description} (${comp.type})
+- Status: ${comp.isCompleted ? '✅ COMPLETED' : '⏳ PENDING'}
+- Completed in steps: ${comp.completedStepNumbers.join(', ') || 'None'}
+- Dependencies: ${comp.dependencies.join(', ') || 'None'}
+`).join('\n')}
+
+**Overall Progress**: ${completedComponents.length}/${totalComponents} components completed
+
+### Execution History Analysis
+${state.executionHistory.map(step => `
+Step ${step.stepNumber}: ${step.plan.tool} (${step.plan.toolType})
+- Status: ${step.success ? '✅ Success' : '❌ Failed'}
+- Reasoning: ${step.plan.reasoning}
+- Component Impact: ${step.success ? 'Contributed to task progress' : 'Needs attention'}
+- Result: ${step.success ? 'Data available' : step.error}
+`).join('\n')}
+
+### Data Availability Analysis
+${Object.keys(state.dataStore).length > 1 ? `
+**Available Data Sources**:
+${Object.keys(state.dataStore).filter(k => k !== 'lastResult').map(key => `- ${key}: Ready for use`).join('\n')}
+` : '**No data collected yet**'}
+
+### Failure Analysis
+${state.failureHistory.length > 0 ? `
+**Recorded Failures**:
+${state.failureHistory.map(f => `- ${f.tool}: ${f.error} (${f.attemptCount} attempts, strategy: ${f.suggestedStrategy})`).join('\n')}
+` : '**No failures recorded**'}
+
+## 🎯 ENHANCED COMPLETION JUDGMENT
+
+### Critical Completion Criteria
+
+1. **Component Completeness Check**
+   - Are ALL required components completed? ${completedComponents.length === totalComponents ? 'YES ✅' : 'NO ❌'}
+   - Remaining components: ${state.taskBreakdown.filter(c => !c.isCompleted).map(c => c.description).join(', ') || 'None'}
+
+2. **Data Flow Analysis**
+   - Is data collection complete? ${state.taskBreakdown.filter(c => c.type === 'data_collection').every(c => c.isCompleted) ? 'YES ✅' : 'NO ❌'}
+   - Is data processing complete? ${state.taskBreakdown.filter(c => c.type === 'data_processing' || c.type === 'analysis').every(c => c.isCompleted) ? 'YES ✅' : 'NO ❌'}
+   - Is action execution complete? ${state.taskBreakdown.filter(c => c.type === 'action_execution').every(c => c.isCompleted) ? 'YES ✅' : 'NO ❌'}
+
+3. **Failure Impact Assessment**
+   - Are there critical failures blocking progress? ${state.failureHistory.filter(f => f.suggestedStrategy === 'manual_intervention').length > 0 ? 'YES ❌' : 'NO ✅'}
+   - Can remaining work be completed with available data? (Analyze based on component dependencies)
+
+4. **User Satisfaction Check**
+   - Would the user be satisfied with current results?
+   - Has the original request been fully addressed?
+
+### 🚨 IMPORTANT DECISION RULES
+
+**MARK COMPLETE ONLY IF**:
+- ✅ ALL task components are completed OR
+- ✅ User's core objective is achieved AND remaining components are optional OR
+- ✅ Critical failures prevent further progress AND significant value has been delivered
+
+**CONTINUE EXECUTION IF**:
+- ❌ Key components remain incomplete
+- ❌ Recent failures can be resolved with alternative approaches
+- ❌ Available data can be used to complete remaining components
+
+### Latest Execution Context
+${lastStep ? `
+**Last Step Details**:
+- Step ${lastStep.stepNumber}: ${lastStep.plan.tool}
+- Status: ${lastStep.success ? '✅ Success' : '❌ Failed'}
+- Reasoning: ${lastStep.plan.reasoning}
+- Result: ${lastStep.success ? (typeof lastStep.result === 'string' ? lastStep.result : '[Data Available]') : lastStep.error}
+` : 'No execution history yet'}
+
+Please return in format:
+{
+  "isComplete": true/false,
+  "reasoning": "detailed analysis of component completion, data flow, and user objective fulfillment",
+  "nextObjective": "specific next objective focusing on incomplete components (if not complete)",
+  "completionConfidence": 0.0-1.0,
+  "criticalGaps": ["list of any critical missing components"]
 }`;
   }
 
@@ -1325,6 +1760,128 @@ Generate a comprehensive but concise summary:`;
     } catch (error) {
       logger.error(`Failed to save Agent final result:`, error);
     }
+  }
+
+  /**
+   * 🔧 新增：更新任务组件完成状态
+   */
+  private async updateTaskComponentStatus(state: AgentWorkflowState, step: AgentExecutionStep): Promise<void> {
+    if (!step.success) return;
+
+    // 根据步骤结果和工具类型判断完成了哪个组件
+    for (const component of state.taskBreakdown) {
+      if (component.isCompleted) continue;
+
+      const isComponentCompleted = this.checkComponentCompletion(component, step, state);
+      
+      if (isComponentCompleted) {
+        component.isCompleted = true;
+        component.completedStepNumbers.push(step.stepNumber);
+        state.completedComponents.push(component.id);
+        
+        logger.info(`✅ Task component completed: ${component.description}`);
+      }
+    }
+  }
+
+  /**
+   * 🔧 新增：检查组件是否完成
+   */
+  private checkComponentCompletion(component: TaskComponent, step: AgentExecutionStep, state: AgentWorkflowState): boolean {
+    const tool = step.plan.tool.toLowerCase();
+    const componentType = component.type;
+    const componentDesc = component.description.toLowerCase();
+
+    // 基于工具类型和组件类型的匹配逻辑
+    switch (componentType) {
+      case 'data_collection':
+        // 数据收集组件：成功调用了数据获取工具
+        return tool.includes('get') || tool.includes('fetch') || tool.includes('search') || tool.includes('retrieve');
+        
+      case 'data_processing':
+      case 'analysis':
+        // 数据处理组件：使用了LLM分析或处理工具
+        return step.plan.toolType === 'llm' || tool.includes('analyze') || tool.includes('process') || tool.includes('summarize');
+        
+      case 'action_execution':
+        // 行动执行组件：成功执行了发送、创建、发布等操作
+        return tool.includes('send') || tool.includes('create') || tool.includes('post') || tool.includes('publish') || tool.includes('save');
+        
+      case 'output':
+        // 输出组件：成功生成了最终输出
+        return tool.includes('generate') || tool.includes('format') || tool.includes('export');
+        
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * 🔧 新增：记录失败并生成处理策略
+   */
+  private async recordFailureAndStrategy(state: AgentWorkflowState, step: AgentExecutionStep): Promise<void> {
+    const tool = step.plan.tool;
+    const error = step.error || 'Unknown error';
+
+    // 查找是否已有此工具的失败记录
+    let failureRecord = state.failureHistory.find(f => f.tool === tool);
+    
+    if (failureRecord) {
+      failureRecord.attemptCount++;
+      failureRecord.lastAttemptTime = new Date();
+    } else {
+      failureRecord = {
+        stepNumber: step.stepNumber,
+        tool,
+        error,
+        attemptCount: 1,
+        lastAttemptTime: new Date(),
+        suggestedStrategy: 'retry',
+        maxRetries: 2
+      };
+      state.failureHistory.push(failureRecord);
+    }
+
+    // 生成处理策略
+    failureRecord.suggestedStrategy = this.generateFailureStrategy(tool, error, failureRecord.attemptCount);
+    
+    logger.info(`📝 Recorded failure for ${tool}: ${error} (attempt ${failureRecord.attemptCount})`);
+    logger.info(`🔧 Suggested strategy: ${failureRecord.suggestedStrategy}`);
+  }
+
+  /**
+   * 🔧 新增：生成失败处理策略
+   */
+  private generateFailureStrategy(tool: string, error: string, attemptCount: number): 'retry' | 'alternative' | 'skip' | 'manual_intervention' {
+    // 字符限制错误 - 尝试替代方案
+    if (error.includes('280') || error.includes('character') || error.includes('too long')) {
+      return 'alternative';
+    }
+    
+    // 认证错误 - 手动干预
+    if (error.includes('auth') || error.includes('permission') || error.includes('403') || error.includes('401')) {
+      return 'manual_intervention';
+    }
+    
+    // 服务器错误 - 重试一次后跳过
+    if (error.includes('500') || error.includes('timeout') || error.includes('network')) {
+      return attemptCount < 2 ? 'retry' : 'skip';
+    }
+    
+    // 其他错误 - 根据尝试次数决定
+    if (attemptCount < 2) {
+      return 'retry';
+    } else {
+      return 'alternative';
+    }
+  }
+
+  /**
+   * 🔧 新增：获取失败处理策略
+   */
+  private getFailureStrategy(state: AgentWorkflowState, step: AgentExecutionStep): string {
+    const failureRecord = state.failureHistory.find(f => f.tool === step.plan.tool);
+    return failureRecord?.suggestedStrategy || 'retry';
   }
 
   /**
