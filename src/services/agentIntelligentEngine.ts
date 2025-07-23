@@ -1405,7 +1405,28 @@ Transform the data now:`;
         logger.info(`🔍 === LLM Parameter Conversion Debug ===`);
         logger.info(`🔍 Raw LLM Response: ${responseText}`);
         
-        conversion = JSON.parse(responseText);
+        // 🔧 完全复制传统引擎的JSON清理逻辑
+        let cleanedJson = responseText;
+        
+        console.log(`\n==== 📝 LLM Parameter Conversion Debug ====`);
+        console.log(`Raw LLM Response Length: ${responseText.length} chars`);
+        console.log(`Raw LLM Response: ${responseText}`);
+        
+        // 移除Markdown代码块标记
+        cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        console.log(`After Markdown Cleanup: ${cleanedJson}`);
+        
+        // 尝试提取JSON对象
+        const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          cleanedJson = jsonMatch[0];
+          console.log(`After JSON Extraction: ${cleanedJson}`);
+        }
+        
+        console.log(`🧹 Final Cleaned LLM response: ${cleanedJson}`);
+        
+        conversion = JSON.parse(cleanedJson);
+        console.log(`🔄 Parsed conversion: ${JSON.stringify(conversion, null, 2)}`);
         logger.info(`🔍 Parsed Conversion: ${JSON.stringify(conversion, null, 2)}`);
       } catch (parseError) {
         logger.error(`❌ Failed to parse parameter conversion response: ${response.content}`);
@@ -1555,9 +1576,30 @@ Select the best alternative tool now:`;
         const responseText = response.content.toString().trim();
         logger.info(`🔍 === LLM Tool Reselection Debug ===`);
         logger.info(`🔍 Original Tool: ${originalTool}`);
-        logger.info(`🔍 Raw LLM Response: ${responseText}`);
+        logger.info(`🔍 Raw LLM Reselection Response: ${responseText}`);
         
-        reselection = JSON.parse(responseText);
+        // 🔧 使用传统引擎的强化JSON清理逻辑
+        let cleanedJson = responseText;
+        
+        console.log(`\n==== 📝 LLM Tool Reselection JSON Debug ====`);
+        console.log(`Raw LLM Response Length: ${responseText.length} chars`);
+        console.log(`Raw LLM Response: ${responseText}`);
+        
+        // 移除Markdown代码块标记
+        cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        console.log(`After Markdown Cleanup: ${cleanedJson}`);
+        
+        // 尝试提取JSON对象
+        const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          cleanedJson = jsonMatch[0];
+          console.log(`After JSON Extraction: ${cleanedJson}`);
+        }
+        
+        console.log(`🧹 Final Cleaned LLM response: ${cleanedJson}`);
+        
+        reselection = JSON.parse(cleanedJson);
+        console.log(`🔄 Parsed reselection: ${JSON.stringify(reselection, null, 2)}`);
         logger.info(`🔍 Parsed Reselection: ${JSON.stringify(reselection, null, 2)}`);
       } catch (parseError) {
         logger.error(`❌ Failed to parse tool reselection response: ${response.content}`);
