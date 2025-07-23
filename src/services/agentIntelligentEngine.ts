@@ -580,7 +580,7 @@ Ask yourself: "As ${this.agent.name}, what is the most logical next step to help
 **OUTPUT FORMAT** (JSON only):
 {
   "tool": "specific-function-name-like-getUserTweets-or-searchTweets",
-  "toolType": "mcp" or "llm",
+  "toolType": "mcp",
   "mcpName": "mcp-service-name-from-list-above",
   "args": {
     // Parameters specific to this tool/action
@@ -590,10 +590,18 @@ Ask yourself: "As ${this.agent.name}, what is the most logical next step to help
   "agentContext": "How this relates to ${this.agent.name}'s capabilities"
 }
 
-**IMPORTANT CLARIFICATION**:
-- "tool": The specific function name (e.g., "getUserTweets", "sendTweet")
-- "mcpName": The MCP service name from the list above (e.g., "twitter-client-mcp")
-- For Twitter tasks, use mcpName="twitter-client-mcp" and tool="getUserTweets" or other appropriate function
+**CRITICAL INSTRUCTIONS - DO NOT REVERSE THESE**:
+❌ WRONG: {"tool": "twitter-client-mcp", "mcpName": "getUserTweets"}
+✅ CORRECT: {"tool": "getUserTweets", "mcpName": "twitter-client-mcp"}
+
+**FIELD DEFINITIONS**:
+- "tool": FUNCTION NAME (getUserTweets, sendTweet, searchTweets, etc.)
+- "mcpName": SERVICE NAME (twitter-client-mcp, github-mcp, etc.)
+
+**FOR TWITTER TASKS SPECIFICALLY**:
+- Always use: "mcpName": "twitter-client-mcp"
+- Tool options: "getUserTweets", "sendTweet", "searchTweets", "getTweetInfo"
+- Example: {"tool": "getUserTweets", "mcpName": "twitter-client-mcp"}
 
 What is the most logical next step for ${this.agent.name} to take?`;
   }
@@ -669,8 +677,14 @@ Please return in format:
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         
+        // 🔧 调试日志：显示原始解析结果
+        logger.info(`🔍 Original parsed plan: tool="${parsed.tool}", mcpName="${parsed.mcpName}", toolType="${parsed.toolType}"`);
+        
         // 🔧 智能修正：检查tool和mcpName是否搞反了
         let { tool, mcpName } = this.correctToolAndMCPNames(parsed.tool, parsed.mcpName);
+        
+        // 🔧 调试日志：显示修正后结果
+        logger.info(`🔍 Corrected plan: tool="${tool}", mcpName="${mcpName}"`);
         
         return {
           tool: tool || 'llm.process',
@@ -701,6 +715,9 @@ Please return in format:
    * 🔧 智能修正工具名和MCP名（防止LLM搞混）
    */
   private correctToolAndMCPNames(toolValue: string, mcpNameValue: string): { tool: string; mcpName: string } {
+    // 🔧 调试日志：输入参数
+    logger.info(`🔍 correctToolAndMCPNames input: tool="${toolValue}", mcpName="${mcpNameValue}"`);
+    
     // 常见的MCP服务名称（通常包含-mcp后缀）
     const commonMCPNames = [
       'twitter-client-mcp', 'github-mcp', 'cryptocurrency-mcp', 
@@ -725,6 +742,9 @@ Please return in format:
       (commonToolNames.includes(mcpNameValue) || /^[a-z][a-zA-Z0-9]*$/.test(mcpNameValue))
     );
     
+    // 🔧 调试日志：检查结果
+    logger.info(`🔍 Detection results: toolLooksLikeMCP=${toolLooksLikeMCP}, mcpNameLooksLikeTool=${mcpNameLooksLikeTool}`);
+    
     if (toolLooksLikeMCP && mcpNameLooksLikeTool) {
       logger.warn(`🔧 Detected reversed tool/mcpName: tool="${toolValue}" mcpName="${mcpNameValue}"`);
       logger.warn(`🔧 Correcting to: tool="${mcpNameValue}" mcpName="${toolValue}"`);
@@ -734,6 +754,20 @@ Please return in format:
         mcpName: toolValue
       };
     }
+    
+    // 🔧 额外修复：如果tool是MCP名但mcpName为空，自动纠正
+    if (toolLooksLikeMCP && !mcpNameValue) {
+      logger.warn(`🔧 Tool looks like MCP but mcpName is empty. Auto-correcting...`);
+      logger.warn(`🔧 Setting mcpName="${toolValue}" and tool="getUserTweets" (default)`);
+      
+      return {
+        tool: 'getUserTweets', // 默认工具名
+        mcpName: toolValue
+      };
+    }
+    
+    // 🔧 调试日志：最终输出
+    logger.info(`🔍 correctToolAndMCPNames output: tool="${toolValue}", mcpName="${mcpNameValue}"`);
     
     return {
       tool: toolValue,
