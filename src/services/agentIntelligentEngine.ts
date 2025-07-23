@@ -555,8 +555,10 @@ export class AgentIntelligentEngine {
 - Last step: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? 'Success' : 'Failed'})` : 'None'}
 ${lastStepResult?.result ? `- Last result preview: ${JSON.stringify(lastStepResult.result).substring(0, 150)}...` : ''}
 
-**AVAILABLE TOOLS FOR ${this.agent.name.toUpperCase()}**:
-${availableMCPs.map(mcp => `- ${mcp.mcpName}: ${mcp.description || 'General purpose tool'}`).join('\n')}
+**AVAILABLE MCP SERVICES FOR ${this.agent.name.toUpperCase()}**:
+${availableMCPs.map(mcp => `- MCP Service: ${mcp.mcpName}
+  Description: ${mcp.description || 'General purpose tool'}
+  Available Tools: getUserTweets, sendTweet, searchTweets (examples - use appropriate tool for task)`).join('\n')}
 
 **AGENT PLANNING PRINCIPLES**:
 
@@ -577,9 +579,9 @@ Ask yourself: "As ${this.agent.name}, what is the most logical next step to help
 
 **OUTPUT FORMAT** (JSON only):
 {
-  "tool": "exact-tool-name",
+  "tool": "specific-function-name-like-getUserTweets-or-searchTweets",
   "toolType": "mcp" or "llm",
-  "mcpName": "exact-mcp-name-if-mcp-tool",
+  "mcpName": "mcp-service-name-from-list-above",
   "args": {
     // Parameters specific to this tool/action
   },
@@ -587,6 +589,11 @@ Ask yourself: "As ${this.agent.name}, what is the most logical next step to help
   "reasoning": "Why ${this.agent.name} chose this specific step",
   "agentContext": "How this relates to ${this.agent.name}'s capabilities"
 }
+
+**IMPORTANT CLARIFICATION**:
+- "tool": The specific function name (e.g., "getUserTweets", "sendTweet")
+- "mcpName": The MCP service name from the list above (e.g., "twitter-client-mcp")
+- For Twitter tasks, use mcpName="twitter-client-mcp" and tool="getUserTweets" or other appropriate function
 
 What is the most logical next step for ${this.agent.name} to take?`;
   }
@@ -662,10 +669,13 @@ Please return in format:
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         
+        // 🔧 智能修正：检查tool和mcpName是否搞反了
+        let { tool, mcpName } = this.correctToolAndMCPNames(parsed.tool, parsed.mcpName);
+        
         return {
-          tool: parsed.tool || 'llm.process',
+          tool: tool || 'llm.process',
           toolType: parsed.toolType || 'llm',
-          mcpName: parsed.mcpName,
+          mcpName: mcpName,
           args: parsed.args || {},
           expectedOutput: parsed.expectedOutput || 'Task result',
           reasoning: parsed.reasoning || 'No reasoning provided',
@@ -684,6 +694,50 @@ Please return in format:
       expectedOutput: 'Process user request',
       reasoning: 'Fallback plan due to parsing error',
       agentContext: `Fallback execution by ${agentName}`
+    };
+  }
+
+  /**
+   * 🔧 智能修正工具名和MCP名（防止LLM搞混）
+   */
+  private correctToolAndMCPNames(toolValue: string, mcpNameValue: string): { tool: string; mcpName: string } {
+    // 常见的MCP服务名称（通常包含-mcp后缀）
+    const commonMCPNames = [
+      'twitter-client-mcp', 'github-mcp', 'cryptocurrency-mcp', 
+      'web-search-mcp', 'email-mcp', 'calendar-mcp'
+    ];
+    
+    // 常见的工具函数名称
+    const commonToolNames = [
+      'getUserTweets', 'sendTweet', 'searchTweets', 'getTweetInfo',
+      'getRepository', 'createIssue', 'searchRepositories',
+      'getCryptoPrice', 'searchWeb', 'sendEmail'
+    ];
+    
+    // 检查是否搞反了：tool字段包含MCP名，mcpName字段包含工具名
+    const toolLooksLikeMCP = toolValue && (
+      toolValue.includes('-mcp') || 
+      commonMCPNames.includes(toolValue)
+    );
+    
+    const mcpNameLooksLikeTool = mcpNameValue && (
+      !mcpNameValue.includes('-mcp') &&
+      (commonToolNames.includes(mcpNameValue) || /^[a-z][a-zA-Z0-9]*$/.test(mcpNameValue))
+    );
+    
+    if (toolLooksLikeMCP && mcpNameLooksLikeTool) {
+      logger.warn(`🔧 Detected reversed tool/mcpName: tool="${toolValue}" mcpName="${mcpNameValue}"`);
+      logger.warn(`🔧 Correcting to: tool="${mcpNameValue}" mcpName="${toolValue}"`);
+      
+      return {
+        tool: mcpNameValue,
+        mcpName: toolValue
+      };
+    }
+    
+    return {
+      tool: toolValue,
+      mcpName: mcpNameValue
     };
   }
 
