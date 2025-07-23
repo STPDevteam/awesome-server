@@ -742,35 +742,6 @@ Please return in format:
       (commonToolNames.includes(mcpNameValue) || /^[a-z][a-zA-Z0-9]*$/.test(mcpNameValue))
     );
     
-    // 🔧 特殊检测：Twitter专用检测
-    const isTwitterRelated = (toolValue && toolValue.includes('twitter-client-mcp')) || 
-                             (mcpNameValue && mcpNameValue.includes('twitter-client-mcp'));
-    
-    if (isTwitterRelated) {
-      logger.info(`🔍 Twitter-related task detected`);
-      
-      // 如果tool是twitter-client-mcp，这肯定是错的
-      if (toolValue === 'twitter-client-mcp') {
-        logger.warn(`🔧 DETECTED: tool is "twitter-client-mcp" - this is definitely wrong!`);
-        
-        // 如果mcpName看起来是工具名，就交换
-        if (mcpNameValue && commonToolNames.includes(mcpNameValue)) {
-          logger.warn(`🔧 SWAPPING: tool="${toolValue}" <-> mcpName="${mcpNameValue}"`);
-          return {
-            tool: mcpNameValue,
-            mcpName: toolValue
-          };
-        } else {
-          // 如果mcpName为空或不合理，设置默认值
-          logger.warn(`🔧 FIXING: setting tool="getUserTweets", mcpName="twitter-client-mcp"`);
-          return {
-            tool: 'getUserTweets',
-            mcpName: 'twitter-client-mcp'
-          };
-        }
-      }
-    }
-    
     // 🔧 调试日志：检查结果
     logger.info(`🔍 Detection results: toolLooksLikeMCP=${toolLooksLikeMCP}, mcpNameLooksLikeTool=${mcpNameLooksLikeTool}`);
     
