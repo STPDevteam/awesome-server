@@ -682,8 +682,11 @@ Analyze the task now:`;
       // 🔧 获取Agent可用的MCP能力
       const availableMCPs = await this.getAgentAvailableMCPs(state.taskId, state.agentId);
 
-      // 🔧 构建增强版规划提示词
-      const plannerPrompt = this.buildEnhancedAgentPlannerPrompt(state, availableMCPs);
+      // 🔧 关键修复：获取每个MCP的实际工具列表
+      const mcpToolsInfo = await this.getDetailedMCPToolsForPlanning(state.taskId);
+
+      // 🔧 构建增强版规划提示词（包含真实工具列表）
+      const plannerPrompt = this.buildEnhancedAgentPlannerPrompt(state, availableMCPs, mcpToolsInfo);
 
       const response = await this.llm.invoke([new SystemMessage(plannerPrompt)]);
       const plan = this.parseAgentPlan(response.content as string, state.agentName);
@@ -699,6 +702,63 @@ Analyze the task now:`;
         success: false, 
         error: error instanceof Error ? error.message : String(error) 
       };
+    }
+  }
+
+  /**
+   * 🔧 新增：获取详细的MCP工具信息用于规划
+   */
+  private async getDetailedMCPToolsForPlanning(taskId: string): Promise<Map<string, any[]>> {
+    const mcpToolsMap = new Map<string, any[]>();
+    
+    try {
+      // 获取任务信息
+      const task = await this.taskService.getTaskById(taskId);
+      if (!task) {
+        logger.warn('Task not found for getting MCP tools');
+        return mcpToolsMap;
+      }
+
+      // 获取Agent配置的MCP列表
+      if (!this.agent.mcpWorkflow || !this.agent.mcpWorkflow.mcps) {
+        logger.info(`Agent ${this.agent.name} has no MCP workflow configuration`);
+        return mcpToolsMap;
+      }
+
+      // 遍历每个MCP，获取其实际工具列表
+      for (const mcpInfo of this.agent.mcpWorkflow.mcps) {
+        try {
+          const mcpName = mcpInfo.name;
+          logger.info(`🔍 Getting tools for MCP: ${mcpName}`);
+          
+          // 检查MCP是否已连接
+          const connectedMCPs = this.mcpManager.getConnectedMCPs(task.userId);
+          const isConnected = connectedMCPs.some(mcp => mcp.name === mcpName);
+          
+          if (!isConnected) {
+            logger.warn(`MCP ${mcpName} not connected, skipping tool list retrieval`);
+            continue;
+          }
+
+          // 获取MCP的实际工具列表
+          const tools = await this.mcpManager.getTools(mcpName, task.userId);
+          mcpToolsMap.set(mcpName, tools);
+          
+          logger.info(`📋 Found ${tools.length} tools in ${mcpName}: ${tools.map(t => t.name).join(', ')}`);
+          
+        } catch (error) {
+          logger.error(`Failed to get tools for MCP ${mcpInfo.name}:`, error);
+          // 即使某个MCP获取失败，继续处理其他MCP
+          continue;
+        }
+      }
+
+      logger.info(`🎯 总共获取了 ${mcpToolsMap.size} 个MCP的工具列表`);
+      return mcpToolsMap;
+      
+    } catch (error) {
+      logger.error('Failed to get detailed MCP tools for planning:', error);
+      return mcpToolsMap;
     }
   }
 
@@ -819,7 +879,7 @@ ${lastStepResult?.result ? `- Last result: ${typeof lastStepResult.result === 's
 **AVAILABLE MCP SERVICES FOR ${this.agent.name.toUpperCase()}**:
 ${availableMCPs.map(mcp => `- MCP Service: ${mcp.mcpName}
   Description: ${mcp.description || 'General purpose tool'}
-  Available Tools: getUserTweets, sendTweet, searchTweets (examples - use appropriate tool for task)`).join('\n')}
+  Status: Available (use appropriate tools for your task)`).join('\n')}
 
 **AGENT PLANNING PRINCIPLES**:
 
@@ -870,7 +930,7 @@ What is the most logical next step for ${this.agent.name} to take?`;
   /**
    * 🔧 新增：构建增强版规划提示词
    */
-  private buildEnhancedAgentPlannerPrompt(state: AgentWorkflowState, availableMCPs: any[]): string {
+  private buildEnhancedAgentPlannerPrompt(state: AgentWorkflowState, availableMCPs: any[], mcpToolsInfo: Map<string, any[]>): string {
     const totalSteps = state.executionHistory.length;
     const hasData = Object.keys(state.dataStore).length > 1;
     const lastStepResult = totalSteps > 0 ? state.executionHistory[totalSteps - 1] : null;
@@ -915,9 +975,20 @@ ${recentFailures.length > 0 ?
   : '- No recent failures'}
 
 **AVAILABLE MCP SERVICES FOR ${this.agent.name.toUpperCase()}**:
-${availableMCPs.map(mcp => `- MCP Service: ${mcp.mcpName}
+${availableMCPs.map(mcp => {
+  const actualTools = mcpToolsInfo.get(mcp.mcpName);
+  if (actualTools && actualTools.length > 0) {
+    return `- MCP Service: ${mcp.mcpName}
   Description: ${mcp.description || 'General purpose tool'}
-  Available Tools: getUserTweets, sendTweet, searchTweets (examples - use appropriate tool for task)`).join('\n')}
+  Available Tools: ${actualTools.map(tool => tool.name).join(', ')}
+  Tool Details:
+${actualTools.map(tool => `    * ${tool.name}: ${tool.description || 'No description'}`).join('\n')}`;
+  } else {
+    return `- MCP Service: ${mcp.mcpName}
+  Description: ${mcp.description || 'General purpose tool'}
+  Status: Not connected or no tools available`;
+  }
+}).join('\n\n')}
 
 **🔧 ENHANCED PLANNING PRINCIPLES**:
 
