@@ -29,6 +29,8 @@ import { taskExecutorDao } from '../dao/taskExecutorDao.js';
 import { MCPManager } from './mcpManager.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
+import { IntelligentTaskService } from './intelligentTaskService.js';
+import { createAgentIntelligentTaskService, AgentIntelligentTaskService } from './agentIntelligentEngine.js';
 
 
 /**
@@ -52,6 +54,7 @@ export class AgentConversationService {
   private mcpManager: MCPManager;
   private mcpToolAdapter: MCPToolAdapter;
   private intelligentWorkflowEngine: IntelligentWorkflowEngine;
+  private intelligentTaskService: IntelligentTaskService;
 
   constructor(taskExecutorService: TaskExecutorService) {
     this.llm = new ChatOpenAI({
@@ -68,6 +71,7 @@ export class AgentConversationService {
     this.mcpManager = (taskExecutorService as any).mcpManager;
     this.mcpToolAdapter = (taskExecutorService as any).mcpToolAdapter;
     this.intelligentWorkflowEngine = (taskExecutorService as any).intelligentWorkflowEngine;
+    this.intelligentTaskService = new IntelligentTaskService();
   }
 
   /**
@@ -1545,6 +1549,16 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       if (!conversationId) {
         logger.warn(`Task ${taskId} has no associated conversation, execution messages will not be stored`);
       }
+
+      // 🔧 新增：智能引擎执行路径（Agent专用格式）
+      const useIntelligentEngine = true;
+      
+      if (useIntelligentEngine) {
+        logger.info(`🧠 Using intelligent workflow engine for Agent ${agent.name}`);
+        
+        // 使用智能任务服务执行（输出Agent格式事件流）
+        return await this.executeAgentTaskWithIntelligentEngine(taskId, agent, stream);
+      }
       
       // 🔧 根据用户输入动态生成工作流，而不是使用Agent预定义的工作流
       logger.info(`🔄 Generating dynamic workflow based on user input: "${task.content}"`);
@@ -2328,6 +2342,43 @@ Return ONLY a JSON array of workflow steps, no other text:`;
     if (!agentId) return null;
 
     return await agentDao.getAgentById(agentId);
+  }
+
+  /**
+   * 使用Agent专用智能引擎执行任务
+   */
+  private async executeAgentTaskWithIntelligentEngine(
+    taskId: string,
+    agent: Agent, 
+    stream: (data: any) => void
+  ): Promise<boolean> {
+    try {
+      logger.info(`🧠 Starting Agent intelligent task execution [Task ID: ${taskId}, Agent: ${agent.name}]`);
+      
+      // 🔧 创建Agent专用智能任务服务
+      const agentIntelligentService = createAgentIntelligentTaskService(agent);
+      
+      // 🔧 使用Agent专用智能引擎执行（原生支持Agent事件流格式）
+      const success = await agentIntelligentService.executeAgentTaskIntelligently(taskId, stream);
+
+      logger.info(`🎯 Agent intelligent task execution completed [Success: ${success}, Agent: ${agent.name}]`);
+      return success;
+
+    } catch (error) {
+      logger.error(`❌ Agent intelligent task execution failed:`, error);
+      
+      stream({
+        event: 'task_execution_error',
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+          agentName: agent.name,
+          message: `${agent.name} intelligent execution failed`,
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      return false;
+    }
   }
 }
 
