@@ -981,10 +981,19 @@ Please return in format:
       }
 
       // 3. 🔧 关键步骤：获取MCP的实际可用工具列表
+      logger.info(`🔍 === Getting MCP Tools Debug ===`);
+      logger.info(`🔍 Actual MCP Name: ${actualMcpName}`);
+      logger.info(`🔍 User ID: ${task.userId}`);
+      
       const mcpTools = await this.mcpManager.getTools(actualMcpName, task.userId);
       logger.info(`📋 Available tools in ${actualMcpName}: ${mcpTools.map(t => t.name).join(', ')}`);
-
+      logger.info(`🔍 Number of tools: ${mcpTools.length}`);
+      
       // 4. 🔧 智能参数转换（使用实际工具schemas）
+      logger.info(`🔍 === Starting Parameter Conversion ===`);
+      logger.info(`🔍 Plan Tool: ${plan.tool}`);
+      logger.info(`🔍 Plan Args: ${JSON.stringify(plan.args, null, 2)}`);
+      
       const convertedInput = await this.convertParametersWithLLM(plan.tool, plan.args, mcpTools);
 
       // 5. 🔧 工具验证和重选机制
@@ -996,6 +1005,23 @@ Please return in format:
       );
 
       logger.info(`🔧 Final tool call: ${finalToolName} with converted parameters`);
+
+      // 🔧 关键调试：记录传递给MCP的确切参数和调用链
+      logger.info(`🔍 === CRITICAL DEBUG: MCP Call Parameters ===`);
+      logger.info(`🔍 MCP Name: ${actualMcpName}`);
+      logger.info(`🔍 Tool Name: ${finalToolName}`);
+      logger.info(`🔍 User ID: ${task.userId}`);
+      logger.info(`🔍 Args Type: ${typeof finalArgs}`);
+      logger.info(`🔍 Args Value: ${JSON.stringify(finalArgs, null, 2)}`);
+      logger.info(`🔍 Args is null/undefined: ${finalArgs === null || finalArgs === undefined}`);
+      if (finalArgs && typeof finalArgs === 'object') {
+        logger.info(`🔍 Args keys: [${Object.keys(finalArgs).join(', ')}]`);
+        Object.keys(finalArgs).forEach(key => {
+          const val = finalArgs[key];
+          logger.info(`🔍 Args.${key}: type=${typeof val}, value=${JSON.stringify(val)}, isNull=${val === null}, isUndefined=${val === undefined}`);
+        });
+      }
+      logger.info(`🔍 ============================================`);
 
       // 6. 使用验证后的工具和转换后的参数进行调用
       const result = await this.mcpToolAdapter.callTool(actualMcpName, finalToolName, finalArgs, task.userId);
@@ -1376,16 +1402,25 @@ Transform the data now:`;
       let conversion;
       try {
         const responseText = response.content.toString().trim();
+        logger.info(`🔍 === LLM Parameter Conversion Debug ===`);
+        logger.info(`🔍 Raw LLM Response: ${responseText}`);
+        
         conversion = JSON.parse(responseText);
+        logger.info(`🔍 Parsed Conversion: ${JSON.stringify(conversion, null, 2)}`);
       } catch (parseError) {
-        logger.error(`Failed to parse parameter conversion response: ${response.content}`);
+        logger.error(`❌ Failed to parse parameter conversion response: ${response.content}`);
+        logger.error(`❌ Parse error: ${parseError}`);
+        logger.info(`🔍 Falling back to originalArgs: ${JSON.stringify(originalArgs, null, 2)}`);
         return originalArgs; // 回退到原始参数
       }
 
       const convertedParams = conversion.inputParams || originalArgs;
       
-      logger.info(`🔧 Parameter conversion successful`);
-      logger.info(`🧠 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
+      logger.info(`🔍 === Parameter Conversion Results ===`);
+      logger.info(`🔍 Original Args: ${JSON.stringify(originalArgs, null, 2)}`);
+      logger.info(`🔍 Converted Params: ${JSON.stringify(convertedParams, null, 2)}`);
+      logger.info(`🔍 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
+      logger.info(`🔍 =====================================`);
       
       return convertedParams;
 
@@ -1405,10 +1440,21 @@ Transform the data now:`;
     mcpName: string
   ): Promise<{ finalToolName: string; finalArgs: any }> {
     try {
+      logger.info(`🔍 === Tool Validation Debug ===`);
+      logger.info(`🔍 Requested Tool: ${requestedTool}`);
+      logger.info(`🔍 MCP Name: ${mcpName}`);
+      logger.info(`🔍 Available Tools: [${availableTools.map(t => t.name).join(', ')}]`);
+      logger.info(`🔍 Converted Args: ${JSON.stringify(convertedArgs, null, 2)}`);
+      
       // 1. 首先检查请求的工具是否存在
       let selectedTool = availableTools.find(t => t.name === requestedTool);
       let finalToolName = requestedTool;
       let finalArgs = convertedArgs;
+      
+      logger.info(`🔍 Tool found: ${!!selectedTool}`);
+      if (selectedTool) {
+        logger.info(`🔍 Tool schema: ${JSON.stringify(selectedTool.inputSchema, null, 2)}`);
+      }
 
       if (!selectedTool) {
         logger.warn(`Tool ${requestedTool} does not exist in ${mcpName}, attempting tool re-selection...`);
@@ -1442,11 +1488,17 @@ Transform the data now:`;
             throw new Error(`Cannot find suitable tool in ${mcpName} to execute task: ${requestedTool}. Available tools: ${availableTools.map(t => t.name).join(', ')}`);
           }
         }
-      } else {
-        logger.info(`✅ Tool ${requestedTool} found in ${mcpName}`);
-      }
+              } else {
+          logger.info(`✅ Tool ${requestedTool} found in ${mcpName}`);
+        }
 
-      return { finalToolName, finalArgs };
+        logger.info(`🔍 === Final Tool Selection Results ===`);
+        logger.info(`🔍 Final Tool Name: ${finalToolName}`);
+        logger.info(`🔍 Final Args: ${JSON.stringify(finalArgs, null, 2)}`);
+        logger.info(`🔍 Final Args Type: ${typeof finalArgs}`);
+        logger.info(`🔍 =====================================`);
+
+        return { finalToolName, finalArgs };
 
     } catch (error) {
       logger.error(`❌ Tool validation and selection failed:`, error);
@@ -1501,11 +1553,18 @@ Select the best alternative tool now:`;
       let reselection;
       try {
         const responseText = response.content.toString().trim();
+        logger.info(`🔍 === LLM Tool Reselection Debug ===`);
+        logger.info(`🔍 Original Tool: ${originalTool}`);
+        logger.info(`🔍 Raw LLM Response: ${responseText}`);
+        
         reselection = JSON.parse(responseText);
+        logger.info(`🔍 Parsed Reselection: ${JSON.stringify(reselection, null, 2)}`);
       } catch (parseError) {
-        logger.error(`Failed to parse tool reselection response: ${response.content}`);
+        logger.error(`❌ Failed to parse tool reselection response: ${response.content}`);
+        logger.error(`❌ Parse error: ${parseError}`);
         // 回退到第一个可用工具
         if (availableTools.length > 0) {
+          logger.info(`🔍 Falling back to first available tool: ${availableTools[0].name}`);
           return {
             toolName: availableTools[0].name,
             inputParams: originalArgs,
