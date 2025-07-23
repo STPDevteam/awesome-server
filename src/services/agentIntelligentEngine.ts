@@ -580,7 +580,7 @@ Ask yourself: "As ${this.agent.name}, what is the most logical next step to help
 **OUTPUT FORMAT** (JSON only):
 {
   "tool": "specific-function-name-like-getUserTweets-or-searchTweets",
-  "toolType": "mcp",
+  "toolType": "mcp" or "llm",
   "mcpName": "mcp-service-name-from-list-above",
   "args": {
     // Parameters specific to this tool/action
@@ -741,6 +741,35 @@ Please return in format:
       !mcpNameValue.includes('-mcp') &&
       (commonToolNames.includes(mcpNameValue) || /^[a-z][a-zA-Z0-9]*$/.test(mcpNameValue))
     );
+    
+    // 🔧 特殊检测：Twitter专用检测
+    const isTwitterRelated = (toolValue && toolValue.includes('twitter-client-mcp')) || 
+                             (mcpNameValue && mcpNameValue.includes('twitter-client-mcp'));
+    
+    if (isTwitterRelated) {
+      logger.info(`🔍 Twitter-related task detected`);
+      
+      // 如果tool是twitter-client-mcp，这肯定是错的
+      if (toolValue === 'twitter-client-mcp') {
+        logger.warn(`🔧 DETECTED: tool is "twitter-client-mcp" - this is definitely wrong!`);
+        
+        // 如果mcpName看起来是工具名，就交换
+        if (mcpNameValue && commonToolNames.includes(mcpNameValue)) {
+          logger.warn(`🔧 SWAPPING: tool="${toolValue}" <-> mcpName="${mcpNameValue}"`);
+          return {
+            tool: mcpNameValue,
+            mcpName: toolValue
+          };
+        } else {
+          // 如果mcpName为空或不合理，设置默认值
+          logger.warn(`🔧 FIXING: setting tool="getUserTweets", mcpName="twitter-client-mcp"`);
+          return {
+            tool: 'getUserTweets',
+            mcpName: 'twitter-client-mcp'
+          };
+        }
+      }
+    }
     
     // 🔧 调试日志：检查结果
     logger.info(`🔍 Detection results: toolLooksLikeMCP=${toolLooksLikeMCP}, mcpNameLooksLikeTool=${mcpNameLooksLikeTool}`);
@@ -918,6 +947,8 @@ Please return in format:
       throw new Error('MCP tool requires mcpName to be specified');
     }
 
+    // 🔧 关键调试：显示执行前的plan内容
+    logger.info(`🔍 executeAgentMCPTool plan: tool="${plan.tool}", mcpName="${plan.mcpName}", toolType="${plan.toolType}"`);
     logger.info(`⚡ Agent ${this.agent.name} calling MCP tool: ${plan.tool} (from ${plan.mcpName})`);
     
     try {
@@ -926,6 +957,9 @@ Please return in format:
       if (!task) {
         throw new Error('Task not found for MCP tool execution');
       }
+
+      // 🔧 关键调试：显示即将传递给MCPToolAdapter的参数
+      logger.info(`🔍 Calling mcpToolAdapter.callTool with: mcpName="${plan.mcpName}", tool="${plan.tool}", userId="${task.userId}"`);
 
       // 🔧 使用多用户隔离的MCP工具调用
       const result = await this.mcpToolAdapter.callTool(plan.mcpName, plan.tool, plan.args, task.userId);
