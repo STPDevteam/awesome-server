@@ -187,7 +187,7 @@ export class AgentIntelligentEngine {
           const chunks = resultText.match(/.{1,100}/g) || [resultText];
           for (const chunk of chunks) {
             yield {
-              event: 'step_thinking_chunk',
+              event: 'step_result_chunk',
               data: {
                 stepId,
                 chunk,
