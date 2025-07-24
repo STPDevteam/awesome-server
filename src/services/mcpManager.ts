@@ -607,17 +607,7 @@ export class MCPManager {
     try {
       // 🔧 新增：记录客户端调用前的内存状态
       const memBeforeClientCall = process.memoryUsage();
-      console.log(`\n==== 🔧 MCPManager Memory Before Client Call ====`);
-      console.log(`  RSS: ${(memBeforeClientCall.rss / 1024 / 1024).toFixed(2)} MB`);
-      console.log(`  Heap Used: ${(memBeforeClientCall.heapUsed / 1024 / 1024).toFixed(2)} MB`);
-      console.log(`  Heap Total: ${(memBeforeClientCall.heapTotal / 1024 / 1024).toFixed(2)} MB`);
-      
-      console.log(`🚀 CALLING MCP CLIENT: ${name}.${actualTool}...`);
-      console.log(`🔧 Client call details:`);
-      console.log(`   Tool name: ${actualTool}`);
-      console.log(`   Arguments: ${JSON.stringify(args, null, 2)}`);
-      console.log(`   Connection key: ${connectionKey}`);
-      console.log(`   Client exists: ${!!mcpClient.client}`);
+
       
       const result = await mcpClient.client.callTool({
         name: actualTool,
@@ -630,13 +620,6 @@ export class MCPManager {
       const memAfterClientCall = process.memoryUsage();
       const resultSize = JSON.stringify(result).length;
       
-      console.log(`\n==== 🧠 MCPManager Memory Debug - AFTER Client Call ====`);
-      console.log(`  RSS: ${(memAfterClientCall.rss / 1024 / 1024).toFixed(2)} MB (${((memAfterClientCall.rss - memBeforeClientCall.rss) / 1024 / 1024).toFixed(2)} MB delta)`);
-      console.log(`  Heap Used: ${(memAfterClientCall.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterClientCall.heapUsed - memBeforeClientCall.heapUsed) / 1024 / 1024).toFixed(2)} MB delta)`);
-      console.log(`  Heap Total: ${(memAfterClientCall.heapTotal / 1024 / 1024).toFixed(2)} MB (${((memAfterClientCall.heapTotal - memBeforeClientCall.heapTotal) / 1024 / 1024).toFixed(2)} MB delta)`);
-      console.log(`Result Size: ${resultSize} bytes (${(resultSize / 1024).toFixed(2)} KB, ${(resultSize / 1024 / 1024).toFixed(2)} MB)`);
-      console.log(`Result Type: ${typeof result}`);
-      console.log(`Result Structure Analysis:`);
       
       if (result && typeof result === 'object') {
         console.log(`  Result keys: ${Object.keys(result)}`);
@@ -675,14 +658,7 @@ export class MCPManager {
       // 🔧 新增：记录最终内存状态和总体效率
       const memUsageAfter = process.memoryUsage();
       
-      console.log(`\n==== 🧠 MCPManager Memory Debug - FINAL STATE ====`);
-      console.log(`Memory After (MB):`);
-      console.log(`  RSS: ${(memUsageAfter.rss / 1024 / 1024).toFixed(2)} (${((memUsageAfter.rss - memUsageBefore.rss) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`  Heap Used: ${(memUsageAfter.heapUsed / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`  Heap Total: ${(memUsageAfter.heapTotal / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapTotal - memUsageBefore.heapTotal) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`  External: ${(memUsageAfter.external / 1024 / 1024).toFixed(2)} (${((memUsageAfter.external - memUsageBefore.external) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`Final Result Size: ${resultSize} bytes (${(resultSize / 1024).toFixed(2)} KB, ${(resultSize / 1024 / 1024).toFixed(2)} MB)`);
-      console.log(`🎯 MCP EFFICIENCY RATIO: ${((resultSize / 1024 / 1024) / Math.max((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024, 0.001)).toFixed(2)} (result MB / heap delta MB)`);
+
       
       // 🔧 检查是否存在内存泄漏迹象
       const heapDelta = (memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024;

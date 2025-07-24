@@ -2270,24 +2270,57 @@ Generate a comprehensive but concise summary:`;
                   break;
                 }
               } catch {
-                // 尝试从文本中提取
-                const match = content.text.match(/draft[_-]?id["\s:]*([^"\s,}]+)/i);
-                if (match) {
-                  draftId = match[1];
-                  break;
+                // 🔧 修复：从文本中提取draft ID，支持多种格式
+                const text = content.text;
+                // 尝试多种提取模式
+                const patterns = [
+                  /draft[_-]?id["\s:]*([^"\s,}]+)/i,                    // draft_id: "xxx" 
+                  /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,               // "with ID thread_draft_xxx.json"
+                  /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,     // "created with ID xxx.json"
+                  /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,                   // "ID: xxx.json" 或 "ID xxx.json"
+                  /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i        // 任何包含draft的.json文件
+                ];
+                
+                for (const pattern of patterns) {
+                  const match = text.match(pattern);
+                  if (match) {
+                    draftId = match[1];
+                    logger.info(`📝 AgentEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" using pattern: ${pattern}`);
+                    break;
+                  }
                 }
+                
+                if (draftId) break;
               }
             }
           }
-        } else if (typeof result === 'string') {
-          // 从字符串结果中提取
-          try {
-            const parsed = JSON.parse(result);
+        }
+      }
+      
+      // 🔧 修复：处理字符串类型的result
+      if (!draftId && typeof result === 'string') {
+        // 从字符串结果中提取
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.draft_id) {
             draftId = parsed.draft_id;
-          } catch {
-            const match = result.match(/draft[_-]?id["\s:]*([^"\s,}]+)/i);
+          }
+        } catch {
+          // 🔧 修复：从字符串文本中提取draft ID
+          const patterns = [
+            /draft[_-]?id["\s:]*([^"\s,}]+)/i,
+            /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,
+            /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,
+            /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,
+            /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i
+          ];
+          
+          for (const pattern of patterns) {
+            const match = result.match(pattern);
             if (match) {
               draftId = match[1];
+              logger.info(`📝 AgentEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from string using pattern: ${pattern}`);
+              break;
             }
           }
         }
