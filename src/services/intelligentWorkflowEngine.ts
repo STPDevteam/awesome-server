@@ -1039,10 +1039,116 @@ Please return in format:
         userId
       );
 
-      return result;
+      // 🔧 新增：x-mcp自动发布处理
+      const processedResult = await this.handleXMcpAutoPublish(plan.mcpName, finalToolName, result, userId);
+
+      return processedResult;
     } catch (error) {
       logger.error(`❌ MCP tool call failed [${plan.mcpName}]:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * x-mcp自动发布处理：当create_draft_tweet或create_draft_thread成功后自动发布
+   */
+  private async handleXMcpAutoPublish(
+    mcpName: string, 
+    toolName: string, 
+    result: any, 
+    userId?: string
+  ): Promise<any> {
+    // 只处理x-mcp的草稿创建操作
+    if (mcpName !== 'x-mcp') {
+      return result;
+    }
+
+    // 检查是否是草稿创建操作
+    if (!toolName.includes('create_draft')) {
+      return result;
+    }
+
+    try {
+      logger.info(`🔄 X-MCP Auto-publish: Detected ${toolName} completion, attempting auto-publish...`);
+
+      // 提取draft_id
+      let draftId = null;
+      if (result && typeof result === 'object') {
+        // 尝试从不同的结果格式中提取draft_id
+        if (result.draft_id) {
+          draftId = result.draft_id;
+        } else if (result.content && Array.isArray(result.content)) {
+          // MCP标准格式
+          for (const content of result.content) {
+            if (content.text) {
+              try {
+                const parsed = JSON.parse(content.text);
+                if (parsed.draft_id) {
+                  draftId = parsed.draft_id;
+                  break;
+                }
+              } catch {
+                // 尝试从文本中提取
+                const match = content.text.match(/draft[_-]?id["\s:]*([^"\s,}]+)/i);
+                if (match) {
+                  draftId = match[1];
+                  break;
+                }
+              }
+            }
+          }
+        } else if (typeof result === 'string') {
+          // 从字符串结果中提取
+          try {
+            const parsed = JSON.parse(result);
+            draftId = parsed.draft_id;
+          } catch {
+            const match = result.match(/draft[_-]?id["\s:]*([^"\s,}]+)/i);
+            if (match) {
+              draftId = match[1];
+            }
+          }
+        }
+      }
+
+      if (!draftId) {
+        logger.warn(`⚠️ X-MCP Auto-publish: Could not extract draft_id from result: ${JSON.stringify(result)}`);
+        return result;
+      }
+
+      logger.info(`📝 X-MCP Auto-publish: Extracted draft_id: ${draftId}`);
+
+      // 调用publish_draft
+      logger.info(`🚀 X-MCP Auto-publish: Publishing draft ${draftId}...`);
+      
+      const publishResult = await this.mcpToolAdapter.callTool(
+        mcpName, 
+        'publish_draft', 
+        { draft_id: draftId }, 
+        userId
+      );
+
+      logger.info(`✅ X-MCP Auto-publish: Successfully published draft ${draftId}`);
+
+      // 返回合并的结果
+      return {
+        draft_creation: result,
+        auto_publish: publishResult,
+        combined_result: `Draft created and published successfully. Draft ID: ${draftId}`,
+        draft_id: draftId,
+        published: true
+      };
+
+    } catch (error) {
+      logger.error(`❌ X-MCP Auto-publish failed:`, error);
+      
+      // 即使发布失败，也返回原始的草稿创建结果
+      return {
+        draft_creation: result,
+        auto_publish_error: error instanceof Error ? error.message : String(error),
+        combined_result: `Draft created successfully but auto-publish failed. You may need to publish manually.`,
+        published: false
+      };
     }
   }
 
