@@ -498,7 +498,7 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
             TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_SECRET: process.env.TWITTER_ACCESS_SECRET || ''
+            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
         },
         connected: false,
         category: 'Social',
@@ -509,7 +509,7 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_KEY: "TWITTER_API_KEY",
             TWITTER_API_SECRET: "TWITTER_API_SECRET",
             TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
-            TWITTER_ACCESS_SECRET: "TWITTER_ACCESS_SECRET"
+            TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
         }
     },
     {
