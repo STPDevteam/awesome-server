@@ -436,6 +436,7 @@ Identify the major components in this task. Common patterns include:
 
 1. **Data Collection**: Getting information from external sources
    - Examples: "get tweets from user X", "fetch repository info", "retrieve price data"
+   - 🔧 CRITICAL FOR MULTI-TARGET TASKS: If multiple users/entities are mentioned, create SEPARATE data collection components for EACH target
    
 2. **Data Processing**: Analyzing, combining, or transforming collected data
    - Examples: "summarize the tweets", "compare the data", "analyze trends"
@@ -446,16 +447,40 @@ Identify the major components in this task. Common patterns include:
 4. **Output Generation**: Creating final deliverables
    - Examples: "generate report", "create summary", "format results"
 
-**Task Analysis**:
-Look for keywords that indicate multiple components:
-- "and", "then", "also", "after", "subsequently"
-- Multiple verbs: "get... and post...", "analyze... and send..."
-- Multiple targets: "from A and B", "to X and Y"
+**🚨 MULTI-TARGET ANALYSIS (CRITICAL)**:
+When the task mentions multiple users, accounts, or data sources:
+- For Twitter users: "@user1, @user2, @user3" → Create separate data_collection component for EACH user
+- For repositories: "repo1, repo2, repo3" → Create separate data_collection component for EACH repo
+- For any list of targets: Create individual components, do NOT group them into one generic component
+
+**Task Analysis Keywords**:
+Look for patterns that indicate multiple targets:
+- Comma-separated lists: "@user1, @user2, @user3"
+- "and" between targets: "@user1 and @user2"
+- Multiple verbs with targets: "get from A and B", "fetch from X, Y, Z"
+- List indicators: "这些用户", "several accounts", "multiple sources"
 
 **Component Dependencies**:
-- Data Collection → Data Processing → Action Execution
-- Some components may run in parallel (collecting from multiple sources)
-- Some components depend on others (can't send summary without data)
+- Individual Data Collection → Combined Data Processing → Action Execution
+- Multiple data collection components can run in parallel
+- Data processing depends on ALL data collection components being complete
+- Action execution depends on data processing being complete
+
+**SPECIFIC EXAMPLES**:
+
+Example 1: "Get tweets from @user1, @user2, and @user3"
+✅ CORRECT breakdown:
+[
+  {"id": "collect_user1", "type": "data_collection", "description": "Get tweets from @user1"},
+  {"id": "collect_user2", "type": "data_collection", "description": "Get tweets from @user2"},
+  {"id": "collect_user3", "type": "data_collection", "description": "Get tweets from @user3"},
+  {"id": "process_all", "type": "data_processing", "description": "Process and analyze all collected tweets", "dependencies": ["collect_user1", "collect_user2", "collect_user3"]}
+]
+
+❌ WRONG breakdown:
+[
+  {"id": "collect_all", "type": "data_collection", "description": "Get tweets from multiple users"}
+]
 
 **Output Format**:
 Return a JSON array of task components:
@@ -463,12 +488,14 @@ Return a JSON array of task components:
   {
     "id": "unique_component_id",
     "type": "data_collection|data_processing|action_execution|analysis|output",
-    "description": "Clear description of what this component does",
+    "description": "Clear, specific description of what this component does (include specific target if applicable)",
     "dependencies": ["id_of_required_component"],
     "requiredData": ["type_of_data_needed"],
     "outputData": ["type_of_data_produced"]
   }
 ]
+
+🔧 REMEMBER: For multi-target tasks, create separate components for each target to ensure complete data collection!
 
 Analyze the task now:`;
 
@@ -2120,8 +2147,8 @@ Generate a comprehensive but concise summary:`;
     // 基于工具类型和组件类型的匹配逻辑
     switch (componentType) {
       case 'data_collection':
-        // 数据收集组件：成功调用了数据获取工具
-        return tool.includes('get') || tool.includes('fetch') || tool.includes('search') || tool.includes('retrieve');
+        // 🔧 修复：精确检查数据收集组件是否完成
+        return this.checkDataCollectionCompletion(component, step, state);
         
       case 'data_processing':
       case 'analysis':
@@ -2138,6 +2165,127 @@ Generate a comprehensive but concise summary:`;
         
       default:
         return false;
+    }
+  }
+
+  /**
+   * 🔧 新增：精确检查数据收集组件是否完成
+   */
+  private checkDataCollectionCompletion(component: TaskComponent, step: AgentExecutionStep, state: AgentWorkflowState): boolean {
+    const tool = step.plan.tool.toLowerCase();
+    const componentDesc = component.description.toLowerCase();
+    
+    // 1. 基础检查：是否是数据获取工具
+    const isDataTool = tool.includes('get') || tool.includes('fetch') || tool.includes('search') || tool.includes('retrieve');
+    if (!isDataTool) {
+      return false;
+    }
+    
+    // 2. 🔧 关键修复：检查是否匹配特定目标
+    const targetMatches = this.checkTargetMatch(componentDesc, step);
+    if (!targetMatches) {
+      logger.info(`❌ Component "${component.description}" target does not match step execution`);
+      return false;
+    }
+    
+    // 3. 检查执行结果是否包含有效数据
+    const hasValidData = this.checkValidDataInResult(step.result);
+    if (!hasValidData) {
+      logger.info(`❌ Component "${component.description}" execution did not return valid data`);
+      return false;
+    }
+    
+    logger.info(`✅ Component "${component.description}" completed successfully`);
+    return true;
+  }
+
+  /**
+   * 🔧 新增：检查目标是否匹配
+   */
+  private checkTargetMatch(componentDesc: string, step: AgentExecutionStep): boolean {
+    // 提取组件描述中的用户名/目标
+    const targets = this.extractTargetsFromDescription(componentDesc);
+    
+    if (targets.length === 0) {
+      // 如果没有特定目标，使用基础检查
+      return true;
+    }
+    
+    // 检查步骤参数中是否包含目标
+    const stepArgsString = JSON.stringify(step.plan.args).toLowerCase();
+    const stepReasoningString = step.plan.reasoning.toLowerCase();
+    
+    // 检查是否有任何目标匹配
+    return targets.some(target => {
+      const normalizedTarget = target.replace('@', '').toLowerCase();
+      return stepArgsString.includes(normalizedTarget) || 
+             stepReasoningString.includes(normalizedTarget) ||
+             stepArgsString.includes(target.toLowerCase());
+    });
+  }
+
+  /**
+   * 🔧 新增：从组件描述中提取目标用户/实体
+   */
+  private extractTargetsFromDescription(description: string): string[] {
+    const targets: string[] = [];
+    
+    // 提取@用户名
+    const usernameMatches = description.match(/@[a-zA-Z0-9_]+/g);
+    if (usernameMatches) {
+      targets.push(...usernameMatches);
+    }
+    
+    // 提取其他可能的目标标识
+    const quotedMatches = description.match(/"([^"]+)"/g);
+    if (quotedMatches) {
+      targets.push(...quotedMatches.map(m => m.replace(/"/g, '')));
+    }
+    
+    // 提取仓库名或其他实体（如果适用）
+    const entityMatches = description.match(/\b[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+\b/g);
+    if (entityMatches) {
+      targets.push(...entityMatches);
+    }
+    
+    return targets;
+  }
+
+  /**
+   * 🔧 新增：检查执行结果是否包含有效数据
+   */
+  private checkValidDataInResult(result: any): boolean {
+    if (!result) {
+      return false;
+    }
+    
+    try {
+      // 检查MCP标准格式
+      if (result && typeof result === 'object' && result.content) {
+        if (Array.isArray(result.content) && result.content.length > 0) {
+          const firstContent = result.content[0];
+          if (firstContent && firstContent.text) {
+            const text = firstContent.text;
+            return text.length > 10 && !text.includes('error') && !text.includes('failed');
+          }
+        }
+      }
+      
+      // 检查字符串结果
+      if (typeof result === 'string') {
+        return result.length > 10 && !result.toLowerCase().includes('error') && !result.toLowerCase().includes('failed');
+      }
+      
+      // 检查对象结果
+      if (typeof result === 'object') {
+        const resultString = JSON.stringify(result);
+        return resultString.length > 20 && !resultString.toLowerCase().includes('error');
+      }
+      
+      return false;
+    } catch (error) {
+      logger.warn(`Failed to validate result data:`, error);
+      return false;
     }
   }
 
