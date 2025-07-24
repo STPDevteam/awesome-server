@@ -489,7 +489,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'x-mcp',
         description: 'An MCP server to create, manage and publish X/Twitter posts directly',
-        command: '/home/ubuntu/venvs/mcp-env/bin/uv',
+        command: '/home/ubuntu/.local/bin/uv',
         args: ["--directory",
             `/home/ubuntu/mcp-tools/x-mcp`,
             "run",
