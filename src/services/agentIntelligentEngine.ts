@@ -1495,12 +1495,13 @@ Please return in format:
       logger.info(`📋 Available tools in ${actualMcpName}: ${mcpTools.map(t => t.name).join(', ')}`);
       logger.info(`🔍 Number of tools: ${mcpTools.length}`);
       
-      // 4. 🔧 智能参数转换（使用实际工具schemas）
+      // 4. 🔧 智能参数转换（使用实际工具schemas和前一步结果）
       logger.info(`🔍 === Starting Parameter Conversion ===`);
       logger.info(`🔍 Plan Tool: ${plan.tool}`);
       logger.info(`🔍 Plan Args: ${JSON.stringify(plan.args, null, 2)}`);
+      logger.info(`🔍 Previous Results Available: ${state.executionHistory.length > 0}`);
       
-      const convertedInput = await this.convertParametersWithLLM(plan.tool, plan.args, mcpTools);
+      const convertedInput = await this.convertParametersWithLLM(plan.tool, plan.args, mcpTools, state);
 
       // 5. 🔧 工具验证和重选机制
       const { finalToolName, finalArgs } = await this.validateAndSelectTool(
@@ -2467,16 +2468,30 @@ Generate a comprehensive but concise summary:`;
   /**
    * 🔧 新增：使用LLM智能转换参数
    */
-  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpTools: any[]): Promise<any> {
+  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpTools: any[], state?: AgentWorkflowState): Promise<any> {
     try {
       logger.info(`🔄 Converting parameters for tool: ${toolName}`);
+
+      // 🔧 准备前一步的执行结果上下文
+      let previousResultsContext = '';
+      if (state && state.executionHistory.length > 0) {
+        const lastExecution = state.executionHistory[state.executionHistory.length - 1];
+        if (lastExecution.success && lastExecution.result) {
+          previousResultsContext = `
+
+PREVIOUS STEP RESULTS:
+${typeof lastExecution.result === 'string' ? lastExecution.result : JSON.stringify(lastExecution.result, null, 2)}
+
+IMPORTANT: Use the ACTUAL CONTENT from the previous step results above when creating parameters. Do NOT use placeholder text like "Summary of @user's tweets" - extract the real data!`;
+        }
+      }
 
       // 构建智能参数转换提示词
       const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform parameters for MCP tool calls.
 
 CONTEXT:
 - Tool to call: ${toolName}
-- Input parameters: ${JSON.stringify(originalArgs, null, 2)}
+- Input parameters: ${JSON.stringify(originalArgs, null, 2)}${previousResultsContext}
 - Available tools with their schemas:
 ${mcpTools.map(tool => {
   const schema = tool.inputSchema || {};
@@ -2494,7 +2509,17 @@ TRANSFORMATION PRINCIPLES:
    - ALWAYS check the inputSchema and use the exact parameter names shown
    - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
    - Match the exact property names shown in the inputSchema
-4. **Handle missing data intelligently**: Extract from input or use descriptive content
+4. **EXTRACT REAL DATA FROM PREVIOUS RESULTS**: 
+   - If previous step results are available: Extract the ACTUAL CONTENT, never use placeholders
+   - Look for real text, summaries, data in the previous results
+   - Use the exact content from previous step, not descriptions like "Summary of @user's tweets"
+   - Example: If previous result contains "Here's the summary: Bitcoin price is up 5%" → use "Bitcoin price is up 5%"
+5. **Handle missing data intelligently**: 
+   - CRITICAL: NEVER use placeholders or descriptions - always extract ACTUAL DATA
+   - For required data: Find and extract the real content from the input or previous results
+   - If actual data exists: Use it directly, never summarize or describe it
+   - If data is truly missing: Return empty string or null, never use descriptive text
+   - DO NOT use hardcoded examples, templates, or placeholder descriptions
 
 CRITICAL TWITTER RULES:
 - Twitter has a HARD 280 character limit!
@@ -2514,7 +2539,12 @@ Return a JSON object with exactly this structure:
   "reasoning": "brief explanation of parameter transformation"
 }
 
-IMPORTANT: Always use exact parameter names from the inputSchema and ensure Twitter content is under 280 characters!
+CRITICAL CONTENT EXTRACTION:
+- When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
+- Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
+- NEVER use "[Insert summary here]" or "Latest tweet content from @user" - extract actual content!
+
+IMPORTANT: Always use exact parameter names from the inputSchema, ensure Twitter content is under 280 characters, and EXTRACT REAL CONTENT from previous results!
 
 Transform the data now:`;
 
