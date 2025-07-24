@@ -1058,13 +1058,18 @@ Please return in format:
     result: any, 
     userId?: string
   ): Promise<any> {
+    // 🔧 添加详细调试信息
+    logger.info(`🔍 X-MCP Auto-publish Check: mcpName="${mcpName}", toolName="${toolName}"`);
+    
     // 只处理x-mcp的草稿创建操作
     if (mcpName !== 'x-mcp') {
+      logger.info(`❌ X-MCP Auto-publish: MCP name "${mcpName}" is not "x-mcp", skipping auto-publish`);
       return result;
     }
 
     // 检查是否是草稿创建操作
     if (!toolName.includes('create_draft')) {
+      logger.info(`❌ X-MCP Auto-publish: Tool name "${toolName}" does not include "create_draft", skipping auto-publish`);
       return result;
     }
 

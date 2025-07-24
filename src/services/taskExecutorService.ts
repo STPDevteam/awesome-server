@@ -2029,14 +2029,19 @@ Transform the data now:`;
     result: any, 
     userId?: string
   ): Promise<any> {
-    // 只处理x-mcp的草稿创建操作
+    // 🔧 添加详细调试信息
     const normalizedMcpName = this.normalizeMCPName(mcpName);
+    logger.info(`🔍 TaskExecutor X-MCP Auto-publish Check: mcpName="${mcpName}", normalizedMcpName="${normalizedMcpName}", toolName="${toolName}"`);
+    
+    // 只处理x-mcp的草稿创建操作
     if (normalizedMcpName !== 'x-mcp') {
+      logger.info(`❌ TaskExecutor X-MCP Auto-publish: Normalized MCP name "${normalizedMcpName}" is not "x-mcp", skipping auto-publish`);
       return result;
     }
 
     // 检查是否是草稿创建操作
     if (!toolName.includes('create_draft')) {
+      logger.info(`❌ TaskExecutor X-MCP Auto-publish: Tool name "${toolName}" does not include "create_draft", skipping auto-publish`);
       return result;
     }
 
