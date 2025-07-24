@@ -1039,10 +1039,159 @@ Please return in format:
         userId
       );
 
-      return result;
+      // 🔧 新增：x-mcp自动发布处理
+      const processedResult = await this.handleXMcpAutoPublish(plan.mcpName, finalToolName, result, userId);
+
+      return processedResult;
     } catch (error) {
       logger.error(`❌ MCP tool call failed [${plan.mcpName}]:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * x-mcp自动发布处理：当create_draft_tweet或create_draft_thread成功后自动发布
+   */
+  private async handleXMcpAutoPublish(
+    mcpName: string, 
+    toolName: string, 
+    result: any, 
+    userId?: string
+  ): Promise<any> {
+    // 🔧 添加详细调试信息
+    logger.info(`🔍 X-MCP Auto-publish Check: mcpName="${mcpName}", toolName="${toolName}"`);
+    
+    // 只处理x-mcp的草稿创建操作
+    if (mcpName !== 'x-mcp') {
+      logger.info(`❌ X-MCP Auto-publish: MCP name "${mcpName}" is not "x-mcp", skipping auto-publish`);
+      return result;
+    }
+
+    // 检查是否是草稿创建操作
+    if (!toolName.includes('create_draft')) {
+      logger.info(`❌ X-MCP Auto-publish: Tool name "${toolName}" does not include "create_draft", skipping auto-publish`);
+      return result;
+    }
+
+    try {
+      logger.info(`🔄 X-MCP Auto-publish: Detected ${toolName} completion, attempting auto-publish...`);
+
+      // 提取draft_id
+      let draftId = null;
+      if (result && typeof result === 'object') {
+        // 尝试从不同的结果格式中提取draft_id
+        if (result.draft_id) {
+          draftId = result.draft_id;
+        } else if (result.content && Array.isArray(result.content)) {
+          // MCP标准格式
+          for (const content of result.content) {
+            if (content.text) {
+              try {
+                const parsed = JSON.parse(content.text);
+                if (parsed.draft_id) {
+                  draftId = parsed.draft_id;
+                  break;
+                }
+              } catch {
+                // 🔧 修复：从文本中提取draft ID，支持多种格式
+                const text = content.text;
+                // 尝试多种提取模式
+                const patterns = [
+                  /draft[_-]?id["\s:]*([^"\s,}]+)/i,                    // draft_id: "xxx" 
+                  /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,               // "with ID thread_draft_xxx.json"
+                  /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,     // "created with ID xxx.json"
+                  /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,                   // "ID: xxx.json" 或 "ID xxx.json"
+                  /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i        // 任何包含draft的.json文件
+                ];
+                
+                for (const pattern of patterns) {
+                  const match = text.match(pattern);
+                  if (match) {
+                    draftId = match[1];
+                    logger.info(`📝 WorkflowEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" using pattern: ${pattern}`);
+                    break;
+                  }
+                }
+                
+                if (draftId) break;
+              }
+            }
+          }
+        }
+      }
+      
+      // 🔧 修复：处理字符串类型的result
+      if (!draftId && typeof result === 'string') {
+        // 从字符串结果中提取
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.draft_id) {
+            draftId = parsed.draft_id;
+          }
+        } catch {
+          // 🔧 修复：从字符串文本中提取draft ID
+          const patterns = [
+            /draft[_-]?id["\s:]*([^"\s,}]+)/i,
+            /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,
+            /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,
+            /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,
+            /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i
+          ];
+          
+          for (const pattern of patterns) {
+            const match = result.match(pattern);
+            if (match) {
+              draftId = match[1];
+              logger.info(`📝 WorkflowEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from string using pattern: ${pattern}`);
+              break;
+            }
+          }
+        }
+      }
+
+      if (!draftId) {
+        logger.warn(`⚠️ X-MCP Auto-publish: Could not extract draft_id from result: ${JSON.stringify(result)}`);
+        return result;
+      }
+
+      logger.info(`📝 X-MCP Auto-publish: Extracted draft_id: ${draftId}`);
+
+            // 调用publish_draft
+      logger.info(`🚀 X-MCP Auto-publish: Publishing draft ${draftId}...`);
+      
+      const publishInput = { draft_id: draftId };
+      logger.info(`📝 WorkflowEngine X-MCP Auto-publish INPUT: ${JSON.stringify(publishInput, null, 2)}`);
+      
+      const publishResult = await this.mcpToolAdapter.callTool(
+        mcpName,
+        'publish_draft',
+        publishInput,
+        userId
+      );
+      
+      logger.info(`📤 WorkflowEngine X-MCP Auto-publish OUTPUT: ${JSON.stringify(publishResult, null, 2)}`);
+
+      logger.info(`✅ X-MCP Auto-publish: Successfully published draft ${draftId}`);
+
+      // 返回合并的结果
+      return {
+        draft_creation: result,
+        auto_publish: publishResult,
+        combined_result: `Draft created and published successfully. Draft ID: ${draftId}`,
+        draft_id: draftId,
+        published: true
+      };
+
+    } catch (error) {
+      logger.error(`❌ X-MCP Auto-publish failed:`, error);
+      
+      // 即使发布失败，也返回原始的草稿创建结果
+      return {
+        draft_creation: result,
+        auto_publish_error: error instanceof Error ? error.message : String(error),
+        combined_result: `Draft created successfully but auto-publish failed. You may need to publish manually.`,
+        published: false
+      };
     }
   }
 
