@@ -569,20 +569,7 @@ export class MCPManager {
     // 🔧 新增：记录MCP调用前的内存使用情况
     const memUsageBefore = process.memoryUsage();
     const argsSize = JSON.stringify(args).length;
-    
-    console.log(`\n==== 🧠 MCPManager Memory Debug - BEFORE Tool Call ====`);
-    console.log(`Time: ${new Date().toISOString()}`);
-    console.log(`MCP: ${name}, Tool: ${tool}, User: ${userId || 'default'}`);
-    console.log(`Memory Before (MB):`);
-    console.log(`  RSS: ${(memUsageBefore.rss / 1024 / 1024).toFixed(2)}`);
-    console.log(`  Heap Used: ${(memUsageBefore.heapUsed / 1024 / 1024).toFixed(2)}`);
-    console.log(`  Heap Total: ${(memUsageBefore.heapTotal / 1024 / 1024).toFixed(2)}`);
-    console.log(`  External: ${(memUsageBefore.external / 1024 / 1024).toFixed(2)}`);
-    console.log(`Args Size: ${argsSize} bytes (${(argsSize / 1024).toFixed(2)} KB)`);
-    console.log(`Args Preview: ${JSON.stringify(args).substring(0, 200)}...`);
-    
-    logger.info(`【MCP Debug】MCPManager.callTool() Starting to call MCP tool [MCP: ${name}, Tool: ${tool}, User: ${userId || 'default'}]`);
-    logger.info(`【MCP Debug】Call arguments: ${JSON.stringify(args)}`);
+
     
     // 标准化MCP名称
     const normalizedName = this.normalizeMCPName(name);

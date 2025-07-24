@@ -207,17 +207,6 @@ export class TaskExecutorService {
       const memUsageBefore = process.memoryUsage();
       const inputSize = JSON.stringify(input).length;
       
-      console.log(`\n==== 🧠 Memory & Data Debug - BEFORE MCP Call ====`);
-      console.log(`Time: ${new Date().toISOString()}`);
-      console.log(`MCP: ${mcpName}, Tool: ${toolName}, Task: ${taskId}`);
-      console.log(`Memory Before (MB):`);
-      console.log(`  RSS: ${(memUsageBefore.rss / 1024 / 1024).toFixed(2)}`);
-      console.log(`  Heap Used: ${(memUsageBefore.heapUsed / 1024 / 1024).toFixed(2)}`);
-      console.log(`  Heap Total: ${(memUsageBefore.heapTotal / 1024 / 1024).toFixed(2)}`);
-      console.log(`  External: ${(memUsageBefore.external / 1024 / 1024).toFixed(2)}`);
-      console.log(`Input Data Size: ${inputSize} bytes (${(inputSize / 1024).toFixed(2)} KB)`);
-      console.log(`Input Data Preview: ${JSON.stringify(input).substring(0, 200)}...`);
-      
       logger.info(`🔍 Calling MCP tool via LangChain [MCP: ${mcpName}, Tool: ${toolName}]`);
       
       // 获取用户ID
