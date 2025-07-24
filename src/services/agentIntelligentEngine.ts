@@ -1702,81 +1702,87 @@ ${this.extractRawContent(item.result)}
   }
 
   /**
-   * 🔧 新增：格式化摘要上下文（当上下文过长时）
+   * 🔧 优化：完全通用的摘要上下文格式化（让LLM来理解所有内容类型）
    */
   private formatSummarizedContext(data: Array<any>): string {
     if (data.length === 0) return 'No context data available.';
 
-    // 🔧 为每个数据源生成智能摘要
+    // 🔧 通用摘要：不做内容类型假设，让LLM自己理解
     const summaries = data.map((item, index) => {
       const rawContent = this.extractRawContent(item.result);
       const summary = this.generateQuickSummary(rawContent, item.tool);
       
       return `**Source ${index + 1}** (Step ${item.stepNumber} - ${item.tool}):
-- **Summary**: ${summary}
+- **Content Preview**: ${summary}
 - **Data Size**: ${rawContent.length} characters
-- **Key Points**: ${this.extractKeyPoints(rawContent)}`;
+- **Structure Type**: ${this.detectContentType(rawContent)}`;
     });
 
-    return `**Summarized Context Data** (${data.length} sources, auto-summarized due to length):
+    return `**Context Data Summary** (${data.length} sources, auto-summarized for efficiency):
 
 ${summaries.join('\n\n')}
 
-**ℹ️ Context Note**: Original data was summarized due to length. Key insights and actionable information preserved.`;
+**📋 Processing Note**: Content was automatically summarized to manage context length. All source data contains complete information that you should analyze and utilize appropriately for the current task.`;
   }
 
   /**
-   * 🔧 新增：生成快速摘要
+   * 🔧 修复：完全通用的内容摘要生成（不针对任何特定平台）
    */
   private generateQuickSummary(content: string, tool: string): string {
     if (!content || content.length === 0) return 'No content';
     
-    // 🔧 针对不同工具类型的智能摘要
-    if (tool.toLowerCase().includes('twitter') || tool.toLowerCase().includes('tweet')) {
-      return this.summarizeTwitterContent(content);
+    // 🔧 完全通用的摘要逻辑：只基于内容长度和结构，不区分具体类型
+    const MAX_SUMMARY_LENGTH = 300;
+    
+    if (content.length <= MAX_SUMMARY_LENGTH) {
+      return content;
     }
     
-    // 🔧 通用摘要：取前200字符 + 关键信息提取
-    const truncated = content.length > 200 ? content.substring(0, 200) + '...' : content;
-    return truncated;
-  }
-
-  /**
-   * 🔧 新增：Twitter内容专门摘要
-   */
-  private summarizeTwitterContent(content: string): string {
+    // 🔧 尝试智能截取：优先保留开头和关键结构
     try {
-      // 🔧 尝试解析Twitter数据结构
+      // 检查是否为JSON结构，如果是则提取关键信息
       const parsed = JSON.parse(content);
-      
-      if (parsed && Array.isArray(parsed)) {
-        const tweetCount = parsed.length;
-        const recentTweets = parsed.slice(0, 3); // 取前3条
-        const summaryTexts = recentTweets.map((tweet: any) => {
-          if (tweet.text) return tweet.text.substring(0, 100);
-          return 'Tweet content';
-        });
-        
-        return `${tweetCount} tweets found. Recent: ${summaryTexts.join(' | ')}`;
+      if (Array.isArray(parsed)) {
+        return `Array with ${parsed.length} items. First item: ${JSON.stringify(parsed[0] || {}).substring(0, 200)}...`;
+      } else if (typeof parsed === 'object') {
+        const keys = Object.keys(parsed);
+        return `Object with keys: ${keys.slice(0, 5).join(', ')}. Content: ${content.substring(0, 200)}...`;
       }
-      
-      return content.substring(0, 200) + '...';
     } catch {
-      return content.substring(0, 200) + '...';
+      // 不是JSON，按文本处理
     }
+    
+    // 🔧 文本内容：智能截取前部分内容
+    return content.substring(0, MAX_SUMMARY_LENGTH) + '...';
   }
 
   /**
-   * 🔧 新增：提取关键要点
+   * 🔧 新增：通用内容类型检测（不针对特定平台，只识别数据结构）
    */
-  private extractKeyPoints(content: string): string {
-    if (!content) return 'No key points';
+  private detectContentType(content: string): string {
+    if (!content) return 'empty';
     
-    // 🔧 简单的关键点提取逻辑
-    const lines = content.split('\n').filter(line => line.trim());
-    const keyLines = lines.slice(0, 3).map(line => line.trim().substring(0, 50));
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        return `array (${parsed.length} items)`;
+      } else if (typeof parsed === 'object') {
+        return 'object';
+      } else {
+        return 'json-value';
+      }
+    } catch {
+      // 不是JSON格式
+    }
     
-    return keyLines.join('; ') || 'Content available';
+    // 🔧 基于内容特征的通用检测
+    if (content.includes('\n') && content.split('\n').length > 5) {
+      return 'multi-line-text';
+    } else if (content.length > 500) {
+      return 'long-text';
+    } else {
+      return 'short-text';
+    }
   }
 
   /**
