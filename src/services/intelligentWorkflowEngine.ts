@@ -1156,15 +1156,20 @@ Please return in format:
 
       logger.info(`📝 X-MCP Auto-publish: Extracted draft_id: ${draftId}`);
 
-      // 调用publish_draft
+            // 调用publish_draft
       logger.info(`🚀 X-MCP Auto-publish: Publishing draft ${draftId}...`);
       
+      const publishInput = { draft_id: draftId };
+      logger.info(`📝 WorkflowEngine X-MCP Auto-publish INPUT: ${JSON.stringify(publishInput, null, 2)}`);
+      
       const publishResult = await this.mcpToolAdapter.callTool(
-        mcpName, 
-        'publish_draft', 
-        { draft_id: draftId }, 
+        mcpName,
+        'publish_draft',
+        publishInput,
         userId
       );
+      
+      logger.info(`📤 WorkflowEngine X-MCP Auto-publish OUTPUT: ${JSON.stringify(publishResult, null, 2)}`);
 
       logger.info(`✅ X-MCP Auto-publish: Successfully published draft ${draftId}`);
 
