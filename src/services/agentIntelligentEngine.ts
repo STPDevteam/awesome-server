@@ -1556,37 +1556,280 @@ Please return in format:
   }
 
   /**
-   * 构建Agent LLM执行提示词
+   * 🔧 重新设计：构建通用且健壮的Agent LLM执行提示词
    */
   private buildAgentLLMPrompt(toolName: string, plan: AgentExecutionPlan, state: AgentWorkflowState): string {
-    return `You are **${this.agent.name}** executing the task: "${toolName}".
+    return this.buildUniversalLLMPrompt(toolName, plan, state);
+  }
 
-## Agent Context
-**Agent**: ${this.agent.name}
-**Agent Description**: ${this.agent.description || 'Specialized AI Assistant'}
-**User's Goal**: ${state.originalQuery}
-**Current Task**: ${toolName}
+  /**
+   * 🔧 新增：构建通用且健壮的LLM提示词（适用于所有LLM任务：分析、摘要、总结、提取、格式化等）
+   */
+  private buildUniversalLLMPrompt(toolName: string, plan: AgentExecutionPlan, state: AgentWorkflowState): string {
+    // 🔧 智能上下文处理：如果上下文过长，先进行摘要
+    const contextData = this.prepareContextData(state);
+    
+    return `You are **${this.agent.name}**, a specialized AI assistant executing: "${toolName}".
 
-## Input Data
+## 🎯 TASK CONTEXT
+
+### Agent Information
+- **Agent**: ${this.agent.name}
+- **Description**: ${this.agent.description || 'Specialized AI Assistant'}
+- **User Request**: ${state.originalQuery}
+- **Current Task**: ${toolName}
+- **Execution Phase**: Step ${state.currentIteration}/${state.maxIterations}
+
+### Task Specifications
+- **Expected Output**: ${plan.expectedOutput}
+- **Task Reasoning**: ${plan.reasoning}
+- **Agent Context**: ${plan.agentContext}
+
+## 📊 INPUT DATA & CONTEXT
+
+### Task Parameters
 ${Object.entries(plan.args).map(([key, value]) => 
-  `**${key}**: ${typeof value === 'string' ? value : JSON.stringify(value)}`
+  `- **${key}**: ${typeof value === 'string' ? value : JSON.stringify(value)}`
 ).join('\n')}
 
-## Previous Results
-${state.dataStore.lastResult ? `
-**Previous Step Result**: ${typeof state.dataStore.lastResult === 'string' 
-  ? state.dataStore.lastResult 
-  : JSON.stringify(state.dataStore.lastResult)}
-` : 'No previous results'}
+### 🧠 Available Context Data
+${contextData.summary}
 
-## Task Execution
-As ${this.agent.name}, execute the "${toolName}" task using your specialized capabilities.
+### Execution Environment
+- **Completed Tasks**: ${state.completedComponents.length}/${state.taskBreakdown.length}
+- **Data Sources**: ${contextData.sourceCount}
+- **Context Type**: ${contextData.type}
 
-**Expected Output**: ${plan.expectedOutput}
-**Reasoning**: ${plan.reasoning}
-**Agent Context**: ${plan.agentContext}
+## 🎯 EXECUTION REQUIREMENTS
 
-Execute the task now:`;
+### Universal Task Guidelines
+1. **Context Integration**: 
+   - Leverage ALL available context data appropriately
+   - Understand relationships between different data sources
+   - Maintain consistency with previous task results
+
+2. **Quality Standards**:
+   - Provide accurate, relevant, and comprehensive output
+   - Ensure output format matches requirements
+   - Include specific details and concrete information
+   - Avoid generic or vague statements
+
+3. **Platform Optimization** (if applicable):
+   - **For Social Media**: Use appropriate character limits, hashtags, emojis
+   - **For Analysis**: Provide structured insights with evidence
+   - **For Summaries**: Extract key points while maintaining context
+   - **For Data Extraction**: Ensure completeness and accuracy
+   - **For Formatting**: Follow specified format requirements precisely
+
+4. **Goal Alignment**:
+   - Stay focused on the user's original request
+   - Ensure output contributes to the overall objective
+   - Maintain professional and engaging tone
+
+## 🚀 EXECUTION COMMAND
+
+Execute the "${toolName}" task now using:
+- Your specialized ${this.agent.name} capabilities
+- All provided context data and parameters
+- Universal quality standards and platform requirements
+
+**Generate your response:**`;
+  }
+
+  /**
+   * 🔧 新增：智能准备上下文数据（处理过长上下文的摘要）
+   */
+  private prepareContextData(state: AgentWorkflowState): {
+    summary: string;
+    type: 'direct' | 'summarized';
+    sourceCount: number;
+  } {
+    const allCollectedData = this.gatherAllCollectedData(state);
+    
+    if (allCollectedData.length === 0) {
+      return {
+        summary: 'No previous context data available.',
+        type: 'direct',
+        sourceCount: 0
+      };
+    }
+
+    // 🔧 计算上下文总长度
+    const totalContextLength = this.calculateContextLength(allCollectedData);
+    const MAX_CONTEXT_LENGTH = 8000; // 约8k字符，留余量给其他部分
+
+    if (totalContextLength <= MAX_CONTEXT_LENGTH) {
+      // 🔧 直接传递所有上下文
+      return {
+        summary: this.formatDirectContext(allCollectedData),
+        type: 'direct',
+        sourceCount: allCollectedData.length
+      };
+    } else {
+      // 🔧 需要摘要处理
+      return {
+        summary: this.formatSummarizedContext(allCollectedData),
+        type: 'summarized',
+        sourceCount: allCollectedData.length
+      };
+    }
+  }
+
+  /**
+   * 🔧 新增：计算上下文总长度
+   */
+  private calculateContextLength(data: Array<any>): number {
+    return data.reduce((total, item) => {
+      const content = this.extractRawContent(item.result);
+      return total + content.length;
+    }, 0);
+  }
+
+  /**
+   * 🔧 新增：格式化直接上下文（当上下文不太长时）
+   */
+  private formatDirectContext(data: Array<any>): string {
+    if (data.length === 0) return 'No context data available.';
+
+    return `**Complete Context Data** (${data.length} sources):
+
+${data.map((item, index) => `
+**Source ${index + 1}** (Step ${item.stepNumber} - ${item.tool}):
+\`\`\`
+${this.extractRawContent(item.result)}
+\`\`\`
+`).join('\n')}`;
+  }
+
+  /**
+   * 🔧 新增：格式化摘要上下文（当上下文过长时）
+   */
+  private formatSummarizedContext(data: Array<any>): string {
+    if (data.length === 0) return 'No context data available.';
+
+    // 🔧 为每个数据源生成智能摘要
+    const summaries = data.map((item, index) => {
+      const rawContent = this.extractRawContent(item.result);
+      const summary = this.generateQuickSummary(rawContent, item.tool);
+      
+      return `**Source ${index + 1}** (Step ${item.stepNumber} - ${item.tool}):
+- **Summary**: ${summary}
+- **Data Size**: ${rawContent.length} characters
+- **Key Points**: ${this.extractKeyPoints(rawContent)}`;
+    });
+
+    return `**Summarized Context Data** (${data.length} sources, auto-summarized due to length):
+
+${summaries.join('\n\n')}
+
+**ℹ️ Context Note**: Original data was summarized due to length. Key insights and actionable information preserved.`;
+  }
+
+  /**
+   * 🔧 新增：生成快速摘要
+   */
+  private generateQuickSummary(content: string, tool: string): string {
+    if (!content || content.length === 0) return 'No content';
+    
+    // 🔧 针对不同工具类型的智能摘要
+    if (tool.toLowerCase().includes('twitter') || tool.toLowerCase().includes('tweet')) {
+      return this.summarizeTwitterContent(content);
+    }
+    
+    // 🔧 通用摘要：取前200字符 + 关键信息提取
+    const truncated = content.length > 200 ? content.substring(0, 200) + '...' : content;
+    return truncated;
+  }
+
+  /**
+   * 🔧 新增：Twitter内容专门摘要
+   */
+  private summarizeTwitterContent(content: string): string {
+    try {
+      // 🔧 尝试解析Twitter数据结构
+      const parsed = JSON.parse(content);
+      
+      if (parsed && Array.isArray(parsed)) {
+        const tweetCount = parsed.length;
+        const recentTweets = parsed.slice(0, 3); // 取前3条
+        const summaryTexts = recentTweets.map((tweet: any) => {
+          if (tweet.text) return tweet.text.substring(0, 100);
+          return 'Tweet content';
+        });
+        
+        return `${tweetCount} tweets found. Recent: ${summaryTexts.join(' | ')}`;
+      }
+      
+      return content.substring(0, 200) + '...';
+    } catch {
+      return content.substring(0, 200) + '...';
+    }
+  }
+
+  /**
+   * 🔧 新增：提取关键要点
+   */
+  private extractKeyPoints(content: string): string {
+    if (!content) return 'No key points';
+    
+    // 🔧 简单的关键点提取逻辑
+    const lines = content.split('\n').filter(line => line.trim());
+    const keyLines = lines.slice(0, 3).map(line => line.trim().substring(0, 50));
+    
+    return keyLines.join('; ') || 'Content available';
+  }
+
+  /**
+   * 🔧 保留：收集所有已收集的数据
+   */
+  private gatherAllCollectedData(state: AgentWorkflowState): Array<{
+    stepNumber: number;
+    tool: string;
+    success: boolean;
+    result: any;
+  }> {
+    return state.executionHistory
+      .filter(step => step.success) // 只包含成功的步骤
+      .map(step => ({
+        stepNumber: step.stepNumber,
+        tool: step.plan.tool,
+        success: step.success,
+        result: step.result
+      }));
+  }
+
+  /**
+   * 🔧 保留：提取原始内容（避免传递格式化的markdown）
+   */
+  private extractRawContent(result: any): string {
+    if (!result) return 'No data';
+    
+    try {
+      // 如果是MCP结果格式，尝试提取原始文本
+      if (result && typeof result === 'object' && result.content) {
+        if (Array.isArray(result.content) && result.content.length > 0) {
+          const firstContent = result.content[0];
+          if (firstContent && firstContent.text) {
+            return firstContent.text;
+          }
+        }
+        return JSON.stringify(result.content);
+      }
+      
+      // 如果是字符串且看起来像JSON，返回原始JSON
+      if (typeof result === 'string') {
+        try {
+          const parsed = JSON.parse(result);
+          return JSON.stringify(parsed, null, 2);
+        } catch {
+          return result;
+        }
+      }
+      
+      return JSON.stringify(result, null, 2);
+    } catch (error) {
+      return String(result);
+    }
   }
 
   /**
