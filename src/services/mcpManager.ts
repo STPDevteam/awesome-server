@@ -674,16 +674,7 @@ export class MCPManager {
       
       // 🔧 新增：记录最终内存状态和总体效率
       const memUsageAfter = process.memoryUsage();
-      
-      console.log(`\n==== 🧠 MCPManager Memory Debug - FINAL STATE ====`);
-      console.log(`Memory After (MB):`);
-      console.log(`  RSS: ${(memUsageAfter.rss / 1024 / 1024).toFixed(2)} (${((memUsageAfter.rss - memUsageBefore.rss) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`  Heap Used: ${(memUsageAfter.heapUsed / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`  Heap Total: ${(memUsageAfter.heapTotal / 1024 / 1024).toFixed(2)} (${((memUsageAfter.heapTotal - memUsageBefore.heapTotal) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`  External: ${(memUsageAfter.external / 1024 / 1024).toFixed(2)} (${((memUsageAfter.external - memUsageBefore.external) / 1024 / 1024).toFixed(2)} MB total delta)`);
-      console.log(`Final Result Size: ${resultSize} bytes (${(resultSize / 1024).toFixed(2)} KB, ${(resultSize / 1024 / 1024).toFixed(2)} MB)`);
-      console.log(`🎯 MCP EFFICIENCY RATIO: ${((resultSize / 1024 / 1024) / Math.max((memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024, 0.001)).toFixed(2)} (result MB / heap delta MB)`);
-      
+    
       // 🔧 检查是否存在内存泄漏迹象
       const heapDelta = (memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024;
       const resultMB = resultSize / 1024 / 1024;
