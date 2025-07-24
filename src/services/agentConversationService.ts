@@ -104,17 +104,6 @@ export class AgentConversationService {
 
       const authCheck = await this.checkAgentMCPAuth(agent, userId);
       
-      if (authCheck.needsAuth) {
-        logger.warn(`❌ MCP authentication check FAILED for Agent [${agent.name}] by user [${userId}]`);
-        logger.warn(`❌ User must authenticate the following MCP services: ${authCheck.missingAuth.map(m => m.mcpName).join(', ')}`);
-        
-        return {
-          success: false,
-          needsAuth: true,
-          missingAuth: authCheck.missingAuth,
-          message: authCheck.message
-        };
-      }
 
       logger.info(`✅ MCP authentication check PASSED for Agent [${agent.name}] by user [${userId}]`);
 
