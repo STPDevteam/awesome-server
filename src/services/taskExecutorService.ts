@@ -828,22 +828,6 @@ Transform the data now:`;
         }
       });
       
-      // 特别检查x-mcp的工具
-      if (mcpName === 'x-mcp') {
-        logger.info(`🐦 X-MCP Tools Summary:`);
-        logger.info(`   Total tools found: ${tools.length}`);
-        logger.info(`   Expected tools: get_home_timeline, create_tweet, reply_to_tweet`);
-        
-        const expectedTools = ['get_home_timeline', 'create_tweet', 'reply_to_tweet', 'get_list_tweets'];
-        expectedTools.forEach(expectedTool => {
-          const found = tools.find(t => t.name === expectedTool);
-          if (found) {
-            logger.info(`   ✅ ${expectedTool}: FOUND`);
-                  } else {
-            logger.warn(`   ❌ ${expectedTool}: NOT FOUND`);
-          }
-        });
-      }
     } catch (toolError) {
       logger.error(`❌ Unable to get tool list for MCP ${mcpName}:`, toolError);
     }
