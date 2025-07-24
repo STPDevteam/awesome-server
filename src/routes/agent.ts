@@ -1583,7 +1583,7 @@ async function validateTwitterAuth(authData: Record<string, string>): Promise<{ 
     const apiKey = authData.TWITTER_API_KEY;
     const apiSecret = authData.TWITTER_API_SECRET;
     const accessToken = authData.TWITTER_ACCESS_TOKEN;
-    const accessSecret = authData.TWITTER_ACCESS_SECRET;
+    const accessSecret = authData.TWITTER_ACCESS_TOKEN_SECRET;
     
     // 检查必需字段
     if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
