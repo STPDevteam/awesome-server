@@ -1637,7 +1637,7 @@ Execute the "${toolName}" task now using:
   }
 
   /**
-   * 🔧 新增：智能准备上下文数据（处理过长上下文的摘要）
+       * 🔧 新增：智能准备上下文数据（处理过长上下文的摘要）
    */
   private prepareContextData(state: AgentWorkflowState): {
     summary: string;
