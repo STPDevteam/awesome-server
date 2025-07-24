@@ -2221,6 +2221,60 @@ Generate a comprehensive but concise summary:`;
   }
 
   /**
+   * 智能提取完整的JSON对象
+   */
+  private extractCompleteJson(text: string): string | null {
+    // 查找第一个 '{' 的位置
+    const startIndex = text.indexOf('{');
+    if (startIndex === -1) {
+      return null;
+    }
+    
+    // 从 '{' 开始，手动匹配大括号以找到完整的JSON对象
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          
+          // 当大括号计数为0时，我们找到了完整的JSON对象
+          if (braceCount === 0) {
+            const jsonString = text.substring(startIndex, i + 1);
+            console.log(`🔧 Extracted complete JSON: ${jsonString}`);
+            return jsonString;
+          }
+        }
+      }
+    }
+    
+    // 如果没有找到完整的JSON对象，返回null
+    console.log(`⚠️ Could not find complete JSON object`);
+    return null;
+  }
+
+  /**
    * 🔧 新增：使用LLM智能转换参数
    */
   private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpTools: any[]): Promise<any> {
@@ -2293,10 +2347,10 @@ Transform the data now:`;
         cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
         console.log(`After Markdown Cleanup: ${cleanedJson}`);
         
-        // 尝试提取JSON对象
-        const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          cleanedJson = jsonMatch[0];
+        // 🔧 修复：使用更智能的JSON提取逻辑
+        const extractedJson = this.extractCompleteJson(cleanedJson);
+        if (extractedJson) {
+          cleanedJson = extractedJson;
           console.log(`After JSON Extraction: ${cleanedJson}`);
         }
         
@@ -2466,10 +2520,10 @@ Select the best alternative tool now:`;
         cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
         console.log(`After Markdown Cleanup: ${cleanedJson}`);
         
-        // 尝试提取JSON对象
-        const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          cleanedJson = jsonMatch[0];
+        // 🔧 修复：使用更智能的JSON提取逻辑
+        const extractedJson = this.extractCompleteJson(cleanedJson);
+        if (extractedJson) {
+          cleanedJson = extractedJson;
           console.log(`After JSON Extraction: ${cleanedJson}`);
         }
         
@@ -2479,8 +2533,9 @@ Select the best alternative tool now:`;
         console.log(`🔄 Parsed reselection: ${JSON.stringify(reselection, null, 2)}`);
         logger.info(`🔍 Parsed Reselection: ${JSON.stringify(reselection, null, 2)}`);
       } catch (parseError) {
+        const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
         logger.error(`❌ Failed to parse tool reselection response: ${response.content}`);
-        logger.error(`❌ Parse error: ${parseError}`);
+        logger.error(`❌ Parse error: ${errorMessage}`);
         // 回退到第一个可用工具
         if (availableTools.length > 0) {
           logger.info(`🔍 Falling back to first available tool: ${availableTools[0].name}`);

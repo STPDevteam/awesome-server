@@ -646,11 +646,11 @@ Transform the data now:`;
 
       let toolSelection;
       try {
-        const responseText = toolSelectionResponse.content.toString().trim();
-        // 尝试解析JSON响应
-        toolSelection = JSON.parse(responseText);
+        toolSelection = this.parseLLMJsonResponse(toolSelectionResponse.content.toString());
       } catch (parseError) {
-        logger.error(`Failed to parse tool selection response: ${toolSelectionResponse.content}`);
+        const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+        logger.error(`Failed to parse tool selection response: ${errorMessage}`);
+        
         // 回退到简单的工具选择
         const fallbackPrompt = `Available tools: ${mcpTools.map(t => t.name).join(', ')}\nObjective: ${objective}\nSelect ONLY the exact tool name:`;
         const fallbackResponse = await this.llm.invoke([new SystemMessage(fallbackPrompt)]);
@@ -2015,6 +2015,100 @@ Transform the data now:`;
     };
     
     return mcpNameMapping[mcpName] || mcpName;
+  }
+
+  /**
+   * 通用LLM JSON响应解析函数
+   */
+  private parseLLMJsonResponse(responseContent: string): any {
+    const responseText = responseContent.toString().trim();
+    
+    console.log(`\n==== 📝 LLM JSON Response Parsing Debug ====`);
+    console.log(`Raw Response Length: ${responseText.length} chars`);
+    console.log(`Raw Response: ${responseText}`);
+    
+    // 🔧 改进JSON解析，先清理LLM响应中的额外内容
+    let cleanedText = responseText;
+    
+    // 移除Markdown代码块标记
+    cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    console.log(`After Markdown Cleanup: ${cleanedText}`);
+    
+    // 🔧 修复：使用更智能的JSON提取逻辑
+    const extractedJson = this.extractCompleteJson(cleanedText);
+    if (extractedJson) {
+      cleanedText = extractedJson;
+      console.log(`After JSON Extraction: ${cleanedText}`);
+    }
+    
+    console.log(`🧹 Final Cleaned text: ${cleanedText}`);
+    
+    try {
+      const parsed = JSON.parse(cleanedText);
+      console.log(`✅ JSON.parse() successful`);
+      console.log(`Parsed result: ${JSON.stringify(parsed, null, 2)}`);
+      return parsed;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.log(`❌ JSON.parse() failed: ${errorMessage}`);
+      logger.error(`Failed to parse LLM JSON response. Error: ${errorMessage}`);
+      logger.error(`Original response: ${responseContent}`);
+      throw new Error(`JSON parsing failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * 智能提取完整的JSON对象
+   */
+  private extractCompleteJson(text: string): string | null {
+    // 查找第一个 '{' 的位置
+    const startIndex = text.indexOf('{');
+    if (startIndex === -1) {
+      return null;
+    }
+    
+    // 从 '{' 开始，手动匹配大括号以找到完整的JSON对象
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          
+          // 当大括号计数为0时，我们找到了完整的JSON对象
+          if (braceCount === 0) {
+            const jsonString = text.substring(startIndex, i + 1);
+            console.log(`🔧 Extracted complete JSON: ${jsonString}`);
+            return jsonString;
+          }
+        }
+      }
+    }
+    
+    // 如果没有找到完整的JSON对象，返回null
+    console.log(`⚠️ Could not find complete JSON object`);
+    return null;
   }
 
   /**
