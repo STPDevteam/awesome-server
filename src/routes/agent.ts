@@ -1591,7 +1591,7 @@ async function validateTwitterAuth(authData: Record<string, string>): Promise<{ 
       if (!apiKey) missingFields.push('TWITTER_API_KEY');
       if (!apiSecret) missingFields.push('TWITTER_API_SECRET');
       if (!accessToken) missingFields.push('TWITTER_ACCESS_TOKEN');
-      if (!accessSecret) missingFields.push('TWITTER_ACCESS_SECRET');
+      if (!accessSecret) missingFields.push('TWITTER_ACCESS_TOKEN_SECRET');
       
       return {
         success: false,
