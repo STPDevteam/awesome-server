@@ -1000,10 +1000,53 @@ data: [DONE]
         },
         "createdAt": "2023-06-20T08:05:30.000Z"
       }
+    ],
+    "lastUsedMcp": [
+      {
+        "name": "coingecko-mcp",
+        "description": "CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data",
+        "authRequired": true,
+        "authVerified": false,
+        "category": "Market Data",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
+        "githubUrl": "https://docs.coingecko.com/reference/mcp-server",
+        "authParams": {
+          "COINGECKO_API_KEY": "COINGECKO_API_KEY"
+        },
+        "alternatives": [
+          {
+            "name": "coinmarketcap-mcp",
+            "description": "CoinMarketCap cryptocurrency market data and analytics",
+            "authRequired": true,
+            "authVerified": false,
+            "category": "Market Data",
+            "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coinmarket.png",
+            "githubUrl": "GitHub - shinzo-labs/coinmarketcap-mcp: MCP Implementation for CoinMarketCap",
+            "authParams": {
+              "COINMARKETCAP_API_KEY1": "COINMARKETCAP_API_KEY1",
+              "COINMARKETCAP_API_KEY2": "COINMARKETCAP_API_KEY2"
+            }
+          }
+        ]
+      }
     ]
   }
 }
 ```
+
+**响应字段说明**:
+- `conversation`: 会话基本信息
+- `messages`: 会话中的所有消息列表
+- `lastUsedMcp`: 最后一个任务使用的MCP工具数组，包含：
+  - `name`: MCP工具名称
+  - `description`: MCP工具描述
+  - `authRequired`: 是否需要认证
+  - `authVerified`: 认证状态
+  - `category`: MCP类别
+  - `imageUrl`: MCP图标URL
+  - `githubUrl`: MCP项目地址
+  - `authParams`: 认证参数配置
+  - `alternatives`: 备选MCP工具列表，结构与主MCP相同
 
 **错误响应**:
 - `401 Unauthorized`: 无效的访问令牌

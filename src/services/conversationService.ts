@@ -13,6 +13,7 @@ import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { titleGeneratorService } from './llmTasks/titleGenerator.js';
 import { db } from '../config/database.js';
 import { userService } from './auth/userService.js';
+import { taskDao } from '../dao/taskDao.js';
 // import { HttpsProxyAgent } from 'https-proxy-agent';
 // const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 // const agent = new HttpsProxyAgent(proxy);
@@ -863,9 +864,46 @@ Please analyze the user intent and return the result in JSON format:
     }
   }
 
-
-
-
+  /**
+   * 从对话相关的任务中提取lastUsedMcp信息
+   * @param conversationId 对话ID
+   * @param userId 用户ID
+   * @returns lastUsedMcp数组，包含完整的MCP信息
+   */
+  async extractLastUsedMcpFromTasks(
+    conversationId: string, 
+    userId: string
+  ): Promise<any[]> {
+    try {
+      // 通过DAO层获取最后一个任务的MCP工作流
+      const mcpWorkflow = await taskDao.getLastTaskMcpWorkflowByConversation(conversationId, userId);
+      
+      if (!mcpWorkflow || !mcpWorkflow.mcps || !Array.isArray(mcpWorkflow.mcps)) {
+        logger.info(`No MCPs found in workflow for conversation ${conversationId}`);
+        return [];
+      }
+      
+      // 返回完整的MCP信息数组
+      const lastUsedMcp = mcpWorkflow.mcps.map((mcp: any) => ({
+        name: mcp.name,
+        description: mcp.description,
+        authRequired: mcp.authRequired || false,
+        authVerified: mcp.authVerified || false,
+        category: mcp.category || 'Other',
+        imageUrl: mcp.imageUrl || '',
+        githubUrl: mcp.githubUrl || '',
+        authParams: mcp.authParams || {},
+        alternatives: mcp.alternatives || [] // 包含备选方案
+      }));
+      
+      logger.info(`Extracted ${lastUsedMcp.length} MCPs from latest task for conversation ${conversationId}`);
+      return lastUsedMcp;
+      
+    } catch (error) {
+      logger.error(`Error extracting lastUsedMcp for conversation ${conversationId}:`, error);
+      return [];
+    }
+  }
 
 
 }

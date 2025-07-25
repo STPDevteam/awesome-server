@@ -29,6 +29,8 @@ import { taskExecutorDao } from '../dao/taskExecutorDao.js';
 import { MCPManager } from './mcpManager.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
+import { IntelligentTaskService } from './intelligentTaskService.js';
+import { createAgentIntelligentTaskService, AgentIntelligentTaskService } from './agentIntelligentEngine.js';
 
 
 /**
@@ -52,6 +54,7 @@ export class AgentConversationService {
   private mcpManager: MCPManager;
   private mcpToolAdapter: MCPToolAdapter;
   private intelligentWorkflowEngine: IntelligentWorkflowEngine;
+  private intelligentTaskService: IntelligentTaskService;
 
   constructor(taskExecutorService: TaskExecutorService) {
     this.llm = new ChatOpenAI({
@@ -68,6 +71,7 @@ export class AgentConversationService {
     this.mcpManager = (taskExecutorService as any).mcpManager;
     this.mcpToolAdapter = (taskExecutorService as any).mcpToolAdapter;
     this.intelligentWorkflowEngine = (taskExecutorService as any).intelligentWorkflowEngine;
+    this.intelligentTaskService = new IntelligentTaskService();
   }
 
   /**
@@ -100,17 +104,6 @@ export class AgentConversationService {
 
       const authCheck = await this.checkAgentMCPAuth(agent, userId);
       
-      if (authCheck.needsAuth) {
-        logger.warn(`❌ MCP authentication check FAILED for Agent [${agent.name}] by user [${userId}]`);
-        logger.warn(`❌ User must authenticate the following MCP services: ${authCheck.missingAuth.map(m => m.mcpName).join(', ')}`);
-        
-        return {
-          success: false,
-          needsAuth: true,
-          missingAuth: authCheck.missingAuth,
-          message: authCheck.message
-        };
-      }
 
       logger.info(`✅ MCP authentication check PASSED for Agent [${agent.name}] by user [${userId}]`);
 
@@ -1545,6 +1538,16 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       if (!conversationId) {
         logger.warn(`Task ${taskId} has no associated conversation, execution messages will not be stored`);
       }
+
+      // 🔧 新增：智能引擎执行路径（Agent专用格式）
+      const useIntelligentEngine = true;
+      
+      if (useIntelligentEngine) {
+        logger.info(`🧠 Using intelligent workflow engine for Agent ${agent.name}`);
+        
+        // 使用智能任务服务执行（输出Agent格式事件流）
+        return await this.executeAgentTaskWithIntelligentEngine(taskId, agent, stream);
+      }
       
       // 🔧 根据用户输入动态生成工作流，而不是使用Agent预定义的工作流
       logger.info(`🔄 Generating dynamic workflow based on user input: "${task.content}"`);
@@ -2176,14 +2179,15 @@ Return ONLY a JSON array of workflow steps, no other text:`;
    */
   private async formatAgentResultWithLLM(rawResult: any, mcpName: string, actionName: string, agent: Agent): Promise<string> {
     try {
-      // 调用TaskExecutorService的formatResultWithLLM方法，但添加Agent信息
-      const baseResult = await (this.taskExecutorService as any).formatResultWithLLM(rawResult, mcpName, actionName);
+      // 🔧 关键修复：直接调用TaskExecutorService的formatResultWithLLM方法，不添加Agent前缀
+      // 这样可以避免markdown内容被错误包装
+      const formattedResult = await (this.taskExecutorService as any).formatResultWithLLM(rawResult, mcpName, actionName);
       
-      // 在结果前添加Agent标识
-      return `🤖 **${agent.name}** execution result\n\n${baseResult}`;
+      // 直接返回格式化结果，不添加Agent标识
+      return formattedResult;
     } catch (error) {
       logger.error(`Failed to format Agent result:`, error);
-      return `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      return `### ${actionName} 结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
     }
   }
 
@@ -2198,32 +2202,20 @@ Return ONLY a JSON array of workflow steps, no other text:`;
     streamCallback: (chunk: string) => void
   ): Promise<string> {
     try {
-      let fullContent = ''; // 累积完整内容用于最终存储
-      
-      // Agent标识部分
-      const agentPrefix = `🤖 **${agent.name}** execution result\n\n`;
-      fullContent += agentPrefix;
-      streamCallback(agentPrefix);
-      
-      // 创建内部回调，既发送给前端，又累积到fullContent
-      const internalCallback = (chunk: string) => {
-        fullContent += chunk; // 累积完整内容
-        streamCallback(chunk); // 发送给前端
-      };
-      
-      // 调用TaskExecutorService的formatResultWithLLMStream方法
+      // 🔧 关键修复：直接调用TaskExecutorService的formatResultWithLLMStream方法
+      // 不添加Agent前缀，避免markdown内容被错误包装
       const formattedResult = await (this.taskExecutorService as any).formatResultWithLLMStream(
         rawResult, 
         mcpName, 
         actionName,
-        internalCallback
+        streamCallback // 直接传递streamCallback，不添加额外的Agent前缀
       );
       
-      // 返回完整的内容用于数据库存储（思考过程+最终结果）
-      return fullContent;
+      // 直接返回格式化结果，不添加Agent标识
+      return formattedResult;
     } catch (error) {
       logger.error(`Failed to format Agent result with streaming:`, error);
-      const fallbackResult = `🤖 **${agent.name}** execution result\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      const fallbackResult = `### ${actionName} 结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
       streamCallback(fallbackResult);
       return fallbackResult;
     }
@@ -2339,6 +2331,43 @@ Return ONLY a JSON array of workflow steps, no other text:`;
     if (!agentId) return null;
 
     return await agentDao.getAgentById(agentId);
+  }
+
+  /**
+   * 使用Agent专用智能引擎执行任务
+   */
+  private async executeAgentTaskWithIntelligentEngine(
+    taskId: string,
+    agent: Agent, 
+    stream: (data: any) => void
+  ): Promise<boolean> {
+    try {
+      logger.info(`🧠 Starting Agent intelligent task execution [Task ID: ${taskId}, Agent: ${agent.name}]`);
+      
+      // 🔧 创建Agent专用智能任务服务
+      const agentIntelligentService = createAgentIntelligentTaskService(agent);
+      
+      // 🔧 使用Agent专用智能引擎执行（原生支持Agent事件流格式）
+      const success = await agentIntelligentService.executeAgentTaskIntelligently(taskId, stream);
+
+      logger.info(`🎯 Agent intelligent task execution completed [Success: ${success}, Agent: ${agent.name}]`);
+      return success;
+
+    } catch (error) {
+      logger.error(`❌ Agent intelligent task execution failed:`, error);
+      
+      stream({
+        event: 'task_execution_error',
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+          agentName: agent.name,
+          message: `${agent.name} intelligent execution failed`,
+          timestamp: new Date().toISOString()
+        }
+      });
+      
+      return false;
+    }
   }
 }
 

@@ -488,25 +488,28 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'x-mcp',
-        description: 'X (Twitter) MCP server for reading timeline and engaging with tweets. Features: get_home_timeline, create_tweet, reply_to_tweet with built-in rate limiting (LOCAL BUILD)',
-        command: 'node',
-        args: [`/home/ubuntu/mcp-tools/x-mcp-server/build/index.js`],
+        description: 'An MCP server to create, manage and publish X/Twitter posts directly',
+        command: '/home/ubuntu/.local/bin/uv',
+        args: ["--directory",
+            `/home/ubuntu/mcp-tools/x-mcp`,
+            "run",
+            "x-mcp"],
         env: {
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
             TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_SECRET: process.env.TWITTER_ACCESS_SECRET || ''
+            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
         },
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/x-mcp.ico',
-        githubUrl: 'https://github.com/datawhisker/x-mcp-server',
+        githubUrl: 'https://github.com/vidhupv/x-mcp',
         authRequired: true,
         authParams: {
             TWITTER_API_KEY: "TWITTER_API_KEY",
             TWITTER_API_SECRET: "TWITTER_API_SECRET",
             TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
-            TWITTER_ACCESS_SECRET: "TWITTER_ACCESS_SECRET"
+            TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
         }
     },
     {

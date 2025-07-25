@@ -1350,11 +1350,11 @@ class MigrationService {
             console.log(`✅ Updated ${agentTasksResult.rowCount} existing tasks to agent type`);
           }
 
-          // 根据标题中的【流程】标识来识别MCP任务
+          // 根据标题中的【MCP】标识来识别MCP任务
           const mcpTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'mcp' 
-            WHERE title LIKE '%【流程】%'
+            WHERE title LIKE '%【MCP】%'
               AND task_type = 'mcp'
           `);
           
@@ -1434,57 +1434,57 @@ class MigrationService {
     },
     {
       version: 26,
-      name: 'update_task_title_tags_to_chinese',
+      name: 'verify_task_title_tags_remain_english',
       up: async () => {
-        console.log('🔄 Updating task title tags from English to Chinese...');
+        console.log('🔄 Verifying task title tags remain in English for international platform...');
         
-        // 1. 更新任务标题中的英文标签为中文标签
+                  // 1. Verify task title tags remain in English (no changes needed)
         try {
-          // 更新 【flow】 为 【流程】
+          // Keep 【flow】 tags in English for international platform
           const flowTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【flow】', '【流程】')
+            SET title = title
             WHERE title LIKE '%【flow】%'
           `);
           
           if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${flowTasksResult.rowCount} tasks from 【flow】 to 【流程】`);
+            console.log(`✅ Verified ${flowTasksResult.rowCount} tasks with 【flow】 tags remain in English`);
           }
 
           // 更新 【robot】 为 【机器人】
           const robotTasksResult = await db.query(`
             UPDATE tasks 
-            SET title = REPLACE(title, '【robot】', '【机器人】')
+            SET title = REPLACE(title, '【robot】', '【robot】')
             WHERE title LIKE '%【robot】%'
           `);
           
           if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${robotTasksResult.rowCount} tasks from 【robot】 to 【机器人】`);
+            console.log(`✅ Updated ${robotTasksResult.rowCount} tasks from 【robot】 to 【robot】`);
           }
 
-          // 2. 确保任务类型正确设置（基于更新后的中文标签）
-          // 根据标题中的【机器人】标识来识别Agent任务
+          // 2. Ensure task types are correctly set based on English tags
+          // Identify Agent tasks based on 【robot】 tags
           const agentTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'agent' 
-            WHERE title LIKE '%【机器人】%'
+            WHERE title LIKE '%【robot】%'
               AND task_type != 'agent'
           `);
           
           if (agentTasksResult.rowCount && agentTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【机器人】 tag`);
+            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【robot】 tag`);
           }
 
-          // 根据标题中的【流程】标识来识别MCP任务
+          // Identify MCP tasks based on 【flow】 tags (keeping English)
           const mcpTasksResult = await db.query(`
             UPDATE tasks 
             SET task_type = 'mcp' 
-            WHERE title LIKE '%【流程】%'
+            WHERE title LIKE '%【flow】%'
               AND task_type != 'mcp'
           `);
           
           if (mcpTasksResult.rowCount && mcpTasksResult.rowCount > 0) {
-            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【流程】 tag`);
+            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【flow】 tag`);
           }
 
         } catch (error) {
@@ -1492,40 +1492,373 @@ class MigrationService {
           throw error;
         }
 
-        console.log('✅ Task title tags migration to Chinese completed');
+        console.log('✅ Task title tags verification completed (kept in English)');
       },
       down: async () => {
-        console.log('🔄 Rolling back task title tags to English...');
+        console.log('🔄 Rolling back task title tags verification...');
         
         try {
-          // 回滚 【流程】 为 【flow】
+          // No actual rollback needed since tags were kept in English
           const flowTasksResult = await db.query(`
+            UPDATE tasks 
+            SET title = title
+            WHERE title LIKE '%【flow】%'
+          `);
+          
+          if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
+            console.log(`✅ Verified ${flowTasksResult.rowCount} tasks still have 【flow】 tags`);
+          }
+
+          const robotTasksResult = await db.query(`
+            UPDATE tasks 
+            SET title = title
+            WHERE title LIKE '%【robot】%'
+          `);
+          
+          if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
+            console.log(`✅ Verified ${robotTasksResult.rowCount} tasks still have 【robot】 tags`);
+          }
+
+        } catch (error) {
+          console.log('⚠️  Error during title tag verification rollback:', error);
+          throw error;
+        }
+        
+        console.log('✅ Rollback completed for task title tags verification');
+      }
+    },
+    {
+      version: 27,
+      name: 'fix_missing_fields_and_constraints',
+      up: async () => {
+        console.log('🔄 Fixing missing fields and constraints...');
+        
+        // 1. 确保 tasks 表有必要的字段和约束
+        try {
+          // 检查 task_type 字段是否存在
+          const taskTypeCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'tasks' 
+            AND column_name = 'task_type'
+          `);
+
+          if (taskTypeCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE tasks 
+              ADD COLUMN task_type VARCHAR(50) DEFAULT 'mcp'
+            `);
+            console.log('✅ Added task_type column to tasks table');
+          }
+
+          // 检查 agent_id 字段是否存在  
+          const agentIdCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'tasks' 
+            AND column_name = 'agent_id'
+          `);
+
+          if (agentIdCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE tasks 
+              ADD COLUMN agent_id VARCHAR(255)
+            `);
+            console.log('✅ Added agent_id column to tasks table');
+          }
+
+          // 添加约束和索引
+          await db.query(`
+            ALTER TABLE tasks 
+            ADD CONSTRAINT tasks_task_type_check 
+            CHECK (task_type IN ('mcp', 'agent'))
+          `).catch(() => {}); // 忽略已存在的错误
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_tasks_task_type_fixed 
+            ON tasks(task_type)
+          `);
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_tasks_agent_id_fixed 
+            ON tasks(agent_id) 
+            WHERE agent_id IS NOT NULL
+          `);
+
+        } catch (error) {
+          console.log('ℹ️  Tasks table fields may already exist:', error);
+        }
+
+        // 2. 确保 conversations 表有必要的字段
+        try {
+          // 检查 type 字段是否存在
+          const typeCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'conversations' 
+            AND column_name = 'type'
+          `);
+
+          if (typeCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE conversations 
+              ADD COLUMN type VARCHAR(50) DEFAULT 'normal'
+            `);
+            console.log('✅ Added type column to conversations table');
+          }
+
+          // 检查 agent_id 字段是否存在
+          const convAgentIdCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'conversations' 
+            AND column_name = 'agent_id'
+          `);
+
+          if (convAgentIdCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE conversations 
+              ADD COLUMN agent_id VARCHAR(255)
+            `);
+            console.log('✅ Added agent_id column to conversations table');
+          }
+
+          // 添加约束和索引
+          await db.query(`
+            ALTER TABLE conversations 
+            ADD CONSTRAINT conversations_type_check 
+            CHECK (type IN ('normal', 'agent'))
+          `).catch(() => {}); // 忽略已存在的错误
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_conversations_type_fixed 
+            ON conversations(type)
+          `);
+
+          await db.query(`
+            CREATE INDEX IF NOT EXISTS idx_conversations_agent_id_fixed 
+            ON conversations(agent_id) 
+            WHERE agent_id IS NOT NULL
+          `);
+
+        } catch (error) {
+          console.log('ℹ️  Conversations table fields may already exist:', error);
+        }
+
+        // 3. 确保 agents 表有所有必要字段
+        try {
+          // 检查 categories 字段
+          const categoriesCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'categories'
+          `);
+
+          if (categoriesCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN categories JSONB DEFAULT '[]'::jsonb NOT NULL
+            `);
+            await db.query(`
+              CREATE INDEX IF NOT EXISTS idx_agents_categories_fixed 
+              ON agents USING GIN (categories)
+            `);
+            console.log('✅ Added categories column to agents table');
+          }
+
+          // 检查 username 字段
+          const usernameCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'username'
+          `);
+
+          if (usernameCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN username VARCHAR(255)
+            `);
+            console.log('✅ Added username column to agents table');
+          }
+
+          // 检查 avatar 字段
+          const avatarCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'avatar'
+          `);
+
+          if (avatarCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN avatar TEXT
+            `);
+            console.log('✅ Added avatar column to agents table');
+          }
+
+          // 检查 agent_avatar 字段
+          const agentAvatarCheck = await db.query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'agents' 
+            AND column_name = 'agent_avatar'
+          `);
+
+          if (agentAvatarCheck.rows.length === 0) {
+            await db.query(`
+              ALTER TABLE agents ADD COLUMN agent_avatar TEXT
+            `);
+            console.log('✅ Added agent_avatar column to agents table');
+          }
+
+        } catch (error) {
+          console.log('ℹ️  Agents table fields may already exist:', error);
+        }
+
+        // 4. 数据修复：确保所有现有数据有正确的默认值
+        try {
+          // 修复 tasks 表的 task_type 字段
+          await db.query(`
+            UPDATE tasks 
+            SET task_type = 'mcp' 
+            WHERE task_type IS NULL
+          `);
+
+          // 修复 conversations 表的 type 字段
+          await db.query(`
+            UPDATE conversations 
+            SET type = 'normal' 
+            WHERE type IS NULL
+          `);
+
+          // 修复 agents 表的 categories 字段
+          await db.query(`
+            UPDATE agents 
+            SET categories = '["General"]'::jsonb 
+            WHERE categories IS NULL OR categories = '[]'::jsonb
+          `);
+
+          console.log('✅ Fixed existing data with proper default values');
+
+        } catch (error) {
+          console.log('ℹ️  Data fix completed with some issues:', error);
+        }
+
+        console.log('✅ Missing fields and constraints fix completed');
+      },
+      down: async () => {
+        console.log('🔄 Rolling back missing fields fix...');
+        
+        // 这个回滚比较复杂，因为我们不想删除可能已经包含重要数据的字段
+        // 只删除我们添加的约束和索引
+        
+        try {
+          await db.query(`ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_task_type_check`);
+          await db.query(`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_type_check`);
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_task_type_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_tasks_agent_id_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_type_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_conversations_agent_id_fixed`);
+          await db.query(`DROP INDEX IF EXISTS idx_agents_categories_fixed`);
+          console.log('✅ Removed constraints and indexes');
+        } catch (error) {
+          console.log('ℹ️  Rollback completed with some issues:', error);
+        }
+        
+        console.log('✅ Rollback completed for missing fields fix');
+      }
+    },
+    {
+      version: 28,
+      name: 'fix_chinese_task_tags_to_english',
+      up: async () => {
+        console.log('🔄 Converting Chinese task tags back to English for international platform...');
+        
+        try {
+          // Convert any existing Chinese 【流程】 tags back to English 【flow】
+          const flowFixResult = await db.query(`
             UPDATE tasks 
             SET title = REPLACE(title, '【流程】', '【flow】')
             WHERE title LIKE '%【流程】%'
           `);
           
-          if (flowTasksResult.rowCount && flowTasksResult.rowCount > 0) {
-            console.log(`✅ Rolled back ${flowTasksResult.rowCount} tasks from 【流程】 to 【flow】`);
+          if (flowFixResult.rowCount && flowFixResult.rowCount > 0) {
+            console.log(`✅ Fixed ${flowFixResult.rowCount} tasks: 【流程】 → 【flow】`);
           }
 
-          // 回滚 【机器人】 为 【robot】
-          const robotTasksResult = await db.query(`
+          // Convert any existing Chinese 【机器人】 tags back to English 【robot】
+          const robotFixResult = await db.query(`
             UPDATE tasks 
             SET title = REPLACE(title, '【机器人】', '【robot】')
             WHERE title LIKE '%【机器人】%'
           `);
           
-          if (robotTasksResult.rowCount && robotTasksResult.rowCount > 0) {
-            console.log(`✅ Rolled back ${robotTasksResult.rowCount} tasks from 【机器人】 to 【robot】`);
+          if (robotFixResult.rowCount && robotFixResult.rowCount > 0) {
+            console.log(`✅ Fixed ${robotFixResult.rowCount} tasks: 【机器人】 → 【robot】`);
+          }
+
+          // Ensure task types are correctly set based on the English tags
+          const mcpTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'mcp' 
+            WHERE title LIKE '%【flow】%'
+              AND task_type != 'mcp'
+          `);
+          
+          if (mcpTasksResult.rowCount && mcpTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${mcpTasksResult.rowCount} tasks to mcp type based on 【flow】 tag`);
+          }
+
+          const agentTasksResult = await db.query(`
+            UPDATE tasks 
+            SET task_type = 'agent' 
+            WHERE title LIKE '%【robot】%'
+              AND task_type != 'agent'
+          `);
+          
+          if (agentTasksResult.rowCount && agentTasksResult.rowCount > 0) {
+            console.log(`✅ Updated ${agentTasksResult.rowCount} tasks to agent type based on 【robot】 tag`);
           }
 
         } catch (error) {
-          console.log('⚠️  Error during title tag rollback:', error);
+          console.log('⚠️  Error during Chinese to English tag conversion:', error);
+          throw error;
+        }
+
+        console.log('✅ Chinese to English task tags conversion completed');
+      },
+      down: async () => {
+        console.log('🔄 Rolling back English to Chinese task tags...');
+        
+        try {
+          // Convert 【flow】 back to 【流程】
+          const flowRollbackResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【flow】', '【流程】')
+            WHERE title LIKE '%【flow】%'
+          `);
+          
+          if (flowRollbackResult.rowCount && flowRollbackResult.rowCount > 0) {
+            console.log(`✅ Rolled back ${flowRollbackResult.rowCount} tasks: 【flow】 → 【流程】`);
+          }
+
+          // Convert 【robot】 back to 【机器人】
+          const robotRollbackResult = await db.query(`
+            UPDATE tasks 
+            SET title = REPLACE(title, '【robot】', '【机器人】')
+            WHERE title LIKE '%【robot】%'
+          `);
+          
+          if (robotRollbackResult.rowCount && robotRollbackResult.rowCount > 0) {
+            console.log(`✅ Rolled back ${robotRollbackResult.rowCount} tasks: 【robot】 → 【机器人】`);
+          }
+
+        } catch (error) {
+          console.log('⚠️  Error during rollback:', error);
           throw error;
         }
         
-        console.log('✅ Rollback completed for task title tags');
+        console.log('✅ Rollback completed for Chinese to English task tags conversion');
       }
     }
   ];

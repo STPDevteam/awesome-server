@@ -19,13 +19,13 @@ const testData = {
   tasks: [
     {
       id: 'task-1',
-      title: '【流程】Analyze market trends',
+      title: '【MCP】Analyze market trends',
       taskType: 'mcp',
       agentId: null
     },
     {
       id: 'task-2',
-      title: '【机器人】Generate crypto report',
+      title: '【Agent】Generate crypto report',
       taskType: 'agent',
       agentId: 'agent-123'
     }
@@ -57,9 +57,9 @@ function testTaskTags() {
     console.log(`  Agent ID: ${task.agentId || 'None'}`);
     
     // 验证标签
-    if (task.taskType === 'mcp' && task.title.startsWith('【流程】')) {
+    if (task.taskType === 'mcp' && task.title.startsWith('【MCP】')) {
       console.log(`  ✅ Correct MCP task tag`);
-    } else if (task.taskType === 'agent' && task.title.startsWith('【机器人】')) {
+    } else if (task.taskType === 'agent' && task.title.startsWith('【Agent】')) {
       console.log(`  ✅ Correct Agent task tag`);
     } else {
       console.log(`  ❌ Incorrect or missing task tag`);
@@ -87,8 +87,8 @@ function testFrontendIdentification() {
   console.log('Frontend task type identification:');
   testData.tasks.forEach(task => {
     const taskTypeDisplay = task.taskType === 'agent' ? 'Agent Task' : 'MCP Task';
-    const hasCorrectTag = (task.taskType === 'mcp' && task.title.includes('【流程】')) ||
-                         (task.taskType === 'agent' && task.title.includes('【机器人】'));
+    const hasCorrectTag = (task.taskType === 'mcp' && task.title.includes('【MCP】')) ||
+                         (task.taskType === 'agent' && task.title.includes('【Agent】'));
     
     console.log(`  ${task.id}: ${taskTypeDisplay} - Tag: ${hasCorrectTag ? '✅' : '❌'}`);
   });

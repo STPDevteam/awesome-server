@@ -207,17 +207,6 @@ export class TaskExecutorService {
       const memUsageBefore = process.memoryUsage();
       const inputSize = JSON.stringify(input).length;
       
-      console.log(`\n==== 🧠 Memory & Data Debug - BEFORE MCP Call ====`);
-      console.log(`Time: ${new Date().toISOString()}`);
-      console.log(`MCP: ${mcpName}, Tool: ${toolName}, Task: ${taskId}`);
-      console.log(`Memory Before (MB):`);
-      console.log(`  RSS: ${(memUsageBefore.rss / 1024 / 1024).toFixed(2)}`);
-      console.log(`  Heap Used: ${(memUsageBefore.heapUsed / 1024 / 1024).toFixed(2)}`);
-      console.log(`  Heap Total: ${(memUsageBefore.heapTotal / 1024 / 1024).toFixed(2)}`);
-      console.log(`  External: ${(memUsageBefore.external / 1024 / 1024).toFixed(2)}`);
-      console.log(`Input Data Size: ${inputSize} bytes (${(inputSize / 1024).toFixed(2)} KB)`);
-      console.log(`Input Data Preview: ${JSON.stringify(input).substring(0, 200)}...`);
-      
       logger.info(`🔍 Calling MCP tool via LangChain [MCP: ${mcpName}, Tool: ${toolName}]`);
       
       // 获取用户ID
@@ -481,7 +470,10 @@ For cryptocurrency tools:
         console.log(`⚠️ Garbage collection not available (start Node.js with --expose-gc to enable)`);
       }
       
-      return finalResult;
+      // 🔧 新增：x-mcp自动发布处理
+      const processedResult = await this.handleXMcpAutoPublish(mcpName, toolName, finalResult, userId);
+      
+      return processedResult;
     } catch (error) {
       // 🔧 新增：记录错误时的内存状态
       const memUsageOnError = process.memoryUsage();
@@ -646,11 +638,11 @@ Transform the data now:`;
 
       let toolSelection;
       try {
-        const responseText = toolSelectionResponse.content.toString().trim();
-        // 尝试解析JSON响应
-        toolSelection = JSON.parse(responseText);
+        toolSelection = this.parseLLMJsonResponse(toolSelectionResponse.content.toString());
       } catch (parseError) {
-        logger.error(`Failed to parse tool selection response: ${toolSelectionResponse.content}`);
+        const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+        logger.error(`Failed to parse tool selection response: ${errorMessage}`);
+        
         // 回退到简单的工具选择
         const fallbackPrompt = `Available tools: ${mcpTools.map(t => t.name).join(', ')}\nObjective: ${objective}\nSelect ONLY the exact tool name:`;
         const fallbackResponse = await this.llm.invoke([new SystemMessage(fallbackPrompt)]);
@@ -828,22 +820,6 @@ Transform the data now:`;
         }
       });
       
-      // 特别检查x-mcp的工具
-      if (mcpName === 'x-mcp') {
-        logger.info(`🐦 X-MCP Tools Summary:`);
-        logger.info(`   Total tools found: ${tools.length}`);
-        logger.info(`   Expected tools: get_home_timeline, create_tweet, reply_to_tweet`);
-        
-        const expectedTools = ['get_home_timeline', 'create_tweet', 'reply_to_tweet', 'get_list_tweets'];
-        expectedTools.forEach(expectedTool => {
-          const found = tools.find(t => t.name === expectedTool);
-          if (found) {
-            logger.info(`   ✅ ${expectedTool}: FOUND`);
-                  } else {
-            logger.warn(`   ❌ ${expectedTool}: NOT FOUND`);
-          }
-        });
-      }
     } catch (toolError) {
       logger.error(`❌ Unable to get tool list for MCP ${mcpName}:`, toolError);
     }
@@ -1156,13 +1132,37 @@ OUTPUT FORMAT:
 - Present the main data in an organized manner (or explain the error)
 - End with any relevant notes or observations
 
-IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary. Handle ALL types of responses intelligently, including errors, arrays, objects, and mixed results.`;
+🚨 CRITICAL: Return ONLY the raw Markdown content without any code block wrappers. 
+❌ DO NOT wrap your response in \`\`\`markdown \`\`\` or \`\`\` \`\`\` blocks.
+✅ Return the markdown content directly, ready for immediate display.
+
+Example of CORRECT output:
+# Latest Tweets from @username
+Here are the recent tweets...
+
+Example of WRONG output:
+\`\`\`markdown
+# Latest Tweets from @username
+Here are the recent tweets...
+\`\`\`
+
+IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.`;
 
       const response = await this.llm.invoke([
         new SystemMessage(formatPrompt)
       ]);
       
-      const formattedResult = response.content.toString().trim();
+      let formattedResult = response.content.toString().trim();
+      
+      // 🔧 关键修复：清理可能的markdown代码块包装
+      if (formattedResult.startsWith('```markdown\n') && formattedResult.endsWith('\n```')) {
+        formattedResult = formattedResult.slice(12, -4).trim();
+        logger.info(`🔧 Cleaned markdown code block wrapper`);
+      } else if (formattedResult.startsWith('```\n') && formattedResult.endsWith('\n```')) {
+        formattedResult = formattedResult.slice(4, -4).trim();
+        logger.info(`🔧 Cleaned generic code block wrapper`);
+      }
+      
       logger.info(`✅ Result formatted successfully`);
       
       return formattedResult;
@@ -2010,6 +2010,285 @@ Transform the data now:`;
   }
 
   /**
+   * 从文本中提取draft_id的辅助方法
+   */
+  private extractDraftIdFromText(text: string): string | null {
+    const patterns = [
+      /draft[_-]?id["\s:]*([^"\s,}]+)/i,                    // draft_id: "xxx" 
+      /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,               // "with ID thread_draft_xxx.json"
+      /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,     // "created with ID xxx.json"
+      /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,                   // "ID: xxx.json" 或 "ID xxx.json"
+      /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i        // 任何包含draft的.json文件
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * x-mcp自动发布处理：当create_draft_tweet或create_draft_thread成功后自动发布
+   */
+  private async handleXMcpAutoPublish(
+    mcpName: string, 
+    toolName: string, 
+    result: any, 
+    userId?: string
+  ): Promise<any> {
+    // 🔧 添加详细调试信息
+    const normalizedMcpName = this.normalizeMCPName(mcpName);
+    logger.info(`🔍 TaskExecutor X-MCP Auto-publish Check: mcpName="${mcpName}", normalizedMcpName="${normalizedMcpName}", toolName="${toolName}"`);
+    
+    // 只处理x-mcp的草稿创建操作
+    if (normalizedMcpName !== 'x-mcp') {
+      logger.info(`❌ TaskExecutor X-MCP Auto-publish: Normalized MCP name "${normalizedMcpName}" is not "x-mcp", skipping auto-publish`);
+      return result;
+    }
+
+    // 检查是否是草稿创建操作
+    if (!toolName.includes('create_draft')) {
+      logger.info(`❌ TaskExecutor X-MCP Auto-publish: Tool name "${toolName}" does not include "create_draft", skipping auto-publish`);
+      return result;
+    }
+
+    try {
+      logger.info(`🔄 X-MCP Auto-publish: Detected ${toolName} completion, attempting auto-publish...`);
+
+      // 提取draft_id
+      let draftId = null;
+      if (result && typeof result === 'object') {
+        // 尝试从不同的结果格式中提取draft_id
+        if (result.draft_id) {
+          draftId = result.draft_id;
+        } else if (result.content && Array.isArray(result.content)) {
+          // MCP标准格式
+          for (const content of result.content) {
+            if (content.text) {
+                          try {
+              const parsed = JSON.parse(content.text);
+              if (parsed.draft_id) {
+                draftId = parsed.draft_id;
+                break;
+              } else if (Array.isArray(parsed)) {
+                // 🔧 处理解析成功但是数组结构的情况
+                for (const nestedItem of parsed) {
+                  if (nestedItem && nestedItem.text) {
+                    const innerText = nestedItem.text;
+                    const innerMatch = this.extractDraftIdFromText(innerText);
+                    if (innerMatch) {
+                      draftId = innerMatch;
+                      logger.info(`📝 X-MCP Auto-publish: Extracted draft_id "${draftId}" from nested JSON structure`);
+                      break;
+                    }
+                  }
+                }
+                if (draftId) break;
+              }
+            } catch {
+                // 🔧 修复：处理嵌套JSON结构和文本提取
+                let text = content.text;
+                
+                // 🔧 处理双重嵌套的JSON情况：text字段本身是JSON字符串
+                try {
+                  // 尝试解析text作为JSON数组
+                  const nestedArray = JSON.parse(text);
+                  if (Array.isArray(nestedArray)) {
+                    // 遍历嵌套数组，寻找包含draft信息的文本
+                    for (const nestedItem of nestedArray) {
+                      if (nestedItem && nestedItem.text) {
+                        const innerText = nestedItem.text;
+                        // 先尝试从内层文本提取draft_id
+                        const innerMatch = this.extractDraftIdFromText(innerText);
+                        if (innerMatch) {
+                          draftId = innerMatch;
+                          logger.info(`📝 X-MCP Auto-publish: Extracted draft_id "${draftId}" from nested JSON structure`);
+                          break;
+                        }
+                      }
+                    }
+                  }
+                } catch {
+                  // 如果不是JSON，继续用原文本进行模式匹配
+                }
+                
+                // 如果嵌套解析没有找到，用原文本进行模式匹配
+                if (!draftId) {
+                  draftId = this.extractDraftIdFromText(text);
+                  if (draftId) {
+                    logger.info(`📝 X-MCP Auto-publish: Extracted draft_id "${draftId}" from text pattern matching`);
+                  }
+                }
+                
+                if (draftId) break;
+              }
+            }
+          }
+        }
+      }
+      
+      // 🔧 修复：处理字符串类型的result
+      if (!draftId && typeof result === 'string') {
+        // 从字符串结果中提取
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.draft_id) {
+            draftId = parsed.draft_id;
+          }
+        } catch {
+          // 🔧 修复：处理嵌套JSON和字符串文本中提取draft ID
+          draftId = this.extractDraftIdFromText(result);
+          if (draftId) {
+            logger.info(`📝 X-MCP Auto-publish: Extracted draft_id "${draftId}" from string pattern matching`);
+          }
+        }
+      }
+
+      if (!draftId) {
+        logger.warn(`⚠️ X-MCP Auto-publish: Could not extract draft_id from result: ${JSON.stringify(result)}`);
+        return result;
+      }
+
+      logger.info(`📝 X-MCP Auto-publish: Extracted draft_id: ${draftId}`);
+
+            // 调用publish_draft
+      logger.info(`🚀 X-MCP Auto-publish: Publishing draft ${draftId}...`);
+      
+      const publishInput = { draft_id: draftId };
+      logger.info(`📝 X-MCP Auto-publish INPUT: ${JSON.stringify(publishInput, null, 2)}`);
+      
+      const publishResult = await this.mcpToolAdapter.callTool(
+        normalizedMcpName,
+        'publish_draft',
+        publishInput,
+        userId
+      );
+      
+      logger.info(`📤 X-MCP Auto-publish OUTPUT: ${JSON.stringify(publishResult, null, 2)}`);
+
+      logger.info(`✅ X-MCP Auto-publish: Successfully published draft ${draftId}`);
+
+      // 返回合并的结果
+      return {
+        draft_creation: result,
+        auto_publish: publishResult,
+        combined_result: `Draft created and published successfully. Draft ID: ${draftId}`,
+        draft_id: draftId,
+        published: true
+      };
+
+    } catch (error) {
+      logger.error(`❌ X-MCP Auto-publish failed:`, error);
+      
+      // 即使发布失败，也返回原始的草稿创建结果
+      return {
+        draft_creation: result,
+        auto_publish_error: error instanceof Error ? error.message : String(error),
+        combined_result: `Draft created successfully but auto-publish failed. You may need to publish manually.`,
+        published: false
+      };
+    }
+  }
+
+  /**
+   * 通用LLM JSON响应解析函数
+   */
+  private parseLLMJsonResponse(responseContent: string): any {
+    const responseText = responseContent.toString().trim();
+    
+    console.log(`\n==== 📝 LLM JSON Response Parsing Debug ====`);
+    console.log(`Raw Response Length: ${responseText.length} chars`);
+    console.log(`Raw Response: ${responseText}`);
+    
+    // 🔧 改进JSON解析，先清理LLM响应中的额外内容
+    let cleanedText = responseText;
+    
+    // 移除Markdown代码块标记
+    cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    console.log(`After Markdown Cleanup: ${cleanedText}`);
+    
+    // 🔧 修复：使用更智能的JSON提取逻辑
+    const extractedJson = this.extractCompleteJson(cleanedText);
+    if (extractedJson) {
+      cleanedText = extractedJson;
+      console.log(`After JSON Extraction: ${cleanedText}`);
+    }
+    
+    console.log(`🧹 Final Cleaned text: ${cleanedText}`);
+    
+    try {
+      const parsed = JSON.parse(cleanedText);
+      console.log(`✅ JSON.parse() successful`);
+      console.log(`Parsed result: ${JSON.stringify(parsed, null, 2)}`);
+      return parsed;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.log(`❌ JSON.parse() failed: ${errorMessage}`);
+      logger.error(`Failed to parse LLM JSON response. Error: ${errorMessage}`);
+      logger.error(`Original response: ${responseContent}`);
+      throw new Error(`JSON parsing failed: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * 智能提取完整的JSON对象
+   */
+  private extractCompleteJson(text: string): string | null {
+    // 查找第一个 '{' 的位置
+    const startIndex = text.indexOf('{');
+    if (startIndex === -1) {
+      return null;
+    }
+    
+    // 从 '{' 开始，手动匹配大括号以找到完整的JSON对象
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          
+          // 当大括号计数为0时，我们找到了完整的JSON对象
+          if (braceCount === 0) {
+            const jsonString = text.substring(startIndex, i + 1);
+            console.log(`🔧 Extracted complete JSON: ${jsonString}`);
+            return jsonString;
+          }
+        }
+      }
+    }
+    
+    // 如果没有找到完整的JSON对象，返回null
+    console.log(`⚠️ Could not find complete JSON object`);
+    return null;
+  }
+
+  /**
    * 使用LLM流式格式化结果
    * @param rawResult 原始结果
    * @param mcpName MCP名称
@@ -2080,7 +2359,11 @@ FORMATTING RULES:
    - Maintain professional tone
    - Ensure the output is immediately useful to the end user
 
-IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-commentary. Handle ALL types of responses intelligently, including errors, arrays, objects, and mixed results.`;
+🚨 CRITICAL: Return ONLY the raw Markdown content without any code block wrappers. 
+❌ DO NOT wrap your response in \`\`\`markdown \`\`\` or \`\`\` \`\`\` blocks.
+✅ Return the markdown content directly, ready for immediate display.
+
+IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.`;
 
       // 创建流式LLM实例
       const streamingLLM = new ChatOpenAI({
@@ -2092,6 +2375,8 @@ IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-c
       });
 
       let fullResult = '';
+      let isFirstChunk = true;
+      let hasMarkdownWrapper = false;
       
       // 使用流式调用
       const stream = await streamingLLM.stream([
@@ -2101,9 +2386,35 @@ IMPORTANT: Return ONLY the formatted Markdown content, no explanations or meta-c
       for await (const chunk of stream) {
         const content = chunk.content.toString();
         if (content) {
-          fullResult += content;
-          streamCallback(content);
+          // 🔧 关键修复：检测并处理markdown代码块包装
+          if (isFirstChunk && content.includes('```markdown')) {
+            hasMarkdownWrapper = true;
+            // 移除开头的```markdown\n
+            const cleanContent = content.replace(/^.*?```markdown\s*\n?/s, '');
+            if (cleanContent) {
+              fullResult += cleanContent;
+              streamCallback(cleanContent);
+            }
+          } else if (hasMarkdownWrapper && content.includes('```')) {
+            // 移除结尾的\n```
+            const cleanContent = content.replace(/\n?```.*$/s, '');
+            if (cleanContent) {
+              fullResult += cleanContent;
+              streamCallback(cleanContent);
+            }
+            hasMarkdownWrapper = false; // 标记包装已结束
+          } else if (!hasMarkdownWrapper || !content.trim().startsWith('```')) {
+            fullResult += content;
+            streamCallback(content);
+          }
+          isFirstChunk = false;
         }
+      }
+      
+      // 🔧 额外清理：如果还有残留的markdown包装
+      if (fullResult.startsWith('```markdown\n') && fullResult.endsWith('\n```')) {
+        fullResult = fullResult.slice(12, -4).trim();
+        logger.info(`🔧 Cleaned residual markdown wrapper in stream`);
       }
       
       logger.info(`✅ Result formatted successfully with streaming`);

@@ -198,83 +198,84 @@ export class TaskDao {
     }
   }
 
-  /**
+ /**
    * 获取用户的任务列表
    */
-  async getUserTasks(userId: string, options?: {
-    status?: string;
-    taskType?: string;
-    agentId?: string;
-    limit?: number;
-    offset?: number;
-    sortBy?: string;
-    sortDir?: 'asc' | 'desc';
-    conversationId?: string;
-  }): Promise<{ rows: TaskDbRow[]; total: number }> {
-    try {
-      // 构建查询条件
-      const conditions = ['user_id = $1', 'is_deleted = FALSE'];
-      const values = [userId];
-      let paramIndex = 2;
+ async getUserTasks(userId: string, options?: {
+  status?: string;
+  taskType?: string;
+  agentId?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
+  conversationId?: string;
+}): Promise<{ rows: TaskDbRow[]; total: number }> {
+  try {
+    // 构建查询条件
+    const conditions = ['user_id = $1', 'is_deleted = FALSE'];
+    const values = [userId];
+    let paramIndex = 2;
 
-      if (options?.status) {
-        conditions.push(`status = $${paramIndex}`);
-        values.push(options.status);
-        paramIndex++;
-      }
-
-      if (options?.taskType) {
-        conditions.push(`task_type = $${paramIndex}`);
-        values.push(options.taskType);
-        paramIndex++;
-      }
-
-      if (options?.agentId) {
-        conditions.push(`agent_id = $${paramIndex}`);
-        values.push(options.agentId);
-        paramIndex++;
-      }
-
-      if (options?.conversationId) {
-        conditions.push(`conversation_id = $${paramIndex}`);
-        values.push(options.conversationId);
-        paramIndex++;
-      }
-
-      // 构建排序
-      const sortField = options?.sortBy || 'created_at';
-      const sortDirection = options?.sortDir || 'desc';
-      const sort = `${sortField} ${sortDirection}`;
-
-      // 构建分页
-      const limit = options?.limit || 10;
-      const offset = options?.offset || 0;
-
-      // 查询总数
-      const countQuery = `
-        SELECT COUNT(*) as total
-        FROM tasks
-        WHERE ${conditions.join(' AND ')}
-      `;
-      const countResult = await db.query(countQuery, values);
-      const total = parseInt(countResult.rows[0].total, 10);
-
-      // 查询任务列表
-      const query = `
-        SELECT *
-        FROM tasks
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY ${sort}
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-      const result = await db.query<TaskDbRow>(query, values);
-
-      return { rows: result.rows, total };
-    } catch (error) {
-      logger.error(`获取用户任务列表失败 [UserID: ${userId}]:`, error);
-      throw error;
+    if (options?.status) {
+      conditions.push(`status = $${paramIndex}`);
+      values.push(options.status);
+      paramIndex++;
     }
+
+    if (options?.taskType) {
+      conditions.push(`task_type = $${paramIndex}`);
+      values.push(options.taskType);
+      paramIndex++;
+    }
+
+    if (options?.agentId) {
+      conditions.push(`agent_id = $${paramIndex}`);
+      values.push(options.agentId);
+      paramIndex++;
+    }
+
+    if (options?.conversationId) {
+      conditions.push(`conversation_id = $${paramIndex}`);
+      values.push(options.conversationId);
+      paramIndex++;
+    }
+
+    // 构建排序
+    const sortField = options?.sortBy || 'created_at';
+    const sortDirection = options?.sortDir || 'desc';
+    const sort = `${sortField} ${sortDirection}`;
+
+    // 构建分页
+    const limit = options?.limit || 10;
+    const offset = options?.offset || 0;
+
+    // 查询总数
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM tasks
+      WHERE ${conditions.join(' AND ')}
+    `;
+    const countResult = await db.query(countQuery, values);
+    const total = parseInt(countResult.rows[0].total, 10);
+
+    // 查询任务列表
+    const query = `
+      SELECT *
+      FROM tasks
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY ${sort}
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+    const result = await db.query<TaskDbRow>(query, values);
+
+    return { rows: result.rows, total };
+  } catch (error) {
+    logger.error(`获取用户任务列表失败 [UserID: ${userId}]:`, error);
+    throw error;
   }
+}
+
 
   /**
    * 获取对话关联的任务
@@ -294,6 +295,52 @@ export class TaskDao {
       return result.rows;
     } catch (error) {
       logger.error(`获取对话关联任务失败 [对话ID: ${conversationId}]:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取对话相关的最后一个任务的MCP工作流
+   * @param conversationId 对话ID
+   * @param userId 用户ID
+   * @returns MCP工作流信息
+   */
+  async getLastTaskMcpWorkflowByConversation(
+    conversationId: string,
+    userId: string
+  ): Promise<any> {
+    try {
+      const result = await db.query<TaskDbRow>(
+        `
+        SELECT mcp_workflow, created_at
+        FROM tasks
+        WHERE conversation_id = $1 AND user_id = $2 AND is_deleted = FALSE
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [conversationId, userId]
+      );
+      
+      if (result.rows.length === 0) {
+        logger.info(`No tasks found for conversation ${conversationId}`);
+        return null;
+      }
+      
+      const mcpWorkflow = result.rows[0].mcp_workflow;
+      
+      // 如果是字符串，解析为对象
+      if (typeof mcpWorkflow === 'string') {
+        try {
+          return JSON.parse(mcpWorkflow);
+        } catch (parseError) {
+          logger.error(`Failed to parse MCP workflow JSON for conversation ${conversationId}:`, parseError);
+          return null;
+        }
+      }
+      
+      return mcpWorkflow;
+    } catch (error) {
+      logger.error(`获取对话最后任务MCP工作流失败 [对话: ${conversationId}]:`, error);
       throw error;
     }
   }
