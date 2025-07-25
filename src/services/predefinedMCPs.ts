@@ -489,7 +489,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'x-mcp',
         description: 'An MCP server to create, manage and publish X/Twitter posts directly',
-        command: 'uv',
+        command: '/home/ubuntu/.local/bin/uv',
         args: ["--directory",
             `/home/ubuntu/mcp-tools/x-mcp`,
             "run",
@@ -498,7 +498,7 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
             TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
             TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_SECRET: process.env.TWITTER_ACCESS_SECRET || ''
+            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
         },
         connected: false,
         category: 'Social',
@@ -509,7 +509,7 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_KEY: "TWITTER_API_KEY",
             TWITTER_API_SECRET: "TWITTER_API_SECRET",
             TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
-            TWITTER_ACCESS_SECRET: "TWITTER_ACCESS_SECRET"
+            TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
         }
     },
     {
