@@ -471,48 +471,6 @@ export class MCPAuthService {
     };
   }
   
-  /**
-   * Twitter/X授权验证
-   * @param authData 授权数据
-   */
-  private async verifyTwitterAuth(authData: Record<string, string>): Promise<AuthVerificationResult> {
-    try {
-      const apiKey = authData.TWITTER_API_KEY;
-      const apiSecret = authData.TWITTER_API_SECRET;
-      const accessToken = authData.TWITTER_ACCESS_TOKEN;
-      const accessSecret = authData.TWITTER_ACCESS_SECRET;
-      
-      // 检查必需字段
-      if (!apiKey || !apiSecret || !accessToken || !accessSecret) {
-        const missingFields = [];
-        if (!apiKey) missingFields.push('Twitter API Key');
-        if (!apiSecret) missingFields.push('Twitter API Secret');
-        if (!accessToken) missingFields.push('Twitter Access Token');
-        if (!accessSecret) missingFields.push('Twitter Access Secret');
-        
-        return { 
-          success: false,
-          message: '缺少必需的认证信息',
-          details: `请提供: ${missingFields.join(', ')}`
-        };
-      }
-      
-      // 这里可以添加实际的Twitter API验证
-      // 由于Twitter API v2需要OAuth，暂时只做基本验证
-      // 在实际使用时，MCP工具会使用这些凭据进行API调用
-      
-      return {
-        success: true,
-        message: 'Twitter/X认证信息已保存'
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: 'Twitter/X授权验证过程中发生错误',
-        details: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
 
   private normalizeMCPName(mcpName: string): string {
     return mcpNameMapping[mcpName] || mcpName;
