@@ -2133,7 +2133,66 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
         githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Dune Analytics的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'execute_query',
+                description: 'Execute a Dune Analytics query and return results',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'number',
+                            description: 'Dune query ID to execute',
+                            required: true
+                        },
+                        parameters: {
+                            type: 'object',
+                            description: 'Query parameters as key-value pairs',
+                            required: false
+                        }
+                    },
+                    required: ['query_id']
+                }
+            },
+            {
+                name: 'get_query_results',
+                description: 'Get results from a previously executed query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        execution_id: {
+                            type: 'string',
+                            description: 'Execution ID of the query',
+                            required: true
+                        }
+                    },
+                    required: ['execution_id']
+                }
+            },
+            {
+                name: 'get_latest_results',
+                description: 'Get the latest results for a query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'number',
+                            description: 'Dune query ID',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of rows to return',
+                            required: false,
+                            default: 100
+                        }
+                    },
+                    required: ['query_id']
+                }
+            }
+        ]
     },
     {
         name: 'rugcheck-mcp',
@@ -2146,7 +2205,52 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
         githubUrl: 'https://github.com/kukapay/rug-check-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于RugCheck的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'check_token',
+                description: 'Analyze token for potential rug pull risks and security issues',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        token_address: {
+                            type: 'string',
+                            description: 'Token contract address to analyze',
+                            required: true
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain network (ethereum, bsc, polygon, etc.)',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['token_address']
+                }
+            },
+            {
+                name: 'get_security_score',
+                description: 'Get detailed security score and risk assessment for a token',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        token_address: {
+                            type: 'string',
+                            description: 'Token contract address',
+                            required: true
+                        },
+                        include_details: {
+                            type: 'boolean',
+                            description: 'Include detailed risk breakdown',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: ['token_address']
+                }
+            }
+        ]
     },
     {
         name: 'chainlink-mcp',
@@ -2159,7 +2263,73 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-chainlink-100.png',
         githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Chainlink的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_price_feed',
+                description: 'Get latest price from Chainlink price feeds',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        feed_address: {
+                            type: 'string',
+                            description: 'Chainlink price feed contract address',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name (ethereum, polygon, arbitrum, etc.)',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['feed_address']
+                }
+            },
+            {
+                name: 'get_feed_data',
+                description: 'Get comprehensive data from a Chainlink price feed',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        pair: {
+                            type: 'string',
+                            description: 'Trading pair (e.g., ETH/USD, BTC/USD)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network to query',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['pair']
+                }
+            },
+            {
+                name: 'list_price_feeds',
+                description: 'List available Chainlink price feeds for a network',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        category: {
+                            type: 'string',
+                            description: 'Feed category (crypto, forex, commodities)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     {
         name: 'feargreed-mcp',
@@ -2176,7 +2346,57 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
         githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Fear & Greed Index的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_current_index',
+                description: 'Get the current Fear & Greed Index value and classification',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'get_historical_data',
+                description: 'Get historical Fear & Greed Index data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        limit: {
+                            type: 'number',
+                            description: 'Number of historical data points to return',
+                            required: false,
+                            default: 30
+                        },
+                        format: {
+                            type: 'string',
+                            description: 'Data format (json, csv)',
+                            required: false,
+                            default: 'json'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_index_analysis',
+                description: 'Get detailed analysis of the current market sentiment',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        include_factors: {
+                            type: 'boolean',
+                            description: 'Include breakdown of contributing factors',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     {
         name: 'whaletracker-mcp',
@@ -2189,7 +2409,82 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
         githubUrl: 'https://github.com/kukapay/whale-tracker-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Whale Tracker的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_whale_transactions',
+                description: 'Get recent large transactions (whale movements)',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        min_value_usd: {
+                            type: 'number',
+                            description: 'Minimum transaction value in USD',
+                            required: false,
+                            default: 1000000
+                        },
+                        token: {
+                            type: 'string',
+                            description: 'Token symbol to filter (ETH, BTC, USDC, etc.)',
+                            required: false
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of transactions to return',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'track_address',
+                description: 'Monitor transactions for a specific whale address',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        address: {
+                            type: 'string',
+                            description: 'Wallet address to track',
+                            required: true
+                        },
+                        time_range: {
+                            type: 'string',
+                            description: 'Time range (24h, 7d, 30d)',
+                            required: false,
+                            default: '24h'
+                        }
+                    },
+                    required: ['address']
+                }
+            },
+            {
+                name: 'get_whale_alerts',
+                description: 'Get real-time whale transaction alerts',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        networks: {
+                            type: 'array',
+                            description: 'Networks to monitor (ethereum, bitcoin, etc.)',
+                            items: {
+                                type: 'string'
+                            },
+                            required: false
+                        },
+                        threshold: {
+                            type: 'number',
+                            description: 'Alert threshold in USD',
+                            required: false,
+                            default: 500000
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     
     // Development Tools 服务
@@ -2515,7 +2810,91 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-money-minded-68.png',
         githubUrl: 'https://github.com/mindsdb/minds-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于MindsDB的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'create_model',
+                description: 'Create a machine learning model in MindsDB',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        model_name: {
+                            type: 'string',
+                            description: 'Name for the ML model',
+                            required: true
+                        },
+                        query: {
+                            type: 'string',
+                            description: 'SQL query to define the model',
+                            required: true
+                        },
+                        engine: {
+                            type: 'string',
+                            description: 'ML engine to use (lightwood, huggingface, etc.)',
+                            required: false,
+                            default: 'lightwood'
+                        }
+                    },
+                    required: ['model_name', 'query']
+                }
+            },
+            {
+                name: 'predict',
+                description: 'Make predictions using a trained model',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        model_name: {
+                            type: 'string',
+                            description: 'Name of the model to use for prediction',
+                            required: true
+                        },
+                        data: {
+                            type: 'object',
+                            description: 'Input data for prediction',
+                            required: true
+                        }
+                    },
+                    required: ['model_name', 'data']
+                }
+            },
+            {
+                name: 'list_models',
+                description: 'List all available models',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        status: {
+                            type: 'string',
+                            description: 'Filter by model status (training, complete, error)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'query_data',
+                description: 'Execute SQL queries on connected data sources',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'SQL query to execute',
+                            required: true
+                        },
+                        database: {
+                            type: 'string',
+                            description: 'Target database name',
+                            required: false
+                        }
+                    },
+                    required: ['query']
+                }
+            }
+        ]
     },
     {
         name: 'playwright-mcp',
@@ -2541,7 +2920,128 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
         githubUrl: 'https://github.com/ahujasid/blender-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Blender的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'create_object',
+                description: 'Create a new 3D object in Blender',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        object_type: {
+                            type: 'string',
+                            description: 'Type of object (cube, sphere, cylinder, plane, etc.)',
+                            required: true
+                        },
+                        location: {
+                            type: 'array',
+                            description: 'Object location [x, y, z]',
+                            items: {
+                                type: 'number'
+                            },
+                            required: false,
+                            default: [0, 0, 0]
+                        },
+                        scale: {
+                            type: 'array',
+                            description: 'Object scale [x, y, z]',
+                            items: {
+                                type: 'number'
+                            },
+                            required: false,
+                            default: [1, 1, 1]
+                        }
+                    },
+                    required: ['object_type']
+                }
+            },
+            {
+                name: 'render_scene',
+                description: 'Render the current Blender scene',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        output_path: {
+                            type: 'string',
+                            description: 'Output file path for rendered image',
+                            required: false
+                        },
+                        resolution: {
+                            type: 'array',
+                            description: 'Render resolution [width, height]',
+                            items: {
+                                type: 'number'
+                            },
+                            required: false,
+                            default: [1920, 1080]
+                        },
+                        samples: {
+                            type: 'number',
+                            description: 'Number of render samples',
+                            required: false,
+                            default: 128
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'apply_material',
+                description: 'Apply material to selected objects',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        material_name: {
+                            type: 'string',
+                            description: 'Name of the material to apply',
+                            required: true
+                        },
+                        object_names: {
+                            type: 'array',
+                            description: 'Names of objects to apply material to',
+                            items: {
+                                type: 'string'
+                            },
+                            required: false
+                        }
+                    },
+                    required: ['material_name']
+                }
+            },
+            {
+                name: 'animate_object',
+                description: 'Create animation for an object',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        object_name: {
+                            type: 'string',
+                            description: 'Name of object to animate',
+                            required: true
+                        },
+                        animation_type: {
+                            type: 'string',
+                            description: 'Animation type (location, rotation, scale)',
+                            required: true
+                        },
+                        start_frame: {
+                            type: 'number',
+                            description: 'Starting frame of animation',
+                            required: false,
+                            default: 1
+                        },
+                        end_frame: {
+                            type: 'number',
+                            description: 'Ending frame of animation',
+                            required: false,
+                            default: 250
+                        }
+                    },
+                    required: ['object_name', 'animation_type']
+                }
+            }
+        ]
     },
     {
         name: 'unity-mcp',
@@ -2582,7 +3082,103 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             FIGMA_API_KEY: "FIGMA_API_KEY"
-        }
+        },
+        // 🔧 新增：基于Figma的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_file_info',
+                description: 'Get information about a Figma file',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        file_key: {
+                            type: 'string',
+                            description: 'Figma file key from the URL',
+                            required: true
+                        },
+                        version: {
+                            type: 'string',
+                            description: 'File version ID (optional)',
+                            required: false
+                        }
+                    },
+                    required: ['file_key']
+                }
+            },
+            {
+                name: 'get_file_nodes',
+                description: 'Get specific nodes from a Figma file',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        file_key: {
+                            type: 'string',
+                            description: 'Figma file key',
+                            required: true
+                        },
+                        node_ids: {
+                            type: 'array',
+                            description: 'Array of node IDs to retrieve',
+                            items: {
+                                type: 'string'
+                            },
+                            required: true
+                        }
+                    },
+                    required: ['file_key', 'node_ids']
+                }
+            },
+            {
+                name: 'get_image_exports',
+                description: 'Export images from Figma nodes',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        file_key: {
+                            type: 'string',
+                            description: 'Figma file key',
+                            required: true
+                        },
+                        node_ids: {
+                            type: 'array',
+                            description: 'Node IDs to export as images',
+                            items: {
+                                type: 'string'
+                            },
+                            required: true
+                        },
+                        format: {
+                            type: 'string',
+                            description: 'Export format (png, jpg, svg, pdf)',
+                            required: false,
+                            default: 'png'
+                        },
+                        scale: {
+                            type: 'number',
+                            description: 'Scale factor for export',
+                            required: false,
+                            default: 1
+                        }
+                    },
+                    required: ['file_key', 'node_ids']
+                }
+            },
+            {
+                name: 'get_team_projects',
+                description: 'Get projects for a team',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        team_id: {
+                            type: 'string',
+                            description: 'Team ID',
+                            required: true
+                        }
+                    },
+                    required: ['team_id']
+                }
+            }
+        ]
     },
     {
         name: 'aws-mcp',
@@ -2595,7 +3191,93 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-aws-96.png',
         githubUrl: 'https://awslabs.github.io/mcp/',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于AWS的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'list_s3_buckets',
+                description: 'List all S3 buckets in the account',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        region: {
+                            type: 'string',
+                            description: 'AWS region',
+                            required: false,
+                            default: 'us-east-1'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_s3_object',
+                description: 'Get an object from S3 bucket',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        bucket: {
+                            type: 'string',
+                            description: 'S3 bucket name',
+                            required: true
+                        },
+                        key: {
+                            type: 'string',
+                            description: 'Object key/path',
+                            required: true
+                        }
+                    },
+                    required: ['bucket', 'key']
+                }
+            },
+            {
+                name: 'list_ec2_instances',
+                description: 'List EC2 instances',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        region: {
+                            type: 'string',
+                            description: 'AWS region',
+                            required: false,
+                            default: 'us-east-1'
+                        },
+                        state: {
+                            type: 'string',
+                            description: 'Instance state filter (running, stopped, etc.)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'invoke_lambda',
+                description: 'Invoke a Lambda function',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        function_name: {
+                            type: 'string',
+                            description: 'Lambda function name or ARN',
+                            required: true
+                        },
+                        payload: {
+                            type: 'object',
+                            description: 'Function payload/input',
+                            required: false
+                        },
+                        invocation_type: {
+                            type: 'string',
+                            description: 'Invocation type (RequestResponse, Event, DryRun)',
+                            required: false,
+                            default: 'RequestResponse'
+                        }
+                    },
+                    required: ['function_name']
+                }
+            }
+        ]
     },
     {
         name: 'convex-mcp',
