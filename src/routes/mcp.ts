@@ -199,4 +199,137 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * 测试MCP连接并返回详细错误信息
+ * POST /api/mcp/test-connection
+ */
+router.post('/test-connection', requireAuth, async (req: Request & { user?: User }, res: Response) => {
+  try {
+    const { mcpName, authData } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'User not authenticated'
+      });
+    }
+
+    if (!mcpName) {
+      return res.status(400).json({
+        success: false,
+        error: 'MISSING_REQUIRED_FIELDS',
+        message: 'Missing required field: mcpName'
+      });
+    }
+
+    logger.info(`🔧 Testing MCP connection [User: ${userId}, MCP: ${mcpName}]`);
+
+    // 获取MCP配置
+    const mcpConfig = getPredefinedMCP(mcpName);
+         if (!mcpConfig) {
+       return res.status(404).json({
+         success: false,
+         error: {
+           type: 'MCP_NOT_FOUND',
+           title: 'MCP Not Found',
+           message: 'The specified MCP service does not exist',
+           suggestions: ['Check if the MCP name is correct', 'View the list of available MCPs'],
+           isRetryable: false,
+           requiresUserAction: true,
+           mcpName
+         }
+       });
+     }
+
+    // 如果提供了认证数据，注入到环境变量中
+    let testEnv = { ...mcpConfig.env };
+    if (authData && typeof authData === 'object') {
+      Object.entries(authData).forEach(([key, value]) => {
+        if (testEnv.hasOwnProperty(key)) {
+          testEnv[key] = value as string;
+        }
+      });
+    }
+
+    // 获取MCP管理器实例
+    const mcpManager = req.app.get('mcpManager');
+    if (!mcpManager) {
+      return res.status(500).json({
+        success: false,
+        error: {
+          type: 'INTERNAL_ERROR',
+          title: '服务内部错误',
+          message: 'MCP管理器不可用',
+          suggestions: ['稍后重试', '联系技术支持'],
+          isRetryable: true,
+          requiresUserAction: false
+        }
+      });
+    }
+
+    // 生成测试连接键，避免与正常连接冲突
+    const testConnectionName = `${mcpName}_test_${Date.now()}`;
+    
+    try {
+      // 尝试连接
+      await mcpManager.connect(testConnectionName, mcpConfig.command, mcpConfig.args, testEnv, userId);
+      
+      // 测试获取工具列表
+      const tools = await mcpManager.getTools(testConnectionName, userId);
+      
+      // 连接成功，立即断开测试连接
+      await mcpManager.disconnect(testConnectionName, userId);
+      
+      res.json({
+        success: true,
+        data: {
+          message: 'MCP连接测试成功',
+          mcpName,
+          toolCount: tools.length,
+          connectionTest: {
+            status: 'success',
+            testTime: new Date().toISOString()
+          }
+        }
+      });
+
+    } catch (testError) {
+      // 确保测试连接被清理
+      try {
+        await mcpManager.disconnect(testConnectionName, userId);
+      } catch (cleanupError) {
+        logger.warn(`清理测试连接失败 [${testConnectionName}]:`, cleanupError);
+      }
+
+      // Analyze error and return detailed information
+      const { MCPErrorHandler } = await import('../services/mcpErrorHandler.js');
+      const errorToAnalyze = testError instanceof Error ? testError : new Error(String(testError));
+      const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, mcpName);
+      const formattedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+
+      logger.error(`MCP connection test failed [User: ${userId}, MCP: ${mcpName}]:`, testError);
+
+      res.status(errorDetails.httpStatus || 500).json({
+        success: false,
+        ...formattedError
+      });
+    }
+
+  } catch (error) {
+    logger.error('MCP connection test exception:', error);
+    
+    const { MCPErrorHandler } = await import('../services/mcpErrorHandler.js');
+    const errorToAnalyze = error instanceof Error ? error : new Error(String(error));
+    const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, req.body.mcpName);
+    const formattedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+
+    res.status(errorDetails.httpStatus || 500).json({
+      success: false,
+      ...formattedError
+    });
+  }
+});
+
 export default router; 

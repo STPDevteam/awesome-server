@@ -15,6 +15,13 @@ export interface AlternativeMCP {
   imageUrl?: string;
   githubUrl?: string;
   authParams?: Record<string, any>; // 认证参数配置
+  // 🔧 新增：预定义工具信息
+  predefinedTools?: Array<{
+    name: string;
+    description?: string;
+    parameters?: any;
+    returnType?: string;
+  }>;
 }
 
 // MCP工作流配置类型
@@ -30,6 +37,13 @@ export interface MCPWorkflow {
     githubUrl?: string;
     authParams?: Record<string, any>;
     alternatives?: AlternativeMCP[]; // 完整的备选MCP信息列表
+    // 🔧 新增：预定义工具信息
+    predefinedTools?: Array<{
+      name: string;
+      description?: string;
+      parameters?: any;
+      returnType?: string;
+    }>;
   }>;
   workflow: Array<{
     step: number;

@@ -24,6 +24,8 @@ export interface MCPInfo {
   authParams?: Record<string, any>;
   alternatives?: string[]; // 备选MCP名称列表（内部处理用）
   alternativesInfo?: AlternativeMCPInfo[]; // 完整的备选MCP信息列表（返回给前端用）
+  // 🔧 新增：预定义的工具信息
+  predefinedTools?: MCPTool[];
 }
 
 /**

@@ -330,19 +330,60 @@ export class AgentIntelligentEngine {
           }
         };
 
-        // 🔧 如果执行失败，发送Agent格式的step_error事件
+        // 🔧 If execution failed, send appropriate error events
         if (!executionResult.success) {
-          yield {
-            event: 'step_error',
-            data: {
-              step: stepCounter,
-              error: executionResult.error || 'Unknown error',
-              agentName: this.agent.name,
-              message: `${this.agent.name} encountered an error in step ${stepCounter}`,
-              // 🔧 新增：失败处理策略
-              failureStrategy: this.getFailureStrategy(state, executionStep)
+          // 🔧 Enhanced: Use error handler to analyze errors with LLM
+          let detailedError = null;
+          let isMCPConnectionError = false;
+          
+          try {
+            const { MCPErrorHandler } = await import('./mcpErrorHandler.js');
+            const errorToAnalyze = executionResult.error ? new Error(executionResult.error) : new Error('Unknown error');
+            const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, state.currentPlan?.mcpName);
+            detailedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+            
+            // Check if this is an MCP connection/authentication error
+            isMCPConnectionError = this.isMCPConnectionError(errorDetails.type);
+            
+            if (isMCPConnectionError && state.currentPlan?.mcpName) {
+              // Send specialized MCP connection error event
+              yield {
+                event: 'mcp_connection_error',
+                data: {
+                  mcpName: state.currentPlan.mcpName,
+                  step: stepCounter,
+                  agentName: this.agent.name,
+                  errorType: errorDetails.type,
+                  title: errorDetails.title,
+                  message: errorDetails.userMessage,
+                  suggestions: errorDetails.suggestions,
+                  authFieldsRequired: errorDetails.authFieldsRequired,
+                  isRetryable: errorDetails.isRetryable,
+                  requiresUserAction: errorDetails.requiresUserAction,
+                  llmAnalysis: errorDetails.llmAnalysis,
+                  originalError: errorDetails.originalError,
+                  timestamp: new Date().toISOString()
+                }
+              };
             }
-          };
+          } catch (analysisError) {
+            logger.warn('Error analysis failed:', analysisError);
+          }
+
+          // Send regular step error event if not MCP connection error
+          if (!isMCPConnectionError) {
+            yield {
+              event: 'step_error',
+              data: {
+                step: stepCounter,
+                error: executionResult.error || 'Unknown error',
+                agentName: this.agent.name,
+                message: `${this.agent.name} encountered an error in step ${stepCounter}`,
+                failureStrategy: this.getFailureStrategy(state, executionStep),
+                detailedError: detailedError
+              }
+            };
+          }
         }
 
         // 🔧 保存步骤结果到数据库（使用格式化结果）
@@ -2350,11 +2391,29 @@ Generate a comprehensive but concise summary:`;
   }
 
   /**
-   * 🔧 新增：获取失败处理策略
+   * Get failure handling strategy
    */
   private getFailureStrategy(state: AgentWorkflowState, step: AgentExecutionStep): string {
     const failureRecord = state.failureHistory.find(f => f.tool === step.plan.tool);
     return failureRecord?.suggestedStrategy || 'retry';
+  }
+  
+  /**
+   * Check if error type is MCP connection related
+   */
+  private isMCPConnectionError(errorType: string): boolean {
+    const mcpConnectionErrorTypes = [
+      'INVALID_API_KEY',
+      'EXPIRED_API_KEY', 
+      'WRONG_PASSWORD',
+      'MISSING_AUTH_PARAMS',
+      'INVALID_AUTH_FORMAT',
+      'INSUFFICIENT_PERMISSIONS',
+      'MCP_CONNECTION_FAILED',
+      'MCP_AUTH_REQUIRED',
+      'MCP_SERVICE_INIT_FAILED'
+    ];
+    return mcpConnectionErrorTypes.includes(errorType);
   }
 
   /**

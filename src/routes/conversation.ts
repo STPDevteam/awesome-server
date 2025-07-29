@@ -421,6 +421,11 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
                 authVerified: mcp.authVerified || false
               };
 
+              // 🔧 新增：添加预定义工具信息
+              if (mcp.predefinedTools && Array.isArray(mcp.predefinedTools)) {
+                mcpData.predefinedTools = mcp.predefinedTools;
+              }
+
               // 添加认证参数（如果需要认证）
               if (mcp.authRequired && mcp.authParams) {
                 mcpData.authParams = mcp.authParams;
@@ -436,6 +441,8 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
                   githubUrl: alt.githubUrl,
                   authRequired: alt.authRequired || false,
                   authVerified: alt.authVerified || false,
+                  // 🔧 新增：备选MCP也包含预定义工具信息
+                  ...(alt.predefinedTools && Array.isArray(alt.predefinedTools) ? { predefinedTools: alt.predefinedTools } : {}),
                   // 添加认证参数（如果需要认证）
                   ...(alt.authRequired && alt.authParams ? { authParams: alt.authParams } : {})
                 }));

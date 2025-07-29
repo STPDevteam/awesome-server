@@ -35,6 +35,8 @@ export interface MCPService {
   githubUrl?: string;
   authRequired?: boolean;
   authParams?: Record<string, any>;
+  // 🔧 新增：预定义的工具信息
+  predefinedTools?: MCPTool[];
 }
 
 /**
@@ -530,9 +532,11 @@ export class MCPManager {
     
     const connectionKey = this.getConnectionKey(name, userId);
     const mcpClient = this.clients.get(connectionKey);
+    
+    // 🔧 如果MCP未连接，尝试返回预定义的工具信息
     if (!mcpClient) {
-      logger.error(`【MCP Debug】MCP not connected [MCP: ${name}, User: ${userId || 'default'}]`);
-      throw new Error(`MCP ${name} not connected for user ${userId || 'default'}`);
+      logger.warn(`【MCP Debug】MCP not connected, trying to get predefined tools [MCP: ${name}, User: ${userId || 'default'}]`);
+      return this.getPredefinedTools(name);
     }
     
     // 更新最后使用时间
@@ -544,8 +548,38 @@ export class MCPManager {
       return tools;
     } catch (error) {
       logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]:`, error);
-      throw error;
+      logger.info(`【MCP Debug】Fallback to predefined tools for [MCP: ${name}]`);
+      // 🔧 连接失败时fallback到预定义工具信息
+      return this.getPredefinedTools(name);
     }
+  }
+
+  /**
+   * 🔧 新增：获取预定义的工具信息
+   * @param mcpName MCP名称
+   * @returns 预定义的工具列表
+   */
+  getPredefinedTools(mcpName: string): any[] {
+    // 需要导入预定义MCP配置
+    const { getPredefinedMCP } = require('./predefinedMCPs.js');
+    const mcpConfig = getPredefinedMCP(mcpName);
+    
+    if (mcpConfig && mcpConfig.predefinedTools) {
+      logger.info(`【MCP Debug】Found ${mcpConfig.predefinedTools.length} predefined tools for ${mcpName}`);
+      // 转换为标准的MCP工具格式
+      return mcpConfig.predefinedTools.map((tool: MCPTool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          required: []
+        }
+      }));
+    }
+    
+    logger.warn(`【MCP Debug】No predefined tools found for ${mcpName}`);
+    return [];
   }
 
   /**

@@ -40,7 +40,9 @@ function convertMCPServiceToMCPInfo(mcpService: MCPService): MCPInfo {
     category: mcpService.category,
     imageUrl: mcpService.imageUrl,
     githubUrl: mcpService.githubUrl,
-    authParams: mcpService.authParams
+    authParams: mcpService.authParams,
+    // 🔧 新增：包含预定义工具信息
+    predefinedTools: mcpService.predefinedTools
   };
 }
 
@@ -383,7 +385,9 @@ export class TaskAnalysisService {
           ...(mcp.category ? { category: mcp.category } : {}),
           ...(mcp.imageUrl ? { imageUrl: mcp.imageUrl } : {}),
           ...(mcp.githubUrl ? { githubUrl: mcp.githubUrl } : {}),
-          ...(mcp.authParams ? { authParams: mcp.authParams } : {})
+          ...(mcp.authParams ? { authParams: mcp.authParams } : {}),
+          // 🔧 新增：包含预定义工具信息
+          ...(mcp.predefinedTools ? { predefinedTools: mcp.predefinedTools } : {})
           // 注意：数据库中不存储完整的alternatives信息，只在返回给前端时构建
         })),
         workflow: workflowResult.workflow
@@ -403,6 +407,8 @@ export class TaskAnalysisService {
           category: mcp.category,
           imageUrl: mcp.imageUrl,
           githubUrl: mcp.githubUrl,
+          // 🔧 新增：包含预定义工具信息
+          ...(mcp.predefinedTools ? { predefinedTools: mcp.predefinedTools } : {}),
           // 只在需要认证时返回实际的认证参数
           ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {}),
           // 包含完整的备选MCP信息列表，格式与主MCP一致
@@ -417,6 +423,8 @@ export class TaskAnalysisService {
                 category: altMcp.category,
                 imageUrl: altMcp.imageUrl,
                 githubUrl: altMcp.githubUrl,
+                // 🔧 新增：备选MCP也包含预定义工具信息
+                ...(altMcp.predefinedTools ? { predefinedTools: altMcp.predefinedTools } : {}),
                 // 备选MCP也需要包含认证参数信息，方便前端替换时处理认证
                 ...(altMcp.authRequired && altMcp.authParams ? { authParams: altMcp.authParams } : {})
               } : {
@@ -1206,7 +1214,7 @@ Design a workflow that accomplishes the maximum possible with these tools and re
       fixed = fixed.replace(/:\s*'([^']*)'(?=\s*[,}\]\n])/g, ':"$1"');
       
       // 4. 处理未引用的字符串值，但保留数字和布尔值
-      fixed = fixed.replace(/:\s*([^",{\[\]}\s\n][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
+      fixed = fixed.replace(/:\s*([^",{\[\]}\s][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
         const trimmedValue = value.trim();
         
         // 跳过已经有引号的值
