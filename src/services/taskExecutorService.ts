@@ -1366,6 +1366,54 @@ Based on the above task execution information, please generate a complete execut
             logger.error(`❌ LangChain Step ${stepNumber} failed:`, error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           
+          // 🔧 Enhanced: Use error handler to analyze errors with LLM for task execution
+          let detailedError = null;
+          let isMCPConnectionError = false;
+          let mcpName: string | undefined;
+          
+          try {
+            // Extract MCP name from step context or error message
+            if (step.mcp) {
+              mcpName = step.mcp;
+            } else if (errorMsg.includes('MCP ')) {
+              const mcpMatch = errorMsg.match(/MCP\s+([^\s]+)/);
+              if (mcpMatch) {
+                mcpName = mcpMatch[1];
+              }
+            }
+            
+            const { MCPErrorHandler } = await import('./mcpErrorHandler.js');
+            const errorToAnalyze = error instanceof Error ? error : new Error(String(error));
+            const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, mcpName);
+            detailedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+            
+            // Check if this is an MCP connection/authentication error
+            isMCPConnectionError = this.isMCPConnectionError(errorDetails.type);
+            
+            if (isMCPConnectionError && mcpName) {
+              // Send specialized MCP connection error event
+              stream({
+                event: 'mcp_connection_error',
+                data: {
+                  mcpName: mcpName,
+                  step: stepNumber,
+                  errorType: errorDetails.type,
+                  title: errorDetails.title,
+                  message: errorDetails.userMessage,
+                  suggestions: errorDetails.suggestions,
+                  authFieldsRequired: errorDetails.authFieldsRequired,
+                  isRetryable: errorDetails.isRetryable,
+                  requiresUserAction: errorDetails.requiresUserAction,
+                  llmAnalysis: errorDetails.llmAnalysis,
+                  originalError: errorDetails.originalError,
+                  timestamp: new Date().toISOString()
+                }
+              });
+            }
+          } catch (analysisError) {
+            logger.warn('Error analysis failed:', analysisError);
+          }
+          
             // 完成步骤消息（错误状态）
             if (stepMessageId) {
               await messageDao.completeStreamingMessage(stepMessageId, `执行失败: ${errorMsg}`);
@@ -1374,14 +1422,17 @@ Based on the above task execution information, please generate a complete execut
             // 保存错误结果
           await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
           
-          // 发送步骤错误信息
-          stream({ 
-            event: 'step_error', 
-            data: { 
-              step: stepNumber,
-              error: errorMsg
-            } 
-          });
+          // Send regular step error event if not MCP connection error
+          if (!isMCPConnectionError) {
+            stream({ 
+              event: 'step_error', 
+              data: { 
+                step: stepNumber,
+                error: errorMsg,
+                detailedError: detailedError
+              } 
+            });
+          }
             
             return {
               step: stepNumber,
@@ -2428,5 +2479,23 @@ IMPORTANT: Your response should be ready-to-display markdown content, not wrappe
       streamCallback(fallbackResult);
       return fallbackResult;
     }
+  }
+
+  /**
+   * Check if error type is MCP connection related
+   */
+  private isMCPConnectionError(errorType: string): boolean {
+    const mcpConnectionErrorTypes = [
+      'INVALID_API_KEY',
+      'EXPIRED_API_KEY', 
+      'WRONG_PASSWORD',
+      'MISSING_AUTH_PARAMS',
+      'INVALID_AUTH_FORMAT',
+      'INSUFFICIENT_PERMISSIONS',
+      'MCP_CONNECTION_FAILED',
+      'MCP_AUTH_REQUIRED',
+      'MCP_SERVICE_INIT_FAILED'
+    ];
+    return mcpConnectionErrorTypes.includes(errorType);
   }
 } 
