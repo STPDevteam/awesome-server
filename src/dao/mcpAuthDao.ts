@@ -12,6 +12,7 @@ export interface MCPAuthDbRow {
   mcp_name: string;
   auth_data: any; // 使用any类型以匹配数据库返回的类型
   is_verified: boolean;
+  save_auth: boolean; // 前端传来的 saveAuth 字段
   created_at: string;
   updated_at: string;
 }
@@ -27,7 +28,8 @@ export class MCPAuthDao {
     userId: string,
     mcpName: string,
     authData: Record<string, string>,
-    isVerified: boolean = false
+    isVerified: boolean = false,
+    saveAuth: boolean = true
   ): Promise<MCPAuthDbRow> {
     try {
       // 加密认证数据并包装成JSON对象
@@ -50,11 +52,11 @@ export class MCPAuthDao {
         const result = await db.query<MCPAuthDbRow>(
           `
           UPDATE mcp_auth
-          SET auth_data = $1, is_verified = $2, updated_at = NOW()
-          WHERE id = $3
+          SET auth_data = $1, is_verified = $2, save_auth = $3, updated_at = NOW()
+          WHERE id = $4
           RETURNING *
           `,
-          [JSON.stringify(encryptedAuthData), isVerified, existingAuth.id]
+          [JSON.stringify(encryptedAuthData), isVerified, saveAuth, existingAuth.id]
         );
         
         logger.info(`更新MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
@@ -64,11 +66,11 @@ export class MCPAuthDao {
         const authId = uuidv4();
         const result = await db.query<MCPAuthDbRow>(
           `
-          INSERT INTO mcp_auth (id, user_id, mcp_name, auth_data, is_verified)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO mcp_auth (id, user_id, mcp_name, auth_data, is_verified, save_auth)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING *
           `,
-          [authId, userId, mcpName, JSON.stringify(encryptedAuthData), isVerified]
+          [authId, userId, mcpName, JSON.stringify(encryptedAuthData), isVerified, saveAuth]
         );
         
         logger.info(`创建MCP授权数据记录 [用户: ${userId}, MCP: ${mcpName}]`);
