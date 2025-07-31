@@ -1288,7 +1288,15 @@ Based on the above task execution information, please generate a complete execut
                 stepName: actionName,
                 totalSteps: workflow.length,
                 taskPhase: 'execution',
-                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking'  // 区分思考过程和最终结果
+                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking',  // 区分思考过程和最终结果
+                // 🔧 新增：详细的工具调用信息（仅在metadata中，不影响内容）
+                toolDetails: {
+                  toolType: 'mcp',
+                  toolName: actionName,
+                  mcpName: mcpName,
+                  args: input,
+                  timestamp: new Date().toISOString()
+                }
               }
             });
             stepMessageId = stepMessage.id;
@@ -1336,7 +1344,88 @@ Based on the above task execution information, please generate a complete execut
               formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
             }
             
-            // 完成步骤消息
+            // 🔧 存储原始结果和格式化结果消息
+            if (conversationId) {
+              // 1. 创建原始结果消息
+              const rawContent = `Step ${stepNumber} Raw Result: ${actionName}
+
+${JSON.stringify(stepResult, null, 2)}`;
+
+              await messageDao.createMessage({
+                conversationId,
+                content: rawContent,
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                metadata: {
+                  stepType: MessageStepType.EXECUTION,
+                  stepNumber,
+                  stepName: actionName,
+                  totalSteps: workflow.length,
+                  taskPhase: 'execution',
+                  contentType: 'raw_result',
+                  isComplete: true,
+                  toolDetails: {
+                    toolType: 'mcp',
+                    toolName: actionName,
+                    mcpName: mcpName,
+                    args: input,
+                    timestamp: new Date().toISOString()
+                  },
+                  executionDetails: {
+                    rawResult: stepResult,
+                    success: true,
+                    processingInfo: {
+                      originalDataSize: JSON.stringify(stepResult).length,
+                      processingTime: new Date().toISOString()
+                    }
+                  }
+                }
+              });
+
+              await conversationDao.incrementMessageCount(conversationId);
+
+              // 2. 创建格式化结果消息
+              const formattedContent = `Step ${stepNumber} Formatted Result: ${actionName}
+
+${formattedResult}`;
+
+              await messageDao.createMessage({
+                conversationId,
+                content: formattedContent,
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                metadata: {
+                  stepType: MessageStepType.EXECUTION,
+                  stepNumber,
+                  stepName: actionName,
+                  totalSteps: workflow.length,
+                  taskPhase: 'execution',
+                  contentType: 'formatted_result',
+                  isComplete: true,
+                  toolDetails: {
+                    toolType: 'mcp',
+                    toolName: actionName,
+                    mcpName: mcpName,
+                    args: input,
+                    timestamp: new Date().toISOString()
+                  },
+                  executionDetails: {
+                    formattedResult: formattedResult,
+                    success: true,
+                    processingInfo: {
+                      formattedDataSize: formattedResult.length,
+                      processingTime: new Date().toISOString()
+                    }
+                  }
+                }
+              });
+
+              await conversationDao.incrementMessageCount(conversationId);
+            }
+
+            // 完成原有的流式步骤消息
             if (stepMessageId) {
               await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
             }

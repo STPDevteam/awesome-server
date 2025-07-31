@@ -202,15 +202,16 @@ export class IntelligentTaskService {
               step.result
             );
 
-            // 保存步骤消息到会话（使用step_thinking contentType对齐传统引擎）
+            // 🔧 保存步骤消息到会话 - 存储原始结果和格式化结果
             if (task.conversationId) {
-              const stepContent = step.success 
-                ? `Execution successful: ${step.plan?.tool}\n\n${step.result}`
-                : `Execution failed: ${step.plan?.tool}\n\nError: ${step.error}`;
+              // 1. 存储原始结果消息
+              const rawContent = step.success 
+                ? `Step ${step.step} Raw Result: ${step.plan?.tool}\n\n${JSON.stringify(step.result, null, 2)}`
+                : `Step ${step.step} Failed: ${step.plan?.tool}\n\nError: ${step.error}`;
 
               await messageDao.createMessage({
                 conversationId: task.conversationId,
-                content: stepContent,
+                content: rawContent,
                 type: MessageType.ASSISTANT,
                 intent: MessageIntent.TASK,
                 taskId,
@@ -219,10 +220,66 @@ export class IntelligentTaskService {
                   stepNumber: step.step,
                   stepName: step.plan?.tool || 'Unknown Step',
                   taskPhase: 'execution',
-                  contentType: 'step_thinking', // 🔧 添加step_thinking标识
-                  isComplete: true
+                  contentType: 'raw_result',
+                  isComplete: true,
+                  toolDetails: {
+                    toolType: step.plan?.toolType,
+                    toolName: step.plan?.tool,
+                    mcpName: step.plan?.mcpName || null,
+                    args: step.plan?.args,
+                    expectedOutput: step.plan?.expectedOutput,
+                    reasoning: step.plan?.reasoning,
+                    timestamp: new Date().toISOString()
+                  },
+                  executionDetails: {
+                    rawResult: step.result,
+                    success: step.success,
+                    error: step.error,
+                    processingInfo: {
+                      originalDataSize: JSON.stringify(step.result).length,
+                      processingTime: new Date().toISOString()
+                    }
+                  }
                 }
               });
+
+              // 2. 存储格式化结果消息（如果执行成功且有结果）
+              if (step.success && step.result) {
+                const formattedContent = `Step ${step.step} Formatted Result: ${step.plan?.tool}\n\n${step.result}`;
+
+                await messageDao.createMessage({
+                  conversationId: task.conversationId,
+                  content: formattedContent,
+                  type: MessageType.ASSISTANT,
+                  intent: MessageIntent.TASK,
+                  taskId,
+                  metadata: {
+                    stepType: MessageStepType.EXECUTION,
+                    stepNumber: step.step,
+                    stepName: step.plan?.tool || 'Unknown Step',
+                    taskPhase: 'execution',
+                    contentType: 'formatted_result',
+                    isComplete: true,
+                    toolDetails: {
+                      toolType: step.plan?.toolType,
+                      toolName: step.plan?.tool,
+                      mcpName: step.plan?.mcpName || null,
+                      args: step.plan?.args,
+                      expectedOutput: step.plan?.expectedOutput,
+                      reasoning: step.plan?.reasoning,
+                      timestamp: new Date().toISOString()
+                    },
+                    executionDetails: {
+                      formattedResult: step.result,
+                      success: step.success,
+                      processingInfo: {
+                        formattedDataSize: String(step.result).length,
+                        processingTime: new Date().toISOString()
+                      }
+                    }
+                  }
+                });
+              }
 
               await conversationDao.incrementMessageCount(task.conversationId);
             }
