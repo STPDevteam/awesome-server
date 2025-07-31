@@ -2921,12 +2921,9 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'blender-mcp',
         description: 'Blender 3D modeling and animation integration with Claude AI through MCP',
-        command: '/home/ubuntu/.local/bin/uvx',
-        args: ['blender-mcp'],
-        env: {
-            LOG_LEVEL: 'INFO',
-            log_level: 'INFO'  // 兼容小写版本
-        },
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: ['-m', 'blender_mcp.server'],
+        env: { LOG_LEVEL: 'INFO' },
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
