@@ -19,7 +19,7 @@ import { mcpNameMapping } from './predefinedMCPs.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
 
 // 🎛️ 智能工作流全局开关 - 设置为false可快速回退到原有流程
-const ENABLE_INTELLIGENT_WORKFLOW = false;
+const ENABLE_INTELLIGENT_WORKFLOW = true;
 
 // 添加LangChain链式调用支持
 import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';

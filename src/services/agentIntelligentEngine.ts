@@ -249,10 +249,10 @@ export class AgentIntelligentEngine {
               // 🔧 新增详细信息 - 不破坏原有结构
               executionDetails: {
                 toolType: state.currentPlan!.toolType,
-                toolName: state.currentPlan!.tool,
-                mcpName: state.currentPlan!.mcpName || null,
+                toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+                mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
                 rawResult: executionResult.result,
-                args: state.currentPlan!.args,
+                args: executionResult.actualExecution?.args || state.currentPlan!.args,
                 expectedOutput: state.currentPlan!.expectedOutput,
                 timestamp: new Date().toISOString()
               }
@@ -310,10 +310,11 @@ export class AgentIntelligentEngine {
               // 🔧 新增详细信息 - 不破坏原有结构
               formattingDetails: {
                 toolType: state.currentPlan!.toolType,
-                toolName: state.currentPlan!.tool,
-                mcpName: state.currentPlan!.mcpName || null,
+                toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+                mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
                 originalResult: executionResult.result,
                 formattedResult: formattedResultForStorage,
+                args: executionResult.actualExecution?.args || state.currentPlan!.args,
                 processingInfo: {
                   originalDataSize: JSON.stringify(executionResult.result).length,
                   formattedDataSize: formattedResultForStorage.length,
@@ -898,6 +899,11 @@ Analyze the task now:`;
     success: boolean;
     result?: any;
     error?: string;
+    actualExecution?: {
+      toolName: string;
+      mcpName?: string;
+      args: any;
+    };
   }> {
     if (!state.currentPlan) {
       return { success: false, error: 'No execution plan available' };
@@ -905,17 +911,25 @@ Analyze the task now:`;
 
     try {
       let result: any;
+      let actualExecution: any = undefined;
 
       if (state.currentPlan.toolType === 'mcp') {
         // 🔧 执行MCP工具
-        result = await this.executeAgentMCPTool(state.currentPlan, state);
+        const mcpResult = await this.executeAgentMCPTool(state.currentPlan, state);
+        result = mcpResult.result;
+        actualExecution = mcpResult.actualExecution;
       } else {
         // 🔧 执行LLM工具
         result = await this.executeAgentLLMTool(state.currentPlan, state);
+        // 对于LLM工具，实际执行参数就是计划参数
+        actualExecution = {
+          toolName: state.currentPlan.tool,
+          args: state.currentPlan.args
+        };
       }
 
       logger.info(`✅ Agent ${this.agent.name} execution successful: ${state.currentPlan.tool}`);
-      return { success: true, result };
+      return { success: true, result, actualExecution };
 
     } catch (error) {
       logger.error(`❌ Agent ${this.agent.name} execution failed:`, error);
@@ -1582,7 +1596,14 @@ Please return in format:
   /**
    * 执行Agent MCP工具
    */
-  private async executeAgentMCPTool(plan: AgentExecutionPlan, state: AgentWorkflowState): Promise<any> {
+  private async executeAgentMCPTool(plan: AgentExecutionPlan, state: AgentWorkflowState): Promise<{
+    result: any;
+    actualExecution: {
+      toolName: string;
+      mcpName: string;
+      args: any;
+    };
+  }> {
     if (!plan.mcpName) {
       throw new Error('MCP tool requires mcpName to be specified');
     }
@@ -1667,7 +1688,15 @@ Please return in format:
       // 🔧 新增：x-mcp自动发布处理
       const processedResult = await this.handleXMcpAutoPublish(actualMcpName, finalToolName, result, task.userId);
       
-      return processedResult;
+      // 🔧 返回结果和实际执行信息
+      return {
+        result: processedResult,
+        actualExecution: {
+          toolName: finalToolName,
+          mcpName: actualMcpName,
+          args: finalArgs
+        }
+      };
 
     } catch (error) {
       logger.error(`❌ Agent ${this.agent.name} MCP tool call failed:`, error);
