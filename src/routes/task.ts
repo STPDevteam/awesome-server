@@ -1053,11 +1053,11 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 
 /**
  * 验证MCP授权
- * POST /api/task/:id/verify-auth
+ * POST /api/task/verify-auth/:id? (id为可选参数)
  */
-router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response) => {
+router.post('/verify-auth/:id?', requireAuth, async (req: Request, res: Response) => {
   try {
-    const taskId = req.params.id;
+    const taskId = req.params.id; // 可能为 undefined
     const validationResult = verifyMCPAuthSchema.safeParse(req.body);
     
     if (!validationResult.success) {
@@ -1069,16 +1069,7 @@ router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response)
     }
     
     const { mcpName, authData, userId: bodyUserId } = validationResult.data;
-    const task = await taskService.getTaskById(taskId);
     
-    if (!task) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: 'Task not found'
-      });
-    }
-
     const userId = req.user?.id || bodyUserId;
     if (!userId) {
       return res.status(401).json({
@@ -1088,13 +1079,26 @@ router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response)
       });
     }
     
-    // 确保用户只能为自己的任务验证授权
-    if (task.userId !== userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden',
-        message: 'No permission to verify authorization for this task'
-      });
+    // 如果提供了taskId，则验证任务权限
+    if (taskId) {
+      const task = await taskService.getTaskById(taskId);
+      
+      if (!task) {
+        return res.status(404).json({
+          success: false,
+          error: 'Not Found',
+          message: 'Task not found'
+        });
+      }
+      
+      // 确保用户只能为自己的任务验证授权
+      if (task.userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden',
+          message: 'No permission to verify authorization for this task'
+        });
+      }
     }
     
     // 验证授权
@@ -1104,8 +1108,8 @@ router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response)
       authData
     );
     
-    // 只有在验证成功时，才更新任务的工作流
-    if (verificationResult.success) {
+    // 只有在验证成功且提供了taskId时，才更新任务的工作流
+    if (verificationResult.success && taskId) {
       await mcpAuthService.updateTaskMCPAuthStatus(
         taskId,
         userId,
@@ -1122,7 +1126,8 @@ router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response)
         data: {
           verified: true,
           details: verificationResult.details,
-          mcpName
+          mcpName,
+          taskId: taskId || null
         }
       });
     } else {
@@ -1134,7 +1139,7 @@ router.post('/:id/verify-auth', requireAuth, async (req: Request, res: Response)
       });
     }
   } catch (error) {
-    logger.error(`MCP authorization verification error [Task ID: ${req.params.id}]:`, error);
+    logger.error(`MCP authorization verification error [Task ID: ${req.params.id || 'none'}]:`, error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
