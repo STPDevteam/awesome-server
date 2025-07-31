@@ -1080,7 +1080,7 @@ router.post('/verify-auth/:id?', requireAuth, async (req: Request, res: Response
     }
     
     // 如果提供了taskId，则验证任务权限
-    if (taskId) {
+    if (taskId && taskId.trim()) {
       const task = await taskService.getTaskById(taskId);
       
       if (!task) {
@@ -1109,7 +1109,7 @@ router.post('/verify-auth/:id?', requireAuth, async (req: Request, res: Response
     );
     
     // 只有在验证成功且提供了taskId时，才更新任务的工作流
-    if (verificationResult.success && taskId) {
+    if (verificationResult.success && taskId && taskId.trim()) {
       await mcpAuthService.updateTaskMCPAuthStatus(
         taskId,
         userId,
@@ -1127,7 +1127,7 @@ router.post('/verify-auth/:id?', requireAuth, async (req: Request, res: Response
           verified: true,
           details: verificationResult.details,
           mcpName,
-          taskId: taskId || null
+          taskId: (taskId && taskId.trim()) ? taskId : null
         }
       });
     } else {
