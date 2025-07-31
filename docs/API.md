@@ -47,6 +47,18 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 - **一致的事件系统**: 统一的流式事件处理，所有步骤都提供相同的流式体验
 - **性能感知优化**: 减少用户等待时的焦虑，提供更好的任务执行反馈
 
+### 增强任务引擎 (v2.2)
+
+从v2.2开始，引入了全新的增强任务引擎，结合Agent引擎的智能化优势：
+
+- **分析与执行分离**: TaskAnalysisService负责工作流构建，EnhancedIntelligentTaskEngine负责智能执行
+- **智能重试机制**: 每个工作流步骤支持最多2次重试，递增延迟策略
+- **智能参数推导**: 从执行上下文自动推导缺失的步骤参数
+- **双重结果格式**: 原始MCP结果 + LLM格式化结果，分别存储和传输
+- **增强错误处理**: 区分MCP连接错误、认证错误等，提供专用错误事件
+- **新增执行接口**: 提供 `/api/task/:id/execute/enhanced` 专用增强执行接口
+- **向后兼容**: 原有任务执行流程保持不变，通过全局开关控制
+
 #### 修复详情
 
 **修复前问题**:
@@ -1585,7 +1597,71 @@ data: [DONE]
 
 ---
 
-#### 6. 验证MCP授权
+#### 6. 增强流式执行任务
+
+**端点**: `POST /api/task/:id/execute/enhanced`
+
+**描述**: 使用增强任务引擎执行任务工作流，集成Agent引擎的智能化优势，提供更可靠的执行体验
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "userId": "用户ID（当未使用访问令牌时必需）",
+  "skipAnalysis": false // 可选，是否跳过工作流存在性检查
+}
+```
+
+**响应**: Server-Sent Events (SSE) 流
+
+**增强特性**:
+- 🔄 **智能重试**: 每个步骤最多重试2次，递增延迟
+- 🧠 **参数推导**: 从上下文自动推导缺失的步骤参数
+- 🔗 **连接管理**: 自动确保所需MCP已连接
+- 📊 **双重结果**: 原始结果 + LLM格式化结果
+- 💾 **消息存储**: 每步骤存储两条消息（原始+格式化）
+- 🚨 **错误分类**: 区分MCP连接错误、认证错误等
+
+**响应事件流**:
+
+```
+data: {"event":"execution_start","data":{"taskId":"task_123456","mode":"enhanced","workflowInfo":{"totalSteps":3,"mcps":["coingecko-mcp"]}}}
+
+data: {"event":"workflow_execution_start","data":{"totalSteps":3,"workflow":[{"step":1,"mcp":"coingecko-mcp","action":"getPriceData","status":"pending"}]}}
+
+data: {"event":"step_executing","data":{"step":1,"toolDetails":{"toolType":"mcp","toolName":"getPriceData","mcpName":"coingecko-mcp","args":{"symbol":"bitcoin"},"reasoning":"获取比特币价格数据"}}}
+
+data: {"event":"step_raw_result","data":{"step":1,"success":true,"rawResult":{"price":45000,"change":"+2.5%"},"executionDetails":{"toolType":"mcp","attempts":1,"timestamp":"2024-12-28T10:30:00.000Z"}}}
+
+data: {"event":"step_formatted_result","data":{"step":1,"success":true,"formattedResult":"## 比特币价格数据\n\n当前价格: $45,000\n涨跌: +2.5%","formattingDetails":{"originalDataSize":156,"formattedDataSize":67,"needsFormatting":true}}}
+
+data: {"event":"step_complete","data":{"step":1,"success":true,"progress":{"completed":1,"total":3,"percentage":33}}}
+
+data: {"event":"final_result","data":{"finalResult":"工作流执行完成...","success":true,"executionSummary":{"totalSteps":3,"completedSteps":3,"failedSteps":0,"successRate":100}}}
+
+data: [DONE]
+```
+
+**错误处理事件**:
+
+```
+// MCP连接错误
+data: {"event":"mcp_connection_error","data":{"mcpName":"coingecko-mcp","step":1,"errorType":"CONNECTION_FAILED","message":"Failed to connect to MCP service"}}
+
+// 步骤执行错误
+data: {"event":"step_error","data":{"step":1,"error":"API rate limit exceeded","mcpName":"coingecko-mcp","action":"getPriceData","attempts":2}}
+```
+
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
+
+---
+
+#### 7. 验证MCP授权
 
 **端点**: `POST /api/tasks/:id/verify-auth`
 

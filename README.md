@@ -7,6 +7,8 @@ MCP-LangChain是一个基于Model Context Protocol (MCP)和LangChain的智能任
 - 🔐 **钱包登录** - 支持 EIP-4361 "Sign-In with Ethereum" 标准
 - 🤖 **AI 聊天** - 集成 OpenAI GPT 模型
 - 🔧 **MCP 集成** - 支持 Model Context Protocol 工具调用
+- ⚡ **增强任务引擎** - 智能重试、参数推导、双重结果格式化 🆕
+- 🎯 **智能代理** - Agent专用多轮对话和任务执行
 - 👤 **用户管理** - 用户信息、头像、余额管理
 - 🛡️ **安全保护** - JWT 令牌、速率限制、签名验证
 - 📱 **多登录支持** - 预留 Google、GitHub 等登录方式
@@ -116,6 +118,8 @@ API端点详细说明请查看[API参考文档](./docs/API_REFERENCE.md)。
 - 📚 [系统概述](./docs/SYSTEM_OVERVIEW.md) - 系统架构、组件和工作流程
 - 📘 [API参考](./docs/API_REFERENCE.md) - 详细API规范和示例
 - 📖 [用户指南](./docs/USER_GUIDE.md) - 系统使用方法和最佳实践
+- ⚡ [增强任务引擎](./docs/ENHANCED_TASK_ENGINE_GUIDE.md) - 智能任务执行系统完整指南 🆕
+- 🚀 [增强引擎快速开始](./docs/ENHANCED_TASK_ENGINE_QUICKSTART.md) - 5分钟上手指南 🆕
 - 🔧 [MCP适配器配置](./docs/adapter-configuration.md) - 配置和扩展MCP适配器
 - 🔄 [自动工具调用](./docs/auto-tool-calling.md) - 自动工具调用机制说明
 - 🔌 [MCP连接管理](./docs/mcp-connection-management.md) - MCP连接管理指南
@@ -154,6 +158,8 @@ mcp-server/
 
 - 📖 **[API 文档](./docs/API.md)** - 完整的 API 接口文档
 - 📋 **[API 概览](./docs/API_OVERVIEW.md)** - 快速查看所有端点
+- ⚡ **[增强任务引擎指南](./docs/ENHANCED_TASK_ENGINE_GUIDE.md)** - 智能任务执行系统完整指南 🆕
+- 🚀 **[增强引擎快速开始](./docs/ENHANCED_TASK_ENGINE_QUICKSTART.md)** - 5分钟上手指南 🆕
 - 🔧 **[Postman 集合](./docs/MCP_LangChain_API.postman_collection.json)** - 导入 Postman 进行 API 测试
 - 🔐 **[认证设置](./docs/AUTH_SETUP.md)** - 认证系统设置指南
 - 🗄️ **[数据库设置](./docs/DATABASE_SETUP.md)** - 数据库配置指南

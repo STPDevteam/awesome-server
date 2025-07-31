@@ -1372,6 +1372,98 @@ router.post('/:id/execute/stream', requireAuth, async (req: Request, res: Respon
   }
 });
 
+/**
+ * 增强流式执行任务 - 使用Agent引擎优势
+ * POST /api/task/:id/execute/enhanced
+ */
+router.post('/:id/execute/enhanced', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id;
+    const task = await taskService.getTaskById(taskId);
+    
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Not Found',
+        message: 'Task not found'
+      });
+    }
+    
+    const userId = req.user?.id || req.body.userId;
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Missing user ID'
+      });
+    }
+    
+    if (task.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden',
+        message: 'No permission to execute this task'
+      });
+    }
+    
+    // 设置SSE响应头
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // 流式回调函数
+    const streamHandler = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    // 🔧 使用增强的智能Task引擎
+    const { enhancedIntelligentTaskService } = await import('../services/enhancedIntelligentTaskEngine.js');
+    
+    // 从请求体获取参数
+    const skipAnalysis = req.body.skipAnalysis || false;
+    
+    const executionStarted = enhancedIntelligentTaskService.executeTaskEnhanced(
+      taskId, 
+      streamHandler,
+      skipAnalysis
+    );
+    
+    executionStarted
+      .then((success: boolean) => {
+        if (!success) {
+          res.write(`data: ${JSON.stringify({ 
+            event: 'error', 
+            data: { message: 'Enhanced task execution failed' } 
+          })}\n\n`);
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+      })
+      .catch((error: Error) => {
+        logger.error(`Enhanced task execution error [Task ID: ${taskId}]:`, error);
+        res.write(`data: ${JSON.stringify({ 
+          event: 'error', 
+          data: { 
+            message: 'Error occurred during enhanced task execution',
+            details: error instanceof Error ? error.message : String(error)
+          } 
+        })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      });
+
+  } catch (error) {
+    logger.error(`Enhanced task execution error [Task ID: ${req.params.id}]:`, error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Internal server error'
+    });
+  }
+});
+
 // 添加Playwright MCP直接执行路由
 router.post('/execute-playwright-search', async (req, res) => {
   try {

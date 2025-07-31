@@ -2090,11 +2090,11 @@ Transform the data now:`;
     try {
       logger.info(`🧠 使用智能工作流引擎执行任务 [任务: ${taskId}]`);
       
-      // 直接调用 IntelligentTaskService 的执行方法
-      // 这个方法会读取预选的 MCP 工具并智能执行
-      const { intelligentTaskService } = await import('./intelligentTaskService.js');
+      // 🔧 使用增强的智能Task引擎（结合Agent引擎优势）
+      const { enhancedIntelligentTaskService } = await import('./enhancedIntelligentTaskEngine.js');
       
-      return await intelligentTaskService.executeTaskIntelligently(taskId, stream);
+      // skipAnalysis=false 表示如果任务还未分析，会先进行分析
+      return await enhancedIntelligentTaskService.executeTaskEnhanced(taskId, stream, false);
       
     } catch (error) {
       logger.error(`❌ 智能工作流执行失败:`, error);
