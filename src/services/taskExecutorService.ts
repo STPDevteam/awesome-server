@@ -19,7 +19,7 @@ import { mcpNameMapping } from './predefinedMCPs.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
 
 // 🎛️ 智能工作流全局开关 - 设置为false可快速回退到原有流程
-const ENABLE_INTELLIGENT_WORKFLOW = false;
+const ENABLE_INTELLIGENT_WORKFLOW = true;
 
 // 添加LangChain链式调用支持
 import { RunnableSequence, RunnablePassthrough } from '@langchain/core/runnables';
@@ -1288,7 +1288,15 @@ Based on the above task execution information, please generate a complete execut
                 stepName: actionName,
                 totalSteps: workflow.length,
                 taskPhase: 'execution',
-                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking'  // 区分思考过程和最终结果
+                contentType: stepNumber === workflow.length ? 'final_result' : 'step_thinking',  // 区分思考过程和最终结果
+                // 🔧 新增：详细的工具调用信息（仅在metadata中，不影响内容）
+                toolDetails: {
+                  toolType: 'mcp',
+                  toolName: actionName,
+                  mcpName: mcpName,
+                  args: input,
+                  timestamp: new Date().toISOString()
+                }
               }
             });
             stepMessageId = stepMessage.id;
@@ -1336,7 +1344,88 @@ Based on the above task execution information, please generate a complete execut
               formattedResult = await this.formatResultWithLLM(stepResult, actualMcpName, actionName);
             }
             
-            // 完成步骤消息
+            // 🔧 存储原始结果和格式化结果消息
+            if (conversationId) {
+              // 1. 创建原始结果消息
+              const rawContent = `Step ${stepNumber} Raw Result: ${actionName}
+
+${JSON.stringify(stepResult, null, 2)}`;
+
+              await messageDao.createMessage({
+                conversationId,
+                content: rawContent,
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                metadata: {
+                  stepType: MessageStepType.EXECUTION,
+                  stepNumber,
+                  stepName: actionName,
+                  totalSteps: workflow.length,
+                  taskPhase: 'execution',
+                  contentType: 'raw_result',
+                  isComplete: true,
+                  toolDetails: {
+                    toolType: 'mcp',
+                    toolName: actionName,
+                    mcpName: mcpName,
+                    args: input,
+                    timestamp: new Date().toISOString()
+                  },
+                  executionDetails: {
+                    rawResult: stepResult,
+                    success: true,
+                    processingInfo: {
+                      originalDataSize: JSON.stringify(stepResult).length,
+                      processingTime: new Date().toISOString()
+                    }
+                  }
+                }
+              });
+
+              await conversationDao.incrementMessageCount(conversationId);
+
+              // 2. 创建格式化结果消息
+              const formattedContent = `Step ${stepNumber} Formatted Result: ${actionName}
+
+${formattedResult}`;
+
+              await messageDao.createMessage({
+                conversationId,
+                content: formattedContent,
+                type: MessageType.ASSISTANT,
+                intent: MessageIntent.TASK,
+                taskId,
+                metadata: {
+                  stepType: MessageStepType.EXECUTION,
+                  stepNumber,
+                  stepName: actionName,
+                  totalSteps: workflow.length,
+                  taskPhase: 'execution',
+                  contentType: 'formatted_result',
+                  isComplete: true,
+                  toolDetails: {
+                    toolType: 'mcp',
+                    toolName: actionName,
+                    mcpName: mcpName,
+                    args: input,
+                    timestamp: new Date().toISOString()
+                  },
+                  executionDetails: {
+                    formattedResult: formattedResult,
+                    success: true,
+                    processingInfo: {
+                      formattedDataSize: formattedResult.length,
+                      processingTime: new Date().toISOString()
+                    }
+                  }
+                }
+              });
+
+              await conversationDao.incrementMessageCount(conversationId);
+            }
+
+            // 完成原有的流式步骤消息
             if (stepMessageId) {
               await messageDao.completeStreamingMessage(stepMessageId, formattedResult);
             }
@@ -1366,6 +1455,54 @@ Based on the above task execution information, please generate a complete execut
             logger.error(`❌ LangChain Step ${stepNumber} failed:`, error);
           const errorMsg = error instanceof Error ? error.message : String(error);
           
+          // 🔧 Enhanced: Use error handler to analyze errors with LLM for task execution
+          let detailedError = null;
+          let isMCPConnectionError = false;
+          let mcpName: string | undefined;
+          
+          try {
+            // Extract MCP name from step context or error message
+            if (step.mcp) {
+              mcpName = step.mcp;
+            } else if (errorMsg.includes('MCP ')) {
+              const mcpMatch = errorMsg.match(/MCP\s+([^\s]+)/);
+              if (mcpMatch) {
+                mcpName = mcpMatch[1];
+              }
+            }
+            
+            const { MCPErrorHandler } = await import('./mcpErrorHandler.js');
+            const errorToAnalyze = error instanceof Error ? error : new Error(String(error));
+            const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, mcpName);
+            detailedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+            
+            // Check if this is an MCP connection/authentication error
+            isMCPConnectionError = this.isMCPConnectionError(errorDetails.type);
+            
+            if (isMCPConnectionError && mcpName) {
+              // Send specialized MCP connection error event
+              stream({
+                event: 'mcp_connection_error',
+                data: {
+                  mcpName: mcpName,
+                  step: stepNumber,
+                  errorType: errorDetails.type,
+                  title: errorDetails.title,
+                  message: errorDetails.userMessage,
+                  suggestions: errorDetails.suggestions,
+                  authFieldsRequired: errorDetails.authFieldsRequired,
+                  isRetryable: errorDetails.isRetryable,
+                  requiresUserAction: errorDetails.requiresUserAction,
+                  llmAnalysis: errorDetails.llmAnalysis,
+                  originalError: errorDetails.originalError,
+                  timestamp: new Date().toISOString()
+                }
+              });
+            }
+          } catch (analysisError) {
+            logger.warn('Error analysis failed:', analysisError);
+          }
+          
             // 完成步骤消息（错误状态）
             if (stepMessageId) {
               await messageDao.completeStreamingMessage(stepMessageId, `执行失败: ${errorMsg}`);
@@ -1374,14 +1511,17 @@ Based on the above task execution information, please generate a complete execut
             // 保存错误结果
           await taskExecutorDao.saveStepResult(taskId, stepNumber, false, errorMsg);
           
-          // 发送步骤错误信息
-          stream({ 
-            event: 'step_error', 
-            data: { 
-              step: stepNumber,
-              error: errorMsg
-            } 
-          });
+          // Send regular step error event if not MCP connection error
+          if (!isMCPConnectionError) {
+            stream({ 
+              event: 'step_error', 
+              data: { 
+                step: stepNumber,
+                error: errorMsg,
+                detailedError: detailedError
+              } 
+            });
+          }
             
             return {
               step: stepNumber,
@@ -1950,11 +2090,11 @@ Transform the data now:`;
     try {
       logger.info(`🧠 使用智能工作流引擎执行任务 [任务: ${taskId}]`);
       
-      // 直接调用 IntelligentTaskService 的执行方法
-      // 这个方法会读取预选的 MCP 工具并智能执行
-      const { intelligentTaskService } = await import('./intelligentTaskService.js');
+      // 🔧 使用增强的智能Task引擎（结合Agent引擎优势）
+      const { enhancedIntelligentTaskService } = await import('./enhancedIntelligentTaskEngine.js');
       
-      return await intelligentTaskService.executeTaskIntelligently(taskId, stream);
+      // skipAnalysis=false 表示如果任务还未分析，会先进行分析
+      return await enhancedIntelligentTaskService.executeTaskEnhanced(taskId, stream, false);
       
     } catch (error) {
       logger.error(`❌ 智能工作流执行失败:`, error);
@@ -2428,5 +2568,23 @@ IMPORTANT: Your response should be ready-to-display markdown content, not wrappe
       streamCallback(fallbackResult);
       return fallbackResult;
     }
+  }
+
+  /**
+   * Check if error type is MCP connection related
+   */
+  private isMCPConnectionError(errorType: string): boolean {
+    const mcpConnectionErrorTypes = [
+      'INVALID_API_KEY',
+      'EXPIRED_API_KEY', 
+      'WRONG_PASSWORD',
+      'MISSING_AUTH_PARAMS',
+      'INVALID_AUTH_FORMAT',
+      'INSUFFICIENT_PERMISSIONS',
+      'MCP_CONNECTION_FAILED',
+      'MCP_AUTH_REQUIRED',
+      'MCP_SERVICE_INIT_FAILED'
+    ];
+    return mcpConnectionErrorTypes.includes(errorType);
   }
 } 

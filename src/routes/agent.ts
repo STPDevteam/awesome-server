@@ -485,10 +485,16 @@ router.post('/mcp/verify-auth', requireAuth, async (req: Request, res: Response)
     }
   } catch (error) {
     logger.error(`Agent MCP authentication error:`, error);
-    res.status(500).json({
+    
+    // Use the new error handler to analyze errors
+    const { MCPErrorHandler } = await import('../services/mcpErrorHandler.js');
+    const errorToAnalyze = error instanceof Error ? error : new Error(String(error));
+    const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, req.body.mcpName);
+    const formattedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+    
+    res.status(errorDetails.httpStatus || 500).json({
       success: false,
-      error: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Failed to verify MCP authentication'
+      ...formattedError
     });
   }
 });

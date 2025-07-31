@@ -209,7 +209,10 @@ export class AgentService {
         throw new Error('Access denied for private Agent');
       }
 
-      return agent;
+      // 增强Agent中的MCP信息，添加来自数据库的真实认证状态
+      const enhancedAgent = await this.enhanceAgentMCPAuth(agent, userId);
+
+      return enhancedAgent;
     } catch (error) {
       logger.error(`Failed to get Agent details [ID: ${agentId}]:`, error);
       throw error;
@@ -217,11 +220,19 @@ export class AgentService {
   }
 
   /**
-   * Get Agent List
+   * Get Agent List（优化版 - 批量查询）
    */
   async getAgents(query: GetAgentsQuery): Promise<{ agents: Agent[]; total: number }> {
     try {
-      return await agentDao.getAgents(query);
+      const result = await agentDao.getAgents(query);
+      
+      // 🚀 优化：批量增强Agent中的MCP信息
+      const enhancedAgents = await this.batchEnhanceAgentsMCPAuth(result.agents, query.userId);
+      
+      return {
+        agents: enhancedAgents,
+        total: result.total
+      };
     } catch (error) {
       logger.error('Failed to get Agent list:', error);
       throw error;
@@ -229,14 +240,142 @@ export class AgentService {
   }
 
   /**
-   * Get Agent Marketplace Data
+   * Get Agent Marketplace Data（优化版 - 批量查询）
    */
   async getAgentMarketplace(query: AgentMarketplaceQuery): Promise<{ agents: Agent[]; total: number }> {
     try {
-      return await agentDao.getAgentMarketplace(query);
+      const result = await agentDao.getAgentMarketplace(query);
+      
+      // 🚀 优化：批量增强Agent中的MCP信息
+      // 注意：marketplace查询不包含userId，所以传undefined
+      const enhancedAgents = await this.batchEnhanceAgentsMCPAuth(result.agents, undefined);
+      
+      return {
+        agents: enhancedAgents,
+        total: result.total
+      };
     } catch (error) {
       logger.error('Failed to get Agent marketplace data:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 批量增强多个Agent中的MCP信息（优化版 - 批量查询）
+   */
+  private async batchEnhanceAgentsMCPAuth(agents: Agent[], userId?: string): Promise<Agent[]> {
+    if (!userId || agents.length === 0) {
+      // 如果没有用户ID或Agent为空，返回保守的状态
+      return agents.map(agent => this.enhanceAgentMCPAuthWithoutDB(agent, userId));
+    }
+
+    try {
+      // 🚀 优化：一次性获取用户的所有MCP认证信息
+      const userAuthDataList = await this.mcpAuthService.getUserAllMCPAuths(userId);
+      
+      // 创建认证状态映射表，提高查找效率
+      const authStatusMap = new Map<string, boolean>();
+      userAuthDataList.forEach(authData => {
+        authStatusMap.set(authData.mcpName, authData.isVerified);
+      });
+
+      // 使用映射表快速增强所有Agent的MCP信息
+      return agents.map(agent => this.enhanceAgentMCPAuthWithMap(agent, authStatusMap));
+    } catch (error) {
+      logger.error(`Failed to get user MCP auth data for user ${userId}:`, error);
+      // 发生错误时返回保守的状态
+      return agents.map(agent => this.enhanceAgentMCPAuthWithoutDB(agent, userId));
+    }
+  }
+
+  /**
+   * 使用认证状态映射表增强单个Agent的MCP信息
+   */
+  private enhanceAgentMCPAuthWithMap(agent: Agent, authStatusMap: Map<string, boolean>): Agent {
+    // 如果Agent没有MCP工作流信息，直接返回
+    if (!agent.mcpWorkflow?.mcps || agent.mcpWorkflow.mcps.length === 0) {
+      return agent;
+    }
+
+    try {
+      const enhancedMcps = agent.mcpWorkflow.mcps.map(mcp => {
+        if (!mcp.authRequired) {
+          return { ...mcp, authVerified: true };
+        }
+
+        const authVerified = authStatusMap.get(mcp.name) || false;
+
+        // 处理alternatives数组
+        let enhancedAlternatives = (mcp as any).alternatives;
+        if ((mcp as any).alternatives && Array.isArray((mcp as any).alternatives)) {
+          enhancedAlternatives = (mcp as any).alternatives.map((alt: any) => {
+            if (!alt.authRequired) {
+              return { ...alt, authVerified: true };
+            }
+            
+            const altAuthVerified = authStatusMap.get(alt.name) || false;
+            return { ...alt, authVerified: altAuthVerified };
+          });
+        }
+
+        return {
+          ...mcp,
+          authVerified,
+          ...(enhancedAlternatives ? { alternatives: enhancedAlternatives } : {})
+        };
+      });
+
+      return {
+        ...agent,
+        mcpWorkflow: {
+          ...agent.mcpWorkflow,
+          mcps: enhancedMcps
+        }
+      };
+    } catch (error) {
+      logger.error(`Failed to enhance Agent MCP auth [Agent: ${agent.id}]:`, error);
+      return agent;
+    }
+  }
+
+  /**
+   * 不查询数据库的Agent MCP增强（用于错误回退）
+   */
+  private enhanceAgentMCPAuthWithoutDB(agent: Agent, userId?: string): Agent {
+    // 如果Agent没有MCP工作流信息，直接返回
+    if (!agent.mcpWorkflow?.mcps || agent.mcpWorkflow.mcps.length === 0) {
+      return agent;
+    }
+
+    const enhancedMcps = agent.mcpWorkflow.mcps.map(mcp => ({
+      ...mcp,
+      authVerified: !mcp.authRequired || false
+    }));
+
+    return {
+      ...agent,
+      mcpWorkflow: {
+        ...agent.mcpWorkflow,
+        mcps: enhancedMcps
+      }
+    };
+  }
+
+  /**
+   * 增强单个Agent中的MCP信息（用于单个Agent查询场景）
+   */
+  private async enhanceAgentMCPAuth(agent: Agent, userId?: string): Promise<Agent> {
+    if (!userId) {
+      return this.enhanceAgentMCPAuthWithoutDB(agent, userId);
+    }
+
+    try {
+      // 对于单个Agent，仍然使用批量查询避免N+1问题
+      const enhancedAgents = await this.batchEnhanceAgentsMCPAuth([agent], userId);
+      return enhancedAgents[0];
+    } catch (error) {
+      logger.error(`Failed to enhance Agent MCP auth [Agent: ${agent.id}]:`, error);
+      return this.enhanceAgentMCPAuthWithoutDB(agent, userId);
     }
   }
 
@@ -907,6 +1046,26 @@ Please generate 3 questions, one per line, without numbering or other formatting
         task.mcpWorkflow
       );
 
+      // 增强MCP工作流信息，添加来自数据库的真实认证状态
+      let enhancedMcpWorkflow = task.mcpWorkflow;
+      if (task.mcpWorkflow?.mcps && task.mcpWorkflow.mcps.length > 0 && userId) {
+        try {
+          // 🚀 优化：使用批量查询获取认证状态
+          const userAuthDataList = await this.mcpAuthService.getUserAllMCPAuths(userId);
+          const authStatusMap = new Map<string, boolean>();
+          userAuthDataList.forEach(authData => {
+            authStatusMap.set(authData.mcpName, authData.isVerified);
+          });
+
+          const tempAgent = { mcpWorkflow: task.mcpWorkflow } as Agent;
+          const enhancedAgent = this.enhanceAgentMCPAuthWithMap(tempAgent, authStatusMap);
+          enhancedMcpWorkflow = enhancedAgent.mcpWorkflow;
+        } catch (error) {
+          logger.error(`Failed to enhance MCP workflow for preview:`, error);
+          // 出错时使用原始工作流
+        }
+      }
+
       return {
         suggestedName,
         suggestedDescription,
@@ -916,7 +1075,7 @@ Please generate 3 questions, one per line, without numbering or other formatting
           content: task.content,
           status: task.status
         },
-        mcpWorkflow: task.mcpWorkflow
+        mcpWorkflow: enhancedMcpWorkflow
       };
     } catch (error) {
       logger.error(`Failed to preview Agent info [TaskID: ${taskId}]:`, error);

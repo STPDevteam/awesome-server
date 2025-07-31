@@ -319,7 +319,17 @@ app.post('/api/mcp/connect', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('MCP connection error:', error);
-    res.status(500).json({ error: 'Failed to connect MCP' });
+    
+    // Use the new error handler to analyze errors
+    const { MCPErrorHandler } = await import('./services/mcpErrorHandler.js');
+    const errorToAnalyze = error instanceof Error ? error : new Error(String(error));
+    const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, req.body.name);
+    const formattedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+    
+    res.status(errorDetails.httpStatus || 500).json({
+      success: false,
+      ...formattedError
+    });
   }
 });
 
@@ -348,7 +358,17 @@ app.post('/api/mcp/disconnect', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('MCP disconnection error:', error);
-    res.status(500).json({ error: 'Failed to disconnect MCP' });
+    
+    // Use the new error handler to analyze errors
+    const { MCPErrorHandler } = await import('./services/mcpErrorHandler.js');
+    const errorToAnalyze = error instanceof Error ? error : new Error(String(error));
+    const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, req.body.name);
+    const formattedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+    
+    res.status(errorDetails.httpStatus || 500).json({
+      success: false,
+      ...formattedError
+    });
   }
 });
 

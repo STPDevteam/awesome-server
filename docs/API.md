@@ -47,6 +47,18 @@ MCP LangChain 服务提供基于钱包认证的AI聊天服务，支持 Sign-In w
 - **一致的事件系统**: 统一的流式事件处理，所有步骤都提供相同的流式体验
 - **性能感知优化**: 减少用户等待时的焦虑，提供更好的任务执行反馈
 
+### 增强任务引擎 (v2.2)
+
+从v2.2开始，引入了全新的增强任务引擎，结合Agent引擎的智能化优势：
+
+- **分析与执行分离**: TaskAnalysisService负责工作流构建，EnhancedIntelligentTaskEngine负责智能执行
+- **智能重试机制**: 每个工作流步骤支持最多2次重试，递增延迟策略
+- **智能参数推导**: 从执行上下文自动推导缺失的步骤参数
+- **双重结果格式**: 原始MCP结果 + LLM格式化结果，分别存储和传输
+- **增强错误处理**: 区分MCP连接错误、认证错误等，提供专用错误事件
+- **新增执行接口**: 提供 `/api/task/:id/execute/enhanced` 专用增强执行接口
+- **向后兼容**: 原有任务执行流程保持不变，通过全局开关控制
+
 #### 修复详情
 
 **修复前问题**:
@@ -1585,7 +1597,71 @@ data: [DONE]
 
 ---
 
-#### 6. 验证MCP授权
+#### 6. 增强流式执行任务
+
+**端点**: `POST /api/task/:id/execute/enhanced`
+
+**描述**: 使用增强任务引擎执行任务工作流，集成Agent引擎的智能化优势，提供更可靠的执行体验
+
+**认证**: 可选（可使用userId参数或访问令牌）
+
+**路径参数**:
+- `id`: 任务ID
+
+**请求体**:
+```json
+{
+  "userId": "用户ID（当未使用访问令牌时必需）",
+  "skipAnalysis": false // 可选，是否跳过工作流存在性检查
+}
+```
+
+**响应**: Server-Sent Events (SSE) 流
+
+**增强特性**:
+- 🔄 **智能重试**: 每个步骤最多重试2次，递增延迟
+- 🧠 **参数推导**: 从上下文自动推导缺失的步骤参数
+- 🔗 **连接管理**: 自动确保所需MCP已连接
+- 📊 **双重结果**: 原始结果 + LLM格式化结果
+- 💾 **消息存储**: 每步骤存储两条消息（原始+格式化）
+- 🚨 **错误分类**: 区分MCP连接错误、认证错误等
+
+**响应事件流**:
+
+```
+data: {"event":"execution_start","data":{"taskId":"task_123456","mode":"enhanced","workflowInfo":{"totalSteps":3,"mcps":["coingecko-mcp"]}}}
+
+data: {"event":"workflow_execution_start","data":{"totalSteps":3,"workflow":[{"step":1,"mcp":"coingecko-mcp","action":"getPriceData","status":"pending"}]}}
+
+data: {"event":"step_executing","data":{"step":1,"toolDetails":{"toolType":"mcp","toolName":"getPriceData","mcpName":"coingecko-mcp","args":{"symbol":"bitcoin"},"reasoning":"获取比特币价格数据"}}}
+
+data: {"event":"step_raw_result","data":{"step":1,"success":true,"rawResult":{"price":45000,"change":"+2.5%"},"executionDetails":{"toolType":"mcp","attempts":1,"timestamp":"2024-12-28T10:30:00.000Z"}}}
+
+data: {"event":"step_formatted_result","data":{"step":1,"success":true,"formattedResult":"## 比特币价格数据\n\n当前价格: $45,000\n涨跌: +2.5%","formattingDetails":{"originalDataSize":156,"formattedDataSize":67,"needsFormatting":true}}}
+
+data: {"event":"step_complete","data":{"step":1,"success":true,"progress":{"completed":1,"total":3,"percentage":33}}}
+
+data: {"event":"final_result","data":{"finalResult":"工作流执行完成...","success":true,"executionSummary":{"totalSteps":3,"completedSteps":3,"failedSteps":0,"successRate":100}}}
+
+data: [DONE]
+```
+
+**错误处理事件**:
+
+```
+// MCP连接错误
+data: {"event":"mcp_connection_error","data":{"mcpName":"coingecko-mcp","step":1,"errorType":"CONNECTION_FAILED","message":"Failed to connect to MCP service"}}
+
+// 步骤执行错误
+data: {"event":"step_error","data":{"step":1,"error":"API rate limit exceeded","mcpName":"coingecko-mcp","action":"getPriceData","attempts":2}}
+```
+
+**错误响应**:
+- 在事件流中以 `{"event":"error","data":{"message":"错误信息"}}` 格式返回
+
+---
+
+#### 7. 验证MCP授权
 
 **端点**: `POST /api/tasks/:id/verify-auth`
 
@@ -5899,6 +5975,341 @@ function handleAgentStreamingEvents(event) {
 curl -X GET "http://localhost:3001/api/agent/agent_123456/conversations?conversationId=conv_987654321" \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
 ```
+
+---
+
+## MCP错误处理和诊断系统 (v2.2)
+
+从v2.2开始，系统引入了全新的MCP错误处理和诊断机制，提供智能化的错误分析和用户友好的错误提示。
+
+### MCP错误处理机制概述
+
+当用户的MCP认证信息填写错误时，系统会通过以下多层机制进行处理：
+
+#### 1. 事前检查阶段
+
+在Agent任务启动前，系统会主动检查所需MCP的认证状态：
+
+**检查流程**:
+- 自动扫描Agent所需的MCP服务
+- 验证每个MCP的认证状态
+- 生成详细的认证指引信息
+
+**如果认证缺失，用户会收到**:
+- 🔐 详细的认证提示消息
+- 📋 每个MCP所需的认证参数列表  
+- 💡 如何进行认证的步骤指引
+
+#### 2. 运行时智能错误检测
+
+当执行过程中遇到认证错误时，新的LLM增强错误分析系统会：
+
+**智能识别各种认证错误模式**:
+```typescript
+// 系统能识别的错误模式包括：
+- /invalid.*api.*key/i          // API Key无效
+- /wrong.*password/i            // 密码错误  
+- /authentication.*failed/i     // 认证失败
+- /unauthorized/i               // 未授权
+- /401/, /403/                  // HTTP状态码
+- /error.*399/i                 // Twitter特定错误码
+- /token.*expired/i             // Token过期
+```
+
+**错误分析结果包括**:
+- 🎯 精确的错误类型识别
+- 💬 用户友好的错误说明
+- 🔧 具体的解决建议
+- 🤖 LLM增强的智能分析
+
+#### 3. 专门的MCP连接错误事件
+
+对于认证相关的错误，系统会发送专门的 `mcp_connection_error` 事件，而不是普通的执行错误事件。
+
+### MCP连接错误事件
+
+#### mcp_connection_error
+
+**事件格式**:
+```json
+{
+  "event": "mcp_connection_error",
+  "data": {
+    "mcpName": "twitter-client-mcp",
+    "step": 2,
+    "agentName": "Twitter Assistant",
+    "errorType": "INVALID_API_KEY",
+    "title": "Invalid API Key",
+    "message": "The API Key you provided is invalid. Please check and enter a valid API Key",
+    "suggestions": [
+      "Check if the API Key is complete without missing characters",
+      "Ensure the API Key does not contain extra spaces",
+      "Verify the API Key is from the correct service provider",
+      "If this is a newly created API Key, wait a few minutes and try again"
+    ],
+    "authFieldsRequired": ["TWITTER_API_KEY", "TWITTER_API_SECRET_KEY"],
+    "isRetryable": false,
+    "requiresUserAction": true,
+    "llmAnalysis": "{\"errorType\":\"authentication\",\"likelyIssue\":\"Invalid Twitter API credentials\",\"userFriendlyExplanation\":\"Your Twitter API key appears to be incorrect or malformed\",\"specificSuggestions\":[\"Double-check your Twitter API key from the developer dashboard\",\"Ensure you're using the correct API key type\"]}",
+    "originalError": "API authentication failed: invalid api key provided",
+    "timestamp": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**字段说明**:
+- `mcpName`: 出错的MCP服务名称
+- `step`: 出错的执行步骤编号
+- `agentName`: 执行Agent的名称
+- `errorType`: 错误类型枚举值
+- `title`: 错误标题（用户友好）
+- `message`: 错误描述（用户友好）
+- `suggestions`: 具体的解决建议数组
+- `authFieldsRequired`: 需要的认证字段列表
+- `isRetryable`: 是否可重试
+- `requiresUserAction`: 是否需要用户操作
+- `llmAnalysis`: LLM智能分析结果（JSON字符串）
+- `originalError`: 原始错误信息（用于调试）
+- `timestamp`: 错误发生时间
+
+### MCP测试连接API
+
+#### POST /api/mcp/test-connection
+
+测试MCP连接并返回详细的错误信息
+
+**认证**: 需要访问令牌
+
+**请求体**:
+```json
+{
+  "mcpName": "twitter-client-mcp",
+  "authData": {
+    "TWITTER_API_KEY": "your_api_key",
+    "TWITTER_API_SECRET_KEY": "your_secret_key",
+    "TWITTER_ACCESS_TOKEN": "your_access_token",
+    "TWITTER_ACCESS_TOKEN_SECRET": "your_token_secret"
+  }
+}
+```
+
+**成功响应 (200)**:
+```json
+{
+  "success": true,
+  "data": {
+    "message": "MCP connection test successful",
+    "mcpName": "twitter-client-mcp",
+    "toolCount": 15,
+    "connectionTest": {
+      "status": "success",
+      "testTime": "2024-01-15T10:30:00.000Z"
+    }
+  }
+}
+```
+
+**错误响应 (401/403/500)**:
+```json
+{
+  "success": false,
+  "error": {
+    "type": "INVALID_API_KEY",
+    "title": "Invalid API Key",
+    "message": "The API Key you provided is invalid. Please check and enter a valid API Key",
+    "suggestions": [
+      "Check if the API Key is complete without missing characters",
+      "Ensure the API Key does not contain extra spaces",
+      "Verify the API Key is from the correct service provider"
+    ],
+    "isRetryable": false,
+    "requiresUserAction": true,
+    "mcpName": "twitter-client-mcp",
+    "authFieldsRequired": ["TWITTER_API_KEY", "TWITTER_API_SECRET_KEY"],
+    "llmAnalysis": "{\"errorType\":\"authentication\",\"likelyIssue\":\"Invalid API credentials\"}"
+  },
+  "technical": {
+    "originalError": "API authentication failed: invalid api key provided",
+    "httpStatus": 401
+  }
+}
+```
+
+### 错误类型枚举
+
+系统支持以下MCP错误类型：
+
+#### 认证相关错误
+- `INVALID_API_KEY`: API Key无效
+- `EXPIRED_API_KEY`: API Key已过期
+- `WRONG_PASSWORD`: 密码错误
+- `MISSING_AUTH_PARAMS`: 缺少认证参数
+- `INVALID_AUTH_FORMAT`: 认证格式无效
+- `INSUFFICIENT_PERMISSIONS`: 权限不足
+
+#### 连接相关错误
+- `CONNECTION_TIMEOUT`: 连接超时
+- `CONNECTION_REFUSED`: 连接被拒绝
+- `NETWORK_ERROR`: 网络错误
+- `SERVICE_UNAVAILABLE`: 服务不可用
+
+#### 配置相关错误
+- `INVALID_CONFIGURATION`: 配置错误
+- `MISSING_DEPENDENCIES`: 依赖缺失
+- `INVALID_COMMAND`: 命令无效
+
+#### 服务器相关错误
+- `INTERNAL_SERVER_ERROR`: 服务器内部错误
+- `RATE_LIMIT_EXCEEDED`: 请求频率超限
+- `QUOTA_EXCEEDED`: 配额超限
+
+#### MCP特定错误
+- `MCP_CONNECTION_FAILED`: MCP连接失败
+- `MCP_AUTH_REQUIRED`: MCP需要认证
+- `MCP_SERVICE_INIT_FAILED`: MCP服务初始化失败
+
+### 错误处理示例
+
+#### API Key错误示例
+```json
+{
+  "event": "mcp_connection_error",
+  "data": {
+    "errorType": "INVALID_API_KEY",
+    "title": "Invalid API Key",
+    "message": "The API Key you provided is invalid. Please check and enter a valid API Key",
+    "suggestions": [
+      "Check if the API Key is complete without missing characters",
+      "Ensure the API Key does not contain extra spaces",
+      "Verify the API Key is from the correct service provider",
+      "If this is a newly created API Key, wait a few minutes and try again"
+    ]
+  }
+}
+```
+
+#### 密码错误示例
+```json
+{
+  "event": "mcp_connection_error",
+  "data": {
+    "errorType": "WRONG_PASSWORD",
+    "title": "Wrong Password",
+    "message": "The password you entered is incorrect. Please check and re-enter",
+    "suggestions": [
+      "Verify the password case sensitivity is correct",
+      "Check if Caps Lock is enabled",
+      "If entered incorrectly multiple times, the account may be temporarily locked",
+      "Try resetting the password or using alternative authentication methods"
+    ]
+  }
+}
+```
+
+#### Token过期示例
+```json
+{
+  "event": "mcp_connection_error",
+  "data": {
+    "errorType": "EXPIRED_API_KEY",
+    "title": "Token Expired",
+    "message": "Your access token has expired and needs to be refreshed or renewed",
+    "suggestions": [
+      "Try refreshing the token",
+      "Re-login to get a new token",
+      "Check the token validity period settings",
+      "Ensure system time is correct"
+    ]
+  }
+}
+```
+
+### 前端处理建议
+
+#### 1. 事件监听
+```javascript
+eventSource.addEventListener('message', (event) => {
+  const data = JSON.parse(event.data);
+  
+  if (data.event === 'mcp_connection_error') {
+    handleMCPConnectionError(data.data);
+  } else if (data.event === 'step_error') {
+    handleStepError(data.data);
+  }
+});
+```
+
+#### 2. 错误处理
+```javascript
+function handleMCPConnectionError(errorData) {
+  // 显示MCP连接错误对话框
+  showMCPErrorDialog({
+    mcpName: errorData.mcpName,
+    title: errorData.title,
+    message: errorData.message,
+    suggestions: errorData.suggestions,
+    authFieldsRequired: errorData.authFieldsRequired,
+    requiresUserAction: errorData.requiresUserAction
+  });
+  
+  // 如果需要用户操作，跳转到认证页面
+  if (errorData.requiresUserAction) {
+    redirectToMCPAuth(errorData.mcpName, errorData.authFieldsRequired);
+  }
+}
+```
+
+#### 3. 用户体验优化
+```javascript
+function showMCPErrorDialog(errorData) {
+  // 创建错误提示对话框
+  const dialog = createDialog({
+    title: `🔧 ${errorData.title}`,
+    message: errorData.message,
+    type: 'mcp-error',
+    actions: [
+      {
+        text: 'Fix Authentication',
+        primary: true,
+        action: () => redirectToMCPAuth(errorData.mcpName)
+      },
+      {
+        text: 'View Details',
+        action: () => showErrorDetails(errorData)
+      }
+    ]
+  });
+  
+  // 显示解决建议
+  if (errorData.suggestions?.length > 0) {
+    dialog.addSuggestions(errorData.suggestions);
+  }
+  
+  dialog.show();
+}
+```
+
+### 用户体验流程
+
+完整的错误处理用户体验流程：
+
+1. **启动Agent** → 系统检查认证状态
+2. **认证缺失** → 显示详细的认证指引和参数要求  
+3. **执行过程中错误** → 触发专门的 `mcp_connection_error` 事件
+4. **前端接收** → 显示具体错误类型和解决建议
+5. **LLM分析** → 提供智能化的错误解释和修复指导
+6. **用户修正** → 根据建议更新认证信息
+7. **重试执行** → 系统使用新的认证信息重新尝试
+
+### 系统特性亮点
+
+- 🤖 **LLM增强分析**: 智能识别复杂错误并提供精准建议
+- 🎯 **专门事件类型**: 区分MCP连接错误和普通执行错误
+- 📱 **前端友好**: 结构化的错误信息，便于UI展示
+- 🔄 **动态指引**: 根据不同MCP提供特定的认证指导
+- 🛠️ **开发者友好**: 保留原始错误信息用于调试
+- 🔍 **主动检测**: 事前检查认证状态，减少运行时错误
+- 💡 **智能建议**: 基于错误类型提供具体的解决方案
 
 ---
 

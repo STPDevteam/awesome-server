@@ -17,6 +17,7 @@ import { MCPService } from '../mcpManager.js';
 import { messageDao } from '../../dao/messageDao.js';
 import { MessageType, MessageIntent, MessageStepType } from '../../models/conversation.js';
 import { conversationDao } from '../../dao/conversationDao.js';
+import { MCPAuthService } from '../mcpAuthService.js';
 // 删除了智能工作流引擎导入，分析阶段不需要
 
 // 🎛️ 智能工作流全局开关 - 设置为false可快速回退到原有流程
@@ -40,7 +41,9 @@ function convertMCPServiceToMCPInfo(mcpService: MCPService): MCPInfo {
     category: mcpService.category,
     imageUrl: mcpService.imageUrl,
     githubUrl: mcpService.githubUrl,
-    authParams: mcpService.authParams
+    authParams: mcpService.authParams,
+    // 🔧 新增：包含预定义工具信息
+    predefinedTools: mcpService.predefinedTools
   };
 }
 
@@ -50,7 +53,8 @@ function convertMCPServiceToMCPInfo(mcpService: MCPService): MCPInfo {
  */
 export class TaskAnalysisService {
   private llm: ChatOpenAI;
-  
+  private mcpAuthService: MCPAuthService;
+
   constructor() {
     this.llm = new ChatOpenAI({
       modelName: process.env.TASK_ANALYSIS_MODEL || 'gpt-4o',
@@ -59,6 +63,62 @@ export class TaskAnalysisService {
       timeout: 15000, // 15秒超时
       maxRetries: 1 // 最多重试1次
     });
+    this.mcpAuthService = new MCPAuthService();
+  }
+
+  /**
+   * 增强MCP信息，添加来自数据库的真实认证状态（优化版 - 批量查询）
+   */
+  private async enhanceMCPsWithAuthStatus(mcps: any[], userId?: string): Promise<any[]> {
+    if (!userId) {
+      // 如果没有用户ID，返回原始信息（authVerified保持false）
+      return mcps.map(mcp => ({ ...mcp, authVerified: mcp.authRequired ? false : true }));
+    }
+
+    try {
+      // 🚀 优化：一次性获取用户的所有MCP认证信息
+      const userAuthDataList = await this.mcpAuthService.getUserAllMCPAuths(userId);
+      
+      // 创建认证状态映射表，提高查找效率
+      const authStatusMap = new Map<string, boolean>();
+      userAuthDataList.forEach(authData => {
+        authStatusMap.set(authData.mcpName, authData.isVerified);
+      });
+
+      // 使用映射表快速增强MCP信息
+      const enhancedMcps = mcps.map(mcp => {
+        if (!mcp.authRequired) {
+          return { ...mcp, authVerified: true };
+        }
+
+        const authVerified = authStatusMap.get(mcp.name) || false;
+
+        // 处理alternatives数组
+        let enhancedAlternatives = mcp.alternatives;
+        if (mcp.alternatives && Array.isArray(mcp.alternatives)) {
+          enhancedAlternatives = mcp.alternatives.map((alt: any) => {
+            if (!alt.authRequired) {
+              return { ...alt, authVerified: true };
+            }
+            
+            const altAuthVerified = authStatusMap.get(alt.name) || false;
+            return { ...alt, authVerified: altAuthVerified };
+          });
+        }
+
+        return {
+          ...mcp,
+          authVerified,
+          ...(enhancedAlternatives ? { alternatives: enhancedAlternatives } : {})
+        };
+      });
+
+      return enhancedMcps;
+    } catch (error) {
+      logger.error(`Failed to get user MCP auth data for user ${userId}:`, error);
+      // 发生错误时返回保守的状态
+      return mcps.map(mcp => ({ ...mcp, authVerified: mcp.authRequired ? false : true }));
+    }
   }
   
 
@@ -383,7 +443,9 @@ export class TaskAnalysisService {
           ...(mcp.category ? { category: mcp.category } : {}),
           ...(mcp.imageUrl ? { imageUrl: mcp.imageUrl } : {}),
           ...(mcp.githubUrl ? { githubUrl: mcp.githubUrl } : {}),
-          ...(mcp.authParams ? { authParams: mcp.authParams } : {})
+          ...(mcp.authParams ? { authParams: mcp.authParams } : {}),
+          // 🔧 新增：包含预定义工具信息
+          ...(mcp.predefinedTools ? { predefinedTools: mcp.predefinedTools } : {})
           // 注意：数据库中不存储完整的alternatives信息，只在返回给前端时构建
         })),
         workflow: workflowResult.workflow
@@ -392,43 +454,52 @@ export class TaskAnalysisService {
       // 获取所有可用的MCP信息用于构建完整的备选列表
       const allAvailableMCPs = await this.getAvailableMCPs();
       
-      // 为前端准备完整的mcpWorkflow数据
+      // 为前端准备完整的mcpWorkflow数据 - 首先构建基础数据
+      const baseMcpData = mcpResult.recommendedMCPs.map(mcp => ({
+        name: mcp.name,
+        description: mcp.description,
+        authRequired: mcp.authRequired,
+        authVerified: false, // 初始状态，稍后会被增强方法覆盖
+        // 包含完整的显示信息
+        category: mcp.category,
+        imageUrl: mcp.imageUrl,
+        githubUrl: mcp.githubUrl,
+        // 🔧 新增：包含预定义工具信息
+        ...(mcp.predefinedTools ? { predefinedTools: mcp.predefinedTools } : {}),
+        // 只在需要认证时返回实际的认证参数
+        ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {}),
+        // 包含完整的备选MCP信息列表，格式与主MCP一致
+        ...(mcp.alternatives && mcp.alternatives.length > 0 ? { 
+          alternatives: mcp.alternatives.map(altName => {
+            const altMcp = allAvailableMCPs.find(availableMcp => availableMcp.name === altName);
+            return altMcp ? {
+              name: altMcp.name,
+              description: altMcp.description,
+              authRequired: altMcp.authRequired,
+              authVerified: false, // 初始状态，稍后会被增强方法覆盖
+              category: altMcp.category,
+              imageUrl: altMcp.imageUrl,
+              githubUrl: altMcp.githubUrl,
+              // 🔧 新增：备选MCP也包含预定义工具信息
+              ...(altMcp.predefinedTools ? { predefinedTools: altMcp.predefinedTools } : {}),
+              // 备选MCP也需要包含认证参数信息，方便前端替换时处理认证
+              ...(altMcp.authRequired && altMcp.authParams ? { authParams: altMcp.authParams } : {})
+            } : {
+              name: altName,
+              description: 'Alternative MCP tool',
+              authRequired: false,
+              authVerified: true, // 不需要认证的工具默认为已验证
+              category: 'Unknown'
+            };
+          })
+        } : {})
+      }));
+
+      // 增强MCP信息，添加来自数据库的真实认证状态
+      const enhancedMcpData = await this.enhanceMCPsWithAuthStatus(baseMcpData, task.userId);
+
       const optimizedWorkflow = {
-        mcps: mcpResult.recommendedMCPs.map(mcp => ({
-          name: mcp.name,
-          description: mcp.description,
-          authRequired: mcp.authRequired,
-          authVerified: false, // 初始状态未验证
-          // 包含完整的显示信息
-          category: mcp.category,
-          imageUrl: mcp.imageUrl,
-          githubUrl: mcp.githubUrl,
-          // 只在需要认证时返回实际的认证参数
-          ...(mcp.authRequired && mcp.authParams ? { authParams: mcp.authParams } : {}),
-          // 包含完整的备选MCP信息列表，格式与主MCP一致
-          ...(mcp.alternatives && mcp.alternatives.length > 0 ? { 
-            alternatives: mcp.alternatives.map(altName => {
-              const altMcp = allAvailableMCPs.find(availableMcp => availableMcp.name === altName);
-              return altMcp ? {
-                name: altMcp.name,
-                description: altMcp.description,
-                authRequired: altMcp.authRequired,
-                authVerified: false, // 备选MCP初始状态也是未验证
-                category: altMcp.category,
-                imageUrl: altMcp.imageUrl,
-                githubUrl: altMcp.githubUrl,
-                // 备选MCP也需要包含认证参数信息，方便前端替换时处理认证
-                ...(altMcp.authRequired && altMcp.authParams ? { authParams: altMcp.authParams } : {})
-              } : {
-                name: altName,
-                description: 'Alternative MCP tool',
-                authRequired: false,
-                authVerified: true, // 不需要认证的工具默认为已验证
-                category: 'Unknown'
-              };
-            })
-          } : {})
-        })),
+        mcps: enhancedMcpData,
         workflow: workflowResult.workflow
       };
       
@@ -1206,7 +1277,7 @@ Design a workflow that accomplishes the maximum possible with these tools and re
       fixed = fixed.replace(/:\s*'([^']*)'(?=\s*[,}\]\n])/g, ':"$1"');
       
       // 4. 处理未引用的字符串值，但保留数字和布尔值
-      fixed = fixed.replace(/:\s*([^",{\[\]}\s\n][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
+      fixed = fixed.replace(/:\s*([^",{\[\]}\s][^,}\]\n]*?)(?=\s*[,}\]\n])/g, (match, value) => {
         const trimmedValue = value.trim();
         
         // 跳过已经有引号的值

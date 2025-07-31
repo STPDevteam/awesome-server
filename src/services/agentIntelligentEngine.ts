@@ -213,59 +213,121 @@ export class AgentIntelligentEngine {
           }
         };
 
+        // 🔧 增强现有的step_executing事件 - 保持兼容性
+        yield {
+          event: 'step_executing',
+          data: {
+            step: stepCounter,
+            tool: state.currentPlan!.tool,
+            agentName: this.agent.name,
+            message: `${this.agent.name} is executing step ${stepCounter}: ${state.currentPlan!.tool}`,
+            // 🔧 新增详细信息 - 不破坏原有结构
+            toolDetails: {
+              toolType: state.currentPlan!.toolType,
+              toolName: state.currentPlan!.tool,
+              mcpName: state.currentPlan!.mcpName || null,
+              args: state.currentPlan!.args,
+              expectedOutput: state.currentPlan!.expectedOutput,
+              reasoning: state.currentPlan!.reasoning,
+              timestamp: new Date().toISOString()
+            }
+          }
+        };
+
         // 🔧 第二步：Agent执行阶段
         const executionResult = await this.agentExecutionPhase(state, stepId);
 
-        // 🔧 Agent格式的流式thinking输出（原始+格式化双重处理）
+        // 🔧 增强现有的step_raw_result事件 - 保持兼容性
         if (executionResult.success && executionResult.result) {
-          // 1. 🔧 首先发送原始结果的chunks（用于调试和上下文传递）
-          const originalResultText = typeof executionResult.result === 'string' 
-            ? executionResult.result 
-            : JSON.stringify(executionResult.result);
-          
-          const originalChunks = originalResultText.match(/.{1,100}/g) || [originalResultText];
-          for (const chunk of originalChunks) {
-            yield {
-              event: 'step_thinking_chunk',
-              data: {
-                stepId,
-                chunk,
-                agentName: this.agent.name,
-                type: 'original' // 标识为原始数据
+          yield {
+            event: 'step_raw_result',
+            data: {
+              step: stepCounter,
+              success: true,
+              result: executionResult.result,
+              agentName: this.agent.name,
+              // 🔧 新增详细信息 - 不破坏原有结构
+              executionDetails: {
+                toolType: state.currentPlan!.toolType,
+                toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+                mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
+                rawResult: executionResult.result,
+                args: executionResult.actualExecution?.args || state.currentPlan!.args,
+                expectedOutput: state.currentPlan!.expectedOutput,
+                timestamp: new Date().toISOString()
               }
-            };
-            await new Promise(resolve => setTimeout(resolve, 30));
-          }
+            }
+          };
 
-          // 2. 🔧 然后发送LLM格式化后的结果chunks（用于前端美观显示和存储）- 使用step_result_chunk事件
-          const formattedResultGenerator = this.formatAndStreamStepResult(
+          // 🔧 存储原始结果消息
+          await this.saveStepRawResult(taskId, stepCounter, state.currentPlan!, executionResult.result);
+        }
+
+        // 🔧 Streaming: 流式格式化和输出步骤结果（仅对MCP工具进行格式化）
+        if (executionResult.success && executionResult.result && state.currentPlan!.toolType === 'mcp') {
+          // 只对MCP工具进行流式格式化，LLM工具已经返回格式化内容
+          const formatGenerator = this.formatAndStreamStepResult(
             executionResult.result,
             state.currentPlan!.mcpName || 'unknown',
             state.currentPlan!.tool
           );
-          
-          for await (const chunk of formattedResultGenerator) {
+
+          for await (const chunk of formatGenerator) {
             yield {
               event: 'step_result_chunk',
               data: {
-                stepId,
+                step: stepCounter,
                 chunk,
-                agentName: this.agent.name,
-                type: 'formatted' // 标识为格式化数据
+                agentName: this.agent.name
               }
             };
           }
         }
 
-        // 🔧 获取格式化结果用于存储（但保留原始结果用于传递）
+        // 🔧 获取格式化结果用于存储（区分MCP和LLM工具）
         let formattedResultForStorage = '';
         if (executionResult.success && executionResult.result) {
-          // 生成完整的格式化结果（不流式，用于存储）
-          formattedResultForStorage = await this.generateFormattedResult(
-            executionResult.result,
-            state.currentPlan!.mcpName || 'unknown',
-            state.currentPlan!.tool
-          );
+          if (state.currentPlan!.toolType === 'mcp') {
+            // MCP工具：需要格式化JSON数据
+            formattedResultForStorage = await this.generateFormattedResult(
+              executionResult.result,
+              state.currentPlan!.mcpName || 'unknown',
+              state.currentPlan!.tool
+            );
+          } else {
+            // LLM工具：直接使用原始结果（已经是格式化的）
+            formattedResultForStorage = executionResult.result;
+          }
+
+          // 🔧 增强现有的step_formatted_result事件 - 保持兼容性
+          yield {
+            event: 'step_formatted_result',
+            data: {
+              step: stepCounter,
+              success: true,
+              formattedResult: formattedResultForStorage,
+              agentName: this.agent.name,
+              // 🔧 新增详细信息 - 不破坏原有结构
+              formattingDetails: {
+                toolType: state.currentPlan!.toolType,
+                toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+                mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
+                originalResult: executionResult.result,
+                formattedResult: formattedResultForStorage,
+                args: executionResult.actualExecution?.args || state.currentPlan!.args,
+                processingInfo: {
+                  originalDataSize: JSON.stringify(executionResult.result).length,
+                  formattedDataSize: formattedResultForStorage.length,
+                  processingTime: new Date().toISOString(),
+                  needsFormatting: state.currentPlan!.toolType === 'mcp' // 标识是否进行了格式化
+                },
+                timestamp: new Date().toISOString()
+              }
+            }
+          };
+
+          // 🔧 存储格式化结果消息
+          await this.saveStepFormattedResult(taskId, stepCounter, state.currentPlan!, formattedResultForStorage);
         }
 
         // 🔧 Agent格式的step_thinking_complete事件
@@ -302,6 +364,27 @@ export class AgentIntelligentEngine {
         // 🔧 新增：记录失败并生成处理策略
         if (!executionResult.success) {
           await this.recordFailureAndStrategy(state, executionStep);
+          
+          // 🔧 重要：检查并应用失败策略
+          const failureStrategy = this.getFailureStrategy(state, executionStep);
+          logger.info(`🎯 Applying failure strategy: ${failureStrategy} for tool: ${executionStep.plan.tool}`);
+          
+          if (failureStrategy === 'skip' || failureStrategy === 'manual_intervention') {
+            // 跳过或需要手动干预时，标记任务为完成（失败完成）
+            logger.warn(`⚠️ Agent ${this.agent.name} stopping execution due to strategy: ${failureStrategy}`);
+            state.isComplete = true;
+            state.errors.push(`Execution stopped due to ${failureStrategy} strategy for tool: ${executionStep.plan.tool}`);
+            break; // 退出主循环
+          } else if (failureStrategy === 'alternative') {
+            // 尝试替代方案的次数限制
+            const failureRecord = state.failureHistory.find(f => f.tool === executionStep.plan.tool);
+            if (failureRecord && failureRecord.attemptCount >= 3) {
+              logger.warn(`⚠️ Agent ${this.agent.name} exceeded alternative attempts limit for tool: ${executionStep.plan.tool}`);
+              state.isComplete = true;
+              state.errors.push(`Exceeded alternative attempts for tool: ${executionStep.plan.tool}`);
+              break; // 退出主循环
+            }
+          }
         }
 
         // 🔧 发送Agent格式的step_complete事件
@@ -330,19 +413,60 @@ export class AgentIntelligentEngine {
           }
         };
 
-        // 🔧 如果执行失败，发送Agent格式的step_error事件
+        // 🔧 If execution failed, send appropriate error events
         if (!executionResult.success) {
-          yield {
-            event: 'step_error',
-            data: {
-              step: stepCounter,
-              error: executionResult.error || 'Unknown error',
-              agentName: this.agent.name,
-              message: `${this.agent.name} encountered an error in step ${stepCounter}`,
-              // 🔧 新增：失败处理策略
-              failureStrategy: this.getFailureStrategy(state, executionStep)
+          // 🔧 Enhanced: Use error handler to analyze errors with LLM
+          let detailedError = null;
+          let isMCPConnectionError = false;
+          
+          try {
+            const { MCPErrorHandler } = await import('./mcpErrorHandler.js');
+            const errorToAnalyze = executionResult.error ? new Error(executionResult.error) : new Error('Unknown error');
+            const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, state.currentPlan?.mcpName);
+            detailedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+            
+            // Check if this is an MCP connection/authentication error
+            isMCPConnectionError = this.isMCPConnectionError(errorDetails.type);
+            
+            if (isMCPConnectionError && state.currentPlan?.mcpName) {
+              // Send specialized MCP connection error event
+              yield {
+                event: 'mcp_connection_error',
+                data: {
+                  mcpName: state.currentPlan.mcpName,
+                  step: stepCounter,
+                  agentName: this.agent.name,
+                  errorType: errorDetails.type,
+                  title: errorDetails.title,
+                  message: errorDetails.userMessage,
+                  suggestions: errorDetails.suggestions,
+                  authFieldsRequired: errorDetails.authFieldsRequired,
+                  isRetryable: errorDetails.isRetryable,
+                  requiresUserAction: errorDetails.requiresUserAction,
+                  llmAnalysis: errorDetails.llmAnalysis,
+                  originalError: errorDetails.originalError,
+                  timestamp: new Date().toISOString()
+                }
+              };
             }
-          };
+          } catch (analysisError) {
+            logger.warn('Error analysis failed:', analysisError);
+          }
+
+          // Send regular step error event if not MCP connection error
+          if (!isMCPConnectionError) {
+            yield {
+              event: 'step_error',
+              data: {
+                step: stepCounter,
+                error: executionResult.error || 'Unknown error',
+                agentName: this.agent.name,
+                message: `${this.agent.name} encountered an error in step ${stepCounter}`,
+                failureStrategy: this.getFailureStrategy(state, executionStep),
+                detailedError: detailedError
+              }
+            };
+          }
         }
 
         // 🔧 保存步骤结果到数据库（使用格式化结果）
@@ -458,7 +582,7 @@ Look for patterns that indicate multiple targets:
 - Comma-separated lists: "@user1, @user2, @user3"
 - "and" between targets: "@user1 and @user2"
 - Multiple verbs with targets: "get from A and B", "fetch from X, Y, Z"
-- List indicators: "这些用户", "several accounts", "multiple sources"
+- List indicators: "these users", "several accounts", "multiple sources"
 
 **Component Dependencies**:
 - Individual Data Collection → Combined Data Processing → Action Execution
@@ -796,6 +920,11 @@ Analyze the task now:`;
     success: boolean;
     result?: any;
     error?: string;
+    actualExecution?: {
+      toolName: string;
+      mcpName?: string;
+      args: any;
+    };
   }> {
     if (!state.currentPlan) {
       return { success: false, error: 'No execution plan available' };
@@ -803,17 +932,25 @@ Analyze the task now:`;
 
     try {
       let result: any;
+      let actualExecution: any = undefined;
 
       if (state.currentPlan.toolType === 'mcp') {
         // 🔧 执行MCP工具
-        result = await this.executeAgentMCPTool(state.currentPlan, state);
+        const mcpResult = await this.executeAgentMCPTool(state.currentPlan, state);
+        result = mcpResult.result;
+        actualExecution = mcpResult.actualExecution;
       } else {
         // 🔧 执行LLM工具
         result = await this.executeAgentLLMTool(state.currentPlan, state);
+        // 对于LLM工具，实际执行参数就是计划参数
+        actualExecution = {
+          toolName: state.currentPlan.tool,
+          args: state.currentPlan.args
+        };
       }
 
       logger.info(`✅ Agent ${this.agent.name} execution successful: ${state.currentPlan.tool}`);
-      return { success: true, result };
+      return { success: true, result, actualExecution };
 
     } catch (error) {
       logger.error(`❌ Agent ${this.agent.name} execution failed:`, error);
@@ -1409,12 +1546,8 @@ Please return in format:
       return;
     }
 
-    const requiredMCPs = this.agent.mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired);
-
-    if (requiredMCPs.length === 0) {
-      logger.info(`Agent ${this.agent.name} does not require authenticated MCP services`);
-      return;
-    }
+    // 🔧 修复：连接所有MCP，不仅仅是需要认证的
+    const requiredMCPs = this.agent.mcpWorkflow.mcps;
 
     logger.info(`Ensuring MCP connections for Agent ${this.agent.name} (User: ${userId}), required MCPs: ${requiredMCPs.map((mcp: any) => mcp.name).join(', ')}`);
 
@@ -1435,28 +1568,35 @@ Please return in format:
             throw new Error(`MCP ${mcpInfo.name} configuration not found`);
           }
 
-          // 获取用户认证信息
-          const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
-          if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
-            throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
-          }
+          let authenticatedMcpConfig = mcpConfig;
 
-          // 动态注入认证信息
-          const dynamicEnv = { ...mcpConfig.env };
-          if (mcpConfig.env) {
-            for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                dynamicEnv[envKey] = userAuth.authData[envKey];
-                logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+          // 🔧 修复：只有需要认证的MCP才检查用户认证信息
+          if (mcpInfo.authRequired) {
+            // 获取用户认证信息
+            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
+            if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
+              throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
+            }
+
+            // 动态注入认证信息
+            const dynamicEnv = { ...mcpConfig.env };
+            if (mcpConfig.env) {
+              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+                }
               }
             }
-          }
 
-          // 创建带认证信息的MCP配置
-          const authenticatedMcpConfig = {
-            ...mcpConfig,
-            env: dynamicEnv
-          };
+            // 创建带认证信息的MCP配置
+            authenticatedMcpConfig = {
+              ...mcpConfig,
+              env: dynamicEnv
+            };
+          } else {
+            logger.info(`MCP ${mcpInfo.name} does not require authentication, using default configuration`);
+          }
 
           // 🔧 重要修复：连接MCP时传递用户ID实现多用户隔离
           const connected = await this.mcpManager.connectPredefined(authenticatedMcpConfig, userId);
@@ -1480,7 +1620,14 @@ Please return in format:
   /**
    * 执行Agent MCP工具
    */
-  private async executeAgentMCPTool(plan: AgentExecutionPlan, state: AgentWorkflowState): Promise<any> {
+  private async executeAgentMCPTool(plan: AgentExecutionPlan, state: AgentWorkflowState): Promise<{
+    result: any;
+    actualExecution: {
+      toolName: string;
+      mcpName: string;
+      args: any;
+    };
+  }> {
     if (!plan.mcpName) {
       throw new Error('MCP tool requires mcpName to be specified');
     }
@@ -1565,7 +1712,15 @@ Please return in format:
       // 🔧 新增：x-mcp自动发布处理
       const processedResult = await this.handleXMcpAutoPublish(actualMcpName, finalToolName, result, task.userId);
       
-      return processedResult;
+      // 🔧 返回结果和实际执行信息
+      return {
+        result: processedResult,
+        actualExecution: {
+          toolName: finalToolName,
+          mcpName: actualMcpName,
+          args: finalArgs
+        }
+      };
 
     } catch (error) {
       logger.error(`❌ Agent ${this.agent.name} MCP tool call failed:`, error);
@@ -1897,7 +2052,7 @@ ${summaries.join('\n\n')}
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 构建格式化提示词，参考传统agent的格式化方式
+      // 🔧 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
       const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
 
 **Tool Information:**
@@ -1936,6 +2091,7 @@ Format the result now:`;
 
   /**
    * 🔧 新增：生成完整的格式化结果（非流式，用于存储）
+   * 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
    */
   private async generateFormattedResult(
     rawResult: any,
@@ -2054,9 +2210,10 @@ Generate a comprehensive but concise summary:`;
         resultToSave
       );
 
-      // 保存Agent步骤消息到会话（使用格式化结果）
+      // 🔧 保存Agent步骤消息到会话（使用格式化结果）
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
+        // 直接使用格式化结果作为消息内容，不添加额外信息
         const stepContent = step.success 
           ? `${this.agent.name} Step ${step.stepNumber}: ${step.plan.tool}\n\n${resultToSave}`
           : `${this.agent.name} Step ${step.stepNumber} Failed: ${step.plan.tool}\n\nError: ${step.error}`;
@@ -2074,7 +2231,28 @@ Generate a comprehensive but concise summary:`;
             taskPhase: 'execution',
             contentType: 'step_thinking',
             agentName: this.agent.name,
-            isComplete: true
+            isComplete: true,
+            // 🔧 新增：详细的执行信息（仅在metadata中，不影响内容）
+            toolDetails: {
+              toolType: step.plan.toolType,
+              toolName: step.plan.tool,
+              mcpName: step.plan.mcpName || null,
+              args: step.plan.args,
+              expectedOutput: step.plan.expectedOutput,
+              reasoning: step.plan.reasoning,
+              timestamp: new Date().toISOString()
+            },
+            executionDetails: {
+              rawResult: step.result,
+              formattedResult: resultToSave,
+              success: step.success,
+              error: step.error,
+              processingInfo: {
+                originalDataSize: JSON.stringify(step.result).length,
+                formattedDataSize: resultToSave.length,
+                processingTime: new Date().toISOString()
+              }
+            }
           }
         });
 
@@ -2082,6 +2260,112 @@ Generate a comprehensive but concise summary:`;
       }
     } catch (error) {
       logger.error(`Failed to save Agent step result:`, error);
+    }
+  }
+
+  /**
+   * 🔧 保存Agent步骤原始结果
+   */
+  private async saveStepRawResult(taskId: string, stepNumber: number, plan: AgentExecutionPlan, rawResult: any): Promise<void> {
+    try {
+      const task = await this.taskService.getTaskById(taskId);
+      if (task.conversationId) {
+        const rawContent = `${this.agent.name} Step ${stepNumber} Raw Result: ${plan.tool}
+
+${JSON.stringify(rawResult, null, 2)}`;
+
+        await messageDao.createMessage({
+          conversationId: task.conversationId,
+          content: rawContent,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.EXECUTION,
+            stepNumber: stepNumber,
+            stepName: plan.tool,
+            taskPhase: 'execution',
+            contentType: 'raw_result',
+            agentName: this.agent.name,
+            isComplete: true,
+            toolDetails: {
+              toolType: plan.toolType,
+              toolName: plan.tool,
+              mcpName: plan.mcpName || null,
+              args: plan.args,
+              expectedOutput: plan.expectedOutput,
+              reasoning: plan.reasoning,
+              timestamp: new Date().toISOString()
+            },
+            executionDetails: {
+              rawResult: rawResult,
+              success: true,
+              processingInfo: {
+                originalDataSize: JSON.stringify(rawResult).length,
+                processingTime: new Date().toISOString()
+              }
+            }
+          }
+        });
+
+        await conversationDao.incrementMessageCount(task.conversationId);
+      }
+    } catch (error) {
+      logger.error(`Failed to save Agent step raw result:`, error);
+    }
+  }
+
+  /**
+   * 🔧 保存Agent步骤格式化结果
+   */
+  private async saveStepFormattedResult(taskId: string, stepNumber: number, plan: AgentExecutionPlan, formattedResult: string): Promise<void> {
+    try {
+      const task = await this.taskService.getTaskById(taskId);
+      if (task.conversationId) {
+        // 🔧 根据工具类型设置不同的标题
+        const resultType = plan.toolType === 'llm' ? 'LLM Result' : 'Formatted Result';
+        const formattedContent = `${this.agent.name} Step ${stepNumber} ${resultType}: ${plan.tool}
+
+${formattedResult}`;
+
+        await messageDao.createMessage({
+          conversationId: task.conversationId,
+          content: formattedContent,
+          type: MessageType.ASSISTANT,
+          intent: MessageIntent.TASK,
+          taskId,
+          metadata: {
+            stepType: MessageStepType.EXECUTION,
+            stepNumber: stepNumber,
+            stepName: plan.tool,
+            taskPhase: 'execution',
+            contentType: 'formatted_result',
+            agentName: this.agent.name,
+            isComplete: true,
+            toolDetails: {
+              toolType: plan.toolType,
+              toolName: plan.tool,
+              mcpName: plan.mcpName || null,
+              args: plan.args,
+              expectedOutput: plan.expectedOutput,
+              reasoning: plan.reasoning,
+              timestamp: new Date().toISOString()
+            },
+            executionDetails: {
+              formattedResult: formattedResult,
+              success: true,
+              processingInfo: {
+                formattedDataSize: formattedResult.length,
+                processingTime: new Date().toISOString()
+              }
+            }
+          }
+        });
+
+        await conversationDao.incrementMessageCount(task.conversationId);
+      }
+    } catch (error) {
+      logger.error(`Failed to save Agent step formatted result:`, error);
     }
   }
 
@@ -2326,6 +2610,11 @@ Generate a comprehensive but concise summary:`;
    * 🔧 新增：生成失败处理策略
    */
   private generateFailureStrategy(tool: string, error: string, attemptCount: number): 'retry' | 'alternative' | 'skip' | 'manual_intervention' {
+    // 系统级错误 - 直接跳过，无法修复
+    if (error.includes('require is not defined') || error.includes('import') || error.includes('module') || error.includes('Cannot resolve')) {
+      return 'manual_intervention';
+    }
+    
     // 字符限制错误 - 尝试替代方案
     if (error.includes('280') || error.includes('character') || error.includes('too long')) {
       return 'alternative';
@@ -2336,6 +2625,11 @@ Generate a comprehensive but concise summary:`;
       return 'manual_intervention';
     }
     
+    // 连接错误 - 直接跳过，避免无限重试
+    if (error.includes('Not connected') || error.includes('Connection closed') || error.includes('connection failed')) {
+      return 'skip';
+    }
+    
     // 服务器错误 - 重试一次后跳过
     if (error.includes('500') || error.includes('timeout') || error.includes('network')) {
       return attemptCount < 2 ? 'retry' : 'skip';
@@ -2344,17 +2638,37 @@ Generate a comprehensive but concise summary:`;
     // 其他错误 - 根据尝试次数决定
     if (attemptCount < 2) {
       return 'retry';
-    } else {
+    } else if (attemptCount < 5) {
       return 'alternative';
+    } else {
+      return 'skip'; // 超过5次尝试就停止
     }
   }
 
   /**
-   * 🔧 新增：获取失败处理策略
+   * Get failure handling strategy
    */
   private getFailureStrategy(state: AgentWorkflowState, step: AgentExecutionStep): string {
     const failureRecord = state.failureHistory.find(f => f.tool === step.plan.tool);
     return failureRecord?.suggestedStrategy || 'retry';
+  }
+  
+  /**
+   * Check if error type is MCP connection related
+   */
+  private isMCPConnectionError(errorType: string): boolean {
+    const mcpConnectionErrorTypes = [
+      'INVALID_API_KEY',
+      'EXPIRED_API_KEY', 
+      'WRONG_PASSWORD',
+      'MISSING_AUTH_PARAMS',
+      'INVALID_AUTH_FORMAT',
+      'INSUFFICIENT_PERMISSIONS',
+      'MCP_CONNECTION_FAILED',
+      'MCP_AUTH_REQUIRED',
+      'MCP_SERVICE_INIT_FAILED'
+    ];
+    return mcpConnectionErrorTypes.includes(errorType);
   }
 
   /**

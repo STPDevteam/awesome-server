@@ -133,13 +133,65 @@ export class IntelligentTaskService {
 
             // 🔧 如果步骤失败，发送step_error事件（对齐传统引擎格式）
             if (!step.success) {
-              stream({
-                event: 'step_error',
-                data: {
-                  step: step.step,
-                  error: step.error || 'Unknown error'
+              // 🔧 Enhanced: Use error handler to analyze errors with LLM for task execution
+              let detailedError = null;
+              let isMCPConnectionError = false;
+              let mcpName: string | undefined;
+              
+              try {
+                // Extract MCP name from step plan or error message
+                if (step.plan?.mcpName) {
+                  mcpName = step.plan.mcpName;
+                } else if (step.error && step.error.includes('MCP ')) {
+                  const mcpMatch = step.error.match(/MCP\s+([^\s]+)/);
+                  if (mcpMatch) {
+                    mcpName = mcpMatch[1];
+                  }
                 }
-              });
+                
+                const { MCPErrorHandler } = await import('./mcpErrorHandler.js');
+                const errorToAnalyze = new Error(step.error || 'Unknown error');
+                const errorDetails = await MCPErrorHandler.analyzeError(errorToAnalyze, mcpName);
+                detailedError = MCPErrorHandler.formatErrorForFrontend(errorDetails);
+                
+                // Check if this is an MCP connection/authentication error
+                isMCPConnectionError = this.isMCPConnectionError(errorDetails.type);
+                
+                if (isMCPConnectionError && mcpName) {
+                  // Send specialized MCP connection error event
+                  stream({
+                    event: 'mcp_connection_error',
+                    data: {
+                      mcpName: mcpName,
+                      step: step.step,
+                      errorType: errorDetails.type,
+                      title: errorDetails.title,
+                      message: errorDetails.userMessage,
+                      suggestions: errorDetails.suggestions,
+                      authFieldsRequired: errorDetails.authFieldsRequired,
+                      isRetryable: errorDetails.isRetryable,
+                      requiresUserAction: errorDetails.requiresUserAction,
+                      llmAnalysis: errorDetails.llmAnalysis,
+                      originalError: errorDetails.originalError,
+                      timestamp: new Date().toISOString()
+                    }
+                  });
+                }
+              } catch (analysisError) {
+                logger.warn('Error analysis failed:', analysisError);
+              }
+              
+              // Send regular step error event if not MCP connection error
+              if (!isMCPConnectionError) {
+                stream({
+                  event: 'step_error',
+                  data: {
+                    step: step.step,
+                    error: step.error || 'Unknown error',
+                    detailedError: detailedError
+                  }
+                });
+              }
             }
 
             // 保存步骤结果到数据库
@@ -150,15 +202,16 @@ export class IntelligentTaskService {
               step.result
             );
 
-            // 保存步骤消息到会话（使用step_thinking contentType对齐传统引擎）
+            // 🔧 保存步骤消息到会话 - 存储原始结果和格式化结果
             if (task.conversationId) {
-              const stepContent = step.success 
-                ? `Execution successful: ${step.plan?.tool}\n\n${step.result}`
-                : `Execution failed: ${step.plan?.tool}\n\nError: ${step.error}`;
+              // 1. 存储原始结果消息
+              const rawContent = step.success 
+                ? `Step ${step.step} Raw Result: ${step.plan?.tool}\n\n${JSON.stringify(step.result, null, 2)}`
+                : `Step ${step.step} Failed: ${step.plan?.tool}\n\nError: ${step.error}`;
 
               await messageDao.createMessage({
                 conversationId: task.conversationId,
-                content: stepContent,
+                content: rawContent,
                 type: MessageType.ASSISTANT,
                 intent: MessageIntent.TASK,
                 taskId,
@@ -167,10 +220,66 @@ export class IntelligentTaskService {
                   stepNumber: step.step,
                   stepName: step.plan?.tool || 'Unknown Step',
                   taskPhase: 'execution',
-                  contentType: 'step_thinking', // 🔧 添加step_thinking标识
-                  isComplete: true
+                  contentType: 'raw_result',
+                  isComplete: true,
+                  toolDetails: {
+                    toolType: step.plan?.toolType,
+                    toolName: step.plan?.tool,
+                    mcpName: step.plan?.mcpName || null,
+                    args: step.plan?.args,
+                    expectedOutput: step.plan?.expectedOutput,
+                    reasoning: step.plan?.reasoning,
+                    timestamp: new Date().toISOString()
+                  },
+                  executionDetails: {
+                    rawResult: step.result,
+                    success: step.success,
+                    error: step.error,
+                    processingInfo: {
+                      originalDataSize: JSON.stringify(step.result).length,
+                      processingTime: new Date().toISOString()
+                    }
+                  }
                 }
               });
+
+              // 2. 存储格式化结果消息（如果执行成功且有结果）
+              if (step.success && step.result) {
+                const formattedContent = `Step ${step.step} Formatted Result: ${step.plan?.tool}\n\n${step.result}`;
+
+                await messageDao.createMessage({
+                  conversationId: task.conversationId,
+                  content: formattedContent,
+                  type: MessageType.ASSISTANT,
+                  intent: MessageIntent.TASK,
+                  taskId,
+                  metadata: {
+                    stepType: MessageStepType.EXECUTION,
+                    stepNumber: step.step,
+                    stepName: step.plan?.tool || 'Unknown Step',
+                    taskPhase: 'execution',
+                    contentType: 'formatted_result',
+                    isComplete: true,
+                    toolDetails: {
+                      toolType: step.plan?.toolType,
+                      toolName: step.plan?.tool,
+                      mcpName: step.plan?.mcpName || null,
+                      args: step.plan?.args,
+                      expectedOutput: step.plan?.expectedOutput,
+                      reasoning: step.plan?.reasoning,
+                      timestamp: new Date().toISOString()
+                    },
+                    executionDetails: {
+                      formattedResult: step.result,
+                      success: step.success,
+                      processingInfo: {
+                        formattedDataSize: String(step.result).length,
+                        processingTime: new Date().toISOString()
+                      }
+                    }
+                  }
+                });
+              }
 
               await conversationDao.incrementMessageCount(task.conversationId);
             }
@@ -310,7 +419,24 @@ export class IntelligentTaskService {
       return false;
     }
   }
-
+  
+  /**
+   * Check if error type is MCP connection related
+   */
+  private isMCPConnectionError(errorType: string): boolean {
+    const mcpConnectionErrorTypes = [
+      'INVALID_API_KEY',
+      'EXPIRED_API_KEY', 
+      'WRONG_PASSWORD',
+      'MISSING_AUTH_PARAMS',
+      'INVALID_AUTH_FORMAT',
+      'INSUFFICIENT_PERMISSIONS',
+      'MCP_CONNECTION_FAILED',
+      'MCP_AUTH_REQUIRED',
+      'MCP_SERVICE_INIT_FAILED'
+    ];
+    return mcpConnectionErrorTypes.includes(errorType);
+  }
 }
 
 // 导出单例实例

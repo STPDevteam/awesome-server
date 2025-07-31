@@ -18,7 +18,364 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
         githubUrl: 'https://github.com/microsoft/playwright',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Playwright浏览器自动化的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'navigate_to_page',
+                description: 'Navigate to a specific URL',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        url: {
+                            type: 'string',
+                            description: 'URL to navigate to',
+                            required: true
+                        },
+                        wait_until: {
+                            type: 'string',
+                            description: 'When to consider navigation complete',
+                            enum: ['load', 'domcontentloaded', 'networkidle'],
+                            required: false,
+                            default: 'load'
+                        },
+                        timeout: {
+                            type: 'number',
+                            description: 'Navigation timeout in milliseconds',
+                            required: false,
+                            default: 30000
+                        }
+                    },
+                    required: ['url']
+                }
+            },
+            {
+                name: 'click_element',
+                description: 'Click on an element using CSS selector or text',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector or text to locate element',
+                            required: true
+                        },
+                        button: {
+                            type: 'string',
+                            description: 'Mouse button to click',
+                            enum: ['left', 'right', 'middle'],
+                            required: false,
+                            default: 'left'
+                        },
+                        click_count: {
+                            type: 'number',
+                            description: 'Number of clicks',
+                            required: false,
+                            default: 1
+                        },
+                        timeout: {
+                            type: 'number',
+                            description: 'Timeout in milliseconds',
+                            required: false,
+                            default: 30000
+                        }
+                    },
+                    required: ['selector']
+                }
+            },
+            {
+                name: 'fill_input',
+                description: 'Fill text into an input field',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the input field',
+                            required: true
+                        },
+                        text: {
+                            type: 'string',
+                            description: 'Text to fill into the input',
+                            required: true
+                        },
+                        clear_first: {
+                            type: 'boolean',
+                            description: 'Clear the field before filling',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: ['selector', 'text']
+                }
+            },
+            {
+                name: 'take_screenshot',
+                description: 'Take a screenshot of the current page or element',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for element screenshot (optional)',
+                            required: false
+                        },
+                        full_page: {
+                            type: 'boolean',
+                            description: 'Capture full scrollable page',
+                            required: false,
+                            default: false
+                        },
+                        path: {
+                            type: 'string',
+                            description: 'File path to save screenshot',
+                            required: false
+                        },
+                        format: {
+                            type: 'string',
+                            description: 'Image format',
+                            enum: ['png', 'jpeg'],
+                            required: false,
+                            default: 'png'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'wait_for_element',
+                description: 'Wait for an element to be visible, hidden, or exist',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the element',
+                            required: true
+                        },
+                        state: {
+                            type: 'string',
+                            description: 'Element state to wait for',
+                            enum: ['visible', 'hidden', 'attached', 'detached'],
+                            required: false,
+                            default: 'visible'
+                        },
+                        timeout: {
+                            type: 'number',
+                            description: 'Timeout in milliseconds',
+                            required: false,
+                            default: 30000
+                        }
+                    },
+                    required: ['selector']
+                }
+            },
+            {
+                name: 'get_text_content',
+                description: 'Get text content from an element',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the element',
+                            required: true
+                        },
+                        trim: {
+                            type: 'boolean',
+                            description: 'Trim whitespace from text',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: ['selector']
+                }
+            },
+            {
+                name: 'get_element_attribute',
+                description: 'Get attribute value from an element',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the element',
+                            required: true
+                        },
+                        attribute: {
+                            type: 'string',
+                            description: 'Attribute name to get',
+                            required: true
+                        }
+                    },
+                    required: ['selector', 'attribute']
+                }
+            },
+            {
+                name: 'select_option',
+                description: 'Select option from a dropdown',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the select element',
+                            required: true
+                        },
+                        value: {
+                            type: 'string',
+                            description: 'Option value to select',
+                            required: false
+                        },
+                        label: {
+                            type: 'string',
+                            description: 'Option label to select',
+                            required: false
+                        },
+                        index: {
+                            type: 'number',
+                            description: 'Option index to select',
+                            required: false
+                        }
+                    },
+                    required: ['selector']
+                }
+            },
+            {
+                name: 'upload_file',
+                description: 'Upload file to a file input element',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for file input',
+                            required: true
+                        },
+                        file_path: {
+                            type: 'string',
+                            description: 'Path to file to upload',
+                            required: true
+                        }
+                    },
+                    required: ['selector', 'file_path']
+                }
+            },
+            {
+                name: 'scroll_to_element',
+                description: 'Scroll to bring an element into view',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the element',
+                            required: true
+                        },
+                        behavior: {
+                            type: 'string',
+                            description: 'Scroll behavior',
+                            enum: ['auto', 'smooth'],
+                            required: false,
+                            default: 'auto'
+                        }
+                    },
+                    required: ['selector']
+                }
+            },
+            {
+                name: 'execute_javascript',
+                description: 'Execute JavaScript code in the page context',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        script: {
+                            type: 'string',
+                            description: 'JavaScript code to execute',
+                            required: true
+                        },
+                        args: {
+                            type: 'array',
+                            description: 'Arguments to pass to the script',
+                            required: false
+                        }
+                    },
+                    required: ['script']
+                }
+            },
+            {
+                name: 'wait_for_load_state',
+                description: 'Wait for page to reach a specific load state',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        state: {
+                            type: 'string',
+                            description: 'Load state to wait for',
+                            enum: ['load', 'domcontentloaded', 'networkidle'],
+                            required: false,
+                            default: 'load'
+                        },
+                        timeout: {
+                            type: 'number',
+                            description: 'Timeout in milliseconds',
+                            required: false,
+                            default: 30000
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'check_element_exists',
+                description: 'Check if an element exists on the page',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        selector: {
+                            type: 'string',
+                            description: 'CSS selector for the element',
+                            required: true
+                        },
+                        timeout: {
+                            type: 'number',
+                            description: 'Timeout in milliseconds',
+                            required: false,
+                            default: 5000
+                        }
+                    },
+                    required: ['selector']
+                }
+            },
+            {
+                name: 'generate_pdf',
+                description: 'Generate PDF from the current page',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        path: {
+                            type: 'string',
+                            description: 'File path to save PDF',
+                            required: false
+                        },
+                        format: {
+                            type: 'string',
+                            description: 'Page format',
+                            enum: ['A3', 'A4', 'A5', 'Legal', 'Letter', 'Tabloid'],
+                            required: false,
+                            default: 'A4'
+                        },
+                        print_background: {
+                            type: 'boolean',
+                            description: 'Include background graphics',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     // Chain RPC 服务
     {
@@ -48,7 +405,355 @@ export const predefinedMCPs: MCPService[] = [
             ALCHEMY_API_KEY: "ALCHEMY_API_KEY",
             OPENROUTER_API_KEY: "OPENROUTER_API_KEY",
             CHAIN_ID: "CHAIN_ID"
-        }
+        },
+        // 🔧 新增：基于Base Chain和Coinbase CDP的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'create_wallet',
+                description: 'Create a new server-side wallet on Base chain',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        network_id: {
+                            type: 'string',
+                            description: 'Network ID (base-mainnet, base-sepolia)',
+                            required: false,
+                            default: 'base-mainnet'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_wallet_balance',
+                description: 'Get wallet balance for ETH and tokens',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        asset_id: {
+                            type: 'string',
+                            description: 'Asset ID (eth, usdc, etc.)',
+                            required: false,
+                            default: 'eth'
+                        }
+                    },
+                    required: ['wallet_id']
+                }
+            },
+            {
+                name: 'transfer_funds',
+                description: 'Transfer ETH or tokens to another address',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Source wallet ID',
+                            required: true
+                        },
+                        destination_address: {
+                            type: 'string',
+                            description: 'Destination address (0x...)',
+                            required: true
+                        },
+                        amount: {
+                            type: 'string',
+                            description: 'Amount to transfer',
+                            required: true
+                        },
+                        asset_id: {
+                            type: 'string',
+                            description: 'Asset ID (eth, usdc, etc.)',
+                            required: false,
+                            default: 'eth'
+                        },
+                        gasless: {
+                            type: 'boolean',
+                            description: 'Use gasless transfers for USDC/EURC/cbBTC',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: ['wallet_id', 'destination_address', 'amount']
+                }
+            },
+            {
+                name: 'deploy_contract',
+                description: 'Deploy a smart contract to Base chain',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID for deployment',
+                            required: true
+                        },
+                        contract_bytecode: {
+                            type: 'string',
+                            description: 'Contract bytecode (0x...)',
+                            required: true
+                        },
+                        constructor_args: {
+                            type: 'array',
+                            description: 'Constructor arguments',
+                            required: false
+                        },
+                        gas_limit: {
+                            type: 'string',
+                            description: 'Gas limit for deployment',
+                            required: false
+                        }
+                    },
+                    required: ['wallet_id', 'contract_bytecode']
+                }
+            },
+            {
+                name: 'invoke_contract',
+                description: 'Call a smart contract method',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        contract_address: {
+                            type: 'string',
+                            description: 'Contract address (0x...)',
+                            required: true
+                        },
+                        method: {
+                            type: 'string',
+                            description: 'Contract method name',
+                            required: true
+                        },
+                        args: {
+                            type: 'array',
+                            description: 'Method arguments',
+                            required: false
+                        },
+                        amount: {
+                            type: 'string',
+                            description: 'ETH amount to send (for payable methods)',
+                            required: false
+                        }
+                    },
+                    required: ['wallet_id', 'contract_address', 'method']
+                }
+            },
+            {
+                name: 'swap_assets',
+                description: 'Swap tokens using Base DEX aggregation',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        from_asset_id: {
+                            type: 'string',
+                            description: 'Source asset ID',
+                            required: true
+                        },
+                        to_asset_id: {
+                            type: 'string',
+                            description: 'Target asset ID',
+                            required: true
+                        },
+                        amount: {
+                            type: 'string',
+                            description: 'Amount to swap',
+                            required: true
+                        },
+                        slippage_tolerance: {
+                            type: 'number',
+                            description: 'Slippage tolerance (0.1 = 0.1%)',
+                            required: false,
+                            default: 0.5
+                        }
+                    },
+                    required: ['wallet_id', 'from_asset_id', 'to_asset_id', 'amount']
+                }
+            },
+            {
+                name: 'stake_eth',
+                description: 'Stake ETH for earning rewards',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        amount: {
+                            type: 'string',
+                            description: 'Amount of ETH to stake',
+                            required: true
+                        },
+                        validator: {
+                            type: 'string',
+                            description: 'Validator address or service',
+                            required: false
+                        }
+                    },
+                    required: ['wallet_id', 'amount']
+                }
+            },
+            {
+                name: 'create_nft',
+                description: 'Mint/create an NFT on Base chain',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        contract_address: {
+                            type: 'string',
+                            description: 'NFT contract address (0x...)',
+                            required: true
+                        },
+                        to_address: {
+                            type: 'string',
+                            description: 'Recipient address (0x...)',
+                            required: true
+                        },
+                        token_uri: {
+                            type: 'string',
+                            description: 'Token metadata URI',
+                            required: false
+                        }
+                    },
+                    required: ['wallet_id', 'contract_address', 'to_address']
+                }
+            },
+            {
+                name: 'bridge_assets',
+                description: 'Bridge assets between Ethereum and Base',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        from_network: {
+                            type: 'string',
+                            description: 'Source network (ethereum, base)',
+                            required: true
+                        },
+                        to_network: {
+                            type: 'string',
+                            description: 'Target network (ethereum, base)',
+                            required: true
+                        },
+                        asset_id: {
+                            type: 'string',
+                            description: 'Asset to bridge (eth, usdc, etc.)',
+                            required: true
+                        },
+                        amount: {
+                            type: 'string',
+                            description: 'Amount to bridge',
+                            required: true
+                        }
+                    },
+                    required: ['wallet_id', 'from_network', 'to_network', 'asset_id', 'amount']
+                }
+            },
+            {
+                name: 'get_transaction_history',
+                description: 'Get transaction history for a wallet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        wallet_id: {
+                            type: 'string',
+                            description: 'Wallet ID',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of transactions to return',
+                            required: false,
+                            default: 50
+                        },
+                        cursor: {
+                            type: 'string',
+                            description: 'Pagination cursor',
+                            required: false
+                        }
+                    },
+                    required: ['wallet_id']
+                }
+            },
+            {
+                name: 'get_address_activity',
+                description: 'Get detailed activity for an address on Base',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        address: {
+                            type: 'string',
+                            description: 'Address to query (0x...)',
+                            required: true
+                        },
+                        activity_type: {
+                            type: 'string',
+                            description: 'Type of activity to filter',
+                            enum: ['all', 'transfers', 'trades', 'nft', 'defi'],
+                            required: false,
+                            default: 'all'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of activities to return',
+                            required: false,
+                            default: 50
+                        }
+                    },
+                    required: ['address']
+                }
+            },
+            {
+                name: 'estimate_fees',
+                description: 'Estimate transaction fees for Base operations',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        operation_type: {
+                            type: 'string',
+                            description: 'Type of operation',
+                            enum: ['transfer', 'contract_call', 'contract_deploy', 'swap'],
+                            required: true
+                        },
+                        to_address: {
+                            type: 'string',
+                            description: 'Destination address (if applicable)',
+                            required: false
+                        },
+                        data: {
+                            type: 'string',
+                            description: 'Transaction data (if applicable)',
+                            required: false
+                        }
+                    },
+                    required: ['operation_type']
+                }
+            }
+        ]
     },
     {
         name: 'evm-mcp',
@@ -62,7 +767,297 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/evm-favicon.ico',
         githubUrl: 'https://github.com/mcpdotdirect/evm-mcp-server',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于EVM工具功能的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_account_balance',
+                description: 'Get ETH balance for an account address',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        address: {
+                            type: 'string',
+                            description: 'Ethereum account address (0x...)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name (ethereum, polygon, arbitrum, etc.)',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        block: {
+                            type: 'string',
+                            description: 'Block number or "latest"',
+                            required: false,
+                            default: 'latest'
+                        }
+                    },
+                    required: ['address']
+                }
+            },
+            {
+                name: 'get_account_nonce',
+                description: 'Get the nonce (transaction count) for an account',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        address: {
+                            type: 'string',
+                            description: 'Ethereum account address (0x...)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        block: {
+                            type: 'string',
+                            description: 'Block number or "latest"',
+                            required: false,
+                            default: 'latest'
+                        }
+                    },
+                    required: ['address']
+                }
+            },
+            {
+                name: 'get_transaction_by_hash',
+                description: 'Get transaction information by transaction hash',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        hash: {
+                            type: 'string',
+                            description: 'Transaction hash (0x...)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['hash']
+                }
+            },
+            {
+                name: 'get_transaction_receipt',
+                description: 'Get transaction receipt by transaction hash',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        hash: {
+                            type: 'string',
+                            description: 'Transaction hash (0x...)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['hash']
+                }
+            },
+            {
+                name: 'get_block_by_number',
+                description: 'Get block information by block number',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        blockNumber: {
+                            type: 'string',
+                            description: 'Block number (hex) or "latest"',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        includeTransactions: {
+                            type: 'boolean',
+                            description: 'Include full transaction objects',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: ['blockNumber']
+                }
+            },
+            {
+                name: 'call_contract_method',
+                description: 'Call a read-only contract method',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        to: {
+                            type: 'string',
+                            description: 'Contract address (0x...)',
+                            required: true
+                        },
+                        data: {
+                            type: 'string',
+                            description: 'Encoded function call data (0x...)',
+                            required: true
+                        },
+                        from: {
+                            type: 'string',
+                            description: 'Caller address (optional)',
+                            required: false
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        block: {
+                            type: 'string',
+                            description: 'Block number or "latest"',
+                            required: false,
+                            default: 'latest'
+                        }
+                    },
+                    required: ['to', 'data']
+                }
+            },
+            {
+                name: 'get_contract_code',
+                description: 'Get bytecode of a smart contract',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        address: {
+                            type: 'string',
+                            description: 'Contract address (0x...)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        block: {
+                            type: 'string',
+                            description: 'Block number or "latest"',
+                            required: false,
+                            default: 'latest'
+                        }
+                    },
+                    required: ['address']
+                }
+            },
+            {
+                name: 'get_token_balance',
+                description: 'Get ERC-20 token balance for an account',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tokenContract: {
+                            type: 'string',
+                            description: 'ERC-20 token contract address (0x...)',
+                            required: true
+                        },
+                        account: {
+                            type: 'string',
+                            description: 'Account address to check balance for (0x...)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['tokenContract', 'account']
+                }
+            },
+            {
+                name: 'estimate_gas',
+                description: 'Estimate gas required for a transaction',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        to: {
+                            type: 'string',
+                            description: 'Destination address (0x...)',
+                            required: true
+                        },
+                        from: {
+                            type: 'string',
+                            description: 'Sender address (0x...)',
+                            required: false
+                        },
+                        data: {
+                            type: 'string',
+                            description: 'Transaction data (0x...)',
+                            required: false
+                        },
+                        value: {
+                            type: 'string',
+                            description: 'Value to send in wei (hex)',
+                            required: false
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['to']
+                }
+            },
+            {
+                name: 'get_gas_price',
+                description: 'Get current gas price for the network',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_latest_block',
+                description: 'Get the latest block information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        includeTransactions: {
+                            type: 'boolean',
+                            description: 'Include full transaction objects',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
 
     {
@@ -80,7 +1075,313 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             COINGECKO_API_KEY: "COINGECKO_API_KEY"
-        }
+        },
+        // 🔧 新增：基于CoinGecko官方API文档的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_coin_price',
+                description: 'Get current price of one or more coins by their IDs',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        ids: {
+                            type: 'string',
+                            description: 'Comma-separated list of coin IDs (e.g., bitcoin,ethereum)',
+                            required: true
+                        },
+                        vs_currencies: {
+                            type: 'string',
+                            description: 'Target currencies (e.g., usd,eur)',
+                            required: false,
+                            default: 'usd'
+                        },
+                        include_market_cap: {
+                            type: 'boolean',
+                            description: 'Include market cap data',
+                            required: false,
+                            default: false
+                        },
+                        include_24hr_vol: {
+                            type: 'boolean',
+                            description: 'Include 24h volume data',
+                            required: false,
+                            default: false
+                        },
+                        include_24hr_change: {
+                            type: 'boolean',
+                            description: 'Include 24h price change data',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: ['ids']
+                }
+            },
+            {
+                name: 'get_coin_market_data',
+                description: 'Get market data for coins including price, market cap, volume',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        vs_currency: {
+                            type: 'string',
+                            description: 'Target currency (usd, eur, btc, etc.)',
+                            required: false,
+                            default: 'usd'
+                        },
+                        ids: {
+                            type: 'string',
+                            description: 'Comma-separated list of coin IDs to filter',
+                            required: false
+                        },
+                        category: {
+                            type: 'string',
+                            description: 'Filter by category',
+                            required: false
+                        },
+                        order: {
+                            type: 'string',
+                            description: 'Sort order',
+                            enum: ['market_cap_desc', 'market_cap_asc', 'volume_desc', 'volume_asc', 'id_asc', 'id_desc'],
+                            required: false,
+                            default: 'market_cap_desc'
+                        },
+                        per_page: {
+                            type: 'number',
+                            description: 'Number of results per page (1-250)',
+                            required: false,
+                            default: 100
+                        },
+                        page: {
+                            type: 'number',
+                            description: 'Page number',
+                            required: false,
+                            default: 1
+                        }
+                    }
+                }
+            },
+            {
+                name: 'get_coin_by_id',
+                description: 'Get detailed coin information by ID',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        id: {
+                            type: 'string',
+                            description: 'Coin ID (e.g., bitcoin, ethereum)',
+                            required: true
+                        },
+                        localization: {
+                            type: 'boolean',
+                            description: 'Include all localized languages',
+                            required: false,
+                            default: false
+                        },
+                        tickers: {
+                            type: 'boolean',
+                            description: 'Include tickers data',
+                            required: false,
+                            default: false
+                        },
+                        market_data: {
+                            type: 'boolean',
+                            description: 'Include market data',
+                            required: false,
+                            default: true
+                        },
+                        community_data: {
+                            type: 'boolean',
+                            description: 'Include community data',
+                            required: false,
+                            default: true
+                        },
+                        developer_data: {
+                            type: 'boolean',
+                            description: 'Include developer data',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: ['id']
+                }
+            },
+            {
+                name: 'get_coin_history',
+                description: 'Get historical market data for a coin at a specific date',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        id: {
+                            type: 'string',
+                            description: 'Coin ID (e.g., bitcoin, ethereum)',
+                            required: true
+                        },
+                        date: {
+                            type: 'string',
+                            description: 'Date in dd-mm-yyyy format',
+                            required: true
+                        },
+                        localization: {
+                            type: 'boolean',
+                            description: 'Include all localized languages',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: ['id', 'date']
+                }
+            },
+            {
+                name: 'get_coin_market_chart',
+                description: 'Get historical market chart data (price, market cap, volume)',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        id: {
+                            type: 'string',
+                            description: 'Coin ID (e.g., bitcoin, ethereum)',
+                            required: true
+                        },
+                        vs_currency: {
+                            type: 'string',
+                            description: 'Target currency',
+                            required: true
+                        },
+                        days: {
+                            type: 'string',
+                            description: 'Data up to number of days ago (1/7/14/30/90/180/365/max)',
+                            required: true
+                        },
+                        interval: {
+                            type: 'string',
+                            description: 'Data interval',
+                            enum: ['daily'],
+                            required: false
+                        }
+                    },
+                    required: ['id', 'vs_currency', 'days']
+                }
+            },
+            {
+                name: 'get_coin_ohlc',
+                description: 'Get OHLC (Open, High, Low, Close) chart data for a coin',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        id: {
+                            type: 'string',
+                            description: 'Coin ID (e.g., bitcoin, ethereum)',
+                            required: true
+                        },
+                        vs_currency: {
+                            type: 'string',
+                            description: 'Target currency',
+                            required: true
+                        },
+                        days: {
+                            type: 'string',
+                            description: 'Data up to number of days ago (1/7/14/30/90/180/365)',
+                            required: true
+                        }
+                    },
+                    required: ['id', 'vs_currency', 'days']
+                }
+            },
+            {
+                name: 'search_coins',
+                description: 'Search for coins, categories and markets',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query',
+                            required: true
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'get_trending',
+                description: 'Get trending search coins, NFTs and categories',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'get_global_data',
+                description: 'Get cryptocurrency global market data',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'get_supported_currencies',
+                description: 'Get list of all supported currencies',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'get_coins_list',
+                description: 'Get list of all supported coins with ID, name and symbol',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        include_platform: {
+                            type: 'boolean',
+                            description: 'Include platform contract addresses',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_exchange_rates',
+                description: 'Get BTC exchange rates with other currencies',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'get_token_price_by_address',
+                description: 'Get token price by contract address',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        id: {
+                            type: 'string',
+                            description: 'Asset platform ID (e.g., ethereum, binance-smart-chain)',
+                            required: true
+                        },
+                        contract_addresses: {
+                            type: 'string',
+                            description: 'Comma-separated list of contract addresses',
+                            required: true
+                        },
+                        vs_currencies: {
+                            type: 'string',
+                            description: 'Target currencies',
+                            required: false,
+                            default: 'usd'
+                        }
+                    },
+                    required: ['id', 'contract_addresses']
+                }
+            }
+        ]
     },
     {
         name: 'coinmarketcap-mcp',
@@ -99,7 +1400,408 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             COINMARKETCAP_API_KEY: "COINMARKETCAP_API_KEY"
-        }
+        },
+        // 🔧 新增：基于CoinMarketCap官方API的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_latest_quotes',
+                description: 'Get the latest market quotes for cryptocurrencies',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        symbol: {
+                            type: 'string',
+                            description: 'Cryptocurrency symbol (e.g., BTC, ETH)',
+                            required: false
+                        },
+                        id: {
+                            type: 'string',
+                            description: 'CoinMarketCap cryptocurrency ID',
+                            required: false
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat or crypto to convert price to (e.g., USD, EUR, BTC)',
+                            required: false,
+                            default: 'USD'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of cryptocurrencies to return (1-5000)',
+                            required: false,
+                            default: 100
+                        },
+                        sort: {
+                            type: 'string',
+                            description: 'Sort field',
+                            enum: ['market_cap', 'name', 'symbol', 'date_added', 'price', 'circulating_supply', 'total_supply', 'max_supply', 'num_market_pairs', 'volume_24h', 'percent_change_1h', 'percent_change_24h', 'percent_change_7d'],
+                            required: false,
+                            default: 'market_cap'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_historical_quotes',
+                description: 'Get historical OHLCV data for cryptocurrency',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        symbol: {
+                            type: 'string',
+                            description: 'Cryptocurrency symbol (e.g., BTC, ETH)',
+                            required: false
+                        },
+                        id: {
+                            type: 'string',
+                            description: 'CoinMarketCap cryptocurrency ID',
+                            required: false
+                        },
+                        time_start: {
+                            type: 'string',
+                            description: 'Start date (ISO 8601 format)',
+                            required: false
+                        },
+                        time_end: {
+                            type: 'string',
+                            description: 'End date (ISO 8601 format)',
+                            required: false
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of historical data points',
+                            required: false,
+                            default: 10
+                        },
+                        interval: {
+                            type: 'string',
+                            description: 'Time interval',
+                            enum: ['1d', '7d', '14d', '15d', '30d', '90d', '365d'],
+                            required: false,
+                            default: '1d'
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_cryptocurrency_info',
+                description: 'Get static metadata information for cryptocurrencies',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        symbol: {
+                            type: 'string',
+                            description: 'Cryptocurrency symbol (e.g., BTC, ETH)',
+                            required: false
+                        },
+                        id: {
+                            type: 'string',
+                            description: 'CoinMarketCap cryptocurrency ID',
+                            required: false
+                        },
+                        aux: {
+                            type: 'string',
+                            description: 'Additional fields to include',
+                            enum: ['urls', 'logo', 'description', 'tags', 'platform', 'date_added', 'notice', 'status'],
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_trending_gainers_losers',
+                description: 'Get trending cryptocurrencies (gainers and losers)',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        time_period: {
+                            type: 'string',
+                            description: 'Time period for trending data',
+                            enum: ['1h', '24h', '7d', '30d'],
+                            required: false,
+                            default: '24h'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of results to return',
+                            required: false,
+                            default: 10
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_global_metrics',
+                description: 'Get global cryptocurrency market metrics',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_exchange_listings',
+                description: 'Get list of all cryptocurrency exchanges',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        start: {
+                            type: 'number',
+                            description: 'Starting point for pagination',
+                            required: false,
+                            default: 1
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of exchanges to return',
+                            required: false,
+                            default: 100
+                        },
+                        sort: {
+                            type: 'string',
+                            description: 'Sort field',
+                            enum: ['name', 'volume_24h', 'volume_24h_adjusted'],
+                            required: false,
+                            default: 'volume_24h'
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_exchange_info',
+                description: 'Get static metadata for specific cryptocurrency exchange',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        id: {
+                            type: 'string',
+                            description: 'CoinMarketCap exchange ID',
+                            required: false
+                        },
+                        slug: {
+                            type: 'string',
+                            description: 'Exchange slug (e.g., binance, coinbase-exchange)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_market_pairs',
+                description: 'Get market trading pairs for a cryptocurrency',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        symbol: {
+                            type: 'string',
+                            description: 'Cryptocurrency symbol (e.g., BTC, ETH)',
+                            required: false
+                        },
+                        id: {
+                            type: 'string',
+                            description: 'CoinMarketCap cryptocurrency ID',
+                            required: false
+                        },
+                        start: {
+                            type: 'number',
+                            description: 'Starting point for pagination',
+                            required: false,
+                            default: 1
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of market pairs to return',
+                            required: false,
+                            default: 100
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'search_cryptocurrencies',
+                description: 'Search for cryptocurrencies by name or symbol',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query (name or symbol)',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of results to return',
+                            required: false,
+                            default: 10
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'get_price_performance_stats',
+                description: 'Get price performance statistics for cryptocurrencies',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        symbol: {
+                            type: 'string',
+                            description: 'Cryptocurrency symbol (e.g., BTC, ETH)',
+                            required: false
+                        },
+                        id: {
+                            type: 'string',
+                            description: 'CoinMarketCap cryptocurrency ID',
+                            required: false
+                        },
+                        time_period: {
+                            type: 'string',
+                            description: 'Time period for performance stats',
+                            enum: ['all_time', 'yesterday', 'today', 'ytd'],
+                            required: false,
+                            default: 'all_time'
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_dex_listings',
+                description: 'Get decentralized exchange (DEX) listings and quotes',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        start: {
+                            type: 'number',
+                            description: 'Starting point for pagination',
+                            required: false,
+                            default: 1
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of DEX listings to return',
+                            required: false,
+                            default: 100
+                        },
+                        sort: {
+                            type: 'string',
+                            description: 'Sort field',
+                            enum: ['name', 'volume_24h', 'num_market_pairs'],
+                            required: false,
+                            default: 'volume_24h'
+                        },
+                        convert: {
+                            type: 'string',
+                            description: 'Fiat currency to convert to',
+                            required: false,
+                            default: 'USD'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_blockchain_networks',
+                description: 'Get list of blockchain networks with unique identifiers',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        start: {
+                            type: 'number',
+                            description: 'Starting point for pagination',
+                            required: false,
+                            default: 1
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of networks to return',
+                            required: false,
+                            default: 100
+                        },
+                        sort: {
+                            type: 'string',
+                            description: 'Sort field',
+                            enum: ['name', 'id'],
+                            required: false,
+                            default: 'id'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_latest_airdrops',
+                description: 'Get information about latest cryptocurrency airdrops',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        start: {
+                            type: 'number',
+                            description: 'Starting point for pagination',
+                            required: false,
+                            default: 1
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of airdrops to return',
+                            required: false,
+                            default: 20
+                        },
+                        status: {
+                            type: 'string',
+                            description: 'Airdrop status filter',
+                            enum: ['active', 'upcoming', 'ended'],
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     {
         name: 'defillama-mcp',
@@ -112,7 +1814,313 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png',
         githubUrl: 'https://github.com/dcSpark/mcp-server-defillama',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于DeFiLlama官方API的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_protocol_tvl',
+                description: 'Get Total Value Locked (TVL) data for DeFi protocols',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        protocol: {
+                            type: 'string',
+                            description: 'Protocol slug (e.g., aave, uniswap, compound)',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain name (e.g., ethereum, polygon, arbitrum)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_all_protocols',
+                description: 'Get list of all DeFi protocols with basic information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        category: {
+                            type: 'string',
+                            description: 'Filter by protocol category (e.g., dexes, lending, derivatives)',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Filter by blockchain',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_chain_tvl',
+                description: 'Get TVL data for specific blockchain chains',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain name (e.g., ethereum, bsc, polygon)',
+                            required: true
+                        }
+                    },
+                    required: ['chain']
+                }
+            },
+            {
+                name: 'get_historical_tvl',
+                description: 'Get historical TVL data for protocols or chains',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        protocol: {
+                            type: 'string',
+                            description: 'Protocol slug for protocol-specific data',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Chain name for chain-specific data',
+                            required: false
+                        },
+                        start_timestamp: {
+                            type: 'number',
+                            description: 'Start timestamp for historical data',
+                            required: false
+                        },
+                        end_timestamp: {
+                            type: 'number',
+                            description: 'End timestamp for historical data',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_token_prices',
+                description: 'Get current and historical token prices',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tokens: {
+                            type: 'array',
+                            description: 'Array of token addresses or coingecko IDs',
+                            required: true
+                        },
+                        timestamp: {
+                            type: 'number',
+                            description: 'Unix timestamp for historical prices',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain for token addresses',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['tokens']
+                }
+            },
+            {
+                name: 'get_stablecoin_data',
+                description: 'Get stablecoin market cap and chain distribution data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        stablecoin: {
+                            type: 'string',
+                            description: 'Stablecoin ID (e.g., 1, 2 for USDT, USDC)',
+                            required: false
+                        },
+                        include_prices: {
+                            type: 'boolean',
+                            description: 'Include price data',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_protocol_fees_revenue',
+                description: 'Get protocol fees and revenue data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        protocol: {
+                            type: 'string',
+                            description: 'Protocol slug',
+                            required: false
+                        },
+                        data_type: {
+                            type: 'string',
+                            description: 'Type of data to retrieve',
+                            enum: ['fees', 'revenue', 'both'],
+                            required: false,
+                            default: 'both'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_yield_pools',
+                description: 'Get yield farming pools and APY data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        chain: {
+                            type: 'string',
+                            description: 'Filter by blockchain',
+                            required: false
+                        },
+                        protocol: {
+                            type: 'string',
+                            description: 'Filter by protocol',
+                            required: false
+                        },
+                        min_tvl: {
+                            type: 'number',
+                            description: 'Minimum TVL threshold',
+                            required: false,
+                            default: 1000
+                        },
+                        stablecoin: {
+                            type: 'boolean',
+                            description: 'Filter for stablecoin pools only',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_protocol_treasury',
+                description: 'Get protocol treasury and token holdings data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        protocol: {
+                            type: 'string',
+                            description: 'Protocol slug',
+                            required: true
+                        }
+                    },
+                    required: ['protocol']
+                }
+            },
+            {
+                name: 'get_protocol_emissions',
+                description: 'Get protocol token emissions and unlock schedules',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        protocol: {
+                            type: 'string',
+                            description: 'Protocol slug',
+                            required: true
+                        }
+                    },
+                    required: ['protocol']
+                }
+            },
+            {
+                name: 'get_bridge_volumes',
+                description: 'Get cross-chain bridge volume data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        bridge: {
+                            type: 'string',
+                            description: 'Bridge name (e.g., multichain, polygon, arbitrum)',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Source or destination chain',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_dex_volumes',
+                description: 'Get decentralized exchange trading volumes',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        dex: {
+                            type: 'string',
+                            description: 'DEX protocol name (e.g., uniswap, sushiswap)',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain name',
+                            required: false
+                        },
+                        exclude_total_data_chart: {
+                            type: 'boolean',
+                            description: 'Exclude total data chart',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_liquidations_data',
+                description: 'Get liquidation data for lending protocols',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        protocol: {
+                            type: 'string',
+                            description: 'Lending protocol name',
+                            required: false
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain name',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'search_protocols',
+                description: 'Search for DeFi protocols by name or keyword',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query (protocol name or keyword)',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Maximum number of results',
+                            required: false,
+                            default: 10
+                        }
+                    },
+                    required: ['query']
+                }
+            }
+        ]
     },
     {
         name: 'dune-mcp',
@@ -129,7 +2137,66 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             DUNE_API_KEY: "DUNE_API_KEY"
-        }
+        },
+        // 🔧 新增：基于Dune Analytics的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'execute_query',
+                description: 'Execute a Dune Analytics query and return results',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'number',
+                            description: 'Dune query ID to execute',
+                            required: true
+                        },
+                        parameters: {
+                            type: 'object',
+                            description: 'Query parameters as key-value pairs',
+                            required: false
+                        }
+                    },
+                    required: ['query_id']
+                }
+            },
+            {
+                name: 'get_query_results',
+                description: 'Get results from a previously executed query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        execution_id: {
+                            type: 'string',
+                            description: 'Execution ID of the query',
+                            required: true
+                        }
+                    },
+                    required: ['execution_id']
+                }
+            },
+            {
+                name: 'get_latest_results',
+                description: 'Get the latest results for a query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'number',
+                            description: 'Dune query ID',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of rows to return',
+                            required: false,
+                            default: 100
+                        }
+                    },
+                    required: ['query_id']
+                }
+            }
+        ]
     },
 
     {
@@ -143,7 +2210,73 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-chainlink-100.png',
         githubUrl: 'https://github.com/kukapay/chainlink-feeds-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Chainlink的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_price_feed',
+                description: 'Get latest price from Chainlink price feeds',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        feed_address: {
+                            type: 'string',
+                            description: 'Chainlink price feed contract address',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network name (ethereum, polygon, arbitrum, etc.)',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['feed_address']
+                }
+            },
+            {
+                name: 'get_feed_data',
+                description: 'Get comprehensive data from a Chainlink price feed',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        pair: {
+                            type: 'string',
+                            description: 'Trading pair (e.g., ETH/USD, BTC/USD)',
+                            required: true
+                        },
+                        network: {
+                            type: 'string',
+                            description: 'Network to query',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['pair']
+                }
+            },
+            {
+                name: 'list_price_feeds',
+                description: 'List available Chainlink price feeds for a network',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        network: {
+                            type: 'string',
+                            description: 'Network name',
+                            required: false,
+                            default: 'ethereum'
+                        },
+                        category: {
+                            type: 'string',
+                            description: 'Feed category (crypto, forex, commodities)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     {
         name: 'feargreed-mcp',
@@ -160,7 +2293,57 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
         githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Fear & Greed Index的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_current_index',
+                description: 'Get the current Fear & Greed Index value and classification',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'get_historical_data',
+                description: 'Get historical Fear & Greed Index data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        limit: {
+                            type: 'number',
+                            description: 'Number of historical data points to return',
+                            required: false,
+                            default: 30
+                        },
+                        format: {
+                            type: 'string',
+                            description: 'Data format (json, csv)',
+                            required: false,
+                            default: 'json'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_index_analysis',
+                description: 'Get detailed analysis of the current market sentiment',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        include_factors: {
+                            type: 'boolean',
+                            description: 'Include breakdown of contributing factors',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     {
         name: 'rugcheck-mcp',
@@ -177,7 +2360,52 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             SOLSNIFFER_API_KEY: "SOLSNIFFER_API_KEY"
-        }
+        },
+        // 🔧 新增：基于RugCheck的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'check_token',
+                description: 'Analyze token for potential rug pull risks and security issues',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        token_address: {
+                            type: 'string',
+                            description: 'Token contract address to analyze',
+                            required: true
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain network (ethereum, bsc, polygon, etc.)',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['token_address']
+                }
+            },
+            {
+                name: 'get_security_score',
+                description: 'Get detailed security score and risk assessment for a token',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        token_address: {
+                            type: 'string',
+                            description: 'Token contract address',
+                            required: true
+                        },
+                        include_details: {
+                            type: 'boolean',
+                            description: 'Include detailed risk breakdown',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: ['token_address']
+                }
+            }
+        ]
     },
     {
         name: 'whaletracker-mcp',
@@ -190,7 +2418,82 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-crypto-100.png',
         githubUrl: 'https://github.com/kukapay/whale-tracker-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Whale Tracker的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_whale_transactions',
+                description: 'Get recent large transactions (whale movements)',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        min_value_usd: {
+                            type: 'number',
+                            description: 'Minimum transaction value in USD',
+                            required: false,
+                            default: 1000000
+                        },
+                        token: {
+                            type: 'string',
+                            description: 'Token symbol to filter (ETH, BTC, USDC, etc.)',
+                            required: false
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of transactions to return',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'track_address',
+                description: 'Monitor transactions for a specific whale address',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        address: {
+                            type: 'string',
+                            description: 'Wallet address to track',
+                            required: true
+                        },
+                        time_range: {
+                            type: 'string',
+                            description: 'Time range (24h, 7d, 30d)',
+                            required: false,
+                            default: '24h'
+                        }
+                    },
+                    required: ['address']
+                }
+            },
+            {
+                name: 'get_whale_alerts',
+                description: 'Get real-time whale transaction alerts',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        networks: {
+                            type: 'array',
+                            description: 'Networks to monitor (ethereum, bitcoin, etc.)',
+                            items: {
+                                type: 'string'
+                            },
+                            required: false
+                        },
+                        threshold: {
+                            type: 'number',
+                            description: 'Alert threshold in USD',
+                            required: false,
+                            default: 500000
+                        }
+                    },
+                    required: []
+                }
+            }
+        ]
     },
     
     // Development Tools 服务
@@ -220,7 +2523,290 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             GITHUB_PERSONAL_ACCESS_TOKEN: "GITHUB_PERSONAL_ACCESS_TOKEN",
-        }
+        },
+        // 🔧 新增：基于GitHub官方文档的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'create_or_update_file',
+                description: 'Create or update a single file in a repository',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        owner: {
+                            type: 'string',
+                            description: 'Repository owner (username or organization)',
+                            required: true
+                        },
+                        repo: {
+                            type: 'string',
+                            description: 'Repository name',
+                            required: true
+                        },
+                        path: {
+                            type: 'string',
+                            description: 'Path where to create/update the file',
+                            required: true
+                        },
+                        content: {
+                            type: 'string',
+                            description: 'Content of the file',
+                            required: true
+                        },
+                        message: {
+                            type: 'string',
+                            description: 'Commit message',
+                            required: true
+                        },
+                        branch: {
+                            type: 'string',
+                            description: 'Branch to create/update the file in',
+                            required: true
+                        },
+                        sha: {
+                            type: 'string',
+                            description: 'SHA of file being replaced (for updates)',
+                            required: false
+                        }
+                    },
+                    required: ['owner', 'repo', 'path', 'content', 'message', 'branch']
+                }
+            },
+            {
+                name: 'search_repositories',
+                description: 'Search for GitHub repositories',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query',
+                            required: true
+                        },
+                        page: {
+                            type: 'number',
+                            description: 'Page number for pagination',
+                            required: false
+                        },
+                        perPage: {
+                            type: 'number',
+                            description: 'Results per page (max 100)',
+                            required: false,
+                            default: 30
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'create_repository',
+                description: 'Create a new GitHub repository',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        name: {
+                            type: 'string',
+                            description: 'Repository name',
+                            required: true
+                        },
+                        description: {
+                            type: 'string',
+                            description: 'Repository description',
+                            required: false
+                        },
+                        private: {
+                            type: 'boolean',
+                            description: 'Whether repo should be private',
+                            required: false,
+                            default: false
+                        },
+                        autoInit: {
+                            type: 'boolean',
+                            description: 'Initialize with README',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: ['name']
+                }
+            },
+            {
+                name: 'create_issue',
+                description: 'Create a new issue',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        owner: {
+                            type: 'string',
+                            description: 'Repository owner',
+                            required: true
+                        },
+                        repo: {
+                            type: 'string',
+                            description: 'Repository name',
+                            required: true
+                        },
+                        title: {
+                            type: 'string',
+                            description: 'Issue title',
+                            required: true
+                        },
+                        body: {
+                            type: 'string',
+                            description: 'Issue description',
+                            required: false
+                        },
+                        assignees: {
+                            type: 'array',
+                            description: 'Usernames to assign',
+                            items: { type: 'string' },
+                            required: false
+                        },
+                        labels: {
+                            type: 'array',
+                            description: 'Labels to add',
+                            items: { type: 'string' },
+                            required: false
+                        }
+                    },
+                    required: ['owner', 'repo', 'title']
+                }
+            },
+            {
+                name: 'create_pull_request',
+                description: 'Create a new pull request',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        owner: {
+                            type: 'string',
+                            description: 'Repository owner',
+                            required: true
+                        },
+                        repo: {
+                            type: 'string',
+                            description: 'Repository name',
+                            required: true
+                        },
+                        title: {
+                            type: 'string',
+                            description: 'PR title',
+                            required: true
+                        },
+                        body: {
+                            type: 'string',
+                            description: 'PR description',
+                            required: false
+                        },
+                        head: {
+                            type: 'string',
+                            description: 'Branch containing changes',
+                            required: true
+                        },
+                        base: {
+                            type: 'string',
+                            description: 'Branch to merge into',
+                            required: true
+                        },
+                        draft: {
+                            type: 'boolean',
+                            description: 'Create as draft PR',
+                            required: false,
+                            default: false
+                        }
+                    },
+                    required: ['owner', 'repo', 'title', 'head', 'base']
+                }
+            },
+            {
+                name: 'search_code',
+                description: 'Search for code across GitHub repositories',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        q: {
+                            type: 'string',
+                            description: 'Search query using GitHub code search syntax',
+                            required: true
+                        },
+                        sort: {
+                            type: 'string',
+                            description: 'Sort field (indexed only)',
+                            enum: ['indexed'],
+                            required: false
+                        },
+                        order: {
+                            type: 'string',
+                            description: 'Sort order',
+                            enum: ['asc', 'desc'],
+                            required: false,
+                            default: 'desc'
+                        },
+                        per_page: {
+                            type: 'number',
+                            description: 'Results per page (max 100)',
+                            required: false,
+                            default: 30
+                        }
+                    },
+                    required: ['q']
+                }
+            },
+            {
+                name: 'get_file_contents',
+                description: 'Get contents of a file or directory',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        owner: {
+                            type: 'string',
+                            description: 'Repository owner',
+                            required: true
+                        },
+                        repo: {
+                            type: 'string',
+                            description: 'Repository name',
+                            required: true
+                        },
+                        path: {
+                            type: 'string',
+                            description: 'Path to file/directory',
+                            required: true
+                        },
+                        branch: {
+                            type: 'string',
+                            description: 'Branch to get contents from',
+                            required: false
+                        }
+                    },
+                    required: ['owner', 'repo', 'path']
+                }
+            },
+            {
+                name: 'fork_repository',
+                description: 'Fork a repository',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        owner: {
+                            type: 'string',
+                            description: 'Repository owner',
+                            required: true
+                        },
+                        repo: {
+                            type: 'string',
+                            description: 'Repository name',
+                            required: true
+                        },
+                        organization: {
+                            type: 'string',
+                            description: 'Organization to fork to',
+                            required: false
+                        }
+                    },
+                    required: ['owner', 'repo']
+                }
+            }
+        ]
     },
     {
         name: 'mindsdb-mcp',
@@ -233,7 +2819,91 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-money-minded-68.png',
         githubUrl: 'https://github.com/mindsdb/minds-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于MindsDB的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'create_model',
+                description: 'Create a machine learning model in MindsDB',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        model_name: {
+                            type: 'string',
+                            description: 'Name for the ML model',
+                            required: true
+                        },
+                        query: {
+                            type: 'string',
+                            description: 'SQL query to define the model',
+                            required: true
+                        },
+                        engine: {
+                            type: 'string',
+                            description: 'ML engine to use (lightwood, huggingface, etc.)',
+                            required: false,
+                            default: 'lightwood'
+                        }
+                    },
+                    required: ['model_name', 'query']
+                }
+            },
+            {
+                name: 'predict',
+                description: 'Make predictions using a trained model',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        model_name: {
+                            type: 'string',
+                            description: 'Name of the model to use for prediction',
+                            required: true
+                        },
+                        data: {
+                            type: 'object',
+                            description: 'Input data for prediction',
+                            required: true
+                        }
+                    },
+                    required: ['model_name', 'data']
+                }
+            },
+            {
+                name: 'list_models',
+                description: 'List all available models',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        status: {
+                            type: 'string',
+                            description: 'Filter by model status (training, complete, error)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'query_data',
+                description: 'Execute SQL queries on connected data sources',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'SQL query to execute',
+                            required: true
+                        },
+                        database: {
+                            type: 'string',
+                            description: 'Target database name',
+                            required: false
+                        }
+                    },
+                    required: ['query']
+                }
+            }
+        ]
     },
     {
         name: 'playwright-mcp',
@@ -259,7 +2929,128 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
         githubUrl: 'https://github.com/ahujasid/blender-mcp',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于Blender的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'create_object',
+                description: 'Create a new 3D object in Blender',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        object_type: {
+                            type: 'string',
+                            description: 'Type of object (cube, sphere, cylinder, plane, etc.)',
+                            required: true
+                        },
+                        location: {
+                            type: 'array',
+                            description: 'Object location [x, y, z]',
+                            items: {
+                                type: 'number'
+                            },
+                            required: false,
+                            default: [0, 0, 0]
+                        },
+                        scale: {
+                            type: 'array',
+                            description: 'Object scale [x, y, z]',
+                            items: {
+                                type: 'number'
+                            },
+                            required: false,
+                            default: [1, 1, 1]
+                        }
+                    },
+                    required: ['object_type']
+                }
+            },
+            {
+                name: 'render_scene',
+                description: 'Render the current Blender scene',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        output_path: {
+                            type: 'string',
+                            description: 'Output file path for rendered image',
+                            required: false
+                        },
+                        resolution: {
+                            type: 'array',
+                            description: 'Render resolution [width, height]',
+                            items: {
+                                type: 'number'
+                            },
+                            required: false,
+                            default: [1920, 1080]
+                        },
+                        samples: {
+                            type: 'number',
+                            description: 'Number of render samples',
+                            required: false,
+                            default: 128
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'apply_material',
+                description: 'Apply material to selected objects',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        material_name: {
+                            type: 'string',
+                            description: 'Name of the material to apply',
+                            required: true
+                        },
+                        object_names: {
+                            type: 'array',
+                            description: 'Names of objects to apply material to',
+                            items: {
+                                type: 'string'
+                            },
+                            required: false
+                        }
+                    },
+                    required: ['material_name']
+                }
+            },
+            {
+                name: 'animate_object',
+                description: 'Create animation for an object',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        object_name: {
+                            type: 'string',
+                            description: 'Name of object to animate',
+                            required: true
+                        },
+                        animation_type: {
+                            type: 'string',
+                            description: 'Animation type (location, rotation, scale)',
+                            required: true
+                        },
+                        start_frame: {
+                            type: 'number',
+                            description: 'Starting frame of animation',
+                            required: false,
+                            default: 1
+                        },
+                        end_frame: {
+                            type: 'number',
+                            description: 'Ending frame of animation',
+                            required: false,
+                            default: 250
+                        }
+                    },
+                    required: ['object_name', 'animation_type']
+                }
+            }
+        ]
     },
     {
         name: 'unity-mcp',
@@ -305,7 +3096,103 @@ export const predefinedMCPs: MCPService[] = [
         authRequired: true,
         authParams: {
             FIGMA_API_KEY: "FIGMA_API_KEY"
-        }
+        },
+        // 🔧 新增：基于Figma的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'get_file_info',
+                description: 'Get information about a Figma file',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        file_key: {
+                            type: 'string',
+                            description: 'Figma file key from the URL',
+                            required: true
+                        },
+                        version: {
+                            type: 'string',
+                            description: 'File version ID (optional)',
+                            required: false
+                        }
+                    },
+                    required: ['file_key']
+                }
+            },
+            {
+                name: 'get_file_nodes',
+                description: 'Get specific nodes from a Figma file',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        file_key: {
+                            type: 'string',
+                            description: 'Figma file key',
+                            required: true
+                        },
+                        node_ids: {
+                            type: 'array',
+                            description: 'Array of node IDs to retrieve',
+                            items: {
+                                type: 'string'
+                            },
+                            required: true
+                        }
+                    },
+                    required: ['file_key', 'node_ids']
+                }
+            },
+            {
+                name: 'get_image_exports',
+                description: 'Export images from Figma nodes',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        file_key: {
+                            type: 'string',
+                            description: 'Figma file key',
+                            required: true
+                        },
+                        node_ids: {
+                            type: 'array',
+                            description: 'Node IDs to export as images',
+                            items: {
+                                type: 'string'
+                            },
+                            required: true
+                        },
+                        format: {
+                            type: 'string',
+                            description: 'Export format (png, jpg, svg, pdf)',
+                            required: false,
+                            default: 'png'
+                        },
+                        scale: {
+                            type: 'number',
+                            description: 'Scale factor for export',
+                            required: false,
+                            default: 1
+                        }
+                    },
+                    required: ['file_key', 'node_ids']
+                }
+            },
+            {
+                name: 'get_team_projects',
+                description: 'Get projects for a team',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        team_id: {
+                            type: 'string',
+                            description: 'Team ID',
+                            required: true
+                        }
+                    },
+                    required: ['team_id']
+                }
+            }
+        ]
     },
     {
         name: 'aws-mcp',
@@ -318,7 +3205,93 @@ export const predefinedMCPs: MCPService[] = [
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-aws-96.png',
         githubUrl: 'https://awslabs.github.io/mcp/',
         authRequired: false,
-        authParams: {}
+        authParams: {},
+        // 🔧 新增：基于AWS的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'list_s3_buckets',
+                description: 'List all S3 buckets in the account',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        region: {
+                            type: 'string',
+                            description: 'AWS region',
+                            required: false,
+                            default: 'us-east-1'
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_s3_object',
+                description: 'Get an object from S3 bucket',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        bucket: {
+                            type: 'string',
+                            description: 'S3 bucket name',
+                            required: true
+                        },
+                        key: {
+                            type: 'string',
+                            description: 'Object key/path',
+                            required: true
+                        }
+                    },
+                    required: ['bucket', 'key']
+                }
+            },
+            {
+                name: 'list_ec2_instances',
+                description: 'List EC2 instances',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        region: {
+                            type: 'string',
+                            description: 'AWS region',
+                            required: false,
+                            default: 'us-east-1'
+                        },
+                        state: {
+                            type: 'string',
+                            description: 'Instance state filter (running, stopped, etc.)',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'invoke_lambda',
+                description: 'Invoke a Lambda function',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        function_name: {
+                            type: 'string',
+                            description: 'Lambda function name or ARN',
+                            required: true
+                        },
+                        payload: {
+                            type: 'object',
+                            description: 'Function payload/input',
+                            required: false
+                        },
+                        invocation_type: {
+                            type: 'string',
+                            description: 'Invocation type (RequestResponse, Event, DryRun)',
+                            required: false,
+                            default: 'RequestResponse'
+                        }
+                    },
+                    required: ['function_name']
+                }
+            }
+        ]
     },
     {
         name: 'convex-mcp',
@@ -498,7 +3471,271 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_USERNAME: "TWITTER_USERNAME",
             TWITTER_PASSWORD: "TWITTER_PASSWORD", 
             TWITTER_EMAIL: "TWITTER_EMAIL"
-        }
+        },
+        // 🔧 新增：预定义工具信息
+        predefinedTools: [
+            {
+                name: 'profileByUsername',
+                description: 'Get detailed Twitter profile information for a specific username',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Twitter username (without @ symbol)',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'myProfile',
+                description: 'Get the authenticated user\'s Twitter profile information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        check: {
+                            type: 'boolean',
+                            description: 'Must be true to confirm the action',
+                            required: true
+                        }
+                    },
+                    required: ['check']
+                }
+            },
+            {
+                name: 'sendTweet',
+                description: 'Post a new tweet or reply to an existing tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Tweet content (max 280 characters)',
+                            required: true
+                        },
+                        replyToId: {
+                            type: 'string',
+                            description: 'ID of the tweet to reply to (optional)',
+                            required: false
+                        }
+                    },
+                    required: ['text']
+                }
+            },
+            {
+                name: 'searchTweets',
+                description: 'Search for tweets using Twitter\'s search API',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query string',
+                            required: true
+                        },
+                        maxResults: {
+                            type: 'number',
+                            description: 'Maximum number of results to return (1-100)',
+                            required: false,
+                            default: 10
+                        },
+                        searchMode: {
+                            type: 'string',
+                            description: 'Search mode: Latest, Top, or Photos',
+                            enum: ['Latest', 'Top', 'Photos'],
+                            required: false,
+                            default: 'Latest'
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'likeTweet',
+                description: 'Like a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to like',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'unlikeTweet',
+                description: 'Unlike a previously liked tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to unlike',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'retweet',
+                description: 'Retweet a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to retweet',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'unretweet',
+                description: 'Undo a previous retweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to unretweet',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'followUser',
+                description: 'Follow a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user to follow',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'unfollowUser',
+                description: 'Unfollow a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user to unfollow',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getFollowers',
+                description: 'Get list of followers for a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get followers for',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of followers to fetch (max 50)',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getFollowing',
+                description: 'Get list of users that a specific user is following',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get following list for',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of following to fetch (max 50)',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getTweets',
+                description: 'Get recent tweets from a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get tweets from',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of tweets to fetch (max 50)',
+                            required: false,
+                            default: 10
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'bookmarkTweet',
+                description: 'Bookmark a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to bookmark',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'removeBookmark',
+                description: 'Remove a tweet from bookmarks',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to remove from bookmarks',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            }
+        ]
     },
     {
         name: 'x-mcp',
