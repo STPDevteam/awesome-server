@@ -3814,7 +3814,6 @@ export const mcpNameMapping: Record<string, string> = {
     'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
     'coinmarketcap_mcp_service': 'coinmarketcap-mcp',
     'defillama-mcp-service': 'mcp-server-defillama',
-    'rug-check-mcp-service': 'rug-check-mcp',
     'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
     'rug-check-mcp-service': 'rugcheck-mcp',
     'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
