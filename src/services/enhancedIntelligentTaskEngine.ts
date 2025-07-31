@@ -391,7 +391,26 @@ export class EnhancedIntelligentTaskEngine {
           
           if (!isConnected) {
             logger.info(`📡 Connecting MCP ${mcpName} for user ${userId}`);
-            await this.mcpManager.connect(mcpName, userId);
+            
+            // 🔧 修复：获取MCP配置，使用正确的参数调用connect方法
+            const { getPredefinedMCP } = await import('./predefinedMCPs.js');
+            const mcpConfig = getPredefinedMCP(mcpName);
+            
+            if (!mcpConfig) {
+              logger.error(`MCP configuration not found for: ${mcpName}`);
+              continue; // 跳过这个MCP，继续处理其他的
+            }
+
+            // 🔧 正确调用：传递完整的参数 (name, command, args, env, userId)
+            await this.mcpManager.connect(
+              mcpConfig.name,
+              mcpConfig.command,
+              mcpConfig.args,
+              mcpConfig.env,
+              userId
+            );
+            
+            logger.info(`✅ Successfully connected MCP: ${mcpName}`);
           }
         } catch (error) {
           logger.error(`Failed to connect MCP ${mcpName}:`, error);
