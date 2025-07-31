@@ -210,7 +210,7 @@ export class EnhancedIntelligentTaskEngine {
               rawResult: executionResult.result,
               success: executionResult.success,
               error: executionResult.error,
-              args: currentStep.input || {},
+              args: executionResult.actualArgs || currentStep.input || {},
               expectedOutput: `Execute ${currentStep.action} on ${currentStep.mcp}`,
               timestamp: new Date().toISOString(),
               attempts: currentStep.attempts || 1
@@ -244,6 +244,7 @@ export class EnhancedIntelligentTaskEngine {
                 mcpName: currentStep.mcp,
                 originalResult: executionResult.result,
                 formattedResult: formattedResult,
+                args: executionResult.actualArgs || currentStep.input || {},
                 processingInfo: {
                   originalDataSize: JSON.stringify(executionResult.result).length,
                   formattedDataSize: formattedResult.length,
@@ -410,6 +411,7 @@ export class EnhancedIntelligentTaskEngine {
     success: boolean;
     result?: any;
     error?: string;
+    actualArgs?: any;
   }> {
     let lastError = '';
     
@@ -453,6 +455,7 @@ export class EnhancedIntelligentTaskEngine {
     success: boolean;
     result?: any;
     error?: string;
+    actualArgs?: any;
   }> {
     try {
       const task = await this.taskService.getTaskById(state.taskId);
@@ -478,7 +481,7 @@ export class EnhancedIntelligentTaskEngine {
       );
 
       logger.info(`✅ MCP ${step.mcp} execution successful`);
-      return { success: true, result };
+      return { success: true, result, actualArgs: processedInput };
 
     } catch (error) {
       logger.error(`❌ Workflow step execution failed:`, error);

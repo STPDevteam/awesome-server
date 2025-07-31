@@ -536,7 +536,7 @@ export class MCPManager {
     // 🔧 如果MCP未连接，尝试返回预定义的工具信息
     if (!mcpClient) {
       logger.warn(`【MCP Debug】MCP not connected, trying to get predefined tools [MCP: ${name}, User: ${userId || 'default'}]`);
-      return this.getPredefinedTools(name);
+      return await this.getPredefinedTools(name);
     }
     
     // 更新最后使用时间
@@ -550,7 +550,7 @@ export class MCPManager {
       logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       logger.info(`【MCP Debug】Fallback to predefined tools for [MCP: ${name}]`);
       // 🔧 连接失败时fallback到预定义工具信息
-      return this.getPredefinedTools(name);
+      return await this.getPredefinedTools(name);
     }
   }
 
@@ -559,9 +559,9 @@ export class MCPManager {
    * @param mcpName MCP名称
    * @returns 预定义的工具列表
    */
-  getPredefinedTools(mcpName: string): any[] {
+  async getPredefinedTools(mcpName: string): Promise<any[]> {
     // 需要导入预定义MCP配置
-    const { getPredefinedMCP } = require('./predefinedMCPs.js');
+    const { getPredefinedMCP } = await import('./predefinedMCPs.js');
     const mcpConfig = getPredefinedMCP(mcpName);
     
     if (mcpConfig && mcpConfig.predefinedTools) {

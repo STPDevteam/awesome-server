@@ -249,10 +249,10 @@ export class AgentIntelligentEngine {
               // 🔧 新增详细信息 - 不破坏原有结构
               executionDetails: {
                 toolType: state.currentPlan!.toolType,
-                toolName: state.currentPlan!.tool,
-                mcpName: state.currentPlan!.mcpName || null,
+                toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+                mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
                 rawResult: executionResult.result,
-                args: state.currentPlan!.args,
+                args: executionResult.actualExecution?.args || state.currentPlan!.args,
                 expectedOutput: state.currentPlan!.expectedOutput,
                 timestamp: new Date().toISOString()
               }
@@ -310,10 +310,11 @@ export class AgentIntelligentEngine {
               // 🔧 新增详细信息 - 不破坏原有结构
               formattingDetails: {
                 toolType: state.currentPlan!.toolType,
-                toolName: state.currentPlan!.tool,
-                mcpName: state.currentPlan!.mcpName || null,
+                toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+                mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
                 originalResult: executionResult.result,
                 formattedResult: formattedResultForStorage,
+                args: executionResult.actualExecution?.args || state.currentPlan!.args,
                 processingInfo: {
                   originalDataSize: JSON.stringify(executionResult.result).length,
                   formattedDataSize: formattedResultForStorage.length,
@@ -363,6 +364,27 @@ export class AgentIntelligentEngine {
         // 🔧 新增：记录失败并生成处理策略
         if (!executionResult.success) {
           await this.recordFailureAndStrategy(state, executionStep);
+          
+          // 🔧 重要：检查并应用失败策略
+          const failureStrategy = this.getFailureStrategy(state, executionStep);
+          logger.info(`🎯 Applying failure strategy: ${failureStrategy} for tool: ${executionStep.plan.tool}`);
+          
+          if (failureStrategy === 'skip' || failureStrategy === 'manual_intervention') {
+            // 跳过或需要手动干预时，标记任务为完成（失败完成）
+            logger.warn(`⚠️ Agent ${this.agent.name} stopping execution due to strategy: ${failureStrategy}`);
+            state.isComplete = true;
+            state.errors.push(`Execution stopped due to ${failureStrategy} strategy for tool: ${executionStep.plan.tool}`);
+            break; // 退出主循环
+          } else if (failureStrategy === 'alternative') {
+            // 尝试替代方案的次数限制
+            const failureRecord = state.failureHistory.find(f => f.tool === executionStep.plan.tool);
+            if (failureRecord && failureRecord.attemptCount >= 3) {
+              logger.warn(`⚠️ Agent ${this.agent.name} exceeded alternative attempts limit for tool: ${executionStep.plan.tool}`);
+              state.isComplete = true;
+              state.errors.push(`Exceeded alternative attempts for tool: ${executionStep.plan.tool}`);
+              break; // 退出主循环
+            }
+          }
         }
 
         // 🔧 发送Agent格式的step_complete事件
@@ -898,6 +920,11 @@ Analyze the task now:`;
     success: boolean;
     result?: any;
     error?: string;
+    actualExecution?: {
+      toolName: string;
+      mcpName?: string;
+      args: any;
+    };
   }> {
     if (!state.currentPlan) {
       return { success: false, error: 'No execution plan available' };
@@ -905,17 +932,25 @@ Analyze the task now:`;
 
     try {
       let result: any;
+      let actualExecution: any = undefined;
 
       if (state.currentPlan.toolType === 'mcp') {
         // 🔧 执行MCP工具
-        result = await this.executeAgentMCPTool(state.currentPlan, state);
+        const mcpResult = await this.executeAgentMCPTool(state.currentPlan, state);
+        result = mcpResult.result;
+        actualExecution = mcpResult.actualExecution;
       } else {
         // 🔧 执行LLM工具
         result = await this.executeAgentLLMTool(state.currentPlan, state);
+        // 对于LLM工具，实际执行参数就是计划参数
+        actualExecution = {
+          toolName: state.currentPlan.tool,
+          args: state.currentPlan.args
+        };
       }
 
       logger.info(`✅ Agent ${this.agent.name} execution successful: ${state.currentPlan.tool}`);
-      return { success: true, result };
+      return { success: true, result, actualExecution };
 
     } catch (error) {
       logger.error(`❌ Agent ${this.agent.name} execution failed:`, error);
@@ -1511,12 +1546,8 @@ Please return in format:
       return;
     }
 
-    const requiredMCPs = this.agent.mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired);
-
-    if (requiredMCPs.length === 0) {
-      logger.info(`Agent ${this.agent.name} does not require authenticated MCP services`);
-      return;
-    }
+    // 🔧 修复：连接所有MCP，不仅仅是需要认证的
+    const requiredMCPs = this.agent.mcpWorkflow.mcps;
 
     logger.info(`Ensuring MCP connections for Agent ${this.agent.name} (User: ${userId}), required MCPs: ${requiredMCPs.map((mcp: any) => mcp.name).join(', ')}`);
 
@@ -1537,28 +1568,35 @@ Please return in format:
             throw new Error(`MCP ${mcpInfo.name} configuration not found`);
           }
 
-          // 获取用户认证信息
-          const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
-          if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
-            throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
-          }
+          let authenticatedMcpConfig = mcpConfig;
 
-          // 动态注入认证信息
-          const dynamicEnv = { ...mcpConfig.env };
-          if (mcpConfig.env) {
-            for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                dynamicEnv[envKey] = userAuth.authData[envKey];
-                logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+          // 🔧 修复：只有需要认证的MCP才检查用户认证信息
+          if (mcpInfo.authRequired) {
+            // 获取用户认证信息
+            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
+            if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
+              throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
+            }
+
+            // 动态注入认证信息
+            const dynamicEnv = { ...mcpConfig.env };
+            if (mcpConfig.env) {
+              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+                }
               }
             }
-          }
 
-          // 创建带认证信息的MCP配置
-          const authenticatedMcpConfig = {
-            ...mcpConfig,
-            env: dynamicEnv
-          };
+            // 创建带认证信息的MCP配置
+            authenticatedMcpConfig = {
+              ...mcpConfig,
+              env: dynamicEnv
+            };
+          } else {
+            logger.info(`MCP ${mcpInfo.name} does not require authentication, using default configuration`);
+          }
 
           // 🔧 重要修复：连接MCP时传递用户ID实现多用户隔离
           const connected = await this.mcpManager.connectPredefined(authenticatedMcpConfig, userId);
@@ -1582,7 +1620,14 @@ Please return in format:
   /**
    * 执行Agent MCP工具
    */
-  private async executeAgentMCPTool(plan: AgentExecutionPlan, state: AgentWorkflowState): Promise<any> {
+  private async executeAgentMCPTool(plan: AgentExecutionPlan, state: AgentWorkflowState): Promise<{
+    result: any;
+    actualExecution: {
+      toolName: string;
+      mcpName: string;
+      args: any;
+    };
+  }> {
     if (!plan.mcpName) {
       throw new Error('MCP tool requires mcpName to be specified');
     }
@@ -1667,7 +1712,15 @@ Please return in format:
       // 🔧 新增：x-mcp自动发布处理
       const processedResult = await this.handleXMcpAutoPublish(actualMcpName, finalToolName, result, task.userId);
       
-      return processedResult;
+      // 🔧 返回结果和实际执行信息
+      return {
+        result: processedResult,
+        actualExecution: {
+          toolName: finalToolName,
+          mcpName: actualMcpName,
+          args: finalArgs
+        }
+      };
 
     } catch (error) {
       logger.error(`❌ Agent ${this.agent.name} MCP tool call failed:`, error);
@@ -2557,6 +2610,11 @@ ${formattedResult}`;
    * 🔧 新增：生成失败处理策略
    */
   private generateFailureStrategy(tool: string, error: string, attemptCount: number): 'retry' | 'alternative' | 'skip' | 'manual_intervention' {
+    // 系统级错误 - 直接跳过，无法修复
+    if (error.includes('require is not defined') || error.includes('import') || error.includes('module') || error.includes('Cannot resolve')) {
+      return 'manual_intervention';
+    }
+    
     // 字符限制错误 - 尝试替代方案
     if (error.includes('280') || error.includes('character') || error.includes('too long')) {
       return 'alternative';
@@ -2567,6 +2625,11 @@ ${formattedResult}`;
       return 'manual_intervention';
     }
     
+    // 连接错误 - 直接跳过，避免无限重试
+    if (error.includes('Not connected') || error.includes('Connection closed') || error.includes('connection failed')) {
+      return 'skip';
+    }
+    
     // 服务器错误 - 重试一次后跳过
     if (error.includes('500') || error.includes('timeout') || error.includes('network')) {
       return attemptCount < 2 ? 'retry' : 'skip';
@@ -2575,8 +2638,10 @@ ${formattedResult}`;
     // 其他错误 - 根据尝试次数决定
     if (attemptCount < 2) {
       return 'retry';
-    } else {
+    } else if (attemptCount < 5) {
       return 'alternative';
+    } else {
+      return 'skip'; // 超过5次尝试就停止
     }
   }
 
