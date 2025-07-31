@@ -2921,9 +2921,9 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'blender-mcp',
         description: 'Blender 3D modeling and animation integration with Claude AI through MCP',
-        command: 'uvx',
-        args: ['blender-mcp'],
-        env: {},
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: ['-m', 'blender_mcp.server'],
+        env: { LOG_LEVEL: 'INFO' },
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
@@ -3068,7 +3068,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'unreal-mcp',
         description: 'Unreal Engine game development integration with AI control through MCP',
-        command: 'uv',
+        command: '/home/ubuntu/.local/bin/uv',
         args: [
             '--directory',
             '/home/ubuntu/mcp-tools/unreal-mcp/Python',
@@ -3197,7 +3197,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'aws-mcp',
         description: 'AWS cloud services integration with comprehensive API support',
-        command: 'uvx',
+        command: '/home/ubuntu/.local/bin/uvx',
         args: ['awslabs.aws-api-mcp-server@latest'],
         env: {},
         connected: false,
@@ -3412,7 +3412,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'discord-mcp',
         description: 'Discord social platform integration',
-        command: 'uv',
+        command: '/home/ubuntu/.local/bin/uv',
         args: ["--directory",
             `/home/ubuntu/mcp-tools/mcp-discord`,
             "run",
