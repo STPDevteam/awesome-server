@@ -173,37 +173,46 @@ export class EnhancedIntelligentTaskEngine {
         const toolType = isLLMTool ? 'llm' : 'mcp';
         const mcpName = isLLMTool ? null : currentStep.mcp;
         
-        // 🔧 生成简单的expectedOutput和reasoning
+        // 🔧 预先推断实际工具名称
+        let actualToolName = currentStep.action;
+        if (!isLLMTool) {
+          const task = await this.taskService.getTaskById(state.taskId);
+          if (task) {
+            actualToolName = await this.inferActualToolName(currentStep.mcp, currentStep.action, processedInput, task.userId);
+          }
+        }
+
+        // 🔧 生成简单的expectedOutput和reasoning（使用实际工具名称）
         const expectedOutput = isLLMTool 
-          ? `AI analysis and processing for ${currentStep.action}`
-          : `Execute ${currentStep.action} on ${currentStep.mcp}`;
+          ? `AI analysis and processing for ${actualToolName}`
+          : `Execute ${actualToolName} on ${currentStep.mcp}`;
         const reasoning = `Workflow step ${currentStep.step}`;
 
-        // 🔧 执行当前步骤（带重试机制）- 传递预处理的参数
-        const executionResult = await this.executeWorkflowStepWithRetry(currentStep, state, processedInput);
-
-        // 🔧 发送步骤开始事件 - 使用实际执行的参数，与Agent引擎一致
+        // 🔧 发送步骤开始事件 - 使用实际推断的工具名称，与Agent引擎一致
         const stepId = `workflow_step_${currentStep.step}_${Date.now()}`;
         yield {
           event: 'step_executing',
           data: {
             step: currentStep.step,
-            tool: currentStep.action,
+            tool: actualToolName,
             // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
             agentName: 'WorkflowEngine',
-            message: `Executing workflow step ${currentStep.step}: ${currentStep.mcp}.${currentStep.action}`,
+            message: `Executing workflow step ${currentStep.step}: ${currentStep.mcp}.${actualToolName}`,
             toolDetails: {
               toolType: toolType,
-              toolName: currentStep.action,
+              toolName: actualToolName,
               mcpName: mcpName,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
-              args: executionResult.actualArgs || processedInput,
+              // 🔧 使用预处理的参数
+              args: processedInput,
               expectedOutput: expectedOutput,
               reasoning: reasoning,
               timestamp: new Date().toISOString()
             }
           }
         };
+
+        // 🔧 执行当前步骤（带重试机制）- 传递预处理的参数和实际工具名称
+        const executionResult = await this.executeWorkflowStepWithRetry(currentStep, state, processedInput, actualToolName);
 
         // 🔧 记录执行历史
         const historyEntry = {
@@ -227,20 +236,20 @@ export class EnhancedIntelligentTaskEngine {
             result: executionResult.result,
             // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
             agentName: 'WorkflowEngine',
-            executionDetails: {
-              toolType: toolType,
-              toolName: currentStep.action,
-              mcpName: mcpName,
-              rawResult: executionResult.result,
-              success: executionResult.success,
-              error: executionResult.error,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
-              args: executionResult.actualArgs || currentStep.input || {},
-              expectedOutput: expectedOutput,
-              reasoning: reasoning,
-              timestamp: new Date().toISOString(),
-              attempts: currentStep.attempts || 1
-            }
+                      executionDetails: {
+            toolType: toolType,
+            toolName: actualToolName,
+            mcpName: mcpName,
+            rawResult: executionResult.result,
+            success: executionResult.success,
+            error: executionResult.error,
+            // 🔧 使用实际执行的参数，与Agent引擎一致
+            args: executionResult.actualArgs || currentStep.input || {},
+            expectedOutput: expectedOutput,
+            reasoning: reasoning,
+            timestamp: new Date().toISOString(),
+            attempts: currentStep.attempts || 1
+          }
           }
         };
 
@@ -253,7 +262,7 @@ export class EnhancedIntelligentTaskEngine {
           formattedResult = await this.generateFormattedResult(
             executionResult.result,
             currentStep.mcp,
-            currentStep.action
+            actualToolName
           );
 
           // 🔧 发送格式化结果事件 - 统一字段结构，与Agent引擎一致
@@ -266,25 +275,25 @@ export class EnhancedIntelligentTaskEngine {
               formattedResult: formattedResult,
               // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
               agentName: 'WorkflowEngine',
-              formattingDetails: {
-                toolType: toolType,
-                toolName: currentStep.action,
-                mcpName: mcpName,
-                originalResult: executionResult.result,
-                formattedResult: formattedResult,
-                // 🔧 使用实际执行的参数，与Agent引擎一致
-                args: executionResult.actualArgs || currentStep.input || {},
-                expectedOutput: expectedOutput,
-                reasoning: reasoning,
-                processingInfo: {
-                  originalDataSize: JSON.stringify(executionResult.result).length,
-                  formattedDataSize: formattedResult.length,
-                  processingTime: new Date().toISOString(),
-                  // 🔧 统一字段：添加needsFormatting标识，与Agent引擎一致
-                  needsFormatting: true
-                },
-                timestamp: new Date().toISOString()
-              }
+                        formattingDetails: {
+            toolType: toolType,
+            toolName: actualToolName,
+            mcpName: mcpName,
+            originalResult: executionResult.result,
+            formattedResult: formattedResult,
+            // 🔧 使用实际执行的参数，与Agent引擎一致
+            args: executionResult.actualArgs || currentStep.input || {},
+            expectedOutput: expectedOutput,
+            reasoning: reasoning,
+            processingInfo: {
+              originalDataSize: JSON.stringify(executionResult.result).length,
+              formattedDataSize: formattedResult.length,
+              processingTime: new Date().toISOString(),
+              // 🔧 统一字段：添加needsFormatting标识，与Agent引擎一致
+              needsFormatting: true
+            },
+            timestamp: new Date().toISOString()
+          }
             }
           };
 
@@ -510,21 +519,22 @@ export class EnhancedIntelligentTaskEngine {
   /**
    * 带重试机制的步骤执行
    */
-  private async executeWorkflowStepWithRetry(step: WorkflowStep, state: EnhancedWorkflowState, input: any): Promise<{
+  private async executeWorkflowStepWithRetry(step: WorkflowStep, state: EnhancedWorkflowState, input: any, actualToolName?: string): Promise<{
     success: boolean;
     result?: any;
     error?: string;
     actualArgs?: any;
   }> {
     let lastError = '';
+    const toolName = actualToolName || step.action;
     
     for (let attempt = 1; attempt <= (step.maxRetries || 2) + 1; attempt++) {
       step.attempts = attempt;
       
       try {
-        logger.info(`🔧 Executing ${step.mcp}.${step.action} (attempt ${attempt})`);
+        logger.info(`🔧 Executing ${step.mcp}.${toolName} (attempt ${attempt})`);
         
-        const result = await this.executeWorkflowStep(step, state, input);
+        const result = await this.executeWorkflowStep(step, state, input, actualToolName);
         
         if (result.success) {
           logger.info(`✅ Step ${step.step} execution successful on attempt ${attempt}`);
@@ -554,7 +564,7 @@ export class EnhancedIntelligentTaskEngine {
   /**
    * 执行单个工作流步骤
    */
-  private async executeWorkflowStep(step: WorkflowStep, state: EnhancedWorkflowState, input: any): Promise<{
+  private async executeWorkflowStep(step: WorkflowStep, state: EnhancedWorkflowState, input: any, actualToolName?: string): Promise<{
     success: boolean;
     result?: any;
     error?: string;
@@ -571,25 +581,26 @@ export class EnhancedIntelligentTaskEngine {
       
       if (isLLMTool) {
         // LLM工具执行
-        logger.info(`🤖 Calling LLM with action: ${step.action}`);
+        const toolName = actualToolName || step.action;
+        logger.info(`🤖 Calling LLM with action: ${toolName}`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
         
-        const prompt = `Execute ${step.action} with the following input: ${JSON.stringify(input, null, 2)}`;
+        const prompt = `Execute ${toolName} with the following input: ${JSON.stringify(input, null, 2)}`;
         const response = await this.llm.invoke([new SystemMessage(prompt)]);
         const result = response.content as string;
         
-        logger.info(`✅ LLM ${step.action} execution successful`);
+        logger.info(`✅ LLM ${toolName} execution successful`);
         return { success: true, result, actualArgs: input };
       } else {
-        // MCP工具执行 - 智能推断实际工具名称
-        const actualToolName = await this.inferActualToolName(step.mcp, step.action, input, task.userId);
+        // MCP工具执行 - 使用预推断的实际工具名称
+        const toolName = actualToolName || await this.inferActualToolName(step.mcp, step.action, input, task.userId);
         
-        logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${actualToolName})`);
+        logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${toolName})`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
 
         const result = await this.mcpToolAdapter.callTool(
           step.mcp,
-          actualToolName,
+          toolName,
           input,
           task.userId
         );
