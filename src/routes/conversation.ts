@@ -418,7 +418,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
                 imageUrl: mcp.imageUrl,
                 githubUrl: mcp.githubUrl,
                 authRequired: mcp.authRequired || false,
-                authVerified: mcp.authVerified || false
+                authVerified: mcp.authVerified || false // 注意：这里应该已经从数据库增强过了
               };
 
               // 🔧 新增：添加预定义工具信息
@@ -440,7 +440,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
                   imageUrl: alt.imageUrl,
                   githubUrl: alt.githubUrl,
                   authRequired: alt.authRequired || false,
-                  authVerified: alt.authVerified || false,
+                  authVerified: alt.authVerified || false, // 注意：这里应该已经从数据库增强过了
                   // 🔧 新增：备选MCP也包含预定义工具信息
                   ...(alt.predefinedTools && Array.isArray(alt.predefinedTools) ? { predefinedTools: alt.predefinedTools } : {}),
                   // 添加认证参数（如果需要认证）
