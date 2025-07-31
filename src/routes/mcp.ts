@@ -5,20 +5,74 @@ import { optionalAuth } from '../middleware/auth.js';
 import { getAllPredefinedMCPs, getMCPsByCategory, getAllMCPCategories, getPredefinedMCP } from '../services/predefinedMCPs.js';
 import { requireAuth } from '../middleware/auth.js';
 import { User } from '../models/User.js';
+import { MCPAuthService } from '../services/mcpAuthService.js';
 
 const router = Router();
+
+// 创建MCPAuthService实例
+const mcpAuthService = new MCPAuthService();
+
+/**
+ * 增强MCP信息，添加来自数据库的真实认证状态（优化版 - 批量查询）
+ */
+async function enhanceMCPsWithAuthStatus(mcps: any[], userId?: string): Promise<any[]> {
+  if (!userId) {
+    // 如果用户未登录，返回原始信息（authVerified保持预定义值）
+    return mcps.map(mcp => ({
+      ...mcp,
+      authVerified: !mcp.authRequired
+    }));
+  }
+
+  try {
+    // 🚀 优化：一次性获取用户的所有MCP认证信息
+    const userAuthDataList = await mcpAuthService.getUserAllMCPAuths(userId);
+    
+    // 创建认证状态映射表，提高查找效率
+    const authStatusMap = new Map<string, boolean>();
+    userAuthDataList.forEach(authData => {
+      authStatusMap.set(authData.mcpName, authData.isVerified);
+    });
+
+    // 使用映射表快速增强MCP信息
+    const enhancedMcps = mcps.map(mcp => {
+      if (!mcp.authRequired) {
+        return { ...mcp, authVerified: true };
+      }
+
+      const authVerified = authStatusMap.get(mcp.name) || false;
+      return {
+        ...mcp,
+        authVerified
+      };
+    });
+
+    return enhancedMcps;
+  } catch (error) {
+    logger.error(`Failed to get user MCP auth data for user ${userId}:`, error);
+    // 发生错误时返回保守的状态
+    return mcps.map(mcp => ({
+      ...mcp,
+      authVerified: !mcp.authRequired
+    }));
+  }
+}
 
 /**
  * 获取所有MCP
  * GET /api/mcp
  */
-router.get('/', optionalAuth, async (_req: Request, res: Response) => {
+router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
     const mcps = getAllPredefinedMCPs();
+    const userId = req.user?.id;
+    
+    // 增强MCP信息，添加来自数据库的真实认证状态
+    const enhancedMcps = await enhanceMCPsWithAuthStatus(mcps, userId);
     
     res.json({
       success: true,
-      data: mcps
+      data: enhancedMcps
     });
   } catch (error) {
     logger.error(`Error getting MCP list:`, error);
@@ -34,16 +88,20 @@ router.get('/', optionalAuth, async (_req: Request, res: Response) => {
  * 按类别获取MCP
  * GET /api/mcp/category/:category
  */
-router.get('/category/:category', async (req: Request, res: Response) => {
+router.get('/category/:category', optionalAuth, async (req: Request, res: Response) => {
   try {
     const category = req.params.category;
     const mcpsByCategory = getMCPsByCategory(category);
+    const userId = req.user?.id;
+    
+    // 增强MCP信息，添加来自数据库的真实认证状态
+    const enhancedMcps = await enhanceMCPsWithAuthStatus(mcpsByCategory, userId);
     
     res.json({
       success: true,
       data: {
         category,
-        mcps: mcpsByCategory
+        mcps: enhancedMcps
       }
     });
   } catch (error) {
@@ -184,10 +242,15 @@ router.get('/:id', optionalAuth, async (req: Request, res: Response) => {
         message: `MCP with ID ${mcpId} not found`
       });
     }
+
+    const userId = req.user?.id;
+    
+    // 增强MCP信息，添加来自数据库的真实认证状态
+    const enhancedMcps = await enhanceMCPsWithAuthStatus([mcp], userId);
     
     res.json({
       success: true,
-      data: mcp
+      data: enhancedMcps[0]
     });
   } catch (error) {
     logger.error(`Error getting MCP details [MCP ID: ${req.params.id}]:`, error);
