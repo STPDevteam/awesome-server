@@ -254,7 +254,7 @@ export class EnhancedIntelligentTaskEngine {
         };
 
         // 🔧 存储原始结果消息
-        await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning);
+        await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
 
         // 🔧 格式化结果处理
         let formattedResult = '';
@@ -298,7 +298,7 @@ export class EnhancedIntelligentTaskEngine {
           };
 
           // 🔧 存储格式化结果消息
-          await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning);
+          await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
 
           // 🔧 更新数据存储
           state.dataStore[`step_${currentStep.step}_result`] = executionResult.result;
@@ -868,12 +868,13 @@ Please format this result in a clear, user-friendly way with appropriate markdow
   /**
    * 保存步骤原始结果消息
    */
-  private async saveStepRawResult(taskId: string, stepNumber: number, step: WorkflowStep, rawResult: any, actualArgs: any, toolType: string, mcpName: string | null, expectedOutput: string, reasoning: string): Promise<void> {
+  private async saveStepRawResult(taskId: string, stepNumber: number, step: WorkflowStep, rawResult: any, actualArgs: any, toolType: string, mcpName: string | null, expectedOutput: string, reasoning: string, actualToolName?: string): Promise<void> {
     try {
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
         // 🔧 只存储结果内容，不包含描述性文本，与Agent引擎一致
         const rawContent = JSON.stringify(rawResult, null, 2);
+        const toolName = actualToolName || step.action;
 
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -884,13 +885,13 @@ Please format this result in a clear, user-friendly way with appropriate markdow
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
-            stepName: `${step.mcp}.${step.action}`,
+            stepName: `${step.mcp}.${toolName}`,
             taskPhase: 'execution',
             contentType: 'raw_result',
             isComplete: true,
             toolDetails: {
               toolType: toolType,
-              toolName: step.action,
+              toolName: toolName,
               mcpName: mcpName,
               // 🔧 使用实际执行的参数，与Agent引擎一致
               args: actualArgs || step.input || {},
@@ -921,12 +922,13 @@ Please format this result in a clear, user-friendly way with appropriate markdow
   /**
    * 保存步骤格式化结果消息
    */
-  private async saveStepFormattedResult(taskId: string, stepNumber: number, step: WorkflowStep, formattedResult: string, actualArgs: any, toolType: string, mcpName: string | null, expectedOutput: string, reasoning: string): Promise<void> {
+  private async saveStepFormattedResult(taskId: string, stepNumber: number, step: WorkflowStep, formattedResult: string, actualArgs: any, toolType: string, mcpName: string | null, expectedOutput: string, reasoning: string, actualToolName?: string): Promise<void> {
     try {
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
         // 🔧 只存储格式化结果内容，不包含描述性文本，与Agent引擎一致
         const formattedContent = formattedResult;
+        const toolName = actualToolName || step.action;
 
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -937,13 +939,13 @@ Please format this result in a clear, user-friendly way with appropriate markdow
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
-            stepName: `${step.mcp}.${step.action}`,
+            stepName: `${step.mcp}.${toolName}`,
             taskPhase: 'execution',
             contentType: 'formatted_result',
             isComplete: true,
             toolDetails: {
               toolType: toolType,
-              toolName: step.action,
+              toolName: toolName,
               mcpName: mcpName,
               // 🔧 使用实际执行的参数，与Agent引擎一致
               args: actualArgs || step.input || {},
