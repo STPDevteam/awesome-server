@@ -1546,12 +1546,8 @@ Please return in format:
       return;
     }
 
-    const requiredMCPs = this.agent.mcpWorkflow.mcps.filter((mcp: any) => mcp.authRequired);
-
-    if (requiredMCPs.length === 0) {
-      logger.info(`Agent ${this.agent.name} does not require authenticated MCP services`);
-      return;
-    }
+    // 🔧 修复：连接所有MCP，不仅仅是需要认证的
+    const requiredMCPs = this.agent.mcpWorkflow.mcps;
 
     logger.info(`Ensuring MCP connections for Agent ${this.agent.name} (User: ${userId}), required MCPs: ${requiredMCPs.map((mcp: any) => mcp.name).join(', ')}`);
 
@@ -1572,28 +1568,35 @@ Please return in format:
             throw new Error(`MCP ${mcpInfo.name} configuration not found`);
           }
 
-          // 获取用户认证信息
-          const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
-          if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
-            throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
-          }
+          let authenticatedMcpConfig = mcpConfig;
 
-          // 动态注入认证信息
-          const dynamicEnv = { ...mcpConfig.env };
-          if (mcpConfig.env) {
-            for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                dynamicEnv[envKey] = userAuth.authData[envKey];
-                logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+          // 🔧 修复：只有需要认证的MCP才检查用户认证信息
+          if (mcpInfo.authRequired) {
+            // 获取用户认证信息
+            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
+            if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
+              throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
+            }
+
+            // 动态注入认证信息
+            const dynamicEnv = { ...mcpConfig.env };
+            if (mcpConfig.env) {
+              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                  dynamicEnv[envKey] = userAuth.authData[envKey];
+                  logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+                }
               }
             }
-          }
 
-          // 创建带认证信息的MCP配置
-          const authenticatedMcpConfig = {
-            ...mcpConfig,
-            env: dynamicEnv
-          };
+            // 创建带认证信息的MCP配置
+            authenticatedMcpConfig = {
+              ...mcpConfig,
+              env: dynamicEnv
+            };
+          } else {
+            logger.info(`MCP ${mcpInfo.name} does not require authentication, using default configuration`);
+          }
 
           // 🔧 重要修复：连接MCP时传递用户ID实现多用户隔离
           const connected = await this.mcpManager.connectPredefined(authenticatedMcpConfig, userId);
