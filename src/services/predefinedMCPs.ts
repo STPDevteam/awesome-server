@@ -2924,7 +2924,8 @@ export const predefinedMCPs: MCPService[] = [
         command: '/home/ubuntu/.local/bin/uvx',
         args: ['blender-mcp'],
         env: {
-            LOG_LEVEL: 'INFO'
+            LOG_LEVEL: 'INFO',
+            log_level: 'INFO'  // 兼容小写版本
         },
         connected: false,
         category: 'Dev Tool',
