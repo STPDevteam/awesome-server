@@ -364,6 +364,27 @@ export class AgentIntelligentEngine {
         // 🔧 新增：记录失败并生成处理策略
         if (!executionResult.success) {
           await this.recordFailureAndStrategy(state, executionStep);
+          
+          // 🔧 重要：检查并应用失败策略
+          const failureStrategy = this.getFailureStrategy(state, executionStep);
+          logger.info(`🎯 Applying failure strategy: ${failureStrategy} for tool: ${executionStep.plan.tool}`);
+          
+          if (failureStrategy === 'skip' || failureStrategy === 'manual_intervention') {
+            // 跳过或需要手动干预时，标记任务为完成（失败完成）
+            logger.warn(`⚠️ Agent ${this.agent.name} stopping execution due to strategy: ${failureStrategy}`);
+            state.isComplete = true;
+            state.errors.push(`Execution stopped due to ${failureStrategy} strategy for tool: ${executionStep.plan.tool}`);
+            break; // 退出主循环
+          } else if (failureStrategy === 'alternative') {
+            // 尝试替代方案的次数限制
+            const failureRecord = state.failureHistory.find(f => f.tool === executionStep.plan.tool);
+            if (failureRecord && failureRecord.attemptCount >= 3) {
+              logger.warn(`⚠️ Agent ${this.agent.name} exceeded alternative attempts limit for tool: ${executionStep.plan.tool}`);
+              state.isComplete = true;
+              state.errors.push(`Exceeded alternative attempts for tool: ${executionStep.plan.tool}`);
+              break; // 退出主循环
+            }
+          }
         }
 
         // 🔧 发送Agent格式的step_complete事件
@@ -2586,6 +2607,11 @@ ${formattedResult}`;
    * 🔧 新增：生成失败处理策略
    */
   private generateFailureStrategy(tool: string, error: string, attemptCount: number): 'retry' | 'alternative' | 'skip' | 'manual_intervention' {
+    // 系统级错误 - 直接跳过，无法修复
+    if (error.includes('require is not defined') || error.includes('import') || error.includes('module') || error.includes('Cannot resolve')) {
+      return 'manual_intervention';
+    }
+    
     // 字符限制错误 - 尝试替代方案
     if (error.includes('280') || error.includes('character') || error.includes('too long')) {
       return 'alternative';
@@ -2596,6 +2622,11 @@ ${formattedResult}`;
       return 'manual_intervention';
     }
     
+    // 连接错误 - 直接跳过，避免无限重试
+    if (error.includes('Not connected') || error.includes('Connection closed') || error.includes('connection failed')) {
+      return 'skip';
+    }
+    
     // 服务器错误 - 重试一次后跳过
     if (error.includes('500') || error.includes('timeout') || error.includes('network')) {
       return attemptCount < 2 ? 'retry' : 'skip';
@@ -2604,8 +2635,10 @@ ${formattedResult}`;
     // 其他错误 - 根据尝试次数决定
     if (attemptCount < 2) {
       return 'retry';
-    } else {
+    } else if (attemptCount < 5) {
       return 'alternative';
+    } else {
+      return 'skip'; // 超过5次尝试就停止
     }
   }
 
