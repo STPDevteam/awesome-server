@@ -1860,26 +1860,6 @@ class MigrationService {
         
         console.log('✅ Rollback completed for Chinese to English task tags conversion');
       }
-    },
-    {
-      version: 29,
-      name: 'add_save_auth_to_mcp_auth_table',
-      up: async () => {
-        await db.query(`
-          ALTER TABLE mcp_auth 
-          ADD COLUMN IF NOT EXISTS save_auth BOOLEAN NOT NULL DEFAULT true
-        `);
-        
-        console.log('✅ Added save_auth column to mcp_auth table');
-      },
-      down: async () => {
-        await db.query(`
-          ALTER TABLE mcp_auth 
-          DROP COLUMN IF EXISTS save_auth
-        `);
-        
-        console.log('✅ Removed save_auth column from mcp_auth table');
-      }
     }
   ];
 

@@ -1357,8 +1357,7 @@ router.get('/:id/favorite/status', requireAuth, async (req: Request, res: Respon
 async function verifyAgentMCPAuth(
   userId: string,
   mcpName: string,
-  authData: Record<string, string>,
-  saveAuth: boolean = true
+  authData: Record<string, string>
 ): Promise<{ success: boolean; message: string; details?: string }> {
   try {
     logger.info(`🔐 Starting Agent MCP auth verification - User: ${userId}, MCP: ${mcpName}`);
@@ -1369,8 +1368,8 @@ async function verifyAgentMCPAuth(
       return validationResult;
     }
 
-    // 2. 保存认证信息（标记为已验证，同时保存 saveAuth 字段）
-    await mcpAuthService.saveAuthData(userId, mcpName, authData, true, saveAuth);
+    // 2. 保存认证信息（标记为已验证）
+    await mcpAuthService.saveAuthData(userId, mcpName, authData, true);
     
     logger.info(`✅ Agent MCP auth saved successfully - User: ${userId}, MCP: ${mcpName}`);
     

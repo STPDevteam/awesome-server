@@ -14,7 +14,6 @@ import { titleGeneratorService } from './llmTasks/titleGenerator.js';
 import { db } from '../config/database.js';
 import { userService } from './auth/userService.js';
 import { taskDao } from '../dao/taskDao.js';
-import { MCPAuthService } from './mcpAuthService.js';
 // import { HttpsProxyAgent } from 'https-proxy-agent';
 // const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 // const agent = new HttpsProxyAgent(proxy);
@@ -28,13 +27,11 @@ export class ConversationService {
   private mcpToolAdapter: MCPToolAdapter;
   private taskExecutorService: TaskExecutorService;
   private conversationMemories: Map<string, BufferMemory>;
-  private mcpAuthService: MCPAuthService;
   
   constructor(mcpToolAdapter: MCPToolAdapter, taskExecutorService: TaskExecutorService) {
     this.mcpToolAdapter = mcpToolAdapter;
     this.taskExecutorService = taskExecutorService;
     this.conversationMemories = new Map();
-    this.mcpAuthService = new MCPAuthService();
     
     this.llm = new ChatOpenAI({
       modelName: process.env.OPENAI_MODEL || 'gpt-4o-mini',
@@ -871,7 +868,7 @@ Please analyze the user intent and return the result in JSON format:
    * 从对话相关的任务中提取lastUsedMcp信息
    * @param conversationId 对话ID
    * @param userId 用户ID
-   * @returns lastUsedMcp数组，包含完整的MCP信息和用户认证状态
+   * @returns lastUsedMcp数组，包含完整的MCP信息
    */
   async extractLastUsedMcpFromTasks(
     conversationId: string, 
@@ -886,38 +883,18 @@ Please analyze the user intent and return the result in JSON format:
         return [];
       }
       
-      // 增强 MCP 信息，包含用户认证状态和 saveAuth
-      const lastUsedMcp = await Promise.all(
-        mcpWorkflow.mcps.map(async (mcp: any) => {
-          const enhancedMcp = {
-            name: mcp.name,
-            description: mcp.description,
-            authRequired: mcp.authRequired || false,
-            authVerified: mcp.authVerified || false,
-            category: mcp.category || 'Other',
-            imageUrl: mcp.imageUrl || '',
-            githubUrl: mcp.githubUrl || '',
-            authParams: mcp.authParams || {},
-            alternatives: mcp.alternatives || [], // 包含备选方案
-            saveAuth: true // 默认值
-          };
-
-          // 如果需要认证，获取用户的实际认证状态
-          if (mcp.authRequired) {
-            try {
-              const authData = await this.mcpAuthService.getUserMCPAuth(userId, mcp.name);
-              if (authData) {
-                enhancedMcp.authVerified = authData.isVerified;
-                enhancedMcp.saveAuth = authData.saveAuth;
-              }
-            } catch (error) {
-              logger.error(`Failed to get auth data for MCP ${mcp.name}:`, error);
-            }
-          }
-
-          return enhancedMcp;
-        })
-      );
+      // 返回完整的MCP信息数组
+      const lastUsedMcp = mcpWorkflow.mcps.map((mcp: any) => ({
+        name: mcp.name,
+        description: mcp.description,
+        authRequired: mcp.authRequired || false,
+        authVerified: mcp.authVerified || false,
+        category: mcp.category || 'Other',
+        imageUrl: mcp.imageUrl || '',
+        githubUrl: mcp.githubUrl || '',
+        authParams: mcp.authParams || {},
+        alternatives: mcp.alternatives || [] // 包含备选方案
+      }));
       
       logger.info(`Extracted ${lastUsedMcp.length} MCPs from latest task for conversation ${conversationId}`);
       return lastUsedMcp;

@@ -7,7 +7,6 @@ export interface MCPAuthData {
   mcpName: string;
   authData: Record<string, string>;
   isVerified: boolean;
-  saveAuth: boolean; // 前端传来的 saveAuth 字段
   createdAt: Date;
   updatedAt: Date;
 }

@@ -26,12 +26,11 @@ export class MCPAuthService {
     userId: string,
     mcpName: string,
     authData: Record<string, string>,
-    isVerified: boolean = false,
-    saveAuth: boolean = true
+    isVerified: boolean = false
   ): Promise<MCPAuthData> {
     try {
       // 调用DAO层保存授权数据
-      const authRecord = await mcpAuthDao.saveAuthData(userId, mcpName, authData, isVerified, saveAuth);
+      const authRecord = await mcpAuthDao.saveAuthData(userId, mcpName, authData, isVerified);
       
       // 转换为业务层实体
       return this.mapAuthFromDb(authRecord);
@@ -312,7 +311,6 @@ export class MCPAuthService {
       mcpName: row.mcp_name,
       authData,
       isVerified: row.is_verified,
-      saveAuth: row.save_auth !== undefined ? row.save_auth : true, // 默认为 true，兼容旧数据
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     };

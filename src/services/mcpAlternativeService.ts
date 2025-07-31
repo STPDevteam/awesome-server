@@ -7,7 +7,6 @@ import { mcpAlternativeDao } from '../dao/mcpAlternativeDao.js';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { getTaskService } from './taskService.js';
 import { TaskAnalysisService } from './llmTasks/taskAnalysisService.js';
-import { MCPAuthService } from './mcpAuthService.js';
 
 const proxy = process.env.HTTPS_PROXY || 'http://127.0.0.1:7890';
 const agent = new HttpsProxyAgent(proxy);
@@ -20,7 +19,6 @@ export class MCPAlternativeService {
   private llm: ChatOpenAI;
   private taskService = getTaskService();
   private taskAnalysisService = new TaskAnalysisService();
-  private mcpAuthService: MCPAuthService;
   
   // 移除硬编码的alternativeMap，改为智能推荐
   private availableMCPs: MCPInfo[];
@@ -54,7 +52,6 @@ export class MCPAlternativeService {
     }
     
     this.llm = new ChatOpenAI(llmConfig);
-    this.mcpAuthService = new MCPAuthService();
     
     logger.info(`MCPAlternativeService 已初始化，加载了 ${this.availableMCPs.length} 个可用MCP`);
   }
@@ -80,37 +77,13 @@ export class MCPAlternativeService {
   private getAvailableMCPs(): MCPInfo[] {
     return this.convertMCPServicesToMCPInfos(getAllPredefinedMCPs());
   }
-
-  /**
-   * 增强 MCP 信息，添加用户的认证状态（包括 saveAuth 字段）
-   */
-  private async enhanceMCPWithUserAuth(mcp: any, userId: string): Promise<any> {
-    if (!mcp.authRequired) {
-      // 不需要认证的 MCP，直接返回并设置默认值
-      return {
-        ...mcp,
-        authVerified: true,
-        saveAuth: true
-      };
-    }
-
-    try {
-      // 获取用户的认证信息
-      const authData = await this.mcpAuthService.getUserMCPAuth(userId, mcp.name);
-      return {
-        ...mcp,
-        authVerified: authData ? authData.isVerified : false,
-        saveAuth: authData ? authData.saveAuth : true // 默认为 true
-      };
-    } catch (error) {
-      logger.error(`Failed to get auth data for MCP ${mcp.name} and user ${userId}:`, error);
-      return {
-        ...mcp,
-        authVerified: false,
-        saveAuth: true
-      };
-    }
-  }
+  
+  
+  
+  
+  
+  
+  
 
   /**
    * 验证MCP替换的合理性
@@ -306,23 +279,21 @@ ${JSON.stringify(newMcp, null, 2)}
       for (const replacement of replacements) {
         const newMCP = availableMCPs.find(mcp => mcp.name === replacement.newMcpName)!;
         
-        newMcpList = await Promise.all(
-          newMcpList.map(async mcp => {
-            if (mcp.name === replacement.originalMcpName) {
-              // 使用辅助方法增强新 MCP 信息，包含用户认证状态
-              return await this.enhanceMCPWithUserAuth({
-                name: newMCP.name,
-                description: newMCP.description,
-                authRequired: newMCP.authRequired,
-                category: newMCP.category,
-                imageUrl: newMCP.imageUrl,
-                githubUrl: newMCP.githubUrl,
-                authParams: newMCP.authParams
-              }, task.userId);
-            }
-            return mcp;
-          })
-        );
+        newMcpList = newMcpList.map(mcp => {
+          if (mcp.name === replacement.originalMcpName) {
+            return {
+              name: newMCP.name,
+              description: newMCP.description,
+              authRequired: newMCP.authRequired,
+              authVerified: !newMCP.authRequired,
+              category: newMCP.category,
+              imageUrl: newMCP.imageUrl,
+              githubUrl: newMCP.githubUrl,
+              authParams: newMCP.authParams
+            };
+          }
+          return mcp;
+        });
       }
       
       stream({ 
@@ -335,8 +306,7 @@ ${JSON.stringify(newMcp, null, 2)}
             name: mcp.name,
             description: mcp.description,
             authRequired: mcp.authRequired,
-            authVerified: mcp.authVerified,
-            saveAuth: (mcp as any).saveAuth || true
+            authVerified: mcp.authVerified
           }))
         } 
       });
