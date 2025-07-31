@@ -581,13 +581,15 @@ export class EnhancedIntelligentTaskEngine {
         logger.info(`✅ LLM ${step.action} execution successful`);
         return { success: true, result, actualArgs: input };
       } else {
-        // MCP工具执行
-        logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action}`);
+        // MCP工具执行 - 智能推断实际工具名称
+        const actualToolName = await this.inferActualToolName(step.mcp, step.action, input, task.userId);
+        
+        logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${actualToolName})`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
 
         const result = await this.mcpToolAdapter.callTool(
           step.mcp,
-          step.action,
+          actualToolName,
           input,
           task.userId
         );
@@ -627,6 +629,164 @@ export class EnhancedIntelligentTaskEngine {
     }
     
     return {};
+  }
+
+  /**
+   * 智能推断实际工具名称：使用LLM将描述性文本转换为实际的MCP工具名称 (参考Agent引擎的通用做法)
+   */
+  private async inferActualToolName(mcpName: string, action: string, input: any, userId: string): Promise<string> {
+    try {
+      // 获取MCP的可用工具列表
+      const tools = await this.mcpManager.getTools(mcpName, userId);
+      
+      if (!tools || tools.length === 0) {
+        logger.warn(`🔍 No tools found for MCP ${mcpName}, using original action: ${action}`);
+        return action;
+      }
+      
+      const toolNames = tools.map((tool: any) => tool.name);
+      logger.info(`🔍 Available tools for ${mcpName}: ${toolNames.join(', ')}`);
+      
+      // 1. 首先检查action是否已经是有效的工具名称
+      if (toolNames.includes(action)) {
+        logger.info(`✅ Action "${action}" is already a valid tool name`);
+        return action;
+      }
+      
+      // 2. 使用LLM进行智能工具名称推断 (通用方法，参考Agent引擎)
+      const toolInferencePrompt = `You are an expert tool name matcher. The requested action "${action}" needs to be mapped to an actual tool name from MCP service "${mcpName}".
+
+CONTEXT:
+- Requested action: ${action}
+- Input parameters: ${JSON.stringify(input, null, 2)}
+- MCP Service: ${mcpName}
+- Available tools with descriptions:
+${tools.map((tool: any) => {
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(tool.inputSchema || {}, null, 2)}
+`;
+}).join('\n')}
+
+MATCHING PRINCIPLES:
+1. **Find functionally equivalent tool**: Select the tool that can accomplish the same objective as the requested action
+2. **Consider semantic meaning**: Match based on functionality, not just text similarity
+3. **Use exact tool names**: Return the exact tool name from the available list
+4. **Prioritize best match**: Choose the most appropriate tool for the requested action
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "toolName": "exact_tool_name_from_available_list",
+  "reasoning": "why this tool was selected for the requested action"
+}
+
+Select the best matching tool now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(toolInferencePrompt)]);
+      
+      try {
+        const responseText = response.content.toString().trim();
+        logger.info(`🔍 === LLM Tool Inference Debug ===`);
+        logger.info(`🔍 Original Action: ${action}`);
+        logger.info(`🔍 Raw LLM Response: ${responseText}`);
+        
+        // 🔧 使用Agent引擎相同的JSON清理逻辑
+        let cleanedJson = responseText;
+        
+        // 移除Markdown代码块标记
+        cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        
+        // 🔧 使用Agent引擎的JSON提取逻辑
+        const extractedJson = this.extractCompleteJson(cleanedJson);
+        if (extractedJson) {
+          cleanedJson = extractedJson;
+        }
+        
+        const inference = JSON.parse(cleanedJson);
+        const selectedTool = inference.toolName;
+        
+        if (selectedTool && toolNames.includes(selectedTool)) {
+          logger.info(`✅ LLM selected tool: ${selectedTool} (${inference.reasoning})`);
+          return selectedTool;
+        } else {
+          logger.warn(`⚠️ LLM selected invalid tool: ${selectedTool}, falling back to first available`);
+        }
+        
+      } catch (parseError) {
+        logger.error(`❌ Failed to parse LLM tool inference response: ${response.content}`);
+        logger.error(`❌ Parse error: ${parseError}`);
+      }
+      
+      // 3. 如果LLM推断失败，使用第一个工具作为默认值
+      if (toolNames.length > 0) {
+        logger.warn(`🔍 Using first available tool as fallback: ${toolNames[0]}`);
+        return toolNames[0];
+      }
+      
+      // 4. 最后的fallback
+      logger.warn(`🔍 No tools available for MCP ${mcpName}, using original action: ${action}`);
+      return action;
+      
+    } catch (error) {
+      logger.error(`❌ Error inferring tool name for ${mcpName}.${action}:`, error);
+      return action; // 如果推断失败，返回原始action
+    }
+  }
+
+  /**
+   * 提取完整JSON对象 (从Agent引擎复制)
+   */
+  private extractCompleteJson(text: string): string | null {
+    // 查找第一个 '{' 的位置
+    const startIndex = text.indexOf('{');
+    if (startIndex === -1) {
+      return null;
+    }
+    
+    // 从 '{' 开始，手动匹配大括号以找到完整的JSON对象
+    let braceCount = 0;
+    let inString = false;
+    let escapeNext = false;
+    
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+      
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      
+      if (char === '\\' && inString) {
+        escapeNext = true;
+        continue;
+      }
+      
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+      
+      if (!inString) {
+        if (char === '{') {
+          braceCount++;
+        } else if (char === '}') {
+          braceCount--;
+          
+          // 当大括号计数为0时，我们找到了完整的JSON对象
+          if (braceCount === 0) {
+            const jsonString = text.substring(startIndex, i + 1);
+            logger.info(`🔧 Extracted complete JSON: ${jsonString}`);
+            return jsonString;
+          }
+        }
+      }
+    }
+    
+    // 如果没有找到完整的JSON对象，返回null
+    logger.warn(`⚠️ Could not find complete JSON object`);
+    return null;
   }
 
   /**
