@@ -119,19 +119,23 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Dune Analytics blockchain data queries and dashboards',
         command: 'bun',
         args: [`/home/ubuntu/mcp-tools/dune-mcp-server/build/index.js`],
-        env: {},
+        env: {
+            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
+        },
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
         githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            DUNE_API_KEY: "DUNE_API_KEY"
+        }
     },
     {
         name: 'rugcheck-mcp',
         description: 'Rug Check token security and risk analysis',
-        command: 'npx',
-        args: ['-y', 'rug-check-mcp'],
+        command: 'node',
+        args: [`/home/ubuntu/mcp-tools/rug-check-mcp/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
@@ -143,8 +147,8 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'chainlink-mcp',
         description: 'ChainLink price feeds and oracle data',
-        command: 'npx',
-        args: ['-y', 'chainlink-feeds-mcp'],
+        command: 'node',
+        args: [`/home/ubuntu/mcp-tools/chainlink-feeds-mcp/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
@@ -169,6 +173,23 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/kukapay/crypto-feargreed-mcp',
         authRequired: false,
         authParams: {}
+    },
+    {
+        name: 'rugcheck-mcp',
+        description: 'Rug Check token security and risk analysis for Solana tokens',
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: [`/home/ubuntu/mcp-tools/rug-check-mcp/main.py`],
+        env: {
+            SOLSNIFFER_API_KEY: process.env.SOLSNIFFER_API_KEY || ''
+        },
+        connected: false,
+        category: 'Market Data',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
+        githubUrl: 'https://github.com/kukapay/rug-check-mcp',
+        authRequired: true,
+        authParams: {
+            SOLSNIFFER_API_KEY: "SOLSNIFFER_API_KEY"
+        }
     },
     {
         name: 'whaletracker-mcp',
@@ -216,8 +237,8 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'mindsdb-mcp',
         description: 'MindsDB machine learning database integration',
-        command: 'npx',
-        args: ['-y', 'minds-mcp'],
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: [`/home/ubuntu/mcp-tools/minds-mcp/server.py`],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -241,9 +262,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'blender-mcp',
-        description: 'Blender 3D modeling and animation integration',
-        command: 'npx',
-        args: ['-y', 'blender-mcp'],
+        description: 'Blender 3D modeling and animation integration with Claude AI through MCP',
+        command: 'uvx',
+        args: ['blender-mcp'],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -267,9 +288,14 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'unreal-mcp',
-        description: 'Unreal Engine game development integration',
-        command: 'npx',
-        args: ['-y', 'unreal-mcp'],
+        description: 'Unreal Engine game development integration with AI control through MCP',
+        command: 'uv',
+        args: [
+            '--directory',
+            '/home/ubuntu/mcp-tools/unreal-mcp/Python',
+            'run',
+            'unreal_mcp_server.py'
+        ],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -295,9 +321,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'aws-mcp',
-        description: 'AWS cloud services integration',
-        command: 'npx',
-        args: ['-y', 'aws-mcp'],
+        description: 'AWS cloud services integration with comprehensive API support',
+        command: 'uvx',
+        args: ['awslabs.aws-api-mcp-server@latest'],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -565,6 +591,7 @@ export const mcpNameMapping: Record<string, string> = {
     'defillama-mcp-service': 'mcp-server-defillama',
     'rug-check-mcp-service': 'rug-check-mcp',
     'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
+    'rug-check-mcp-service': 'rugcheck-mcp',
     'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
     'whale-tracker-mcp-service': 'whale-tracker-mcp',
     'discord-mcp-service': 'mcp-discord',
