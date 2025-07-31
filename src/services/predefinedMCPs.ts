@@ -131,19 +131,7 @@ export const predefinedMCPs: MCPService[] = [
             DUNE_API_KEY: "DUNE_API_KEY"
         }
     },
-    {
-        name: 'rugcheck-mcp',
-        description: 'Rug Check token security and risk analysis',
-        command: 'node',
-        args: [`/home/ubuntu/mcp-tools/rug-check-mcp/index.js`],
-        env: {},
-        connected: false,
-        category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
-        githubUrl: 'https://github.com/kukapay/rug-check-mcp',
-        authRequired: false,
-        authParams: {}
-    },
+
     {
         name: 'chainlink-mcp',
         description: 'ChainLink price feeds and oracle data',
