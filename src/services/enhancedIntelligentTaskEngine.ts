@@ -223,6 +223,9 @@ export class EnhancedIntelligentTaskEngine {
           error: executionResult.error || 'none'
         });
 
+        // 🔧 CRITICAL: 检查是否到达了后续处理阶段
+        logger.info(`🎯 REACHED POST-EXECUTION PROCESSING - Step ${currentStep.step}`);
+
         // 🔧 记录执行历史
         const historyEntry = {
           stepNumber: currentStep.step,
@@ -246,19 +249,20 @@ export class EnhancedIntelligentTaskEngine {
         // 🔧 与Agent引擎完全一致：只在成功且有结果时处理
         if (executionResult.success && executionResult.result) {
           logger.info(`🎯 CRITICAL DEBUG - Conditions met, yielding step_raw_result`);
-          // 发送原始结果事件
+          
+          // 🔧 为传输优化：避免在executionDetails中重复大数据
           yield {
             event: 'step_raw_result',
             data: {
               step: currentStep.step,
               success: true,
-              result: executionResult.result,
+              result: executionResult.result,  // 原始MCP数据结构
               agentName: 'WorkflowEngine',
               executionDetails: {
                 toolType: toolType,
                 toolName: actualToolName,
                 mcpName: mcpName,
-                rawResult: executionResult.result,
+                // 🔧 移除rawResult重复 - 数据已在上面的result字段中
                 args: executionResult.actualArgs || currentStep.input || {},
                 expectedOutput: expectedOutput,
                 timestamp: new Date().toISOString()
@@ -714,7 +718,7 @@ export class EnhancedIntelligentTaskEngine {
           task.userId
         );
 
-        logger.info(`✅ MCP ${step.mcp} execution successful`);
+        logger.info(`✅ MCP ${step.mcp} execution successful - returning original MCP structure`);
         return { success: true, result, actualArgs: input };
       }
 
