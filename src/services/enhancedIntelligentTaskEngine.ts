@@ -226,30 +226,30 @@ export class EnhancedIntelligentTaskEngine {
         };
         state.executionHistory.push(historyEntry);
 
-        // 🔧 发送原始结果事件 - 统一字段结构，与Agent引擎一致
+        // 🔧 发送原始结果事件 - 智能处理大数据，避免传输超时
+        const resultForTransmission = this.prepareResultForTransmission(executionResult.result);
+        
         yield {
           event: 'step_raw_result',
           data: {
             step: currentStep.step,
             success: executionResult.success,
-            // 🔧 统一字段：只使用result，删除重复的rawResult字段
-            result: executionResult.result,
-            // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
+            // 🔧 使用处理后的结果数据，避免传输问题
+            result: resultForTransmission,
             agentName: 'WorkflowEngine',
-                      executionDetails: {
-            toolType: toolType,
-            toolName: actualToolName,
-            mcpName: mcpName,
-            rawResult: executionResult.result,
-            success: executionResult.success,
-            error: executionResult.error,
-            // 🔧 使用实际执行的参数，与Agent引擎一致
-            args: executionResult.actualArgs || currentStep.input || {},
-            expectedOutput: expectedOutput,
-            reasoning: reasoning,
-            timestamp: new Date().toISOString(),
-            attempts: currentStep.attempts || 1
-          }
+            // 🔧 简化 executionDetails，移除重复的 rawResult
+            executionDetails: {
+              toolType: toolType,
+              toolName: actualToolName,
+              mcpName: mcpName,
+              success: executionResult.success,
+              error: executionResult.error,
+              args: executionResult.actualArgs || currentStep.input || {},
+              expectedOutput: expectedOutput,
+              reasoning: reasoning,
+              timestamp: new Date().toISOString(),
+              attempts: currentStep.attempts || 1
+            }
           }
         };
 
@@ -1324,6 +1324,68 @@ Please format this result in a clear, user-friendly way with appropriate markdow
   }
 
 
+
+  /**
+   * 🔧 智能准备传输数据，避免大数据导致传输失败
+   */
+  private prepareResultForTransmission(result: any): any {
+    try {
+      // 估算数据大小
+      const resultStr = JSON.stringify(result);
+      const dataSizeKB = resultStr.length / 1024;
+      
+      // 如果数据小于 100KB，直接传输
+      if (dataSizeKB < 100) {
+        return result;
+      }
+      
+      // 大数据处理：提供摘要信息
+      if (Array.isArray(result)) {
+        return {
+          _dataType: 'large_array',
+          _summary: `Large array with ${result.length} items (${Math.round(dataSizeKB)}KB)`,
+          _sample: result.slice(0, 3),
+          _totalItems: result.length,
+          _note: 'Data truncated for transmission. Full data available in formatted result.'
+        };
+      } else if (typeof result === 'object' && result !== null) {
+        const keys = Object.keys(result);
+        const sample: any = {};
+        keys.slice(0, 5).forEach(key => {
+          const value = result[key];
+          if (typeof value === 'string' && value.length > 200) {
+            sample[key] = value.substring(0, 200) + '...';
+          } else if (typeof value === 'object') {
+            sample[key] = '[Object]';
+          } else {
+            sample[key] = value;
+          }
+        });
+        
+        return {
+          _dataType: 'large_object',
+          _summary: `Large object with ${keys.length} properties (${Math.round(dataSizeKB)}KB)`,
+          _sample: sample,
+          _totalProperties: keys.length,
+          _note: 'Data truncated for transmission. Full data available in formatted result.'
+        };
+      } else {
+        return {
+          _dataType: 'large_data',
+          _summary: `Large ${typeof result} data (${Math.round(dataSizeKB)}KB)`,
+          _preview: String(result).substring(0, 500) + '...',
+          _note: 'Data truncated for transmission. Full data available in formatted result.'
+        };
+      }
+    } catch (error) {
+      return {
+        _dataType: 'error',
+        _summary: 'Failed to process result data',
+        _error: 'Data processing error',
+        _note: 'Original data available in formatted result.'
+      };
+    }
+  }
 
   /**
    * 保存步骤原始结果消息
