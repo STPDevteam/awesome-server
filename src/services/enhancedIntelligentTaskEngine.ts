@@ -256,9 +256,30 @@ export class EnhancedIntelligentTaskEngine {
         // 🔧 存储原始结果消息
         await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
 
-        // 🔧 格式化结果处理
+        // 🔧 流式格式化结果处理（参考Agent引擎）
         let formattedResult = '';
         if (executionResult.success && executionResult.result) {
+          // 🔧 流式格式化：先发送流式格式化块（仅对MCP工具）
+          if (toolType === 'mcp') {
+            const formatGenerator = this.formatAndStreamTaskResult(
+              executionResult.result,
+              currentStep.mcp,
+              actualToolName
+            );
+
+            for await (const chunk of formatGenerator) {
+              yield {
+                event: 'step_result_chunk',
+                data: {
+                  step: currentStep.step,
+                  chunk,
+                  agentName: 'WorkflowEngine'
+                }
+              };
+            }
+          }
+
+          // 🔧 生成完整的格式化结果用于存储和最终事件
           formattedResult = await this.generateFormattedResult(
             executionResult.result,
             currentStep.mcp,
@@ -593,7 +614,16 @@ export class EnhancedIntelligentTaskEngine {
         return { success: true, result, actualArgs: input };
       } else {
         // MCP工具执行 - 使用预推断的实际工具名称
-        const toolName = actualToolName || await this.inferActualToolName(step.mcp, step.action, input, task.userId);
+        let toolName = actualToolName;
+        if (!toolName) {
+          try {
+            toolName = await this.inferActualToolName(step.mcp, step.action, input, task.userId);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error(`❌ Failed to infer tool name for MCP ${step.mcp} action ${step.action}: ${errorMessage}`);
+            throw error;
+          }
+        }
         
         logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${toolName})`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
@@ -801,7 +831,53 @@ Select the best matching tool now:`;
   }
 
   /**
-   * 生成格式化结果
+   * 🔧 新增：流式格式化任务结果（参考Agent引擎实现）
+   */
+  private async *formatAndStreamTaskResult(
+    rawResult: any,
+    mcpName: string,
+    toolName: string
+  ): AsyncGenerator<string, void, unknown> {
+    try {
+      // 🔧 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
+      const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
+
+**Tool Information:**
+- MCP Service: ${mcpName}
+- Tool/Action: ${toolName}
+
+**Raw Result:**
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+
+**Format Requirements:**
+1. Use proper markdown formatting (headers, lists, code blocks, etc.)
+2. Make the content easy to read and understand
+3. Highlight important information
+4. Structure the data logically
+5. If the result contains data, format it in tables or lists
+6. If it's an error, clearly explain what happened
+7. Keep the formatting professional and clean
+
+Format the result now:`;
+
+      // 使用流式LLM生成格式化结果
+      const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
+
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          yield chunk.content as string;
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to format task result:`, error);
+      // 降级处理：返回基本格式化
+      const fallbackResult = `### ${toolName} 执行结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      yield fallbackResult;
+    }
+  }
+
+  /**
+   * 生成格式化结果（非流式，用于存储）
    */
   private async generateFormattedResult(rawResult: any, mcpName: string, action: string): Promise<string> {
     try {
