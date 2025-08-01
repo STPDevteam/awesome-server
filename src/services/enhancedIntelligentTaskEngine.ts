@@ -178,7 +178,9 @@ export class EnhancedIntelligentTaskEngine {
         if (!isLLMTool) {
           const task = await this.taskService.getTaskById(state.taskId);
           if (task) {
+            logger.info(`🔍 Inferring tool name for step ${currentStep.step}: ${currentStep.mcp}.${currentStep.action}`);
             actualToolName = await this.inferActualToolName(currentStep.mcp, currentStep.action, processedInput, task.userId);
+            logger.info(`✅ Tool name inference completed: ${actualToolName}`);
           }
         }
 
@@ -212,7 +214,17 @@ export class EnhancedIntelligentTaskEngine {
         };
 
         // 🔧 执行当前步骤（带重试机制）- 传递预处理的参数和实际工具名称
+        logger.info(`🔄 Starting execution for step ${currentStep.step} with tool: ${actualToolName}`);
         const executionResult = await this.executeWorkflowStepWithRetry(currentStep, state, processedInput, actualToolName);
+        logger.info(`📋 Execution result:`, {
+          success: executionResult.success,
+          hasResult: !!executionResult.result,
+          resultSize: executionResult.result ? JSON.stringify(executionResult.result).length : 0,
+          error: executionResult.error || 'none'
+        });
+
+        // 🔧 CRITICAL: 检查是否到达了后续处理阶段
+        logger.info(`🎯 REACHED POST-EXECUTION PROCESSING - Step ${currentStep.step}`);
 
         // 🔧 记录执行历史
         const historyEntry = {
@@ -226,79 +238,104 @@ export class EnhancedIntelligentTaskEngine {
         };
         state.executionHistory.push(historyEntry);
 
-        // 🔧 发送原始结果事件 - 统一字段结构，与Agent引擎一致
-        yield {
-          event: 'step_raw_result',
-          data: {
-            step: currentStep.step,
-            success: executionResult.success,
-            // 🔧 统一字段：只使用result，删除重复的rawResult字段
-            result: executionResult.result,
-            // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
-            agentName: 'WorkflowEngine',
-                      executionDetails: {
-            toolType: toolType,
-            toolName: actualToolName,
-            mcpName: mcpName,
-            rawResult: executionResult.result,
-            success: executionResult.success,
-            error: executionResult.error,
-            // 🔧 使用实际执行的参数，与Agent引擎一致
-            args: executionResult.actualArgs || currentStep.input || {},
-            expectedOutput: expectedOutput,
-            reasoning: reasoning,
-            timestamp: new Date().toISOString(),
-            attempts: currentStep.attempts || 1
-          }
-          }
-        };
+        // 🔧 重要调试：检查executionResult的结构
+        logger.info(`🔍 CRITICAL DEBUG - executionResult:`, {
+          success: executionResult.success,
+          hasResult: !!executionResult.result,
+          resultType: typeof executionResult.result,
+          resultKeys: executionResult.result ? Object.keys(executionResult.result) : 'no result'
+        });
 
-        // 🔧 存储原始结果消息
-        await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+        // 🔧 与Agent引擎完全一致：只在成功且有结果时处理
+        if (executionResult.success && executionResult.result) {
+          logger.info(`🎯 CRITICAL DEBUG - Conditions met, yielding step_raw_result`);
+          
+          // 🔧 为传输优化：避免在executionDetails中重复大数据
+          yield {
+            event: 'step_raw_result',
+            data: {
+              step: currentStep.step,
+              success: true,
+              result: executionResult.result,  // 原始MCP数据结构
+              agentName: 'WorkflowEngine',
+              executionDetails: {
+                toolType: toolType,
+                toolName: actualToolName,
+                mcpName: mcpName,
+                // 🔧 移除rawResult重复 - 数据已在上面的result字段中
+                args: executionResult.actualArgs || currentStep.input || {},
+                expectedOutput: expectedOutput,
+                timestamp: new Date().toISOString()
+              }
+            }
+          };
 
-        // 🔧 格式化结果处理
+          // 🔧 异步保存原始结果，避免阻塞流式响应
+          this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName).catch(error => {
+            logger.error(`Failed to save step raw result:`, error);
+          });
+        }
+
+        // 🔧 流式格式化结果处理（参考Agent引擎）
         let formattedResult = '';
         if (executionResult.success && executionResult.result) {
+          // 🔧 流式格式化：先发送流式格式化块（仅对MCP工具）
+          if (toolType === 'mcp') {
+            const formatGenerator = this.formatAndStreamTaskResult(
+              executionResult.result,
+              currentStep.mcp,
+              actualToolName
+            );
+
+            for await (const chunk of formatGenerator) {
+              yield {
+                event: 'step_result_chunk',
+                data: {
+                  step: currentStep.step,
+                  chunk,
+                  agentName: 'WorkflowEngine'
+                }
+              };
+            }
+          }
+
+          // 🔧 生成完整的格式化结果用于存储和最终事件
           formattedResult = await this.generateFormattedResult(
             executionResult.result,
             currentStep.mcp,
             actualToolName
           );
 
-          // 🔧 发送格式化结果事件 - 统一字段结构，与Agent引擎一致
+          // 🔧 发送格式化结果事件 - 与Agent引擎完全一致的结构
           yield {
             event: 'step_formatted_result',
             data: {
               step: currentStep.step,
               success: true,
-              // 🔧 统一字段：只使用formattedResult，删除重复的result字段
               formattedResult: formattedResult,
-              // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
               agentName: 'WorkflowEngine',
-                        formattingDetails: {
-            toolType: toolType,
-            toolName: actualToolName,
-            mcpName: mcpName,
-            originalResult: executionResult.result,
-            formattedResult: formattedResult,
-            // 🔧 使用实际执行的参数，与Agent引擎一致
-            args: executionResult.actualArgs || currentStep.input || {},
-            expectedOutput: expectedOutput,
-            reasoning: reasoning,
-            processingInfo: {
-              originalDataSize: JSON.stringify(executionResult.result).length,
-              formattedDataSize: formattedResult.length,
-              processingTime: new Date().toISOString(),
-              // 🔧 统一字段：添加needsFormatting标识，与Agent引擎一致
-              needsFormatting: true
-            },
-            timestamp: new Date().toISOString()
-          }
+              formattingDetails: {
+                toolType: toolType,
+                toolName: actualToolName,
+                mcpName: mcpName,
+                originalResult: executionResult.result,
+                formattedResult: formattedResult,
+                args: executionResult.actualArgs || currentStep.input || {},
+                processingInfo: {
+                  originalDataSize: JSON.stringify(executionResult.result).length,
+                  formattedDataSize: formattedResult.length,
+                  processingTime: new Date().toISOString(),
+                  needsFormatting: toolType === 'mcp'
+                },
+                timestamp: new Date().toISOString()
+              }
             }
           };
 
-          // 🔧 存储格式化结果消息
-          await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+          // 🔧 异步保存格式化结果，避免阻塞流式响应
+          this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName).catch(error => {
+            logger.error(`Failed to save step formatted result:`, error);
+          });
 
           // 🔧 更新数据存储
           state.dataStore[`step_${currentStep.step}_result`] = executionResult.result;
@@ -363,6 +400,73 @@ export class EnhancedIntelligentTaskEngine {
               attempts: currentStep.attempts || 1
             }
           };
+        }
+
+        // 🧠 任务观察阶段 - 与Agent引擎一致，每步执行后都进行观察
+        logger.info(`🔍 Performing task observation after step ${currentStep.step}...`);
+        
+        const observation = await this.taskObservationPhase(state);
+        
+        // 发送观察结果事件
+        yield {
+          event: 'task_observation',
+          data: {
+            taskId,
+            stepIndex: i,
+            shouldContinue: observation.shouldContinue,
+            shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
+            adaptationReason: observation.adaptationReason,
+            agentName: 'WorkflowEngine',
+            timestamp: new Date().toISOString()
+          }
+        };
+        
+        // 🔄 如果需要调整工作流，进行动态规划
+        if (observation.shouldAdaptWorkflow) {
+          logger.info(`🧠 Initiating dynamic workflow adaptation...`);
+          
+          const currentContext = this.buildCurrentContext(state);
+          const planningResult = await this.taskDynamicPlanningPhase(state, currentContext);
+          
+          if (planningResult.success && planningResult.adaptedSteps) {
+            // 用动态规划的步骤替换剩余工作流
+            const adaptedWorkflow = planningResult.adaptedSteps.map((adaptedStep, index) => ({
+              ...adaptedStep,
+              step: i + index + 1,
+              status: 'pending' as const,
+              attempts: 0,
+              maxRetries: 2
+            }));
+            
+            // 更新工作流：保留已完成的步骤，替换剩余步骤
+            state.workflow = [
+              ...state.workflow.slice(0, i + 1),
+              ...adaptedWorkflow
+            ];
+            state.totalSteps = state.workflow.length;
+            
+            // 发送工作流调整事件
+            yield {
+              event: 'workflow_adapted',
+              data: {
+                taskId,
+                reason: observation.adaptationReason,
+                adaptedAt: i + 1,
+                newSteps: adaptedWorkflow.length,
+                totalSteps: state.totalSteps,
+                agentName: 'WorkflowEngine',
+                timestamp: new Date().toISOString()
+              }
+            };
+            
+            logger.info(`✅ Workflow adapted: ${adaptedWorkflow.length} new steps planned`);
+          }
+        }
+        
+        // 如果观察认为应该停止，则提前完成任务
+        if (!observation.shouldContinue) {
+          logger.info(`🏁 Task observation indicates completion, stopping workflow execution`);
+          break;
         }
       }
 
@@ -593,7 +697,16 @@ export class EnhancedIntelligentTaskEngine {
         return { success: true, result, actualArgs: input };
       } else {
         // MCP工具执行 - 使用预推断的实际工具名称
-        const toolName = actualToolName || await this.inferActualToolName(step.mcp, step.action, input, task.userId);
+        let toolName = actualToolName;
+        if (!toolName) {
+          try {
+            toolName = await this.inferActualToolName(step.mcp, step.action, input, task.userId);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error(`❌ Failed to infer tool name for MCP ${step.mcp} action ${step.action}: ${errorMessage}`);
+            throw error;
+          }
+        }
         
         logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${toolName})`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
@@ -605,7 +718,7 @@ export class EnhancedIntelligentTaskEngine {
           task.userId
         );
 
-        logger.info(`✅ MCP ${step.mcp} execution successful`);
+        logger.info(`✅ MCP ${step.mcp} execution successful - returning original MCP structure`);
         return { success: true, result, actualArgs: input };
       }
 
@@ -801,7 +914,358 @@ Select the best matching tool now:`;
   }
 
   /**
-   * 生成格式化结果
+ * 🧠 新增：动态规划阶段（参考Agent引擎，使任务引擎也具备智能规划能力）
+ */
+private async taskDynamicPlanningPhase(
+  state: EnhancedWorkflowState,
+  currentContext: string
+): Promise<{
+  success: boolean;
+  adaptedSteps?: Array<{
+    step: number;
+    mcp: string;
+    action: string;
+    input?: any;
+    reasoning?: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    // 🔧 获取当前可用的MCP和执行历史
+    const availableMCPs = await this.getAvailableMCPsForPlanning(state.taskId);
+    const executionHistory = this.buildExecutionHistory(state);
+    
+    const plannerPrompt = this.buildTaskPlannerPrompt(state, availableMCPs, currentContext, executionHistory);
+
+    // 🔄 使用LLM进行动态规划
+    const response = await this.llm.invoke([new SystemMessage(plannerPrompt)]);
+    const adaptedSteps = this.parseTaskPlan(response.content.toString());
+
+    return { success: true, adaptedSteps };
+  } catch (error) {
+    logger.error('Task dynamic planning failed:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    };
+  }
+}
+
+/**
+ * 🧠 新增：任务观察阶段（参考Agent引擎，智能分析当前进度和调整策略）
+ */
+private async taskObservationPhase(
+  state: EnhancedWorkflowState
+): Promise<{
+  shouldContinue: boolean;
+  shouldAdaptWorkflow: boolean;
+  adaptationReason?: string;
+  newObjective?: string;
+}> {
+  try {
+    const observerPrompt = this.buildTaskObserverPrompt(state);
+    const response = await this.llm.invoke([new SystemMessage(observerPrompt)]);
+    
+    return this.parseTaskObservation(response.content.toString());
+  } catch (error) {
+    logger.error('Task observation failed:', error);
+    return { 
+      shouldContinue: true, 
+      shouldAdaptWorkflow: false 
+    };
+  }
+}
+
+/**
+ * 🔧 构建任务规划提示词
+ */
+private buildTaskPlannerPrompt(
+  state: EnhancedWorkflowState,
+  availableMCPs: any[],
+  currentContext: string,
+  executionHistory: string
+): string {
+  return `You are an intelligent task workflow planner. Based on the current execution context and available tools, dynamically plan the optimal next steps.
+
+**Current Task**: ${state.originalQuery}
+
+**Execution Context**: ${currentContext}
+
+**Available MCP Tools**:
+${JSON.stringify(availableMCPs.map(mcp => ({
+  name: mcp.name,
+  description: mcp.description,
+  capabilities: mcp.predefinedTools?.map((tool: any) => tool.name) || []
+})), null, 2)}
+
+**Previous Execution History**:
+${executionHistory}
+
+**Current Workflow Progress**: ${state.completedSteps}/${state.totalSteps} steps completed
+
+**Instructions**:
+1. Analyze what has been accomplished so far
+2. Identify what still needs to be done to complete the original task
+3. Plan the optimal next steps using available MCP tools
+4. Consider efficiency and logical flow
+5. Adapt based on previous results
+
+Respond with valid JSON in this exact format:
+{
+  "analysis": "Brief analysis of current progress and what's needed",
+  "adapted_steps": [
+    {
+      "step": 1,
+      "mcp": "mcp_name",
+      "action": "Clear description of what this step will accomplish",
+      "input": {"actual": "parameters"},
+      "reasoning": "Why this step is needed now"
+    }
+  ],
+  "planning_reasoning": "Detailed explanation of the planning logic"
+}`;
+}
+
+/**
+ * 🔧 构建任务观察提示词
+ */
+private buildTaskObserverPrompt(state: EnhancedWorkflowState): string {
+  const completedStepsInfo = state.executionHistory
+    .filter(step => step.success)
+    .map(step => `Step ${step.stepNumber}: ${step.action} -> Success`)
+    .join('\n');
+    
+  const failedStepsInfo = state.executionHistory
+    .filter(step => !step.success)
+    .map(step => `Step ${step.stepNumber}: ${step.action} -> Failed: ${step.error}`)
+    .join('\n');
+
+  return `You are an intelligent task execution observer analyzing workflow progress after each step. Make smart decisions about continuation, completion, and adaptation.
+
+**Original Task**: ${state.originalQuery}
+
+**Current Progress**: Step ${state.currentStepIndex + 1}/${state.totalSteps} (${Math.round(((state.currentStepIndex + 1) / state.totalSteps) * 100)}%)
+
+**Execution Summary**:
+- Completed Steps: ${state.completedSteps}
+- Failed Steps: ${state.failedSteps}
+- Current Step: ${state.currentStepIndex + 1}
+
+**Recent Completed Steps**:
+${completedStepsInfo || 'None yet'}
+
+**Recent Failed Steps**:
+${failedStepsInfo || 'None'}
+
+**Available Results & Data**:
+${JSON.stringify(state.dataStore, null, 2)}
+
+**Observation Guidelines**:
+1. **Task Completion Analysis**: Evaluate if the original task objective has been achieved with current results
+2. **Progress Assessment**: Consider the quality and relevance of completed steps
+3. **Failure Impact**: Assess how failed steps affect overall task completion
+4. **Workflow Efficiency**: Determine if the remaining planned steps are still optimal
+5. **Early Completion**: Identify if sufficient results exist to complete the task early
+6. **Adaptation Needs**: Detect if the workflow should be adapted based on current context
+
+**Decision Criteria**:
+- CONTINUE: Task not complete, current workflow is optimal
+- STOP EARLY: Task objective achieved with current results
+- ADAPT: Task not complete, but workflow needs modification
+
+Respond with valid JSON:
+{
+  "should_continue": true/false,
+  "should_adapt_workflow": true/false,
+  "adaptation_reason": "Reason for adaptation if needed",
+  "new_objective": "Adjusted objective if adaptation needed",
+  "completion_analysis": "Analysis of current task completion status",
+  "confidence_score": 0.0-1.0,
+  "observation_reasoning": "Detailed step-by-step reasoning for this decision"
+}`;
+}
+
+/**
+ * 🔧 解析任务规划结果
+ */
+private parseTaskPlan(content: string): Array<{
+  step: number;
+  mcp: string;
+  action: string;
+  input?: any;
+  reasoning?: string;
+}> {
+  try {
+    const cleanedContent = content
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*$/g, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedContent);
+    return parsed.adapted_steps || [];
+  } catch (error) {
+    logger.error('Failed to parse task plan:', error);
+    return [];
+  }
+}
+
+/**
+ * 🔧 解析任务观察结果
+ */
+private parseTaskObservation(content: string): {
+  shouldContinue: boolean;
+  shouldAdaptWorkflow: boolean;
+  adaptationReason?: string;
+  newObjective?: string;
+} {
+  try {
+    const cleanedContent = content
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*$/g, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedContent);
+    
+    return {
+      shouldContinue: parsed.should_continue !== false,
+      shouldAdaptWorkflow: parsed.should_adapt_workflow === true,
+      adaptationReason: parsed.adaptation_reason,
+      newObjective: parsed.new_objective
+    };
+  } catch (error) {
+    logger.error('Failed to parse task observation:', error);
+    logger.error('Raw observation content:', content);
+    return { 
+      shouldContinue: true, 
+      shouldAdaptWorkflow: false 
+    };
+  }
+}
+
+/**
+ * 🔧 获取可用于规划的MCP列表
+ */
+private async getAvailableMCPsForPlanning(taskId: string): Promise<any[]> {
+  try {
+    const task = await this.taskService.getTaskById(taskId);
+    if (task?.mcpWorkflow?.mcps) {
+      return task.mcpWorkflow.mcps;
+    }
+    return [];
+  } catch (error) {
+    logger.error('Failed to get available MCPs for planning:', error);
+    return [];
+  }
+}
+
+  /**
+   * 🔧 构建执行历史摘要
+   */
+  private buildExecutionHistory(state: EnhancedWorkflowState): string {
+    if (state.executionHistory.length === 0) {
+      return 'No previous execution history.';
+    }
+    
+    return state.executionHistory
+      .map(step => `Step ${step.stepNumber}: ${step.action} -> ${step.success ? 'Success' : 'Failed'}`)
+      .join('\n');
+  }
+
+  /**
+   * 🔧 构建当前执行上下文
+   */
+  private buildCurrentContext(state: EnhancedWorkflowState): string {
+    const completedSteps = state.executionHistory.filter(step => step.success);
+    const failedSteps = state.executionHistory.filter(step => !step.success);
+    
+    let context = `Current execution context for task: ${state.originalQuery}\n\n`;
+    
+    // 进度概览
+    context += `Progress Overview:\n`;
+    context += `- Completed: ${state.completedSteps}/${state.totalSteps} steps\n`;
+    context += `- Failed: ${state.failedSteps} steps\n`;
+    context += `- Current step index: ${state.currentStepIndex}\n\n`;
+    
+    // 已完成的步骤和结果
+    if (completedSteps.length > 0) {
+      context += `Successfully completed steps:\n`;
+      completedSteps.forEach(step => {
+        const resultSummary = typeof step.result === 'string' 
+          ? step.result.substring(0, 100) + '...'
+          : JSON.stringify(step.result).substring(0, 100) + '...';
+        context += `- Step ${step.stepNumber}: ${step.action} -> ${resultSummary}\n`;
+      });
+      context += '\n';
+    }
+    
+    // 失败的步骤
+    if (failedSteps.length > 0) {
+      context += `Failed steps:\n`;
+      failedSteps.forEach(step => {
+        context += `- Step ${step.stepNumber}: ${step.action} -> Error: ${step.error}\n`;
+      });
+      context += '\n';
+    }
+    
+    // 可用数据
+    if (Object.keys(state.dataStore).length > 0) {
+      context += `Available data in context:\n`;
+      Object.keys(state.dataStore).forEach(key => {
+        context += `- ${key}: ${typeof state.dataStore[key]}\n`;
+      });
+    }
+    
+    return context;
+  }
+
+/**
+ * 🔧 新增：流式格式化任务结果（参考Agent引擎实现）
+ */
+  private async *formatAndStreamTaskResult(
+    rawResult: any,
+    mcpName: string,
+    toolName: string
+  ): AsyncGenerator<string, void, unknown> {
+    try {
+      // 🔧 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
+      const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
+
+**Tool Information:**
+- MCP Service: ${mcpName}
+- Tool/Action: ${toolName}
+
+**Raw Result:**
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+
+**Format Requirements:**
+1. Use proper markdown formatting (headers, lists, code blocks, etc.)
+2. Make the content easy to read and understand
+3. Highlight important information
+4. Structure the data logically
+5. If the result contains data, format it in tables or lists
+6. If it's an error, clearly explain what happened
+7. Keep the formatting professional and clean
+
+Format the result now:`;
+
+      // 使用流式LLM生成格式化结果
+      const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
+
+      for await (const chunk of stream) {
+        if (chunk.content) {
+          yield chunk.content as string;
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to format task result:`, error);
+      // 降级处理：返回基本格式化
+      const fallbackResult = `### ${toolName} 执行结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      yield fallbackResult;
+    }
+  }
+
+  /**
+   * 生成格式化结果（非流式，用于存储）
    */
   private async generateFormattedResult(rawResult: any, mcpName: string, action: string): Promise<string> {
     try {
@@ -865,6 +1329,8 @@ Please format this result in a clear, user-friendly way with appropriate markdow
     return summary;
   }
 
+
+
   /**
    * 保存步骤原始结果消息
    */
@@ -872,9 +1338,11 @@ Please format this result in a clear, user-friendly way with appropriate markdow
     try {
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
-        // 🔧 只存储结果内容，不包含描述性文本，与Agent引擎一致
-        const rawContent = JSON.stringify(rawResult, null, 2);
+        // 🔧 与Agent引擎完全一致的content格式和metadata结构
         const toolName = actualToolName || step.action;
+        const rawContent = `WorkflowEngine Step ${stepNumber} Raw Result: ${toolName}
+
+${JSON.stringify(rawResult, null, 2)}`;
 
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -885,15 +1353,15 @@ Please format this result in a clear, user-friendly way with appropriate markdow
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
-            stepName: `${step.mcp}.${toolName}`,
+            stepName: toolName,
             taskPhase: 'execution',
             contentType: 'raw_result',
+            agentName: 'WorkflowEngine',
             isComplete: true,
             toolDetails: {
               toolType: toolType,
               toolName: toolName,
               mcpName: mcpName,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
               args: actualArgs || step.input || {},
               expectedOutput: expectedOutput,
               reasoning: reasoning,
@@ -902,8 +1370,6 @@ Please format this result in a clear, user-friendly way with appropriate markdow
             executionDetails: {
               rawResult: rawResult,
               success: true,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
-              args: actualArgs || step.input || {},
               processingInfo: {
                 originalDataSize: JSON.stringify(rawResult).length,
                 processingTime: new Date().toISOString()
@@ -926,9 +1392,12 @@ Please format this result in a clear, user-friendly way with appropriate markdow
     try {
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
-        // 🔧 只存储格式化结果内容，不包含描述性文本，与Agent引擎一致
-        const formattedContent = formattedResult;
+        // 🔧 与Agent引擎完全一致的content格式和metadata结构
         const toolName = actualToolName || step.action;
+        const resultType = toolType === 'llm' ? 'LLM Result' : 'Formatted Result';
+        const formattedContent = `WorkflowEngine Step ${stepNumber} ${resultType}: ${toolName}
+
+${formattedResult}`;
 
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -939,29 +1408,26 @@ Please format this result in a clear, user-friendly way with appropriate markdow
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
-            stepName: `${step.mcp}.${toolName}`,
+            stepName: toolName,
             taskPhase: 'execution',
             contentType: 'formatted_result',
+            agentName: 'WorkflowEngine',
             isComplete: true,
             toolDetails: {
               toolType: toolType,
               toolName: toolName,
               mcpName: mcpName,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
               args: actualArgs || step.input || {},
               expectedOutput: expectedOutput,
               reasoning: reasoning,
               timestamp: new Date().toISOString()
             },
-            formattingDetails: {
+            executionDetails: {
               formattedResult: formattedResult,
               success: true,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
-              args: actualArgs || step.input || {},
               processingInfo: {
                 formattedDataSize: formattedResult.length,
-                processingTime: new Date().toISOString(),
-                needsFormatting: true
+                processingTime: new Date().toISOString()
               }
             }
           }

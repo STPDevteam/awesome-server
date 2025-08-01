@@ -1513,14 +1513,14 @@ ${formattedResult}`;
           
           // Send regular step error event if not MCP connection error
           if (!isMCPConnectionError) {
-            stream({ 
-              event: 'step_error', 
-              data: { 
-                step: stepNumber,
+          stream({ 
+            event: 'step_error', 
+            data: { 
+              step: stepNumber,
                 error: errorMsg,
                 detailedError: detailedError
-              } 
-            });
+            } 
+          });
           }
             
             return {
