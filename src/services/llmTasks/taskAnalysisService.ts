@@ -257,10 +257,12 @@ export class TaskAnalysisService {
         await conversationDao.incrementMessageCount(conversationId);
       }
       
-      // 常规处理，不是流式方法
+      // 常规处理，不是流式方法  
+      // 🚀 优化：传递userId以启用认证优先级排序
       const mcpResult = await this.identifyRelevantMCPs(
         task.content, 
-        requirementsResult.content
+        requirementsResult.content,
+        task.userId // 传递用户ID以支持认证状态排序
       );
       
       // 完成步骤2消息
@@ -675,14 +677,16 @@ You must output valid JSON with the following structure:
   }
   
   /**
-   * 步骤2: 识别最相关的MCP
+   * 步骤2: 识别最相关的MCP（优化版 - 支持认证优先级排序）
    * @param taskContent 任务内容
    * @param requirementsAnalysis 需求分析结果
+   * @param userId 用户ID（可选，用于认证状态排序）
    * @returns 推荐的MCP列表
    */
   public async identifyRelevantMCPs(
     taskContent: string,
-    requirementsAnalysis: string
+    requirementsAnalysis: string,
+    userId?: string
   ): Promise<{
     content: string;
     reasoning: string;
@@ -692,8 +696,58 @@ You must output valid JSON with the following structure:
       logger.info('Starting identification of relevant MCP tools');
       
       // Dynamically get available MCP list instead of using static list
-      const availableMCPs = await this.getAvailableMCPs();
+      let availableMCPs = await this.getAvailableMCPs();
       logger.info(`[MCP Debug] Available MCP tools list: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
+      
+      // 🚀 优化：根据认证状态对MCP进行优先级排序
+      if (userId) {
+        try {
+          logger.info(`[MCP Auth Priority] Sorting MCPs by auth status for user ${userId}`);
+          
+          // 获取用户的认证状态映射
+          const userAuthDataList = await this.mcpAuthService.getUserAllMCPAuths(userId);
+          const authStatusMap = new Map<string, boolean>();
+          userAuthDataList.forEach(authData => {
+            authStatusMap.set(authData.mcpName, authData.isVerified);
+          });
+          
+          // 按认证优先级排序：
+          // 1. authRequired: false (不需要认证) - 优先级最高
+          // 2. authRequired: true && authVerified: true (已认证) - 优先级次高  
+          // 3. authRequired: true && authVerified: false (未认证) - 优先级最低
+          availableMCPs.sort((a, b) => {
+            const aAuthRequired = a.authRequired || false;
+            const bAuthRequired = b.authRequired || false;
+            const aAuthVerified = authStatusMap.get(a.name) || false;
+            const bAuthVerified = authStatusMap.get(b.name) || false;
+            
+            // 计算优先级分数 (分数越高优先级越高)
+            const getAuthPriority = (authRequired: boolean, authVerified: boolean): number => {
+              if (!authRequired) return 3; // 不需要认证 - 最高优先级
+              if (authRequired && authVerified) return 2; // 需要认证且已认证 - 次高优先级
+              return 1; // 需要认证但未认证 - 最低优先级
+            };
+            
+            const aPriority = getAuthPriority(aAuthRequired, aAuthVerified);
+            const bPriority = getAuthPriority(bAuthRequired, bAuthVerified);
+            
+            // 按优先级分数降序排列
+            if (aPriority !== bPriority) {
+              return bPriority - aPriority;
+            }
+            
+            // 优先级相同时，按名称字母顺序排列
+            return a.name.localeCompare(b.name);
+          });
+          
+          logger.info(`[MCP Auth Priority] Sorted MCPs by auth priority. Top 5: ${availableMCPs.slice(0, 5).map(mcp => `${mcp.name}(authRequired:${mcp.authRequired},verified:${authStatusMap.get(mcp.name)||false})`).join(', ')}`);
+        } catch (error) {
+          logger.error(`[MCP Auth Priority] Failed to sort MCPs by auth status:`, error);
+          // 出错时继续使用原始排序
+        }
+      } else {
+        logger.info(`[MCP Auth Priority] No userId provided, using default MCP order`);
+      }
       
       // Group MCPs by category for better LLM understanding and selection
       const mcpsByCategory = availableMCPs.reduce((acc, mcp) => {
@@ -723,6 +777,7 @@ SELECTION PRINCIPLES:
 ✅ Choose tools that are DIRECTLY required for the task
 ✅ Be selective - only choose what is actually needed
 ✅ Consider the core functionality required
+✅ PRIORITIZE tools that appear earlier in the list - they are sorted by authentication preference
 ✅ For each selected tool, identify alternative tools ONLY if they can provide similar functionality
 ✅ Alternatives should be genuinely capable of serving the same purpose
 ✅ If no suitable alternatives exist for a tool, leave the alternatives array empty
@@ -730,9 +785,14 @@ SELECTION PRINCIPLES:
 ❌ Do NOT force alternatives if none are truly suitable
 ❌ Do NOT select tools based on loose associations
 
+**IMPORTANT**: The MCP tools are pre-sorted by authentication preference:
+- Tools requiring no authentication appear first (ready to use immediately)
+- Tools already authenticated by the user appear next (ready to use)
+- Tools requiring authentication appear last (may need user setup)
+
 **Current task**: "${taskContent}"
 
-Available MCP tools by category:
+Available MCP tools by category (sorted by authentication preference):
 ${JSON.stringify(availableMCPs.reduce((acc, mcp) => {
   const category = mcp.category || 'Other';
   if (!acc[category]) acc[category] = [];
