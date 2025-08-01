@@ -2126,7 +2126,7 @@ export const predefinedMCPs: MCPService[] = [
         name: 'dune-mcp',
         description: 'Dune Analytics blockchain data queries and dashboards',
         command: '/home/ubuntu/.bun/bin/bun',
-        args: [`/home/ubuntu/mcp-tools/dune-mcp-server/build/index.js`],
+        args: [`/home/ubuntu/mcp-tools/dune-mcp-server/src/index.ts`],
         env: {
             DUNE_API_KEY: process.env.DUNE_API_KEY || ''
         },
