@@ -253,10 +253,7 @@ export class EnhancedIntelligentTaskEngine {
           }
         };
 
-        // 🔧 存储原始结果消息
-        await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
-
-        // 🔧 流式格式化结果处理（参考Agent引擎）
+        // 🔧 流式格式化结果处理（参考Agent引擎）- 先处理流式事件，避免大数据阻塞
         let formattedResult = '';
         if (executionResult.success && executionResult.result) {
           // 🔧 流式格式化：先发送流式格式化块（仅对MCP工具）
@@ -318,12 +315,25 @@ export class EnhancedIntelligentTaskEngine {
             }
           };
 
-          // 🔧 存储格式化结果消息
-          await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
-
           // 🔧 更新数据存储
           state.dataStore[`step_${currentStep.step}_result`] = executionResult.result;
           state.dataStore.lastResult = executionResult.result;
+        }
+
+        // 🔧 数据库保存操作放在最后，避免大数据JSON.stringify阻塞流式事件
+        // 与Agent引擎保持一致的执行顺序
+        try {
+          // 存储原始结果消息
+          await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+          
+          // 存储格式化结果消息
+          if (formattedResult) {
+            await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+          }
+        } catch (dbError) {
+          // 🔧 数据库保存失败不应该影响任务继续执行
+          logger.error(`❌ Failed to save step results to database:`, dbError);
+          // 继续执行，不中断流程
         }
 
         // 🔧 更新步骤状态
@@ -1312,6 +1322,8 @@ Please format this result in a clear, user-friendly way with appropriate markdow
     
     return summary;
   }
+
+
 
   /**
    * 保存步骤原始结果消息
