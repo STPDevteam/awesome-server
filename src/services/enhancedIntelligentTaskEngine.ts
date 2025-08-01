@@ -226,22 +226,19 @@ export class EnhancedIntelligentTaskEngine {
         };
         state.executionHistory.push(historyEntry);
 
-        // 🔧 发送原始结果事件 - 智能处理大数据，避免传输超时
-        const resultForTransmission = this.prepareResultForTransmission(executionResult.result);
-        
+        // 🔧 发送原始结果事件 - 与Agent引擎保持一致的数据结构
         yield {
           event: 'step_raw_result',
           data: {
             step: currentStep.step,
             success: executionResult.success,
-            // 🔧 使用处理后的结果数据，避免传输问题
-            result: resultForTransmission,
+            result: executionResult.result,
             agentName: 'WorkflowEngine',
-            // 🔧 简化 executionDetails，移除重复的 rawResult
             executionDetails: {
               toolType: toolType,
               toolName: actualToolName,
               mcpName: mcpName,
+              rawResult: executionResult.result,
               success: executionResult.success,
               error: executionResult.error,
               args: executionResult.actualArgs || currentStep.input || {},
@@ -253,7 +250,10 @@ export class EnhancedIntelligentTaskEngine {
           }
         };
 
-        // 🔧 流式格式化结果处理（参考Agent引擎）- 先处理流式事件，避免大数据阻塞
+        // 🔧 与Agent引擎一致：立即保存原始结果，避免传输中断
+        await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+
+        // 🔧 流式格式化结果处理（参考Agent引擎）
         let formattedResult = '';
         if (executionResult.success && executionResult.result) {
           // 🔧 流式格式化：先发送流式格式化块（仅对MCP工具）
@@ -315,25 +315,12 @@ export class EnhancedIntelligentTaskEngine {
             }
           };
 
+          // 🔧 与Agent引擎一致：保存格式化结果
+          await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+
           // 🔧 更新数据存储
           state.dataStore[`step_${currentStep.step}_result`] = executionResult.result;
           state.dataStore.lastResult = executionResult.result;
-        }
-
-        // 🔧 数据库保存操作放在最后，避免大数据JSON.stringify阻塞流式事件
-        // 与Agent引擎保持一致的执行顺序
-        try {
-          // 存储原始结果消息
-          await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
-          
-          // 存储格式化结果消息
-          if (formattedResult) {
-            await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
-          }
-        } catch (dbError) {
-          // 🔧 数据库保存失败不应该影响任务继续执行
-          logger.error(`❌ Failed to save step results to database:`, dbError);
-          // 继续执行，不中断流程
         }
 
         // 🔧 更新步骤状态
@@ -1324,68 +1311,6 @@ Please format this result in a clear, user-friendly way with appropriate markdow
   }
 
 
-
-  /**
-   * 🔧 智能准备传输数据，避免大数据导致传输失败
-   */
-  private prepareResultForTransmission(result: any): any {
-    try {
-      // 估算数据大小
-      const resultStr = JSON.stringify(result);
-      const dataSizeKB = resultStr.length / 1024;
-      
-      // 如果数据小于 100KB，直接传输
-      if (dataSizeKB < 100) {
-        return result;
-      }
-      
-      // 大数据处理：提供摘要信息
-      if (Array.isArray(result)) {
-        return {
-          _dataType: 'large_array',
-          _summary: `Large array with ${result.length} items (${Math.round(dataSizeKB)}KB)`,
-          _sample: result.slice(0, 3),
-          _totalItems: result.length,
-          _note: 'Data truncated for transmission. Full data available in formatted result.'
-        };
-      } else if (typeof result === 'object' && result !== null) {
-        const keys = Object.keys(result);
-        const sample: any = {};
-        keys.slice(0, 5).forEach(key => {
-          const value = result[key];
-          if (typeof value === 'string' && value.length > 200) {
-            sample[key] = value.substring(0, 200) + '...';
-          } else if (typeof value === 'object') {
-            sample[key] = '[Object]';
-          } else {
-            sample[key] = value;
-          }
-        });
-        
-        return {
-          _dataType: 'large_object',
-          _summary: `Large object with ${keys.length} properties (${Math.round(dataSizeKB)}KB)`,
-          _sample: sample,
-          _totalProperties: keys.length,
-          _note: 'Data truncated for transmission. Full data available in formatted result.'
-        };
-      } else {
-        return {
-          _dataType: 'large_data',
-          _summary: `Large ${typeof result} data (${Math.round(dataSizeKB)}KB)`,
-          _preview: String(result).substring(0, 500) + '...',
-          _note: 'Data truncated for transmission. Full data available in formatted result.'
-        };
-      }
-    } catch (error) {
-      return {
-        _dataType: 'error',
-        _summary: 'Failed to process result data',
-        _error: 'Data processing error',
-        _note: 'Original data available in formatted result.'
-      };
-    }
-  }
 
   /**
    * 保存步骤原始结果消息
