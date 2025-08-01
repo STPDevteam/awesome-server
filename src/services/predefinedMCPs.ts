@@ -2127,13 +2127,17 @@ export const predefinedMCPs: MCPService[] = [
         description: 'Dune Analytics blockchain data queries and dashboards',
         command: 'bun',
         args: [`/home/ubuntu/mcp-tools/dune-mcp-server/build/index.js`],
-        env: {},
+        env: {
+            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
+        },
         connected: false,
         category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
         githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
-        authRequired: false,
-        authParams: {},
+        authRequired: true,
+        authParams: {
+            DUNE_API_KEY: "DUNE_API_KEY"
+        },
         // 🔧 新增：基于Dune Analytics的预定义工具信息
         predefinedTools: [
             {
@@ -2194,69 +2198,12 @@ export const predefinedMCPs: MCPService[] = [
             }
         ]
     },
-    {
-        name: 'rugcheck-mcp',
-        description: 'Rug Check token security and risk analysis',
-        command: 'npx',
-        args: ['-y', 'rug-check-mcp'],
-        env: {},
-        connected: false,
-        category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
-        githubUrl: 'https://github.com/kukapay/rug-check-mcp',
-        authRequired: false,
-        authParams: {},
-        // 🔧 新增：基于RugCheck的预定义工具信息
-        predefinedTools: [
-            {
-                name: 'check_token',
-                description: 'Analyze token for potential rug pull risks and security issues',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        token_address: {
-                            type: 'string',
-                            description: 'Token contract address to analyze',
-                            required: true
-                        },
-                        chain: {
-                            type: 'string',
-                            description: 'Blockchain network (ethereum, bsc, polygon, etc.)',
-                            required: false,
-                            default: 'ethereum'
-                        }
-                    },
-                    required: ['token_address']
-                }
-            },
-            {
-                name: 'get_security_score',
-                description: 'Get detailed security score and risk assessment for a token',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        token_address: {
-                            type: 'string',
-                            description: 'Token contract address',
-                            required: true
-                        },
-                        include_details: {
-                            type: 'boolean',
-                            description: 'Include detailed risk breakdown',
-                            required: false,
-                            default: true
-                        }
-                    },
-                    required: ['token_address']
-                }
-            }
-        ]
-    },
+
     {
         name: 'chainlink-mcp',
         description: 'ChainLink price feeds and oracle data',
-        command: 'npx',
-        args: ['-y', 'chainlink-feeds-mcp'],
+        command: 'node',
+        args: [`/home/ubuntu/mcp-tools/chainlink-feeds-mcp/index.js`],
         env: {},
         connected: false,
         category: 'Market Data',
@@ -2394,6 +2341,68 @@ export const predefinedMCPs: MCPService[] = [
                         }
                     },
                     required: []
+                }
+            }
+        ]
+    },
+    {
+        name: 'rugcheck-mcp',
+        description: 'Rug Check token security and risk analysis for Solana tokens',
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: [`/home/ubuntu/mcp-tools/rug-check-mcp/main.py`],
+        env: {
+            SOLSNIFFER_API_KEY: process.env.SOLSNIFFER_API_KEY || ''
+        },
+        connected: false,
+        category: 'Market Data',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-rug-100.png',
+        githubUrl: 'https://github.com/kukapay/rug-check-mcp',
+        authRequired: true,
+        authParams: {
+            SOLSNIFFER_API_KEY: "SOLSNIFFER_API_KEY"
+        },
+        // 🔧 新增：基于RugCheck的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'check_token',
+                description: 'Analyze token for potential rug pull risks and security issues',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        token_address: {
+                            type: 'string',
+                            description: 'Token contract address to analyze',
+                            required: true
+                        },
+                        chain: {
+                            type: 'string',
+                            description: 'Blockchain network (ethereum, bsc, polygon, etc.)',
+                            required: false,
+                            default: 'ethereum'
+                        }
+                    },
+                    required: ['token_address']
+                }
+            },
+            {
+                name: 'get_security_score',
+                description: 'Get detailed security score and risk assessment for a token',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        token_address: {
+                            type: 'string',
+                            description: 'Token contract address',
+                            required: true
+                        },
+                        include_details: {
+                            type: 'boolean',
+                            description: 'Include detailed risk breakdown',
+                            required: false,
+                            default: true
+                        }
+                    },
+                    required: ['token_address']
                 }
             }
         ]
@@ -2802,8 +2811,8 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'mindsdb-mcp',
         description: 'MindsDB machine learning database integration',
-        command: 'npx',
-        args: ['-y', 'minds-mcp'],
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: [`/home/ubuntu/mcp-tools/minds-mcp/server.py`],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -2911,10 +2920,10 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'blender-mcp',
-        description: 'Blender 3D modeling and animation integration',
-        command: 'npx',
-        args: ['-y', 'blender-mcp'],
-        env: {},
+        description: 'Blender 3D modeling and animation integration with Claude AI through MCP',
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: ['-m', 'blender_mcp.server'],
+        env: { LOG_LEVEL: 'INFO' },
         connected: false,
         category: 'Dev Tool',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/icons8-blender-100.png',
@@ -3058,9 +3067,14 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'unreal-mcp',
-        description: 'Unreal Engine game development integration',
-        command: 'npx',
-        args: ['-y', 'unreal-mcp'],
+        description: 'Unreal Engine game development integration with AI control through MCP',
+        command: '/home/ubuntu/.local/bin/uv',
+        args: [
+            '--directory',
+            '/home/ubuntu/mcp-tools/unreal-mcp/Python',
+            'run',
+            'unreal_mcp_server.py'
+        ],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -3182,9 +3196,9 @@ export const predefinedMCPs: MCPService[] = [
     },
     {
         name: 'aws-mcp',
-        description: 'AWS cloud services integration',
-        command: 'npx',
-        args: ['-y', 'aws-mcp'],
+        description: 'AWS cloud services integration with comprehensive API support',
+        command: '/home/ubuntu/.local/bin/uvx',
+        args: ['awslabs.aws-api-mcp-server@latest'],
         env: {},
         connected: false,
         category: 'Dev Tool',
@@ -3398,7 +3412,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'discord-mcp',
         description: 'Discord social platform integration',
-        command: 'uv',
+        command: '/home/ubuntu/.local/bin/uv',
         args: ["--directory",
             `/home/ubuntu/mcp-tools/mcp-discord`,
             "run",
@@ -3800,8 +3814,8 @@ export const mcpNameMapping: Record<string, string> = {
     'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
     'coinmarketcap_mcp_service': 'coinmarketcap-mcp',
     'defillama-mcp-service': 'mcp-server-defillama',
-    'rug-check-mcp-service': 'rug-check-mcp',
     'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
+    'rug-check-mcp-service': 'rugcheck-mcp',
     'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
     'whale-tracker-mcp-service': 'whale-tracker-mcp',
     'discord-mcp-service': 'mcp-discord',

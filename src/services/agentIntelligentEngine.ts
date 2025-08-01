@@ -213,29 +213,29 @@ export class AgentIntelligentEngine {
           }
         };
 
-        // 🔧 增强现有的step_executing事件 - 保持兼容性
+        // 🔧 第二步：Agent执行阶段 - 先执行获取实际参数
+        const executionResult = await this.agentExecutionPhase(state, stepId);
+
+        // 🔧 增强现有的step_executing事件 - 使用实际执行的参数
         yield {
           event: 'step_executing',
           data: {
             step: stepCounter,
-            tool: state.currentPlan!.tool,
+            tool: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
             agentName: this.agent.name,
-            message: `${this.agent.name} is executing step ${stepCounter}: ${state.currentPlan!.tool}`,
-            // 🔧 新增详细信息 - 不破坏原有结构
+            message: `${this.agent.name} is executing step ${stepCounter}: ${executionResult.actualExecution?.toolName || state.currentPlan!.tool}`,
+            // 🔧 使用实际执行的详细信息
             toolDetails: {
               toolType: state.currentPlan!.toolType,
-              toolName: state.currentPlan!.tool,
-              mcpName: state.currentPlan!.mcpName || null,
-              args: state.currentPlan!.args,
+              toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
+              mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
+              args: executionResult.actualExecution?.args || state.currentPlan!.args,
               expectedOutput: state.currentPlan!.expectedOutput,
               reasoning: state.currentPlan!.reasoning,
               timestamp: new Date().toISOString()
             }
           }
         };
-
-        // 🔧 第二步：Agent执行阶段
-        const executionResult = await this.agentExecutionPhase(state, stepId);
 
         // 🔧 增强现有的step_raw_result事件 - 保持兼容性
         if (executionResult.success && executionResult.result) {
