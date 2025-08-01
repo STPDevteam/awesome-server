@@ -178,7 +178,9 @@ export class EnhancedIntelligentTaskEngine {
         if (!isLLMTool) {
           const task = await this.taskService.getTaskById(state.taskId);
           if (task) {
+            logger.info(`🔍 Inferring tool name for step ${currentStep.step}: ${currentStep.mcp}.${currentStep.action}`);
             actualToolName = await this.inferActualToolName(currentStep.mcp, currentStep.action, processedInput, task.userId);
+            logger.info(`✅ Tool name inference completed: ${actualToolName}`);
           }
         }
 
@@ -212,7 +214,14 @@ export class EnhancedIntelligentTaskEngine {
         };
 
         // 🔧 执行当前步骤（带重试机制）- 传递预处理的参数和实际工具名称
+        logger.info(`🔄 Starting execution for step ${currentStep.step} with tool: ${actualToolName}`);
         const executionResult = await this.executeWorkflowStepWithRetry(currentStep, state, processedInput, actualToolName);
+        logger.info(`📋 Execution result:`, {
+          success: executionResult.success,
+          hasResult: !!executionResult.result,
+          resultSize: executionResult.result ? JSON.stringify(executionResult.result).length : 0,
+          error: executionResult.error || 'none'
+        });
 
         // 🔧 记录执行历史
         const historyEntry = {
@@ -226,28 +235,33 @@ export class EnhancedIntelligentTaskEngine {
         };
         state.executionHistory.push(historyEntry);
 
-        // 🔧 发送原始结果事件 - 与Agent引擎完全一致的精简结构
-        yield {
-          event: 'step_raw_result',
-          data: {
-            step: currentStep.step,
-            success: true,
-            result: executionResult.result,
-            agentName: 'WorkflowEngine',
-            executionDetails: {
-              toolType: toolType,
-              toolName: actualToolName,
-              mcpName: mcpName,
-              rawResult: executionResult.result,
-              args: executionResult.actualArgs || currentStep.input || {},
-              expectedOutput: expectedOutput,
-              timestamp: new Date().toISOString()
+        // 🔧 与Agent引擎完全一致：只在成功且有结果时处理
+        if (executionResult.success && executionResult.result) {
+          // 发送原始结果事件
+          yield {
+            event: 'step_raw_result',
+            data: {
+              step: currentStep.step,
+              success: true,
+              result: executionResult.result,
+              agentName: 'WorkflowEngine',
+              executionDetails: {
+                toolType: toolType,
+                toolName: actualToolName,
+                mcpName: mcpName,
+                rawResult: executionResult.result,
+                args: executionResult.actualArgs || currentStep.input || {},
+                expectedOutput: expectedOutput,
+                timestamp: new Date().toISOString()
+              }
             }
-          }
-        };
+          };
 
-        // 🔧 与Agent引擎一致：立即保存原始结果，避免传输中断
-        await this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+          // 🔧 异步保存原始结果，避免阻塞流式响应
+          this.saveStepRawResult(taskId, currentStep.step, currentStep, executionResult.result, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName).catch(error => {
+            logger.error(`Failed to save step raw result:`, error);
+          });
+        }
 
         // 🔧 流式格式化结果处理（参考Agent引擎）
         let formattedResult = '';
@@ -305,8 +319,10 @@ export class EnhancedIntelligentTaskEngine {
             }
           };
 
-          // 🔧 与Agent引擎一致：保存格式化结果
-          await this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName);
+          // 🔧 异步保存格式化结果，避免阻塞流式响应
+          this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName).catch(error => {
+            logger.error(`Failed to save step formatted result:`, error);
+          });
 
           // 🔧 更新数据存储
           state.dataStore[`step_${currentStep.step}_result`] = executionResult.result;
