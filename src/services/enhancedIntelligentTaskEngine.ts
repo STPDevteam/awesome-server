@@ -235,8 +235,17 @@ export class EnhancedIntelligentTaskEngine {
         };
         state.executionHistory.push(historyEntry);
 
+        // 🔧 重要调试：检查executionResult的结构
+        logger.info(`🔍 CRITICAL DEBUG - executionResult:`, {
+          success: executionResult.success,
+          hasResult: !!executionResult.result,
+          resultType: typeof executionResult.result,
+          resultKeys: executionResult.result ? Object.keys(executionResult.result) : 'no result'
+        });
+
         // 🔧 与Agent引擎完全一致：只在成功且有结果时处理
         if (executionResult.success && executionResult.result) {
+          logger.info(`🎯 CRITICAL DEBUG - Conditions met, yielding step_raw_result`);
           // 发送原始结果事件
           yield {
             event: 'step_raw_result',
