@@ -1386,8 +1386,8 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'coinmarketcap-mcp',
         description: 'CoinMarketCap cryptocurrency market data and analytics',
-        command: 'npx',
-        args: ['@shinzolabs/coinmarketcap-mcp'],
+        command: 'node',
+        args: ['/home/ubuntu/mcp-tools/coinmarketcap-mcp/index.js'],
         env: {
             COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY || '',
             SUBSCRIPTION_LEVEL: "Basic",
@@ -2125,7 +2125,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'dune-mcp',
         description: 'Dune Analytics blockchain data queries and dashboards',
-        command: 'bun',
+        command: '/home/ubuntu/.bun/bin/bun',
         args: [`/home/ubuntu/mcp-tools/dune-mcp-server/build/index.js`],
         env: {
             DUNE_API_KEY: process.env.DUNE_API_KEY || ''
@@ -3433,14 +3433,17 @@ export const predefinedMCPs: MCPService[] = [
         name: 'telegram-mcp',
         description: 'Telegram messaging platform integration',
         command: 'npx',
-        args: ['-y', 'mcp-telegram'],
+        args: ['mcp-telegram'],
         env: {},
         connected: false,
         category: 'Social',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/telegram.ico',
         githubUrl: 'https://github.com/sparfenyuk/mcp-telegram',
-        authRequired: false,
-        authParams: {}
+        authRequired: true,
+        authParams: {
+            TELEGRAM_API_ID: "TELEGRAM_API_ID",
+            TELEGRAM_API_HASH: "TELEGRAM_API_HASH"
+        }
     },
     {
         name: 'twitter-client-mcp',
