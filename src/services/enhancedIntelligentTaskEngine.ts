@@ -385,6 +385,73 @@ export class EnhancedIntelligentTaskEngine {
             }
           };
         }
+
+        // 🧠 任务观察阶段 - 与Agent引擎一致，每步执行后都进行观察
+        logger.info(`🔍 Performing task observation after step ${currentStep.step}...`);
+        
+        const observation = await this.taskObservationPhase(state);
+        
+        // 发送观察结果事件
+        yield {
+          event: 'task_observation',
+          data: {
+            taskId,
+            stepIndex: i,
+            shouldContinue: observation.shouldContinue,
+            shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
+            adaptationReason: observation.adaptationReason,
+            agentName: 'WorkflowEngine',
+            timestamp: new Date().toISOString()
+          }
+        };
+        
+        // 🔄 如果需要调整工作流，进行动态规划
+        if (observation.shouldAdaptWorkflow) {
+          logger.info(`🧠 Initiating dynamic workflow adaptation...`);
+          
+          const currentContext = this.buildCurrentContext(state);
+          const planningResult = await this.taskDynamicPlanningPhase(state, currentContext);
+          
+          if (planningResult.success && planningResult.adaptedSteps) {
+            // 用动态规划的步骤替换剩余工作流
+            const adaptedWorkflow = planningResult.adaptedSteps.map((adaptedStep, index) => ({
+              ...adaptedStep,
+              step: i + index + 1,
+              status: 'pending' as const,
+              attempts: 0,
+              maxRetries: 2
+            }));
+            
+            // 更新工作流：保留已完成的步骤，替换剩余步骤
+            state.workflow = [
+              ...state.workflow.slice(0, i + 1),
+              ...adaptedWorkflow
+            ];
+            state.totalSteps = state.workflow.length;
+            
+            // 发送工作流调整事件
+            yield {
+              event: 'workflow_adapted',
+              data: {
+                taskId,
+                reason: observation.adaptationReason,
+                adaptedAt: i + 1,
+                newSteps: adaptedWorkflow.length,
+                totalSteps: state.totalSteps,
+                agentName: 'WorkflowEngine',
+                timestamp: new Date().toISOString()
+              }
+            };
+            
+            logger.info(`✅ Workflow adapted: ${adaptedWorkflow.length} new steps planned`);
+          }
+        }
+        
+        // 如果观察认为应该停止，则提前完成任务
+        if (!observation.shouldContinue) {
+          logger.info(`🏁 Task observation indicates completion, stopping workflow execution`);
+          break;
+        }
       }
 
       // 🔧 检查完成状态
@@ -831,8 +898,313 @@ Select the best matching tool now:`;
   }
 
   /**
-   * 🔧 新增：流式格式化任务结果（参考Agent引擎实现）
+ * 🧠 新增：动态规划阶段（参考Agent引擎，使任务引擎也具备智能规划能力）
+ */
+private async taskDynamicPlanningPhase(
+  state: EnhancedWorkflowState,
+  currentContext: string
+): Promise<{
+  success: boolean;
+  adaptedSteps?: Array<{
+    step: number;
+    mcp: string;
+    action: string;
+    input?: any;
+    reasoning?: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    // 🔧 获取当前可用的MCP和执行历史
+    const availableMCPs = await this.getAvailableMCPsForPlanning(state.taskId);
+    const executionHistory = this.buildExecutionHistory(state);
+    
+    const plannerPrompt = this.buildTaskPlannerPrompt(state, availableMCPs, currentContext, executionHistory);
+
+    // 🔄 使用LLM进行动态规划
+    const response = await this.llm.invoke([new SystemMessage(plannerPrompt)]);
+    const adaptedSteps = this.parseTaskPlan(response.content.toString());
+
+    return { success: true, adaptedSteps };
+  } catch (error) {
+    logger.error('Task dynamic planning failed:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    };
+  }
+}
+
+/**
+ * 🧠 新增：任务观察阶段（参考Agent引擎，智能分析当前进度和调整策略）
+ */
+private async taskObservationPhase(
+  state: EnhancedWorkflowState
+): Promise<{
+  shouldContinue: boolean;
+  shouldAdaptWorkflow: boolean;
+  adaptationReason?: string;
+  newObjective?: string;
+}> {
+  try {
+    const observerPrompt = this.buildTaskObserverPrompt(state);
+    const response = await this.llm.invoke([new SystemMessage(observerPrompt)]);
+    
+    return this.parseTaskObservation(response.content.toString());
+  } catch (error) {
+    logger.error('Task observation failed:', error);
+    return { 
+      shouldContinue: true, 
+      shouldAdaptWorkflow: false 
+    };
+  }
+}
+
+/**
+ * 🔧 构建任务规划提示词
+ */
+private buildTaskPlannerPrompt(
+  state: EnhancedWorkflowState,
+  availableMCPs: any[],
+  currentContext: string,
+  executionHistory: string
+): string {
+  return `You are an intelligent task workflow planner. Based on the current execution context and available tools, dynamically plan the optimal next steps.
+
+**Current Task**: ${state.originalQuery}
+
+**Execution Context**: ${currentContext}
+
+**Available MCP Tools**:
+${JSON.stringify(availableMCPs.map(mcp => ({
+  name: mcp.name,
+  description: mcp.description,
+  capabilities: mcp.predefinedTools?.map((tool: any) => tool.name) || []
+})), null, 2)}
+
+**Previous Execution History**:
+${executionHistory}
+
+**Current Workflow Progress**: ${state.completedSteps}/${state.totalSteps} steps completed
+
+**Instructions**:
+1. Analyze what has been accomplished so far
+2. Identify what still needs to be done to complete the original task
+3. Plan the optimal next steps using available MCP tools
+4. Consider efficiency and logical flow
+5. Adapt based on previous results
+
+Respond with valid JSON in this exact format:
+{
+  "analysis": "Brief analysis of current progress and what's needed",
+  "adapted_steps": [
+    {
+      "step": 1,
+      "mcp": "mcp_name",
+      "action": "Clear description of what this step will accomplish",
+      "input": {"actual": "parameters"},
+      "reasoning": "Why this step is needed now"
+    }
+  ],
+  "planning_reasoning": "Detailed explanation of the planning logic"
+}`;
+}
+
+/**
+ * 🔧 构建任务观察提示词
+ */
+private buildTaskObserverPrompt(state: EnhancedWorkflowState): string {
+  const completedStepsInfo = state.executionHistory
+    .filter(step => step.success)
+    .map(step => `Step ${step.stepNumber}: ${step.action} -> Success`)
+    .join('\n');
+    
+  const failedStepsInfo = state.executionHistory
+    .filter(step => !step.success)
+    .map(step => `Step ${step.stepNumber}: ${step.action} -> Failed: ${step.error}`)
+    .join('\n');
+
+  return `You are an intelligent task execution observer analyzing workflow progress after each step. Make smart decisions about continuation, completion, and adaptation.
+
+**Original Task**: ${state.originalQuery}
+
+**Current Progress**: Step ${state.currentStepIndex + 1}/${state.totalSteps} (${Math.round(((state.currentStepIndex + 1) / state.totalSteps) * 100)}%)
+
+**Execution Summary**:
+- Completed Steps: ${state.completedSteps}
+- Failed Steps: ${state.failedSteps}
+- Current Step: ${state.currentStepIndex + 1}
+
+**Recent Completed Steps**:
+${completedStepsInfo || 'None yet'}
+
+**Recent Failed Steps**:
+${failedStepsInfo || 'None'}
+
+**Available Results & Data**:
+${JSON.stringify(state.dataStore, null, 2)}
+
+**Observation Guidelines**:
+1. **Task Completion Analysis**: Evaluate if the original task objective has been achieved with current results
+2. **Progress Assessment**: Consider the quality and relevance of completed steps
+3. **Failure Impact**: Assess how failed steps affect overall task completion
+4. **Workflow Efficiency**: Determine if the remaining planned steps are still optimal
+5. **Early Completion**: Identify if sufficient results exist to complete the task early
+6. **Adaptation Needs**: Detect if the workflow should be adapted based on current context
+
+**Decision Criteria**:
+- CONTINUE: Task not complete, current workflow is optimal
+- STOP EARLY: Task objective achieved with current results
+- ADAPT: Task not complete, but workflow needs modification
+
+Respond with valid JSON:
+{
+  "should_continue": true/false,
+  "should_adapt_workflow": true/false,
+  "adaptation_reason": "Reason for adaptation if needed",
+  "new_objective": "Adjusted objective if adaptation needed",
+  "completion_analysis": "Analysis of current task completion status",
+  "confidence_score": 0.0-1.0,
+  "observation_reasoning": "Detailed step-by-step reasoning for this decision"
+}`;
+}
+
+/**
+ * 🔧 解析任务规划结果
+ */
+private parseTaskPlan(content: string): Array<{
+  step: number;
+  mcp: string;
+  action: string;
+  input?: any;
+  reasoning?: string;
+}> {
+  try {
+    const cleanedContent = content
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*$/g, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedContent);
+    return parsed.adapted_steps || [];
+  } catch (error) {
+    logger.error('Failed to parse task plan:', error);
+    return [];
+  }
+}
+
+/**
+ * 🔧 解析任务观察结果
+ */
+private parseTaskObservation(content: string): {
+  shouldContinue: boolean;
+  shouldAdaptWorkflow: boolean;
+  adaptationReason?: string;
+  newObjective?: string;
+} {
+  try {
+    const cleanedContent = content
+      .replace(/```json\s*/g, '')
+      .replace(/```\s*$/g, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedContent);
+    
+    return {
+      shouldContinue: parsed.should_continue !== false,
+      shouldAdaptWorkflow: parsed.should_adapt_workflow === true,
+      adaptationReason: parsed.adaptation_reason,
+      newObjective: parsed.new_objective
+    };
+  } catch (error) {
+    logger.error('Failed to parse task observation:', error);
+    logger.error('Raw observation content:', content);
+    return { 
+      shouldContinue: true, 
+      shouldAdaptWorkflow: false 
+    };
+  }
+}
+
+/**
+ * 🔧 获取可用于规划的MCP列表
+ */
+private async getAvailableMCPsForPlanning(taskId: string): Promise<any[]> {
+  try {
+    const task = await this.taskService.getTaskById(taskId);
+    if (task?.mcpWorkflow?.mcps) {
+      return task.mcpWorkflow.mcps;
+    }
+    return [];
+  } catch (error) {
+    logger.error('Failed to get available MCPs for planning:', error);
+    return [];
+  }
+}
+
+  /**
+   * 🔧 构建执行历史摘要
    */
+  private buildExecutionHistory(state: EnhancedWorkflowState): string {
+    if (state.executionHistory.length === 0) {
+      return 'No previous execution history.';
+    }
+    
+    return state.executionHistory
+      .map(step => `Step ${step.stepNumber}: ${step.action} -> ${step.success ? 'Success' : 'Failed'}`)
+      .join('\n');
+  }
+
+  /**
+   * 🔧 构建当前执行上下文
+   */
+  private buildCurrentContext(state: EnhancedWorkflowState): string {
+    const completedSteps = state.executionHistory.filter(step => step.success);
+    const failedSteps = state.executionHistory.filter(step => !step.success);
+    
+    let context = `Current execution context for task: ${state.originalQuery}\n\n`;
+    
+    // 进度概览
+    context += `Progress Overview:\n`;
+    context += `- Completed: ${state.completedSteps}/${state.totalSteps} steps\n`;
+    context += `- Failed: ${state.failedSteps} steps\n`;
+    context += `- Current step index: ${state.currentStepIndex}\n\n`;
+    
+    // 已完成的步骤和结果
+    if (completedSteps.length > 0) {
+      context += `Successfully completed steps:\n`;
+      completedSteps.forEach(step => {
+        const resultSummary = typeof step.result === 'string' 
+          ? step.result.substring(0, 100) + '...'
+          : JSON.stringify(step.result).substring(0, 100) + '...';
+        context += `- Step ${step.stepNumber}: ${step.action} -> ${resultSummary}\n`;
+      });
+      context += '\n';
+    }
+    
+    // 失败的步骤
+    if (failedSteps.length > 0) {
+      context += `Failed steps:\n`;
+      failedSteps.forEach(step => {
+        context += `- Step ${step.stepNumber}: ${step.action} -> Error: ${step.error}\n`;
+      });
+      context += '\n';
+    }
+    
+    // 可用数据
+    if (Object.keys(state.dataStore).length > 0) {
+      context += `Available data in context:\n`;
+      Object.keys(state.dataStore).forEach(key => {
+        context += `- ${key}: ${typeof state.dataStore[key]}\n`;
+      });
+    }
+    
+    return context;
+  }
+
+/**
+ * 🔧 新增：流式格式化任务结果（参考Agent引擎实现）
+ */
   private async *formatAndStreamTaskResult(
     rawResult: any,
     mcpName: string,

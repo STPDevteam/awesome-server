@@ -239,13 +239,13 @@ export class AgentIntelligentEngine {
 
         // 🔧 增强现有的step_raw_result事件 - 保持兼容性
         if (executionResult.success && executionResult.result) {
-          yield {
+            yield {
             event: 'step_raw_result',
-            data: {
+              data: {
               step: stepCounter,
               success: true,
               result: executionResult.result,
-              agentName: this.agent.name,
+                agentName: this.agent.name,
               // 🔧 新增详细信息 - 不破坏原有结构
               executionDetails: {
                 toolType: state.currentPlan!.toolType,
@@ -256,12 +256,12 @@ export class AgentIntelligentEngine {
                 expectedOutput: state.currentPlan!.expectedOutput,
                 timestamp: new Date().toISOString()
               }
-            }
-          };
+              }
+            };
 
           // 🔧 存储原始结果消息
           await this.saveStepRawResult(taskId, stepCounter, state.currentPlan!, executionResult.result);
-        }
+          }
 
         // 🔧 Streaming: 流式格式化和输出步骤结果（仅对MCP工具进行格式化）
         if (executionResult.success && executionResult.result && state.currentPlan!.toolType === 'mcp') {
@@ -271,7 +271,7 @@ export class AgentIntelligentEngine {
             state.currentPlan!.mcpName || 'unknown',
             state.currentPlan!.tool
           );
-
+          
           for await (const chunk of formatGenerator) {
             yield {
               event: 'step_result_chunk',
@@ -289,11 +289,11 @@ export class AgentIntelligentEngine {
         if (executionResult.success && executionResult.result) {
           if (state.currentPlan!.toolType === 'mcp') {
             // MCP工具：需要格式化JSON数据
-            formattedResultForStorage = await this.generateFormattedResult(
-              executionResult.result,
-              state.currentPlan!.mcpName || 'unknown',
-              state.currentPlan!.tool
-            );
+          formattedResultForStorage = await this.generateFormattedResult(
+            executionResult.result,
+            state.currentPlan!.mcpName || 'unknown',
+            state.currentPlan!.tool
+          );
           } else {
             // LLM工具：直接使用原始结果（已经是格式化的）
             formattedResultForStorage = executionResult.result;
@@ -455,17 +455,17 @@ export class AgentIntelligentEngine {
 
           // Send regular step error event if not MCP connection error
           if (!isMCPConnectionError) {
-            yield {
-              event: 'step_error',
-              data: {
-                step: stepCounter,
-                error: executionResult.error || 'Unknown error',
-                agentName: this.agent.name,
-                message: `${this.agent.name} encountered an error in step ${stepCounter}`,
+          yield {
+            event: 'step_error',
+            data: {
+              step: stepCounter,
+              error: executionResult.error || 'Unknown error',
+              agentName: this.agent.name,
+              message: `${this.agent.name} encountered an error in step ${stepCounter}`,
                 failureStrategy: this.getFailureStrategy(state, executionStep),
                 detailedError: detailedError
-              }
-            };
+            }
+          };
           }
         }
 
@@ -1572,28 +1572,28 @@ Please return in format:
 
           // 🔧 修复：只有需要认证的MCP才检查用户认证信息
           if (mcpInfo.authRequired) {
-            // 获取用户认证信息
-            const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
-            if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
-              throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
-            }
+          // 获取用户认证信息
+          const userAuth = await this.mcpAuthService.getUserMCPAuth(userId, mcpInfo.name);
+          if (!userAuth || !userAuth.isVerified || !userAuth.authData) {
+            throw new Error(`User authentication not found or not verified for MCP ${mcpInfo.name}. Please authenticate this MCP service first.`);
+          }
 
-            // 动态注入认证信息
-            const dynamicEnv = { ...mcpConfig.env };
-            if (mcpConfig.env) {
-              for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                  dynamicEnv[envKey] = userAuth.authData[envKey];
-                  logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
-                }
+          // 动态注入认证信息
+          const dynamicEnv = { ...mcpConfig.env };
+          if (mcpConfig.env) {
+            for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
+              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                dynamicEnv[envKey] = userAuth.authData[envKey];
+                logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
               }
             }
+          }
 
-            // 创建带认证信息的MCP配置
+          // 创建带认证信息的MCP配置
             authenticatedMcpConfig = {
-              ...mcpConfig,
-              env: dynamicEnv
-            };
+            ...mcpConfig,
+            env: dynamicEnv
+          };
           } else {
             logger.info(`MCP ${mcpInfo.name} does not require authentication, using default configuration`);
           }

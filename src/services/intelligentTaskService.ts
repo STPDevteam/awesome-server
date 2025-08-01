@@ -183,14 +183,14 @@ export class IntelligentTaskService {
               
               // Send regular step error event if not MCP connection error
               if (!isMCPConnectionError) {
-                stream({
-                  event: 'step_error',
-                  data: {
-                    step: step.step,
+              stream({
+                event: 'step_error',
+                data: {
+                  step: step.step,
                     error: step.error || 'Unknown error',
                     detailedError: detailedError
-                  }
-                });
+                }
+              });
               }
             }
 
@@ -277,8 +277,8 @@ export class IntelligentTaskService {
                         processingTime: new Date().toISOString()
                       }
                     }
-                  }
-                });
+                }
+              });
               }
 
               await conversationDao.incrementMessageCount(task.conversationId);
@@ -419,7 +419,7 @@ export class IntelligentTaskService {
       return false;
     }
   }
-  
+
   /**
    * Check if error type is MCP connection related
    */
