@@ -226,12 +226,12 @@ export class EnhancedIntelligentTaskEngine {
         };
         state.executionHistory.push(historyEntry);
 
-        // 🔧 发送原始结果事件 - 与Agent引擎保持一致的数据结构
+        // 🔧 发送原始结果事件 - 与Agent引擎完全一致的精简结构
         yield {
           event: 'step_raw_result',
           data: {
             step: currentStep.step,
-            success: executionResult.success,
+            success: true,
             result: executionResult.result,
             agentName: 'WorkflowEngine',
             executionDetails: {
@@ -239,13 +239,9 @@ export class EnhancedIntelligentTaskEngine {
               toolName: actualToolName,
               mcpName: mcpName,
               rawResult: executionResult.result,
-              success: executionResult.success,
-              error: executionResult.error,
               args: executionResult.actualArgs || currentStep.input || {},
               expectedOutput: expectedOutput,
-              reasoning: reasoning,
-              timestamp: new Date().toISOString(),
-              attempts: currentStep.attempts || 1
+              timestamp: new Date().toISOString()
             }
           }
         };
@@ -283,35 +279,29 @@ export class EnhancedIntelligentTaskEngine {
             actualToolName
           );
 
-          // 🔧 发送格式化结果事件 - 统一字段结构，与Agent引擎一致
+          // 🔧 发送格式化结果事件 - 与Agent引擎完全一致的结构
           yield {
             event: 'step_formatted_result',
             data: {
               step: currentStep.step,
               success: true,
-              // 🔧 统一字段：只使用formattedResult，删除重复的result字段
               formattedResult: formattedResult,
-              // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
               agentName: 'WorkflowEngine',
-                        formattingDetails: {
-            toolType: toolType,
-            toolName: actualToolName,
-            mcpName: mcpName,
-            originalResult: executionResult.result,
-            formattedResult: formattedResult,
-            // 🔧 使用实际执行的参数，与Agent引擎一致
-            args: executionResult.actualArgs || currentStep.input || {},
-            expectedOutput: expectedOutput,
-            reasoning: reasoning,
-            processingInfo: {
-              originalDataSize: JSON.stringify(executionResult.result).length,
-              formattedDataSize: formattedResult.length,
-              processingTime: new Date().toISOString(),
-              // 🔧 统一字段：添加needsFormatting标识，与Agent引擎一致
-              needsFormatting: true
-            },
-            timestamp: new Date().toISOString()
-          }
+              formattingDetails: {
+                toolType: toolType,
+                toolName: actualToolName,
+                mcpName: mcpName,
+                originalResult: executionResult.result,
+                formattedResult: formattedResult,
+                args: executionResult.actualArgs || currentStep.input || {},
+                processingInfo: {
+                  originalDataSize: JSON.stringify(executionResult.result).length,
+                  formattedDataSize: formattedResult.length,
+                  processingTime: new Date().toISOString(),
+                  needsFormatting: toolType === 'mcp'
+                },
+                timestamp: new Date().toISOString()
+              }
             }
           };
 
@@ -1319,9 +1309,11 @@ Please format this result in a clear, user-friendly way with appropriate markdow
     try {
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
-        // 🔧 只存储结果内容，不包含描述性文本，与Agent引擎一致
-        const rawContent = JSON.stringify(rawResult, null, 2);
+        // 🔧 与Agent引擎完全一致的content格式和metadata结构
         const toolName = actualToolName || step.action;
+        const rawContent = `WorkflowEngine Step ${stepNumber} Raw Result: ${toolName}
+
+${JSON.stringify(rawResult, null, 2)}`;
 
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -1332,15 +1324,15 @@ Please format this result in a clear, user-friendly way with appropriate markdow
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
-            stepName: `${step.mcp}.${toolName}`,
+            stepName: toolName,
             taskPhase: 'execution',
             contentType: 'raw_result',
+            agentName: 'WorkflowEngine',
             isComplete: true,
             toolDetails: {
               toolType: toolType,
               toolName: toolName,
               mcpName: mcpName,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
               args: actualArgs || step.input || {},
               expectedOutput: expectedOutput,
               reasoning: reasoning,
@@ -1349,8 +1341,6 @@ Please format this result in a clear, user-friendly way with appropriate markdow
             executionDetails: {
               rawResult: rawResult,
               success: true,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
-              args: actualArgs || step.input || {},
               processingInfo: {
                 originalDataSize: JSON.stringify(rawResult).length,
                 processingTime: new Date().toISOString()
@@ -1373,9 +1363,12 @@ Please format this result in a clear, user-friendly way with appropriate markdow
     try {
       const task = await this.taskService.getTaskById(taskId);
       if (task.conversationId) {
-        // 🔧 只存储格式化结果内容，不包含描述性文本，与Agent引擎一致
-        const formattedContent = formattedResult;
+        // 🔧 与Agent引擎完全一致的content格式和metadata结构
         const toolName = actualToolName || step.action;
+        const resultType = toolType === 'llm' ? 'LLM Result' : 'Formatted Result';
+        const formattedContent = `WorkflowEngine Step ${stepNumber} ${resultType}: ${toolName}
+
+${formattedResult}`;
 
         await messageDao.createMessage({
           conversationId: task.conversationId,
@@ -1386,29 +1379,26 @@ Please format this result in a clear, user-friendly way with appropriate markdow
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
-            stepName: `${step.mcp}.${toolName}`,
+            stepName: toolName,
             taskPhase: 'execution',
             contentType: 'formatted_result',
+            agentName: 'WorkflowEngine',
             isComplete: true,
             toolDetails: {
               toolType: toolType,
               toolName: toolName,
               mcpName: mcpName,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
               args: actualArgs || step.input || {},
               expectedOutput: expectedOutput,
               reasoning: reasoning,
               timestamp: new Date().toISOString()
             },
-            formattingDetails: {
+            executionDetails: {
               formattedResult: formattedResult,
               success: true,
-              // 🔧 使用实际执行的参数，与Agent引擎一致
-              args: actualArgs || step.input || {},
               processingInfo: {
                 formattedDataSize: formattedResult.length,
-                processingTime: new Date().toISOString(),
-                needsFormatting: true
+                processingTime: new Date().toISOString()
               }
             }
           }
