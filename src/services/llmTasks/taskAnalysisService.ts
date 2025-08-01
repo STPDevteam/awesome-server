@@ -700,15 +700,16 @@ You must output valid JSON with the following structure:
       logger.info(`[MCP Debug] Available MCP tools list: ${JSON.stringify(availableMCPs.map(mcp => ({ name: mcp.name, description: mcp.description })))}`);
       
       // 🚀 优化：根据认证状态对MCP进行优先级排序
+      let authStatusMap: Map<string, boolean> | null = null;
       if (userId) {
         try {
           logger.info(`[MCP Auth Priority] Sorting MCPs by auth status for user ${userId}`);
           
           // 获取用户的认证状态映射
           const userAuthDataList = await this.mcpAuthService.getUserAllMCPAuths(userId);
-          const authStatusMap = new Map<string, boolean>();
+          authStatusMap = new Map<string, boolean>();
           userAuthDataList.forEach(authData => {
-            authStatusMap.set(authData.mcpName, authData.isVerified);
+            authStatusMap!.set(authData.mcpName, authData.isVerified);
           });
           
           // 按认证优先级排序：
@@ -718,8 +719,8 @@ You must output valid JSON with the following structure:
           availableMCPs.sort((a, b) => {
             const aAuthRequired = a.authRequired || false;
             const bAuthRequired = b.authRequired || false;
-            const aAuthVerified = authStatusMap.get(a.name) || false;
-            const bAuthVerified = authStatusMap.get(b.name) || false;
+            const aAuthVerified = authStatusMap?.get(a.name) || false;
+            const bAuthVerified = authStatusMap?.get(b.name) || false;
             
             // 计算优先级分数 (分数越高优先级越高)
             const getAuthPriority = (authRequired: boolean, authVerified: boolean): number => {
@@ -740,7 +741,7 @@ You must output valid JSON with the following structure:
             return a.name.localeCompare(b.name);
           });
           
-          logger.info(`[MCP Auth Priority] Sorted MCPs by auth priority. Top 5: ${availableMCPs.slice(0, 5).map(mcp => `${mcp.name}(authRequired:${mcp.authRequired},verified:${authStatusMap.get(mcp.name)||false})`).join(', ')}`);
+          logger.info(`[MCP Auth Priority] Sorted MCPs by auth priority. Top 5: ${availableMCPs.slice(0, 5).map(mcp => `${mcp.name}(authRequired:${mcp.authRequired},verified:${authStatusMap?.get(mcp.name)||false})`).join(', ')}`);
         } catch (error) {
           logger.error(`[MCP Auth Priority] Failed to sort MCPs by auth status:`, error);
           // 出错时继续使用原始排序
@@ -777,7 +778,7 @@ SELECTION PRINCIPLES:
 ✅ Choose tools that are DIRECTLY required for the task
 ✅ Be selective - only choose what is actually needed
 ✅ Consider the core functionality required
-✅ PRIORITIZE tools that appear earlier in the list - they are sorted by authentication preference
+✅ **CRITICAL**: ALWAYS prioritize authentication status when selecting the primary tool
 ✅ For each selected tool, identify alternative tools ONLY if they can provide similar functionality
 ✅ Alternatives should be genuinely capable of serving the same purpose
 ✅ If no suitable alternatives exist for a tool, leave the alternatives array empty
@@ -785,10 +786,16 @@ SELECTION PRINCIPLES:
 ❌ Do NOT force alternatives if none are truly suitable
 ❌ Do NOT select tools based on loose associations
 
+**AUTHENTICATION PRIORITY RULES (MANDATORY):**
+🔴 **NEVER** choose a tool marked "❌ NOT_AUTHENTICATED" as primary if there's a "✅ AUTHENTICATED" or "✅ NO_AUTH_REQUIRED" alternative
+🟡 Always prefer "✅ NO_AUTH_REQUIRED" tools when functionally equivalent
+🟢 Always prefer "✅ AUTHENTICATED" tools over "❌ NOT_AUTHENTICATED" tools
+🔧 Tools are sorted by authentication preference - choose from the top of each category first
+
 **IMPORTANT**: The MCP tools are pre-sorted by authentication preference:
-- Tools requiring no authentication appear first (ready to use immediately)
-- Tools already authenticated by the user appear next (ready to use)
-- Tools requiring authentication appear last (may need user setup)
+- "✅ NO_AUTH_REQUIRED" tools appear first (ready to use immediately)
+- "✅ AUTHENTICATED" tools appear next (ready to use)  
+- "❌ NOT_AUTHENTICATED" tools appear last (may need user setup)
 
 **Current task**: "${taskContent}"
 
@@ -796,7 +803,33 @@ Available MCP tools by category (sorted by authentication preference):
 ${JSON.stringify(availableMCPs.reduce((acc, mcp) => {
   const category = mcp.category || 'Other';
   if (!acc[category]) acc[category] = [];
-  acc[category].push({ name: mcp.name, description: mcp.description });
+  
+  // 🚀 增强：在MCP信息中包含认证状态，让LLM明确看到优先级
+  let mcpWithAuthInfo: any = { 
+    name: mcp.name, 
+    description: mcp.description,
+    authRequired: mcp.authRequired || false
+  };
+  
+  // 如果有userId和认证状态映射，添加认证状态信息
+  if (userId && authStatusMap) {
+    const authVerified = authStatusMap.get(mcp.name) || false;
+    mcpWithAuthInfo.authVerified = authVerified;
+    
+    // 添加可读的状态标识，让LLM更容易理解
+    if (!mcp.authRequired) {
+      mcpWithAuthInfo.authStatus = "✅ NO_AUTH_REQUIRED";
+    } else if (authVerified) {
+      mcpWithAuthInfo.authStatus = "✅ AUTHENTICATED";
+    } else {
+      mcpWithAuthInfo.authStatus = "❌ NOT_AUTHENTICATED";
+    }
+  } else {
+    // 没有用户信息时，只显示基本状态
+    mcpWithAuthInfo.authStatus = mcp.authRequired ? "⚠️ AUTH_REQUIRED" : "✅ NO_AUTH_REQUIRED";
+  }
+  
+  acc[category].push(mcpWithAuthInfo);
   return acc;
 }, {} as Record<string, any[]>), null, 2)}
 
@@ -817,7 +850,12 @@ Analyze the task and respond with valid JSON in this exact structure:
   ],
   "selection_explanation": "Brief explanation of why these tools were selected",
   "detailed_reasoning": "Detailed explanation of the selection logic and how these tools address the task requirements"
-}`),
+}
+
+**REMINDER**: When selecting the primary tool name, MUST follow authentication priority:
+1. Choose "✅ NO_AUTH_REQUIRED" tools first
+2. Then choose "✅ AUTHENTICATED" tools  
+3. Only choose "❌ NOT_AUTHENTICATED" tools if no other options exist`),
              new SystemMessage(`Task analysis result: ${requirementsAnalysis}`),
              new HumanMessage(`User task: ${taskContent}`)
           ]);
@@ -844,6 +882,8 @@ Analyze the task and respond with valid JSON in this exact structure:
           // Process the new structure with alternatives
           const recommendedMCPs: MCPInfo[] = [];
           
+          // 使用前面已经获取的认证状态用于后处理优化
+          
           for (const mcpSelection of selectedMCPsWithAlternatives) {
             // Handle both old format (string) and new format (object with alternatives)
             let primaryMcpName: string;
@@ -856,25 +896,71 @@ Analyze the task and respond with valid JSON in this exact structure:
               // New format with alternatives
               primaryMcpName = mcpSelection.name;
               alternatives = mcpSelection.alternatives || [];
-          } else {
+            } else {
               logger.warn(`[MCP Debug] Invalid MCP selection format: ${JSON.stringify(mcpSelection)}`);
               continue;
             }
             
-            // Find the primary MCP
+            // Find the primary MCP and alternatives
             const primaryMcp = availableMCPs.find(mcp => mcp.name === primaryMcpName);
             if (primaryMcp) {
+              const validAlternatives = alternatives.filter(altName => 
+                availableMCPs.some(mcp => mcp.name === altName)
+              );
+              
+              // 🚀 后处理优化：根据认证状态重新排序主MCP和备选MCP
+              let finalPrimaryMcp = primaryMcp;
+              let finalAlternatives = validAlternatives;
+              
+              if (authStatusMap && validAlternatives.length > 0) {
+                // 构建所有候选MCP（主MCP + 备选MCP）及其认证状态
+                const allCandidates = [primaryMcpName, ...validAlternatives].map(mcpName => {
+                  const mcpInfo = availableMCPs.find(mcp => mcp.name === mcpName);
+                  const authRequired = mcpInfo?.authRequired || false;
+                  const authVerified = authStatusMap!.get(mcpName) || false;
+                  
+                  // 计算认证优先级分数
+                  const authPriority = !authRequired ? 3 : (authVerified ? 2 : 1);
+                  
+                  return {
+                    mcpName,
+                    mcpInfo,
+                    authRequired,
+                    authVerified,
+                    authPriority
+                  };
+                }).filter(candidate => candidate.mcpInfo); // 过滤掉未找到的MCP
+                
+                // 按认证优先级排序
+                allCandidates.sort((a, b) => {
+                  if (a.authPriority !== b.authPriority) {
+                    return b.authPriority - a.authPriority; // 优先级高的在前
+                  }
+                  return a.mcpName.localeCompare(b.mcpName); // 同优先级按名称排序
+                });
+                
+                if (allCandidates.length > 0) {
+                  // 重新分配主MCP和备选MCP
+                  const topCandidate = allCandidates[0];
+                  finalPrimaryMcp = topCandidate.mcpInfo!;
+                  finalAlternatives = allCandidates.slice(1).map(c => c.mcpName);
+                  
+                  // 记录优化情况
+                  if (topCandidate.mcpName !== primaryMcpName) {
+                    logger.info(`[MCP Auth Priority] Optimized recommendation: promoted '${topCandidate.mcpName}' (authRequired:${topCandidate.authRequired},verified:${topCandidate.authVerified}) over '${primaryMcpName}' as primary MCP`);
+                  }
+                }
+              }
+              
               // Add alternatives to the MCP info
               const mcpWithAlternatives = {
-                ...primaryMcp,
-                alternatives: alternatives.filter(altName => 
-                  availableMCPs.some(mcp => mcp.name === altName)
-                )
+                ...finalPrimaryMcp,
+                alternatives: finalAlternatives
               };
               
               recommendedMCPs.push(mcpWithAlternatives);
               
-              logger.info(`[MCP Debug] Added MCP ${primaryMcpName} with ${mcpWithAlternatives.alternatives.length} alternatives: ${JSON.stringify(mcpWithAlternatives.alternatives)}`);
+              logger.info(`[MCP Debug] Added MCP ${finalPrimaryMcp.name} with ${finalAlternatives.length} alternatives: ${JSON.stringify(finalAlternatives)}`);
             } else {
               logger.warn(`[MCP Debug] Primary MCP not found: ${primaryMcpName}`);
             }
