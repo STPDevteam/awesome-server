@@ -1451,20 +1451,39 @@ private async getAvailableMCPsForPlanning(taskId: string): Promise<any[]> {
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 🔧 纯粹的格式转换：JSON → Markdown
-      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Do NOT summarize, analyze, or explain - just format the data for better readability.
+      // 🔧 纯粹的格式转换：JSON → Markdown（智能长度控制）
+      const dataString = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2);
+      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      
+      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
 
 **Data to format:**
-${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+${dataString}
 
 **Formatting rules:**
 - Convert JSON structure to clear Markdown
 - Use tables for object data when helpful
 - Use lists for arrays
-- Keep ALL original data values
 - Make long numbers readable with commas
-- NO analysis, summary, or explanations
-- ONLY format the data, nothing else`;
+- Output the formatted Markdown directly
+- DO NOT wrap in code blocks or backticks
+- DO NOT add explanations or descriptions
+
+${isLongData ? `
+**IMPORTANT - Data Length Control:**
+This is a large dataset. Apply smart filtering:
+- Show only the most important/commonly used fields
+- For blockchain data: show hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
+- Skip verbose fields like logsBloom, extraData, mix_hash unless they contain short meaningful values
+- For large objects: show top 10-15 most relevant fields
+- Always prioritize user-actionable or identifying information
+- Keep the output concise and focused
+` : `
+**Standard formatting:**
+- Keep ALL original data values
+- Format all available fields
+`}
+- ONLY return the formatted data`;
 
 
       // 使用流式LLM生成格式化结果
@@ -1488,19 +1507,38 @@ ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)
    */
   private async generateFormattedResult(rawResult: any, mcpName: string, action: string): Promise<string> {
     try {
-      const prompt = `Convert this JSON data to clean, readable Markdown format. Do NOT summarize, analyze, or explain - just format the data for better readability.
+      const dataString = JSON.stringify(rawResult, null, 2);
+      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      
+      const prompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
 
 **Data to format:**
-${JSON.stringify(rawResult, null, 2)}
+${dataString}
 
 **Formatting rules:**
 - Convert JSON structure to clear Markdown
 - Use tables for object data when helpful
 - Use lists for arrays
-- Keep ALL original data values
 - Make long numbers readable with commas
-- NO analysis, summary, or explanations
-- ONLY format the data, nothing else`;
+- Output the formatted Markdown directly
+- DO NOT wrap in code blocks or backticks
+- DO NOT add explanations or descriptions
+
+${isLongData ? `
+**IMPORTANT - Data Length Control:**
+This is a large dataset. Apply smart filtering:
+- Show only the most important/commonly used fields
+- For blockchain data: show hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
+- Skip verbose fields like logsBloom, extraData, mix_hash unless they contain short meaningful values
+- For large objects: show top 10-15 most relevant fields
+- Always prioritize user-actionable or identifying information
+- Keep the output concise and focused
+` : `
+**Standard formatting:**
+- Keep ALL original data values
+- Format all available fields
+`}
+- ONLY return the formatted data`;
 
       const response = await this.llm.invoke([new SystemMessage(prompt)]);
       return response.content as string;
