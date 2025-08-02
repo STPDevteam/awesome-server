@@ -304,7 +304,7 @@ export class EnhancedIntelligentTaskEngine {
 
             for await (const chunk of formatGenerator) {
               yield {
-                event: 'step_formatted_result',
+                event: 'final_result',
                 data: {
                   step: currentStep.step,
                   chunk,
