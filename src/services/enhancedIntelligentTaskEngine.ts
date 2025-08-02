@@ -302,16 +302,16 @@ export class EnhancedIntelligentTaskEngine {
               actualToolName
             );
 
-            for await (const chunk of formatGenerator) {
-              yield {
-                event: 'final_result',
-                data: {
-                  step: currentStep.step,
-                  chunk,
-                  agentName: 'WorkflowEngine'
-                }
-              };
-            }
+                      for await (const chunk of formatGenerator) {
+            yield {
+              event: 'final_result',
+              data: {
+                step: currentStep.step,
+                chunk,
+                agentName: 'WorkflowEngine'
+              }
+            };
+          }
           }
 
           // 🔧 生成完整的格式化结果用于存储和最终事件
@@ -1765,7 +1765,15 @@ export class EnhancedIntelligentTaskService {
       // 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
       if (!task) {
-        stream({ event: 'error', data: { message: 'Task not found' } });
+        // 🔧 包装错误事件，与Agent引擎一致
+        stream({ 
+          event: 'task_execution_progress',
+          data: {
+            event: 'error', 
+            data: { message: 'Task not found' },
+            agentName: 'WorkflowEngine'
+          }
+        });
         return false;
       }
 
@@ -1775,19 +1783,32 @@ export class EnhancedIntelligentTaskService {
         : task.mcpWorkflow;
 
       if (!skipAnalysisCheck && (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0)) {
+        // 🔧 包装错误事件，与Agent引擎一致
         stream({ 
-          event: 'error', 
-          data: { 
-            message: 'No workflow found. Please analyze the task first.',
-            details: 'Call /api/task/:id/analyze to generate a workflow before execution.'
-          } 
+          event: 'task_execution_progress',
+          data: {
+            event: 'error', 
+            data: { 
+              message: 'No workflow found. Please analyze the task first.',
+              details: 'Call /api/task/:id/analyze to generate a workflow before execution.'
+            },
+            agentName: 'WorkflowEngine'
+          }
         });
         return false;
       }
 
       // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
-      stream({ event: 'status_update', data: { status: 'in_progress' } });
+      // 🔧 包装状态更新事件，与Agent引擎一致
+      stream({ 
+        event: 'task_execution_progress',
+        data: {
+          event: 'status_update', 
+          data: { status: 'in_progress' },
+          agentName: 'WorkflowEngine'
+        }
+      });
 
       // 使用增强引擎执行工作流
       const executionGenerator = this.engine.executeWorkflowEnhanced(taskId, mcpWorkflow);
@@ -1795,8 +1816,16 @@ export class EnhancedIntelligentTaskService {
       let finalSuccess = false;
 
       for await (const result of executionGenerator) {
-        // 转发所有事件到流
-        stream(result);
+        // 🔧 包装所有事件在task_execution_progress中，与Agent引擎一致
+        const wrappedEvent = {
+          event: 'task_execution_progress',
+          data: {
+            ...result,  // 原始事件：{ event: 'step_executing', data: {...} }
+            agentName: result.data.agentName || 'WorkflowEngine'
+          }
+        };
+        
+        stream(wrappedEvent);
         
         // 记录最终执行结果
         if (result.event === 'final_result') {
@@ -1810,17 +1839,39 @@ export class EnhancedIntelligentTaskService {
         finalSuccess ? 'completed' : 'failed'
       );
 
+      // 🔧 发送执行完成事件，与Agent引擎一致
+      stream({
+        event: 'task_execution_progress',
+        data: {
+          event: 'task_execution_complete',
+          data: {
+            success: finalSuccess,
+            message: finalSuccess ? 
+              'WorkflowEngine task execution completed successfully' : 
+              'WorkflowEngine task execution failed',
+            agentName: 'WorkflowEngine',
+            timestamp: new Date().toISOString()
+          },
+          agentName: 'WorkflowEngine'
+        }
+      });
+
       logger.info(`✅ Enhanced workflow execution completed [Task: ${taskId}, Success: ${finalSuccess}]`);
       return finalSuccess;
 
     } catch (error) {
       logger.error(`❌ Enhanced workflow execution failed:`, error);
       
+      // 🔧 包装错误事件，与Agent引擎一致
       stream({
-        event: 'error',
+        event: 'task_execution_progress',
         data: {
-          message: 'Enhanced workflow execution failed',
-          details: error instanceof Error ? error.message : String(error)
+          event: 'error',
+          data: {
+            message: 'Enhanced workflow execution failed',
+            details: error instanceof Error ? error.message : String(error)
+          },
+          agentName: 'WorkflowEngine'
         }
       });
 
