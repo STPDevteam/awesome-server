@@ -140,23 +140,6 @@ export class TaskExecutorService {
   }
   
   /**
-   * 通用关键步骤判断
-   */
-  private isCriticalStep(actionName: string): boolean {
-    // 定义通用的关键操作关键词
-    const criticalKeywords = [
-      'create', 'send', 'post', 'publish', 'tweet', 'payment', 'transfer', 
-      'buy', 'sell', 'trade', 'execute', 'deploy', 'delete', 'remove'
-    ];
-    
-    return criticalKeywords.some(keyword => 
-      actionName.toLowerCase().includes(keyword.toLowerCase())
-    );
-  }
-  
-
-  
-  /**
    * 🔧 新增：根据schema自动创建参数
    */
   private createParamsFromSchema(userInput: string, schema: any): any {

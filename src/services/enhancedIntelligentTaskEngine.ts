@@ -323,7 +323,7 @@ export class EnhancedIntelligentTaskEngine {
 
           // 🔧 发送格式化结果事件 - 与Agent引擎完全一致的结构
           yield {
-            event: 'step_formatted_result',
+            event: 'final_result',
             data: {
               step: currentStep.step,
               success: true,
