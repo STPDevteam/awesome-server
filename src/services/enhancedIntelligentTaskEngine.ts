@@ -81,6 +81,9 @@ export class EnhancedIntelligentTaskEngine {
     taskId: string,
     mcpWorkflow: any
   ): AsyncGenerator<{ event: string; data: any }, boolean, unknown> {
+    
+    // 🔧 CRITICAL DEBUG: 确认进入Enhanced引擎
+    logger.info(`🚨 ENHANCED ENGINE STARTED - Task: ${taskId}`);
     logger.info(`🚀 Starting enhanced workflow execution [Task: ${taskId}]`);
 
     // 🔧 验证工作流结构
@@ -289,7 +292,7 @@ export class EnhancedIntelligentTaskEngine {
 
             for await (const chunk of formatGenerator) {
               yield {
-                event: 'step_result_chunk',
+                event: 'step_formatted_result',
                 data: {
                   step: currentStep.step,
                   chunk,
