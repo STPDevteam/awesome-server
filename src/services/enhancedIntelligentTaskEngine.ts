@@ -1230,26 +1230,18 @@ private async getAvailableMCPsForPlanning(taskId: string): Promise<any[]> {
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 🔧 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
-      const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
+      // 🔧 简化格式化提示，避免过度生成内容
+      const formatPrompt = `Extract and present the key data from this result. Be concise.
 
-**Tool Information:**
-- MCP Service: ${mcpName}
-- Tool/Action: ${toolName}
+Tool: ${toolName}
+Result: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
 
-**Raw Result:**
-${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
-
-**Format Requirements:**
-1. Use proper markdown formatting (headers, lists, code blocks, etc.)
-2. Make the content easy to read and understand
-3. Highlight important information
-4. Structure the data logically
-5. If the result contains data, format it in tables or lists
-6. If it's an error, clearly explain what happened
-7. Keep the formatting professional and clean
-
-Format the result now:`;
+Instructions:
+- Show only the important data values
+- Use simple markdown formatting
+- Keep output under 5 lines
+- No explanations or extra text
+- Focus on actual data, not metadata`;
 
       // 使用流式LLM生成格式化结果
       const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
@@ -1272,13 +1264,23 @@ Format the result now:`;
    */
   private async generateFormattedResult(rawResult: any, mcpName: string, action: string): Promise<string> {
     try {
-      const prompt = `Format the following MCP result for better readability:
+      const prompt = `Extract and format the key information from this MCP result. Keep it concise and direct.
 
-**MCP**: ${mcpName}
-**Action**: ${action}
-**Raw Result**: ${JSON.stringify(rawResult, null, 2)}
+MCP: ${mcpName}
+Action: ${action}
+Raw Result: ${JSON.stringify(rawResult, null, 2)}
 
-Please format this result in a clear, user-friendly way with appropriate markdown formatting.`;
+INSTRUCTIONS:
+- Extract only the essential data from the result
+- Use simple, clean formatting
+- No explanations or interpretations
+- No repeated information
+- Maximum 3-4 lines of output
+- Focus on the actual data values
+
+Format as:
+**[Data Name]**: [Value]
+**[Status/Type]**: [Value]`;
 
       const response = await this.llm.invoke([new SystemMessage(prompt)]);
       return response.content as string;
