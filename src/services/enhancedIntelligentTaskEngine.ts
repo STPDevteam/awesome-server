@@ -98,6 +98,16 @@ export class EnhancedIntelligentTaskEngine {
       return false;
     }
 
+    // 🧠 智能任务复杂度分析
+    const task = await this.taskService.getTaskById(taskId);
+    const taskQuery = task?.content || '';
+    const taskComplexity = await this.analyzeTaskComplexity(taskQuery, mcpWorkflow.workflow.length);
+    
+    logger.info(`🎯 Task complexity analysis: ${taskComplexity.type} (${taskComplexity.recommendedObservation})`);
+
+    // 🔧 根据复杂度调整执行策略
+    const shouldObserveEveryStep = taskComplexity.type !== 'simple_query';
+
     // 🔧 发送执行开始事件 - 统一字段结构，与Agent引擎一致
     yield {
       event: 'execution_start',
@@ -105,6 +115,8 @@ export class EnhancedIntelligentTaskEngine {
         taskId,
         // 🔧 统一字段：添加agentName，与Agent引擎一致
         agentName: 'WorkflowEngine',
+        taskComplexity: taskComplexity.type,
+        observationStrategy: taskComplexity.recommendedObservation,
         timestamp: new Date().toISOString(),
         message: `Starting enhanced workflow execution with ${mcpWorkflow.workflow.length} steps...`,
         mode: 'enhanced',
@@ -405,24 +417,56 @@ export class EnhancedIntelligentTaskEngine {
           };
         }
 
-        // 🧠 任务观察阶段 - 与Agent引擎一致，每步执行后都进行观察
-        logger.info(`🔍 Performing task observation after step ${currentStep.step}...`);
+        // 🧠 智能观察阶段 - 根据任务复杂度决定观察频率和策略
+        let shouldObserve = false;
         
-        const observation = await this.taskObservationPhase(state);
-        
-        // 发送观察结果事件
-        yield {
-          event: 'task_observation',
-          data: {
-            taskId,
-            stepIndex: i,
-            shouldContinue: observation.shouldContinue,
-            shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
-            adaptationReason: observation.adaptationReason,
-            agentName: 'WorkflowEngine',
-            timestamp: new Date().toISOString()
-          }
+        if (taskComplexity.type === 'simple_query') {
+          // 简单查询：只在第一步完成后观察
+          shouldObserve = (i === 0 && executionResult.success) || !executionResult.success;
+        } else if (taskComplexity.type === 'medium_task') {
+          // 中等任务：每2步或失败时观察
+          shouldObserve = (i % 2 === 0) || !executionResult.success || (i === state.workflow.length - 1);
+        } else {
+          // 复杂工作流：每步都观察
+          shouldObserve = true;
+        }
+
+        let observation: {
+          shouldContinue: boolean;
+          shouldAdaptWorkflow: boolean;
+          adaptationReason?: string;
+          newObjective?: string;
+        } = {
+          shouldContinue: true,
+          shouldAdaptWorkflow: false
         };
+
+        if (shouldObserve) {
+          logger.info(`🔍 Performing task observation after step ${currentStep.step} (${taskComplexity.type} strategy)...`);
+          
+          observation = await this.taskObservationPhase(state, taskComplexity);
+          
+          // 发送观察结果事件
+          yield {
+            event: 'task_observation',
+            data: {
+              taskId,
+              stepIndex: i,
+              shouldContinue: observation.shouldContinue,
+              shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
+              adaptationReason: observation.adaptationReason,
+              agentName: 'WorkflowEngine',
+              complexityType: taskComplexity.type,
+              timestamp: new Date().toISOString()
+            }
+          };
+        } else {
+          // 简单查询且第一步成功 - 直接完成
+          if (taskComplexity.type === 'simple_query' && executionResult.success && i === 0) {
+            logger.info(`🎯 Simple query completed successfully after first step, stopping execution`);
+            observation.shouldContinue = false;
+          }
+        }
         
         // 🔄 如果需要调整工作流，进行动态规划
         if (observation.shouldAdaptWorkflow) {
@@ -914,9 +958,159 @@ Select the best matching tool now:`;
     // 如果没有找到完整的JSON对象，返回null
     logger.warn(`⚠️ Could not find complete JSON object`);
     return null;
+    }
+
+  /**
+   * 🧠 智能任务复杂度分析（针对任务引擎优化）
+   */
+  private async analyzeTaskComplexity(
+    query: string, 
+    workflowSteps: number
+  ): Promise<{
+    type: 'simple_query' | 'medium_task' | 'complex_workflow';
+    recommendedObservation: 'fast' | 'balanced' | 'thorough';
+    shouldCompleteEarly: boolean;
+    reasoning: string;
+  }> {
+    try {
+      // 🔍 基于模式的快速分析
+      const quickAnalysis = this.quickTaskComplexityAnalysis(query, workflowSteps);
+      if (quickAnalysis) {
+        return quickAnalysis;
+      }
+
+      // 🧠 LLM深度分析（用于边缘情况）
+      const analysisPrompt = `Analyze the task complexity for workflow execution and recommend observation strategy.
+
+**User Query**: "${query}"
+**Workflow Steps**: ${workflowSteps} steps
+
+**Task Types:**
+1. **SIMPLE_QUERY** (Direct data requests):
+   - "Show me...", "Get current...", "What is..."
+   - Single data point requests
+   - Basic information lookup
+   - Observation: Fast - complete after first success
+
+2. **MEDIUM_TASK** (Multi-step operations):
+   - "Compare X and Y", "Analyze trends"
+   - Data processing and basic analysis
+   - Sequential operations with dependencies
+   - Observation: Balanced - observe key checkpoints
+
+3. **COMPLEX_WORKFLOW** (Comprehensive tasks):
+   - Multi-source analysis with transformations
+   - Complex decision workflows
+   - Extensive data processing chains
+   - Observation: Thorough - observe every step
+
+**OUTPUT FORMAT (JSON only):**
+{
+  "type": "simple_query|medium_task|complex_workflow",
+  "recommended_observation": "fast|balanced|thorough",
+  "should_complete_early": true/false,
+  "reasoning": "Brief explanation of complexity assessment"
+}`;
+
+      const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
+      const content = response.content as string;
+      
+      // 解析LLM响应
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          type: parsed.type || 'medium_task',
+          recommendedObservation: parsed.recommended_observation || 'balanced',
+          shouldCompleteEarly: parsed.should_complete_early || false,
+          reasoning: parsed.reasoning || 'LLM analysis completed'
+        };
+      }
+    } catch (error) {
+      logger.warn(`Task complexity analysis failed: ${error}`);
+    }
+
+    // 默认中等复杂度
+    return {
+      type: 'medium_task',
+      recommendedObservation: 'balanced',
+      shouldCompleteEarly: false,
+      reasoning: 'Default complexity analysis'
+    };
   }
 
   /**
+   * 🔍 快速模式匹配复杂度分析（针对任务引擎）
+   */
+  private quickTaskComplexityAnalysis(
+    query: string, 
+    workflowSteps: number
+  ): {
+    type: 'simple_query' | 'medium_task' | 'complex_workflow';
+    recommendedObservation: 'fast' | 'balanced' | 'thorough';
+    shouldCompleteEarly: boolean;
+    reasoning: string;
+  } | null {
+    const lowerQuery = query.toLowerCase().trim();
+
+    // 🟢 简单查询模式 (1-2 steps, fast completion)
+    const simplePatterns = [
+      /^(show me|get|fetch|what is|current|latest)\s/,
+      /^(how much|how many|price of|value of)\s/,
+      /^(status of|info about|details of)\s/,
+      /\b(index|price|value|status|information)\s*(of|for)?\s*\w+$/,
+      /^(get current|show current|fetch latest)\s/
+    ];
+
+    if (simplePatterns.some(pattern => pattern.test(lowerQuery)) || workflowSteps <= 2) {
+      return {
+        type: 'simple_query',
+        recommendedObservation: 'fast',
+        shouldCompleteEarly: true,
+        reasoning: 'Direct data query - fast completion after first success'
+      };
+    }
+
+    // 🟡 中等任务模式 (3-5 steps, balanced observation)
+    const mediumPatterns = [
+      /\b(compare|analyze|calculate|process)\b/,
+      /\b(then|after|next|followed by)\b/,
+      /\b(both|all|multiple|several)\b/,
+      /\band\s+\w+\s+(also|too|as well)/,
+      /\b(summary|report|overview)\b/
+    ];
+
+    if (mediumPatterns.some(pattern => pattern.test(lowerQuery)) || (workflowSteps >= 3 && workflowSteps <= 5)) {
+      return {
+        type: 'medium_task',
+        recommendedObservation: 'balanced',
+        shouldCompleteEarly: false,
+        reasoning: 'Multi-step task requiring balanced observation'
+      };
+    }
+
+    // 🔴 复杂工作流模式 (6+ steps, thorough observation)
+    const complexPatterns = [
+      /\b(workflow|pipeline|process.*step)\b/,
+      /\b(first.*then.*finally|step.*step.*step)\b/,
+      /\b(comprehensive|detailed|thorough)\s+(analysis|report|study)\b/,
+      /\b(multiple.*and.*then)\b/,
+      /\b(optimize|automate|integrate)\b/
+    ];
+
+    if (complexPatterns.some(pattern => pattern.test(lowerQuery)) || workflowSteps > 5 || lowerQuery.length > 100) {
+      return {
+        type: 'complex_workflow',
+        recommendedObservation: 'thorough',
+        shouldCompleteEarly: false,
+        reasoning: 'Complex multi-step workflow requiring thorough observation'
+      };
+    }
+
+    return null; // 需要LLM深度分析
+  }
+
+/**
  * 🧠 新增：动态规划阶段（参考Agent引擎，使任务引擎也具备智能规划能力）
  */
 private async taskDynamicPlanningPhase(
@@ -958,7 +1152,8 @@ private async taskDynamicPlanningPhase(
  * 🧠 新增：任务观察阶段（参考Agent引擎，智能分析当前进度和调整策略）
  */
 private async taskObservationPhase(
-  state: EnhancedWorkflowState
+  state: EnhancedWorkflowState,
+  taskComplexity?: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
 ): Promise<{
   shouldContinue: boolean;
   shouldAdaptWorkflow: boolean;
@@ -966,7 +1161,7 @@ private async taskObservationPhase(
   newObjective?: string;
 }> {
   try {
-    const observerPrompt = this.buildTaskObserverPrompt(state);
+    const observerPrompt = this.buildTaskObserverPrompt(state, taskComplexity);
     const response = await this.llm.invoke([new SystemMessage(observerPrompt)]);
     
     return this.parseTaskObservation(response.content.toString());
@@ -1030,9 +1225,12 @@ Respond with valid JSON in this exact format:
 }
 
 /**
- * 🔧 构建任务观察提示词
+ * 🔧 构建任务观察提示词（智能复杂度感知）
  */
-private buildTaskObserverPrompt(state: EnhancedWorkflowState): string {
+private buildTaskObserverPrompt(
+  state: EnhancedWorkflowState,
+  taskComplexity?: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
+): string {
   const completedStepsInfo = state.executionHistory
     .filter(step => step.success)
     .map(step => `Step ${step.stepNumber}: ${step.action} -> Success`)
@@ -1043,11 +1241,34 @@ private buildTaskObserverPrompt(state: EnhancedWorkflowState): string {
     .map(step => `Step ${step.stepNumber}: ${step.action} -> Failed: ${step.error}`)
     .join('\n');
 
-  return `You are an intelligent task execution observer analyzing workflow progress after each step. Make smart decisions about continuation, completion, and adaptation.
+  return `You are an intelligent task execution observer analyzing workflow progress. Make smart decisions based on task complexity.
 
 **Original Task**: ${state.originalQuery}
+**Task Complexity**: ${taskComplexity ? `${taskComplexity.type} (${taskComplexity.recommendedObservation} observation)` : 'Unknown'}
 
 **Current Progress**: Step ${state.currentStepIndex + 1}/${state.totalSteps} (${Math.round(((state.currentStepIndex + 1) / state.totalSteps) * 100)}%)
+
+**COMPLEXITY-BASED COMPLETION CRITERIA**:
+
+${taskComplexity?.type === 'simple_query' ? `
+🟢 **SIMPLE QUERY MODE** - Fast completion priority:
+- ✅ **COMPLETE IMMEDIATELY** if first step returned valid data
+- ✅ **COMPLETE IMMEDIATELY** if user's question is answered
+- ❌ Continue only if NO data retrieved or complete failure
+- 🎯 Priority: Speed over perfection for data requests
+` : taskComplexity?.type === 'medium_task' ? `
+🟡 **MEDIUM TASK MODE** - Balanced approach:
+- ✅ Complete if main objectives achieved (50%+ steps successful)
+- ✅ Complete if sufficient data collected for analysis
+- ❌ Continue if key analysis or comparison still needed
+- 🎯 Priority: Balance speed with thoroughness
+` : `
+🔴 **COMPLEX WORKFLOW MODE** - Thorough completion:
+- ✅ Complete only if all major workflow components finished
+- ✅ Complete if comprehensive analysis delivered
+- ❌ Continue if significant workflow steps remain
+- 🎯 Priority: Comprehensive completion over speed
+`}
 
 **Execution Summary**:
 - Completed Steps: ${state.completedSteps}

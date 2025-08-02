@@ -120,9 +120,15 @@ export class AgentIntelligentEngine {
   async *executeAgentTask(
     taskId: string,
     query: string,
-    maxIterations: number = 10
+    maxIterations: number = 8
   ): AsyncGenerator<{ event: string; data: any }, boolean, unknown> {
     logger.info(`🤖 Starting Agent intelligent execution [Task: ${taskId}, Agent: ${this.agent.name}]`);
+
+    // 🧠 智能任务复杂度分析
+    const taskComplexity = await this.analyzeTaskComplexity(query);
+    const smartMaxIterations = Math.min(maxIterations, taskComplexity.recommendedSteps);
+    
+    logger.info(`🎯 Task complexity analysis: ${taskComplexity.type} (${smartMaxIterations} steps recommended)`);
 
     // 🔧 Agent专用：发送execution_start事件
     yield {
@@ -130,6 +136,8 @@ export class AgentIntelligentEngine {
       data: {
         taskId,
         agentName: this.agent.name,
+        taskComplexity: taskComplexity.type,
+        maxSteps: smartMaxIterations,
         timestamp: new Date().toISOString(),
         message: `Starting intelligent execution with ${this.agent.name}...`
       }
@@ -149,7 +157,7 @@ export class AgentIntelligentEngine {
       dataStore: {},
       currentPlan: null,
       isComplete: false,
-      maxIterations,
+      maxIterations: smartMaxIterations,
       currentIteration: 0,
       errors: [],
       lastError: null,
@@ -166,7 +174,7 @@ export class AgentIntelligentEngine {
       await this.prepareAgentTask(taskId, state);
 
       // 🔧 Agent智能执行主循环
-      while (!state.isComplete && state.currentIteration < maxIterations) {
+      while (!state.isComplete && state.currentIteration < smartMaxIterations) {
         state.currentIteration++;
         stepCounter++;
 
@@ -472,8 +480,8 @@ export class AgentIntelligentEngine {
         // 🔧 保存步骤结果到数据库（使用格式化结果）
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
-        // 🔧 第三步：Agent观察阶段（增强版） - 判断是否完成
-        const observationResult = await this.agentObservationPhaseEnhanced(state);
+        // 🔧 第三步：Agent观察阶段（增强版） - 判断是否完成，考虑任务复杂度
+        const observationResult = await this.agentObservationPhaseEnhanced(state, taskComplexity);
         state.isComplete = observationResult.isComplete;
         
         if (observationResult.nextObjective) {
@@ -544,6 +552,139 @@ export class AgentIntelligentEngine {
       
       return false;
     }
+  }
+
+  /**
+   * 🧠 智能任务复杂度分析
+   */
+  private async analyzeTaskComplexity(query: string): Promise<{
+    type: 'simple_query' | 'medium_task' | 'complex_workflow';
+    recommendedSteps: number;
+    reasoning: string;
+  }> {
+    try {
+      // 🔍 基于模式的快速分析
+      const quickAnalysis = this.quickComplexityAnalysis(query);
+      if (quickAnalysis) {
+        return quickAnalysis;
+      }
+
+      // 🧠 LLM深度分析（用于边缘情况）
+      const analysisPrompt = `Analyze the task complexity and recommend execution steps.
+
+**User Query**: "${query}"
+
+**Task Types:**
+1. **SIMPLE_QUERY** (1-2 steps):
+   - Direct data requests: "Show me...", "Get current...", "What is..."
+   - Single API calls: "Get user info", "Fetch latest price"
+   - Basic information lookup
+
+2. **MEDIUM_TASK** (3-5 steps):
+   - Multi-source data collection: "Compare X and Y"
+   - Basic analysis: "Analyze trends in..."
+   - Sequential operations: "First get X, then process Y"
+
+3. **COMPLEX_WORKFLOW** (6+ steps):
+   - Multi-step analysis with processing
+   - Complex decision trees
+   - Multiple interdependent operations
+   - Extensive data transformation
+
+**OUTPUT FORMAT (JSON only):**
+{
+  "type": "simple_query|medium_task|complex_workflow",
+  "recommendedSteps": 1-8,
+  "reasoning": "Brief explanation of complexity assessment"
+}`;
+
+      const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
+      const content = response.content as string;
+      
+      // 解析LLM响应
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          type: parsed.type || 'medium_task',
+          recommendedSteps: Math.min(8, Math.max(1, parsed.recommendedSteps || 3)),
+          reasoning: parsed.reasoning || 'LLM analysis completed'
+        };
+      }
+    } catch (error) {
+      logger.warn(`Task complexity analysis failed: ${error}`);
+    }
+
+    // 默认中等复杂度
+    return {
+      type: 'medium_task',
+      recommendedSteps: 3,
+      reasoning: 'Default complexity analysis'
+    };
+  }
+
+  /**
+   * 🔍 快速模式匹配复杂度分析
+   */
+  private quickComplexityAnalysis(query: string): {
+    type: 'simple_query' | 'medium_task' | 'complex_workflow';
+    recommendedSteps: number;
+    reasoning: string;
+  } | null {
+    const lowerQuery = query.toLowerCase().trim();
+
+    // 🟢 简单查询模式 (1-2 steps)
+    const simplePatterns = [
+      /^(show me|get|fetch|what is|current|latest)\s/,
+      /^(how much|how many|price of|value of)\s/,
+      /^(status of|info about|details of)\s/,
+      /\b(index|price|value|status|information)\s*(of|for)?\s*\w+$/,
+      /^(get current|show current|fetch latest)\s/
+    ];
+
+    if (simplePatterns.some(pattern => pattern.test(lowerQuery))) {
+      return {
+        type: 'simple_query',
+        recommendedSteps: 1,
+        reasoning: 'Direct data query - single API call expected'
+      };
+    }
+
+    // 🟡 中等任务模式 (3-5 steps)
+    const mediumPatterns = [
+      /\b(compare|analyze|calculate|process)\b/,
+      /\b(then|after|next|followed by)\b/,
+      /\b(both|all|multiple|several)\b/,
+      /\band\s+\w+\s+(also|too|as well)/,
+      /\b(summary|report|overview)\b/
+    ];
+
+    if (mediumPatterns.some(pattern => pattern.test(lowerQuery))) {
+      return {
+        type: 'medium_task',
+        recommendedSteps: 3,
+        reasoning: 'Multi-step task with analysis or comparison'
+      };
+    }
+
+    // 🔴 复杂工作流模式 (6+ steps)
+    const complexPatterns = [
+      /\b(workflow|pipeline|process.*step)\b/,
+      /\b(first.*then.*finally|step.*step.*step)\b/,
+      /\b(comprehensive|detailed|thorough)\s+(analysis|report|study)\b/,
+      /\b(multiple.*and.*then)\b/,
+      /\b(optimize|automate|integrate)\b/
+    ];
+
+    if (complexPatterns.some(pattern => pattern.test(lowerQuery)) || lowerQuery.length > 100) {
+      return {
+        type: 'complex_workflow',
+        recommendedSteps: 6,
+        reasoning: 'Complex multi-step workflow detected'
+      };
+    }
+
+    return null; // 需要LLM深度分析
   }
 
   /**
@@ -992,12 +1133,15 @@ Analyze the task now:`;
   /**
    * 🔧 新增：增强版观察阶段
    */
-  private async agentObservationPhaseEnhanced(state: AgentWorkflowState): Promise<{
+  private async agentObservationPhaseEnhanced(
+    state: AgentWorkflowState, 
+    taskComplexity?: { type: string; recommendedSteps: number; reasoning: string }
+  ): Promise<{
     isComplete: boolean;
     nextObjective?: string;
   }> {
     try {
-      const observerPrompt = this.buildEnhancedAgentObserverPrompt(state);
+      const observerPrompt = this.buildEnhancedAgentObserverPrompt(state, taskComplexity);
       
       const response = await this.llm.invoke([
         new SystemMessage(observerPrompt),
@@ -1242,33 +1386,36 @@ Step ${lastStep.stepNumber}: ${lastStep.plan.tool}
 ## Agent Data Store
 ${JSON.stringify(state.dataStore, null, 2)}
 
-## Completion Judgment for ${this.agent.name}
+## Task Completion Analysis for ${this.agent.name}
 
-Please analyze whether **${this.agent.name}** has successfully completed the user's task:
+**SIMPLE COMPLETION RULES**:
 
-### 🤖 Agent Performance Assessment
-From ${this.agent.name}'s perspective:
-- Has ${this.agent.name} successfully fulfilled the user's request?
-- Are the results satisfactory for ${this.agent.name}'s standards?
-- Would the user be satisfied with ${this.agent.name}'s performance?
+For **DATA QUERIES** (like "show me", "get", "what is"):
+- ✅ Complete if ANY valid data was retrieved successfully  
+- ✅ Complete if the latest step returned meaningful information
+- ❌ NOT complete only if NO data was retrieved or major errors
 
-### 📋 Task Completeness Check
-1. **Primary Goal**: Has the main objective been achieved?
-2. **Quality Assessment**: Are the results of sufficient quality?
-3. **User Satisfaction**: Would this satisfy the user's expectations?
+For **COMPLEX TASKS** (multi-step analysis, processing):
+- ✅ Complete if all required steps finished successfully
+- ❌ NOT complete if significant work remains
 
-Please return in format:
+**QUICK CHECK**: Look at the latest step result - does it answer the user's question?
+
+**OUTPUT FORMAT**:
 {
   "isComplete": true/false,
-  "reasoning": "detailed reasoning for ${this.agent.name}'s completion judgment",
-  "nextObjective": "next objective for ${this.agent.name} (if not complete)"
+  "reasoning": "Brief explanation - focus on whether user's question is answered",  
+  "nextObjective": "only if NOT complete"
 }`;
   }
 
   /**
    * 🔧 新增：构建增强版观察提示词
    */
-  private buildEnhancedAgentObserverPrompt(state: AgentWorkflowState): string {
+  private buildEnhancedAgentObserverPrompt(
+    state: AgentWorkflowState, 
+    taskComplexity?: { type: string; recommendedSteps: number; reasoning: string }
+  ): string {
     const lastStep = state.executionHistory[state.executionHistory.length - 1];
     const completedComponents = state.taskBreakdown.filter(c => c.isCompleted);
     const totalComponents = state.taskBreakdown.length;
@@ -1279,6 +1426,7 @@ Please return in format:
 - **Agent**: ${this.agent.name}
 - **Agent Description**: ${this.agent.description || 'Specialized AI Assistant'}
 - **Original Task**: ${state.originalQuery}
+- **Task Complexity**: ${taskComplexity ? `${taskComplexity.type} (${taskComplexity.recommendedSteps} steps recommended)` : 'Unknown'}
 - **Current Objective**: ${state.currentObjective}
 - **Executed Steps**: ${state.executionHistory.length}
 
@@ -1315,55 +1463,50 @@ ${state.failureHistory.length > 0 ? `
 ${state.failureHistory.map(f => `- ${f.tool}: ${f.error} (${f.attemptCount} attempts, strategy: ${f.suggestedStrategy})`).join('\n')}
 ` : '**No failures recorded**'}
 
-## 🎯 ENHANCED COMPLETION JUDGMENT
+## 🎯 SMART COMPLETION JUDGMENT
 
-### Critical Completion Criteria
+**TASK-SPECIFIC COMPLETION RULES**:
 
-1. **Component Completeness Check**
-   - Are ALL required components completed? ${completedComponents.length === totalComponents ? 'YES ✅' : 'NO ❌'}
-   - Remaining components: ${state.taskBreakdown.filter(c => !c.isCompleted).map(c => c.description).join(', ') || 'None'}
+${taskComplexity?.type === 'simple_query' ? `
+🟢 **SIMPLE QUERY DETECTED** - Fast completion mode:
+- ✅ **COMPLETE IMMEDIATELY** if latest step returned ANY valid data
+- ✅ **COMPLETE IMMEDIATELY** if user's question is answered
+- ❌ Continue only if NO data retrieved or complete failure
+- ⚡ **Priority**: Speed over perfection for simple data requests
+` : taskComplexity?.type === 'medium_task' ? `
+🟡 **MEDIUM TASK DETECTED** - Balanced completion mode:
+- ✅ Complete if main objectives achieved (2-3 successful steps)
+- ✅ Complete if sufficient data collected for user's needs
+- ❌ Continue if key analysis or comparison still needed
+` : `
+🔴 **COMPLEX WORKFLOW DETECTED** - Thorough completion mode:
+- ✅ Complete only if all major components finished
+- ✅ Complete if comprehensive analysis delivered
+- ❌ Continue if significant workflow steps remain
+`}
 
-2. **Data Flow Analysis**
-   - Is data collection complete? ${state.taskBreakdown.filter(c => c.type === 'data_collection').every(c => c.isCompleted) ? 'YES ✅' : 'NO ❌'}
-   - Is data processing complete? ${state.taskBreakdown.filter(c => c.type === 'data_processing' || c.type === 'analysis').every(c => c.isCompleted) ? 'YES ✅' : 'NO ❌'}
-   - Is action execution complete? ${state.taskBreakdown.filter(c => c.type === 'action_execution').every(c => c.isCompleted) ? 'YES ✅' : 'NO ❌'}
+**CURRENT EXECUTION STATUS**:
+- Steps completed: ${state.executionHistory.length}/${taskComplexity?.recommendedSteps || 'unknown'}
+- Task type: ${taskComplexity?.type || 'unknown'}
 
-3. **Failure Impact Assessment**
-   - Are there critical failures blocking progress? ${state.failureHistory.filter(f => f.suggestedStrategy === 'manual_intervention').length > 0 ? 'YES ❌' : 'NO ✅'}
-   - Can remaining work be completed with available data? (Analyze based on component dependencies)
-
-4. **User Satisfaction Check**
-   - Would the user be satisfied with current results?
-   - Has the original request been fully addressed?
-
-### 🚨 IMPORTANT DECISION RULES
-
-**MARK COMPLETE ONLY IF**:
-- ✅ ALL task components are completed OR
-- ✅ User's core objective is achieved AND remaining components are optional OR
-- ✅ Critical failures prevent further progress AND significant value has been delivered
-
-**CONTINUE EXECUTION IF**:
-- ❌ Key components remain incomplete
-- ❌ Recent failures can be resolved with alternative approaches
-- ❌ Available data can be used to complete remaining components
-
-### Latest Execution Context
+### Latest Step Analysis
 ${lastStep ? `
-**Last Step Details**:
-- Step ${lastStep.stepNumber}: ${lastStep.plan.tool}
-- Status: ${lastStep.success ? '✅ Success' : '❌ Failed'}
-- Reasoning: ${lastStep.plan.reasoning}
-- Result: ${lastStep.success ? (typeof lastStep.result === 'string' ? lastStep.result : '[Data Available]') : lastStep.error}
+**Step ${lastStep.stepNumber}**: ${lastStep.plan.tool}
+- Status: ${lastStep.success ? '✅ Success' : '❌ Failed'}  
+- Result: ${lastStep.success ? 'Data available' : lastStep.error}
+${taskComplexity?.type === 'simple_query' && lastStep.success ? '- 🎯 **SIMPLE QUERY + SUCCESS = SHOULD COMPLETE**' : ''}
 ` : 'No execution history yet'}
 
-Please return in format:
+**DECISION FRAMEWORK**:
+${taskComplexity?.type === 'simple_query' ? 'For simple queries: Success = Complete. No exceptions.' : 
+  taskComplexity?.type === 'medium_task' ? 'For medium tasks: Focus on core objectives achievement.' :
+  'For complex workflows: Ensure comprehensive completion.'}
+
+**OUTPUT FORMAT**:
 {
   "isComplete": true/false,
-  "reasoning": "detailed analysis of component completion, data flow, and user objective fulfillment",
-  "nextObjective": "specific next objective focusing on incomplete components (if not complete)",
-  "completionConfidence": 0.0-1.0,
-  "criticalGaps": ["list of any critical missing components"]
+  "reasoning": "Brief explanation focusing on task type and completion criteria",
+  "nextObjective": "only if NOT complete"
 }`;
   }
 
@@ -1500,8 +1643,8 @@ Please return in format:
       logger.warn(`Agent observation parsing failed: ${error}`);
     }
 
-    // 智能判断
-    const isComplete = /complete|finished|done|success/i.test(content);
+    // 🔧 增强智能判断 - 对数据查询更敏感
+    const isComplete = /complete|finished|done|success|data.*retrieved|information.*available|result.*ready/i.test(content);
     return { isComplete };
   }
 
