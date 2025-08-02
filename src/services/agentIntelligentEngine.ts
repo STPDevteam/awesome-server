@@ -2195,18 +2195,20 @@ ${summaries.join('\n\n')}
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 🔧 简化格式化提示，避免过度生成内容
-      const formatPrompt = `Extract and present the key data from this result. Be concise.
+      // 🔧 纯粹的格式转换：JSON → Markdown
+      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Do NOT summarize, analyze, or explain - just format the data for better readability.
 
-Tool: ${toolName}
-Result: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+**Data to format:**
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
 
-Instructions:
-- Show only the important data values
-- Use simple markdown formatting
-- Keep output under 5 lines
-- No explanations or extra text
-- Focus on actual data, not metadata`;
+**Formatting rules:**
+- Convert JSON structure to clear Markdown
+- Use tables for object data when helpful
+- Use lists for arrays
+- Keep ALL original data values
+- Make long numbers readable with commas
+- NO analysis, summary, or explanations
+- ONLY format the data, nothing else`;
 
       // 使用流式LLM生成格式化结果
       const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
@@ -2234,18 +2236,20 @@ Instructions:
     toolName: string
   ): Promise<string> {
     try {
-      // 🔧 简化格式化提示，与流式版本保持一致
-      const formatPrompt = `Extract and present the key data from this result. Be concise.
+      // 🔧 纯粹的格式转换，与流式版本保持一致
+      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Do NOT summarize, analyze, or explain - just format the data for better readability.
 
-Tool: ${toolName}
-Result: ${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+**Data to format:**
+${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
 
-Instructions:
-- Show only the important data values
-- Use simple markdown formatting
-- Keep output under 5 lines
-- No explanations or extra text
-- Focus on actual data, not metadata`;
+**Formatting rules:**
+- Convert JSON structure to clear Markdown
+- Use tables for object data when helpful
+- Use lists for arrays
+- Keep ALL original data values
+- Make long numbers readable with commas
+- NO analysis, summary, or explanations
+- ONLY format the data, nothing else`;
 
       // 使用非流式LLM生成格式化结果
       const response = await this.llm.invoke([new SystemMessage(formatPrompt)]);
