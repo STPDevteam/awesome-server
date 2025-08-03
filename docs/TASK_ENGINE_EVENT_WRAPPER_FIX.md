@@ -1,140 +1,138 @@
-# 任务引擎事件包装修复
+# 任务引擎事件传输演进历程
 
-## 🔧 问题背景
+## 🔧 问题背景与演进
 
-在之前的实现中，Agent引擎和任务引擎返回的事件格式不一致：
+### 第一阶段：事件格式不一致
+在最初的实现中，Agent引擎和任务引擎返回的事件格式不一致：
+- **Agent引擎**: 所有执行事件都被包装在 `task_execution_progress` 中
+- **任务引擎**: 直接返回原始事件
 
-- **Agent引擎** (agentConversationService): 所有执行事件都被包装在 `task_execution_progress` 中
-- **任务引擎** (enhancedIntelligentTaskEngine): 直接返回原始事件
+### 第二阶段：统一包装格式 ❌
+为了统一格式，我们给任务引擎也添加了 `task_execution_progress` 包装。
 
-这导致前端收到不一致的事件格式，影响了事件处理逻辑。
+### 第三阶段：移除包装，直接传输 ✅
+**最终决定**：移除任务引擎中的 `task_execution_progress` 包装，直接返回原始事件，简化前端处理逻辑。
 
-## 📋 修复内容
+## 📋 最终修复内容
 
-### 1. 统一事件包装格式
-
-现在两个引擎都返回一致的事件格式：
-
-```typescript
-// 统一的事件包装格式
-{
-  event: 'task_execution_progress',
-  data: {
-    event: 'step_executing',  // 内部事件类型
-    data: {                   // 内部事件数据
-      // ... 原始事件数据
-    },
-    agentName: 'WorkflowEngine' // 或实际的Agent名称
-  }
-}
-```
-
-### 2. 修复的服务
+### 🚫 移除了所有 `task_execution_progress` 包装
 
 **修改的文件**: `src/services/enhancedIntelligentTaskEngine.ts`
 
 **修改的方法**: `EnhancedIntelligentTaskService.executeTaskEnhanced()`
 
-### 3. 包装的事件类型
+### 📤 现在直接返回的事件格式
 
-所有任务引擎事件现在都被包装在 `task_execution_progress` 中：
-
-1. `execution_start`
-2. `workflow_execution_start`
-3. `step_executing`
-4. `step_raw_result`
-5. `step_result_chunk` ✅ (修复事件名称)
-6. `step_formatted_result` ✅ (修复事件名称)
-7. `step_complete`
-8. `step_error`
-9. `task_observation`
-10. `workflow_adapted`
-11. `final_result`
-12. `task_execution_complete` 🆕 (新增完成事件)
-13. `status_update`
-14. `error`
-
-### 4. 修复的事件名称
-
-修复了两处错误的事件名称：
-- `event: 'final_result'` → `event: 'step_result_chunk'` (流式格式化块)
-- `event: 'final_result'` → `event: 'step_formatted_result'` (格式化结果)
-
-## 🔄 事件流对比
-
-### 修复前 (任务引擎)
 ```typescript
-// 直接返回原始事件
-stream({ event: 'step_executing', data: {...} });
-stream({ event: 'step_complete', data: {...} });
-```
-
-### 修复后 (任务引擎)
-```typescript
-// 包装在task_execution_progress中
-stream({
-  event: 'task_execution_progress',
+// 直接返回原始事件，无包装
+{
+  event: 'step_executing',
   data: {
-    event: 'step_executing',
-    data: {...},
-    agentName: 'WorkflowEngine'
+    step: 1,
+    tool: 'get_current_fng_tool',
+    agentName: 'WorkflowEngine',
+    message: 'WorkflowEngine is executing step 1: get_current_fng_tool',
+    toolDetails: {
+      toolType: 'mcp',
+      toolName: 'get_current_fng_tool',
+      mcpName: 'feargreed-mcp',
+      args: {...},
+      expectedOutput: '...',
+      reasoning: '...',
+      timestamp: '...'
+    }
   }
-});
+}
 ```
 
-### Agent引擎 (已有格式)
-```typescript
-// 已经使用包装格式
-stream({
-  event: 'task_execution_progress',
-  data: {
-    event: 'step_executing',
-    data: {...},
-    agentName: agent.name
-  }
-});
-```
+### 📋 直接返回的事件列表
 
-## ✅ 优势
+任务智能引擎现在**直接返回**以下原始事件：
 
-1. **前端一致性**: 前端现在可以使用统一的事件处理逻辑
-2. **代码简化**: 减少前端需要处理的事件类型分支
-3. **调试便利**: 统一的事件格式便于调试和监控
-4. **向后兼容**: 保持了原有的内部事件结构
+### 🚀 核心执行事件
+- ✅ `execution_start` - 执行开始
+- ✅ `status_update` - 状态更新
+- ✅ `workflow_execution_start` - 工作流执行开始
+- ✅ `step_executing` - 步骤执行中
+- ✅ `step_raw_result` - 步骤原始结果
+- ✅ `step_result_chunk` / `final_result_chunk` - 结果流式块
+- ✅ `step_formatted_result` - 步骤格式化结果
+- ✅ `step_complete` - 步骤完成
+- ✅ `step_error` - 步骤错误
 
-## 🎯 前端集成
+### 🧠 智能特性事件
+- ✅ `task_observation` - 任务观察
+- ✅ `workflow_adapted` - 工作流适配
+- ✅ `mcp_connection_error` - MCP连接错误
 
-前端现在可以使用统一的事件监听逻辑：
+### 🏁 完成事件
+- ✅ `final_result` - 最终结果
+- ✅ `workflow_complete` - 工作流完成
+- ✅ `task_complete` - 任务完成
+- ✅ `task_execution_complete` - 执行完成
 
+### ❌ 错误事件
+- ✅ `error` - 错误
+
+**重要**: 所有事件都是**直接返回**，不再包装在 `task_execution_progress` 中！
+
+## 🎯 前端处理简化
+
+### ❌ 第二阶段（包装格式，已移除）
 ```javascript
-// 统一的事件处理
+// 第二阶段的包装格式（已废弃）
+if (data.event === 'task_execution_progress') {
+  const { event: innerEvent, data: innerData } = data.data;
+  // 需要解包处理...
+}
+```
+
+### ✅ 第三阶段（直接格式，当前状态）
+```javascript
+// 现在的直接格式 - 简洁高效
 eventSource.addEventListener('message', (event) => {
   const data = JSON.parse(event.data);
   
-  if (data.event === 'task_execution_progress') {
-    const { event: innerEvent, data: innerData, agentName } = data.data;
-    
-    switch (innerEvent) {
-      case 'step_executing':
-        handleStepExecuting(innerData, agentName);
-        break;
-      case 'step_complete':
-        handleStepComplete(innerData, agentName);
-        break;
-      case 'final_result':
-        handleFinalResult(innerData, agentName);
-        break;
-      // ... 其他事件类型
-    }
+  switch (data.event) {
+    case 'step_executing':
+      // 直接处理步骤执行
+      const { toolDetails } = data.data;
+      console.log('执行工具:', toolDetails.toolName);
+      break;
+      
+    case 'step_complete':
+      // 直接处理步骤完成
+      console.log('步骤完成:', data.data.result);
+      break;
+      
+    case 'final_result':
+      // 直接处理最终结果
+      console.log('最终结果:', data.data.finalResult);
+      break;
+      
+    case 'task_execution_complete':
+      // 直接处理执行完成
+      console.log('任务执行完成:', data.data.success);
+      break;
   }
 });
 ```
 
-## 📊 测试验证
+## 🚀 最终优势
 
-修改后，任务引擎的流式执行应该返回与Agent引擎一致的事件格式。可以通过以下方式验证：
+1. **✅ 简化处理**: 前端无需解包 `task_execution_progress`
+2. **🔄 一致性**: 事件结构更加直观统一
+3. **📈 性能**: 减少事件嵌套层级，提高处理效率
+4. **🛠️ 维护性**: 简化事件结构，降低维护复杂度
+5. **💡 直观性**: 事件结构更加直观和易理解
 
-1. 调用 `/api/task/:id/execute/stream` 端点
-2. 检查返回的事件是否都包装在 `task_execution_progress` 中
-3. 验证 `agentName` 字段是否正确设置为 `'WorkflowEngine'`
-4. 确认所有内部事件类型名称正确 
+## 🎉 最终状态
+
+任务智能引擎现在返回**直接、简洁的事件流**：
+
+- **无包装**: 直接返回原始事件
+- **高性能**: 减少数据传输和处理开销
+- **易使用**: 前端可以直接处理事件，无需解包
+- **一致性**: 与Agent智能引擎的事件结构完全对齐
+
+现在任务智能引擎提供最优化的事件流体验！🎉 
