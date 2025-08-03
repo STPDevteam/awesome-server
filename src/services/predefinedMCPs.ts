@@ -3822,10 +3822,8 @@ export const predefinedMCPs: MCPService[] = [
         "category": "Search Tools",
         "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-web-search.png", // Placeholder; update if available
         "githubUrl": "https://github.com/pskill9/web-search",
-        "authRequired": true, // Requires API key for Serper.dev
-        "authParams": {
-            SERPER_API_KEY: "SERPER_API_KEY",
-        },
+        "authRequired": false,
+        "authParams": {},
     },
     {
         "name": "puppeteer-mcp",
@@ -3882,48 +3880,48 @@ export const predefinedMCPs: MCPService[] = [
         },
     },
     {
-        "name": "dune-analytics-mcp",
-        "description": "Dune Analytics MCP Server - provides access to blockchain data queries and results from Dune Analytics for AI agents, including fetching latest results and executing queries (LOCAL BUILD)",
-        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
-        "args": ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
-        "env": {},
-        "connected": false,
-        "category": "Crypto Tools",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png",
-        "githubUrl": "https://github.com/kukapay/dune-analytics-mcp",
-        "authRequired": true,
-        "authParams": {
-            DUNE_API_KEY: "your_api_key_here"
+        name: 'dune-analytics-mcp',
+        description: 'Dune Analytics MCP Server - provides access to blockchain data queries and results from Dune Analytics for AI agents, including fetching latest results and executing queries',
+        command: 'npx',
+        args: ['-y', '@kukapay/dune-analytics-mcp'],
+        env: {},
+        connected: false,
+        category: 'Crypto Tools',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png',
+        githubUrl: 'https://·github.com/kukapay/dune-analytics-mcp',
+        authRequired: true,
+        authParams: {
+            DUNE_API_KEY: "DUNE_API_KEY"
         },
-        "predefinedTools": [
+        predefinedTools: [
             {
-                "name": "get_latest_result",
-                "description": "Retrieves the latest results of a specified Dune query",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query_id": {
-                            "type": "integer",
-                            "description": "The ID of the Dune query",
-                            "required": true
+                name: 'get_latest_result',
+                description: 'Retrieves the latest results of a specified Dune query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'integer',
+                            description: 'The ID of the Dune query',
+                            required: true
                         }
                     },
-                    "required": ["query_id"]
+                    required: ['query_id']
                 }
             },
             {
-                "name": "run_query",
-                "description": "Executes a Dune query and returns the results",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query_id": {
-                            "type": "integer",
-                            "description": "The ID of the Dune query to run",
-                            "required": true
+                name: 'run_query',
+                description: 'Executes a Dune query and returns the results',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'integer',
+                            description: 'The ID of the Dune query to run',
+                            required: true
                         }
                     },
-                    "required": ["query_id"]
+                    required: ['query_id']
                 }
             }
         ]
@@ -4043,51 +4041,56 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        "name": "crypto-projects-mcp",
-        "description": "Crypto Projects MCP Server - provides cryptocurrency project data from Mobula.io to AI agents, including raw JSON data and formatted Markdown summaries (LOCAL BUILD)",
-        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
-        "args": ["/home/ubuntu/mcp-tools/crypto-projects-mcp/main.py"],
-        "env": {},
-        "connected": false,
-        "category": "Crypto Tools",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-projects.png",
-        "githubUrl": "https://github.com/kukapay/crypto-projects-mcp",
-        "authRequired": false,
-        "authParams": {},
-        "predefinedTools": [
+        name: 'crypto-projects-mcp',
+        description: 'Crypto Projects MCP Server - provides cryptocurrency project data from Mobula.io to AI agents, including raw JSON data and formatted Markdown summaries using uv for package management',
+        command: '/home/ubuntu/.local/bin/uv',
+        args: [
+            'run',
+            '--directory',
+            '/home/ubuntu/mcp-tools/crypto-projects-mcp',
+            'main.py'
+        ],
+        env: {},
+        connected: false,
+        category: 'Crypto Tools',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-projects.png',
+        githubUrl: 'https://github.com/kukapay/crypto-projects-mcp',
+        authRequired: false,
+        authParams: {},
+        predefinedTools: [
             {
-                "name": "get_project_data",
-                "description": "Retrieves raw JSON data for a specified cryptocurrency project, useful for applications needing unprocessed data",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {
-                            "type": "string",
-                            "description": "Project name (e.g., avalanche)",
-                            "required": true
+                name: 'get_project_data',
+                description: 'Retrieves raw JSON data for a specified cryptocurrency project, useful for applications needing unprocessed data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        project_name: {
+                            type: 'string',
+                            description: 'Project name (e.g., avalanche)',
+                            required: true
                         }
                     },
-                    "required": ["project_name"]
+                    required: ['project_name']
                 }
             },
             {
-                "name": "format_project_data",
-                "description": "Fetches data using the get_project_data tool and formats it into a comprehensive Markdown document, designed for LLM applications to present structured, human-readable information about a cryptocurrency project",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "project_name": {
-                            "type": "string",
-                            "description": "Project name (e.g., avalanche)",
-                            "required": true
+                name: 'format_project_data',
+                description: 'Fetches data using the get_project_data tool and formats it into a comprehensive Markdown document, designed for LLM applications to present structured, human-readable information about a cryptocurrency project',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        project_name: {
+                            type: 'string',
+                            description: 'Project name (e.g., avalanche)',
+                            required: true
                         },
-                        "lang": {
-                            "type": "string",
-                            "description": "Language code (e.g., en_US)",
-                            "required": false
+                        lang: {
+                            type: 'string',
+                            description: 'Language code (e.g., en_US)',
+                            required: false
                         }
                     },
-                    "required": ["project_name"]
+                    required: ['project_name']
                 }
             }
         ]
