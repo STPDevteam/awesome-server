@@ -3793,6 +3793,1138 @@ export const predefinedMCPs: MCPService[] = [
         githubUrl: 'https://github.com/opensvm/dexscreener-mcp-server',
         authRequired: false,
         authParams: {}
+    },
+    // new mcp
+    {
+        "name": "coingecko-mcp",
+        "description": "CoinGecko cryptocurrency data and market analytics - provides prices, market data, trends, historical data, and crypto categories (REMOTE PUBLIC or LOCAL BUILD)",
+        "command": "npx",
+        "args": ["-y", "@coingecko/coingecko-mcp"],
+        "env": {
+            "COINGECKO_ENVIRONMENT": "Demo"
+        },
+        "connected": false,
+        "category": "Market Data",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-coingecko.png",
+        "githubUrl": "https://github.com/coingecko", // Note: No official GitHub for MCP server, this is general
+        "authRequired": true, // For public keyless mode; set to true for Pro
+        "authParams": {
+            COINGECKO_API_KEY: "COINGECKO_API_KEY",
+        },
+    },
+    {
+        "name": "web-search-mcp",
+        "description": "Web Search MCP Server - provides internet search capabilities using Serper.dev API for querying web results, snippets, and related searches (LOCAL BUILD)",
+        "command": "node",
+        "args": ["/path/to/web-search/build/index.js"], // Adjust to your local build path, e.g., /home/ubuntu/mcp-tools/web-search/dist/index.js
+        "env": {},
+        "connected": false,
+        "category": "Search Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-web-search.png", // Placeholder; update if available
+        "githubUrl": "https://github.com/pskill9/web-search",
+        "authRequired": false,
+        "authParams": {},
+    },
+    {
+        "name": "puppeteer-mcp",
+        "description": "Puppeteer MCP Server - provides browser automation capabilities through Puppeteer, allowing interaction with both new browser instances and existing Chrome windows for tasks like navigation, screenshots, and element interactions (LOCAL BUILD)",
+        "command": "node",
+        "args": ["/home/ubuntu/mcp-tools/puppeteer-mcp-server/dist/index.js"],
+        "env": {},
+        "connected": false,
+        "category": "Browser Automation",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-puppeteer.png",
+        "githubUrl": "https://github.com/merajmehrabi/puppeteer-mcp-server",
+        "authRequired": false,
+        "authParams": {},
+    },
+    {
+        "name": "web3-research-mcp",
+        "description": "Web3 Research MCP Server - provides blockchain data, transaction history, smart contract interactions, wallet analytics, and DeFi/NFT metrics using Alchemy and other Web3 APIs (LOCAL BUILD)",
+        "command": "npx",
+        "args": ["-y", "web3-research-mcp@latest"],
+        "env": {},
+        "connected": false,
+        "category": "Web3 Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-web3-research.png",
+        "githubUrl": "https://github.com/aaronjmars/web3-research-mcp",
+        "authRequired": false,
+        "authParams": {},
+    },
+    {
+        "name": "crypto-portfolio-mcp",
+        "description": "Crypto Portfolio MCP Server - provides tools for tracking and managing cryptocurrency portfolio allocations, including real-time prices from Binance, portfolio summaries, value history charts, and analysis for diversification and risk (LOCAL BUILD)",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
+        "args": ["/home/ubuntu/mcp-tools/crypto-portfolio-mcp/main.py"],
+        "env": {},
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-portfolio.png",
+        "githubUrl": "https://github.com/kukapay/crypto-portfolio-mcp",
+        "authRequired": false,
+        "authParams": {},
+    },
+    {
+        "name": "crypto-news-mcp",
+        "description": "Crypto News MCP Server - provides real-time cryptocurrency news headlines, keyword searches, and summarization prompts sourced from NewsData API for AI agents (LOCAL BUILD)",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
+        "args": ["/home/ubuntu/mcp-tools/crypto-news-mcp/main.py"],
+        "env": {},
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-news.png",
+        "githubUrl": "https://github.com/kukapay/crypto-news-mcp",
+        "authRequired": true,
+        "authParams": {
+            NEWS_API_KEY: "your_newsdata_api_key_here"
+        },
+    },
+    {
+        name: 'dune-analytics-mcp',
+        description: 'Dune Analytics MCP Server - provides access to blockchain data queries and results from Dune Analytics for AI agents, including fetching latest results and executing queries',
+        command: 'npx',
+        args: ['-y', '@kukapay/dune-analytics-mcp'],
+        env: {},
+        connected: false,
+        category: 'Crypto Tools',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png',
+        githubUrl: 'https://·github.com/kukapay/dune-analytics-mcp',
+        authRequired: true,
+        authParams: {
+            DUNE_API_KEY: "DUNE_API_KEY"
+        },
+        predefinedTools: [
+            {
+                name: 'get_latest_result',
+                description: 'Retrieves the latest results of a specified Dune query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'integer',
+                            description: 'The ID of the Dune query',
+                            required: true
+                        }
+                    },
+                    required: ['query_id']
+                }
+            },
+            {
+                name: 'run_query',
+                description: 'Executes a Dune query and returns the results',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'integer',
+                            description: 'The ID of the Dune query to run',
+                            required: true
+                        }
+                    },
+                    required: ['query_id']
+                }
+            }
+        ]
+    },
+    {
+        "name": "demcp-defillama-mcp",
+        "description": "DeFiLlama MCP Server (demcp variant) - provides DeFi protocol data, TVL analytics, chain data, token prices, and liquidity pool information using FastMCP framework for AI integration (LOCAL BUILD)",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
+        "args": ["/home/ubuntu/mcp-tools/demcp-defillama-mcp/defillama.py"],
+        "env": {},
+        "connected": false,
+        "category": "Market Data",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png",
+        "githubUrl": "https://github.com/demcp/demcp-defillama-mcp",
+        "authRequired": false,
+        "authParams": {},
+        "predefinedTools": [
+            {
+                "name": "get_protocols",
+                "description": "Retrieve information about top DeFi protocols",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_protocol_tvl",
+                "description": "Get TVL data for a specific protocol",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "protocol": {
+                            "type": "string",
+                            "description": "Protocol slug (e.g., aave, uniswap)",
+                            "required": true
+                        }
+                    },
+                    "required": ["protocol"]
+                }
+            },
+            {
+                "name": "get_chain_tvl",
+                "description": "Access historical TVL data for a specific blockchain",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "chain": {
+                            "type": "string",
+                            "description": "Blockchain name (e.g., ethereum, polygon)",
+                            "required": true
+                        }
+                    },
+                    "required": ["chain"]
+                }
+            },
+            {
+                "name": "get_token_prices",
+                "description": "Obtain current price information for specific tokens",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tokens": {
+                            "type": "array",
+                            "description": "Array of token addresses or symbols",
+                            "required": true
+                        },
+                        "chain": {
+                            "type": "string",
+                            "description": "Blockchain name",
+                            "required": false
+                        }
+                    },
+                    "required": ["tokens"]
+                }
+            },
+            {
+                "name": "get_pools",
+                "description": "List available liquidity pools",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "chain": {
+                            "type": "string",
+                            "description": "Filter by blockchain",
+                            "required": false
+                        },
+                        "protocol": {
+                            "type": "string",
+                            "description": "Filter by protocol",
+                            "required": false
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "get_pool_tvl",
+                "description": "Get detailed information about a specific liquidity pool",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pool_id": {
+                            "type": "string",
+                            "description": "ID of the liquidity pool",
+                            "required": true
+                        },
+                        "chain": {
+                            "type": "string",
+                            "description": "Blockchain name",
+                            "required": false
+                        }
+                    },
+                    "required": ["pool_id"]
+                }
+            }
+        ]
+    },
+    {
+        name: 'crypto-projects-mcp',
+        description: 'Crypto Projects MCP Server - provides cryptocurrency project data from Mobula.io to AI agents, including raw JSON data and formatted Markdown summaries using uv for package management',
+        command: '/home/ubuntu/.local/bin/uv',
+        args: [
+            'run',
+            '--directory',
+            '/home/ubuntu/mcp-tools/crypto-projects-mcp',
+            'main.py'
+        ],
+        env: {},
+        connected: false,
+        category: 'Crypto Tools',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-projects.png',
+        githubUrl: 'https://github.com/kukapay/crypto-projects-mcp',
+        authRequired: false,
+        authParams: {},
+        predefinedTools: [
+            {
+                name: 'get_project_data',
+                description: 'Retrieves raw JSON data for a specified cryptocurrency project, useful for applications needing unprocessed data',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        project_name: {
+                            type: 'string',
+                            description: 'Project name (e.g., avalanche)',
+                            required: true
+                        }
+                    },
+                    required: ['project_name']
+                }
+            },
+            {
+                name: 'format_project_data',
+                description: 'Fetches data using the get_project_data tool and formats it into a comprehensive Markdown document, designed for LLM applications to present structured, human-readable information about a cryptocurrency project',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        project_name: {
+                            type: 'string',
+                            description: 'Project name (e.g., avalanche)',
+                            required: true
+                        },
+                        lang: {
+                            type: 'string',
+                            description: 'Language code (e.g., en_US)',
+                            required: false
+                        }
+                    },
+                    required: ['project_name']
+                }
+            }
+        ]
+    },
+    {
+        "name": "crypto-whitepapers-mcp",
+        "description": "Crypto Whitepapers MCP Server - serves as a structured knowledge base of crypto whitepapers, enabling AI agents to access, analyze, and learn from them by searching, loading, and querying whitepaper content (LOCAL BUILD)",
+        "command": "/home/ubuntu/.local/bin/uv",
+        "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-whitepapers-mcp", "run", "crypto-whitepapers-mcp"],
+        "env": {},
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-whitepapers.png",
+        "githubUrl": "https://github.com/kukapay/crypto-whitepapers-mcp",
+        "authRequired": false,
+        "authParams": {},
+        "predefinedTools": [
+            {
+                "name": "list_available_projects",
+                "description": "Lists all projects in the knowledge base, derived from PDF filenames",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "search_whitepaper",
+                "description": "Searches for a project's whitepaper PDF using DuckDuckGo",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_name": {
+                            "type": "string",
+                            "description": "Project name (e.g., bitcoin)",
+                            "required": true
+                        }
+                    },
+                    "required": ["project_name"]
+                }
+            },
+            {
+                "name": "load_whitepaper",
+                "description": "Downloads a whitepaper PDF from a URL and loads it into the knowledge base",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "project_name": {
+                            "type": "string",
+                            "description": "Project name (e.g., bitcoin)",
+                            "required": true
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL of the whitepaper PDF",
+                            "required": true
+                        }
+                    },
+                    "required": ["project_name", "url"]
+                }
+            },
+            {
+                "name": "ask_whitepapers",
+                "description": "Searches the knowledge base for a query, optionally filtered by project",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The query to search in whitepapers",
+                            "required": true
+                        },
+                        "project_name": {
+                            "type": "string",
+                            "description": "Optional project name to filter",
+                            "required": false
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        ]
+    },
+    {
+        "name": "hyperliquid-mcp",
+        "description": "Hyperliquid MCP Server - provides onchain tools for AI applications to interact with Hyperliquid, including account states, order management, trading operations, and market data using Hyperliquid SDK (LOCAL BUILD)",
+        "command": "node",
+        "args": ["/home/ubuntu/mcp-tools/hyperliquid-mcp/dist/index.js"],
+        "env": {},
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-hyperliquid.png",
+        "githubUrl": "https://github.com/Impa-Ventures/hyperliquid-mcp",
+        "authRequired": true,
+        "authParams": {
+            PRIVATE_KEY: "This is your wallet private key"
+        },
+        "predefinedTools": [
+            {
+                "name": "get_spot_clearinghouse_state",
+                "description": "Get the clearinghouse state of a user on Hyperliquid",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "string",
+                            "description": "User address (defaults to wallet address)",
+                            "required": false
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "get_perp_clearinghouse_state",
+                "description": "Get the perpetual clearinghouse state of a user on Hyperliquid",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "string",
+                            "description": "User address (defaults to wallet address)",
+                            "required": false
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "get_order_status",
+                "description": "Get the status of a specific order",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "string",
+                            "description": "User address",
+                            "required": true
+                        },
+                        "oid": {
+                            "type": "string",
+                            "description": "Order ID (number or string)",
+                            "required": true
+                        }
+                    },
+                    "required": ["user", "oid"]
+                }
+            },
+            {
+                "name": "get_open_orders",
+                "description": "Get all open orders for a user",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "string",
+                            "description": "User address (defaults to wallet address)",
+                            "required": false
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "get_order_history",
+                "description": "Get order history for a user",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user": {
+                            "type": "string",
+                            "description": "User address (defaults to wallet address)",
+                            "required": false
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "get_all_mids",
+                "description": "Get mid prices for all coins on Hyperliquid",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_spot_meta",
+                "description": "Request spot trading metadata",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "get_candle_snapshot",
+                "description": "Get historical candlestick data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "description": "Coin symbol",
+                            "required": true
+                        },
+                        "interval": {
+                            "type": "string",
+                            "description": "Time interval",
+                            "required": true
+                        },
+                        "startTime": {
+                            "type": "number",
+                            "description": "Start timestamp",
+                            "required": true
+                        },
+                        "endTime": {
+                            "type": "number",
+                            "description": "End timestamp",
+                            "required": false
+                        }
+                    },
+                    "required": ["coin", "interval", "startTime"]
+                }
+            },
+            {
+                "name": "get_l2_book",
+                "description": "Get L2 order book data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "description": "Coin symbol",
+                            "required": true
+                        }
+                    },
+                    "required": ["coin"]
+                }
+            },
+            {
+                "name": "place_order",
+                "description": "Place a trading order",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "description": "Coin symbol",
+                            "required": true
+                        },
+                        "is_buy": {
+                            "type": "boolean",
+                            "description": "Buy or sell",
+                            "required": true
+                        },
+                        "sz": {
+                            "type": "number",
+                            "description": "Size",
+                            "required": true
+                        },
+                        "limit_px": {
+                            "type": "number",
+                            "description": "Limit price",
+                            "required": true
+                        },
+                        "tif": {
+                            "type": "string",
+                            "description": "Time in force (Gtc, Ioc, Alo)",
+                            "required": false
+                        },
+                        "reduce_only": {
+                            "type": "boolean",
+                            "description": "Reduce only",
+                            "required": false
+                        },
+                        "vaultAddress": {
+                            "type": "string",
+                            "description": "Vault address",
+                            "required": false
+                        },
+                        "is_limit": {
+                            "type": "boolean",
+                            "description": "Is limit order",
+                            "required": false
+                        },
+                        "trigger_px": {
+                            "type": "number",
+                            "description": "Trigger price",
+                            "required": false
+                        },
+                        "is_market": {
+                            "type": "boolean",
+                            "description": "Is market order",
+                            "required": false
+                        },
+                        "tpsl": {
+                            "type": "string",
+                            "description": "Take profit or stop loss (tp, sl)",
+                            "required": false
+                        }
+                    },
+                    "required": ["coin", "is_buy", "sz", "limit_px"]
+                }
+            },
+            {
+                "name": "cancel_order",
+                "description": "Cancel an existing order",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "coin": {
+                            "type": "string",
+                            "description": "Coin symbol",
+                            "required": true
+                        },
+                        "o": {
+                            "type": "number",
+                            "description": "Order ID",
+                            "required": true
+                        }
+                    },
+                    "required": ["coin", "o"]
+                }
+            },
+            {
+                "name": "transfer_spot_perp",
+                "description": "Transfer between spot and perpetual accounts",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "amount": {
+                            "type": "number",
+                            "description": "Amount to transfer",
+                            "required": true
+                        },
+                        "to_perp": {
+                            "type": "boolean",
+                            "description": "Transfer to perp (true) or spot (false)",
+                            "required": true
+                        }
+                    },
+                    "required": ["amount", "to_perp"]
+                }
+            }
+        ]
+    },
+    {
+        "name": "crypto-sentiment-mcp",
+        "description": "Crypto Sentiment MCP Server - provides cryptocurrency sentiment analysis to AI agents, leveraging Santiment's aggregated social media and news data to track market mood and detect emerging trends (LOCAL BUILD)",
+        "command": "/home/ubuntu/.local/bin/uv",
+        "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-sentiment-mcp", "run", "main.py"],
+        "env": {},
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-sentiment.png",
+        "githubUrl": "https://github.com/kukapay/crypto-sentiment-mcp",
+        "authRequired": true,
+        "authParams": {
+            SANTIMENT_API_KEY: "SANTIMENT_API_KEY"
+        },
+        "predefinedTools": [
+            {
+                "name": "get_sentiment_balance",
+                "description": "Get the average sentiment balance for an asset over a specified period",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "asset": {
+                            "type": "string",
+                            "description": "The cryptocurrency asset (e.g., bitcoin)",
+                            "required": true
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days for the period",
+                            "required": true,
+                            "default": 7
+                        }
+                    },
+                    "required": ["asset", "days"]
+                }
+            },
+            {
+                "name": "get_social_volume",
+                "description": "Fetch the total number of social media mentions for an asset",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "asset": {
+                            "type": "string",
+                            "description": "The cryptocurrency asset (e.g., bitcoin)",
+                            "required": true
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days for the period",
+                            "required": true,
+                            "default": 7
+                        }
+                    },
+                    "required": ["asset", "days"]
+                }
+            },
+            {
+                "name": "alert_social_shift",
+                "description": "Detect significant spikes or drops in social volume compared to the previous average",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "asset": {
+                            "type": "string",
+                            "description": "The cryptocurrency asset (e.g., bitcoin)",
+                            "required": true
+                        },
+                        "threshold": {
+                            "type": "number",
+                            "description": "Percentage threshold for shift detection",
+                            "required": true,
+                            "default": 50.0
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days for the period",
+                            "required": true,
+                            "default": 7
+                        }
+                    },
+                    "required": ["asset", "threshold", "days"]
+                }
+            },
+            {
+                "name": "get_trending_words",
+                "description": "Retrieve the top trending words in crypto discussions, ranked by score over a period",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days for the period",
+                            "required": false,
+                            "default": 7
+                        },
+                        "top_n": {
+                            "type": "integer",
+                            "description": "Number of top words to return",
+                            "required": false,
+                            "default": 5
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "get_social_dominance",
+                "description": "Measure the percentage of crypto media discussions dominated by an asset",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "asset": {
+                            "type": "string",
+                            "description": "The cryptocurrency asset (e.g., bitcoin)",
+                            "required": true
+                        },
+                        "days": {
+                            "type": "integer",
+                            "description": "Number of days for the period",
+                            "required": false,
+                            "default": 7
+                        }
+                    },
+                    "required": ["asset"]
+                }
+            }
+        ]
+    },
+    {
+        "name": "crypto-indicators-mcp",
+        "description": "Crypto Indicators MCP Server - provides a range of cryptocurrency technical analysis indicators and strategies, empowering AI trading agents to efficiently analyze market trends and develop robust quantitative strategies (LOCAL BUILD)",
+        "command": "node",
+        "args": ["/home/ubuntu/mcp-tools/crypto-indicators-mcp/index.js"],
+        "env": {
+            "EXCHANGE_NAME": "binance"
+        },
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-indicators.png",
+        "githubUrl": "https://github.com/kukapay/crypto-indicators-mcp",
+        "authRequired": false,
+        "authParams": {},
+        "predefinedTools": [
+            {
+                "name": "calculate_absolute_price_oscillator",
+                "description": "Measures the difference between two EMAs to identify trend strength (APO)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": true,
+                            "default": "1d"
+                        },
+                        "fast_period": {
+                            "type": "number",
+                            "description": "Fast EMA period",
+                            "required": true,
+                            "default": 12
+                        },
+                        "slow_period": {
+                            "type": "number",
+                            "description": "Slow EMA period",
+                            "required": true,
+                            "default": 26
+                        }
+                    },
+                    "required": ["symbol", "timeframe", "fast_period", "slow_period"]
+                }
+            },
+            {
+                "name": "calculate_aroon",
+                "description": "Identifies trend changes and strength using high/low price extremes (Aroon)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        },
+                        "period": {
+                            "type": "number",
+                            "description": "Lookback period",
+                            "required": false,
+                            "default": 14
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            },
+            {
+                "name": "calculate_balance_of_power",
+                "description": "Gauges buying vs. selling pressure based on price movement (BOP)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            },
+            {
+                "name": "calculate_commodity_channel_index",
+                "description": "Detects overbought/oversold conditions and trend reversals (CCI)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        },
+                        "period": {
+                            "type": "number",
+                            "description": "Period for calculation",
+                            "required": false,
+                            "default": 20
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            },
+            {
+                "name": "calculate_moving_average_convergence_divergence",
+                "description": "Tracks momentum and trend direction via EMA differences (MACD)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        },
+                        "fast_period": {
+                            "type": "number",
+                            "description": "Fast EMA period",
+                            "required": false,
+                            "default": 12
+                        },
+                        "slow_period": {
+                            "type": "number",
+                            "description": "Slow EMA period",
+                            "required": false,
+                            "default": 26
+                        },
+                        "signal_period": {
+                            "type": "number",
+                            "description": "Signal line period",
+                            "required": false,
+                            "default": 9
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            },
+            {
+                "name": "calculate_relative_strength_index",
+                "description": "Identifies overbought/oversold conditions via momentum (RSI)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        },
+                        "period": {
+                            "type": "number",
+                            "description": "RSI period",
+                            "required": false,
+                            "default": 14
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            },
+            {
+                "name": "calculate_stochastic_oscillator",
+                "description": "Compares closing prices to ranges for momentum signals (STOCH)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        },
+                        "k_period": {
+                            "type": "number",
+                            "description": "%K period",
+                            "required": false,
+                            "default": 14
+                        },
+                        "d_period": {
+                            "type": "number",
+                            "description": "%D period",
+                            "required": false,
+                            "default": 3
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            },
+            {
+                "name": "calculate_awesome_oscillator",
+                "description": "Measures market momentum using midline crossovers (AO)",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "symbol": {
+                            "type": "string",
+                            "description": "Cryptocurrency symbol (e.g., BTCUSDT)",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Timeframe (e.g., 1d)",
+                            "required": false,
+                            "default": "1d"
+                        },
+                        "fast_period": {
+                            "type": "number",
+                            "description": "Fast period",
+                            "required": false,
+                            "default": 5
+                        },
+                        "slow_period": {
+                            "type": "number",
+                            "description": "Slow period",
+                            "required": false,
+                            "default": 34
+                        }
+                    },
+                    "required": ["symbol"]
+                }
+            }
+        ]
+    },
+    {
+        "name": "polymarket-mcp",
+        "description": "PolyMarket MCP Server - provides access to prediction market data through the PolyMarket API, implementing a standardized interface for retrieving market information, prices, and historical data from prediction markets (LOCAL BUILD)",
+        "command": "/home/ubuntu/.local/bin/uv",
+        "args": ["--directory", "/home/ubuntu/mcp-tools/polymarket-mcp", "run", "src/polymarket_mcp/server.py"],
+        "env": {},
+        "connected": false,
+        "category": "Crypto Tools",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-polymarket.png",
+        "githubUrl": "https://github.com/berlinbra/polymarket-mcp",
+        "authRequired": true,
+        "authParams": {
+            "Key": "your_api_key_here",
+            "Funder": "poly market wallet address"
+        },        
+        "predefinedTools": [
+            {
+                "name": "get_market_info",
+                "description": "Get detailed information about a specific prediction market",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "market_id": {
+                            "type": "string",
+                            "description": "Market ID or slug",
+                            "required": true
+                        }
+                    },
+                    "required": ["market_id"]
+                }
+            },
+            {
+                "name": "list_markets",
+                "description": "List available prediction markets with filtering options",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "status": {
+                            "type": "string",
+                            "description": "Filter by market status",
+                            "enum": ["open", "closed", "resolved"],
+                            "required": true
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of markets to return",
+                            "default": 10,
+                            "minimum": 1,
+                            "maximum": 100,
+                            "required": true
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "description": "Number of markets to skip (for pagination)",
+                            "default": 0,
+                            "minimum": 0,
+                            "required": true
+                        }
+                    },
+                    "required": ["status", "limit", "offset"]
+                }
+            },
+            {
+                "name": "get_market_prices",
+                "description": "Get current prices and trading information",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "market_id": {
+                            "type": "string",
+                            "description": "Market ID or slug",
+                            "required": true
+                        }
+                    },
+                    "required": ["market_id"]
+                }
+            },
+            {
+                "name": "get_market_history",
+                "description": "Get historical price and volume data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "market_id": {
+                            "type": "string",
+                            "description": "Market ID or slug",
+                            "required": true
+                        },
+                        "timeframe": {
+                            "type": "string",
+                            "description": "Time period for historical data",
+                            "enum": ["1d", "7d", "30d", "all"],
+                            "default": "7d",
+                            "required": false
+                        }
+                    },
+                    "required": ["market_id"]
+                }
+            }
+        ]
     }
 
 ];
