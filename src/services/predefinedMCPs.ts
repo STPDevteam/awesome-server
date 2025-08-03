@@ -3856,7 +3856,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-portfolio-mcp",
         "description": "Crypto Portfolio MCP Server - provides tools for tracking and managing cryptocurrency portfolio allocations, including real-time prices from Binance, portfolio summaries, value history charts, and analysis for diversification and risk (LOCAL BUILD)",
-        "command": "python",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
         "args": ["/home/ubuntu/mcp-tools/crypto-portfolio-mcp/main.py"],
         "env": {},
         "connected": false,
@@ -3869,7 +3869,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-news-mcp",
         "description": "Crypto News MCP Server - provides real-time cryptocurrency news headlines, keyword searches, and summarization prompts sourced from NewsData API for AI agents (LOCAL BUILD)",
-        "command": "python",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
         "args": ["/home/ubuntu/mcp-tools/crypto-news-mcp/main.py"],
         "env": {},
         "connected": false,
@@ -3884,7 +3884,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "dune-analytics-mcp",
         "description": "Dune Analytics MCP Server - provides access to blockchain data queries and results from Dune Analytics for AI agents, including fetching latest results and executing queries (LOCAL BUILD)",
-        "command": "python",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
         "args": ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         "env": {},
         "connected": false,
@@ -3931,7 +3931,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "demcp-defillama-mcp",
         "description": "DeFiLlama MCP Server (demcp variant) - provides DeFi protocol data, TVL analytics, chain data, token prices, and liquidity pool information using FastMCP framework for AI integration (LOCAL BUILD)",
-        "command": "python",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
         "args": ["/home/ubuntu/mcp-tools/demcp-defillama-mcp/defillama.py"],
         "env": {},
         "connected": false,
@@ -4045,7 +4045,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-projects-mcp",
         "description": "Crypto Projects MCP Server - provides cryptocurrency project data from Mobula.io to AI agents, including raw JSON data and formatted Markdown summaries (LOCAL BUILD)",
-        "command": "python",
+        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
         "args": ["/home/ubuntu/mcp-tools/crypto-projects-mcp/main.py"],
         "env": {},
         "connected": false,
@@ -4095,7 +4095,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-whitepapers-mcp",
         "description": "Crypto Whitepapers MCP Server - serves as a structured knowledge base of crypto whitepapers, enabling AI agents to access, analyze, and learn from them by searching, loading, and querying whitepaper content (LOCAL BUILD)",
-        "command": "uv",
+        "command": "/home/ubuntu/.local/bin/uv",
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-whitepapers-mcp", "run", "crypto-whitepapers-mcp"],
         "env": {},
         "connected": false,
@@ -4439,7 +4439,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-sentiment-mcp",
         "description": "Crypto Sentiment MCP Server - provides cryptocurrency sentiment analysis to AI agents, leveraging Santiment's aggregated social media and news data to track market mood and detect emerging trends (LOCAL BUILD)",
-        "command": "uv",
+        "command": "/home/ubuntu/.local/bin/uv",
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-sentiment-mcp", "run", "main.py"],
         "env": {},
         "connected": false,
@@ -4825,7 +4825,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "polymarket-mcp",
         "description": "PolyMarket MCP Server - provides access to prediction market data through the PolyMarket API, implementing a standardized interface for retrieving market information, prices, and historical data from prediction markets (LOCAL BUILD)",
-        "command": "uv",
+        "command": "/home/ubuntu/.local/bin/uv",
         "args": ["--directory", "/home/ubuntu/mcp-tools/polymarket-mcp", "run", "src/polymarket_mcp/server.py"],
         "env": {},
         "connected": false,
