@@ -205,21 +205,22 @@ export class EnhancedIntelligentTaskEngine {
           : `Execute ${actualToolName} on ${currentStep.mcp}`;
         const reasoning = `Workflow step ${currentStep.step}`;
 
-        // 🔧 发送步骤开始事件 - 使用实际推断的工具名称，与Agent引擎一致
+        // 🔧 发送步骤开始事件 - 对齐传统任务执行的事件名称
         const stepId = `workflow_step_${currentStep.step}_${Date.now()}`;
         yield {
-          event: 'step_executing',
+          event: 'step_start',
           data: {
             step: currentStep.step,
-            tool: actualToolName,
-            // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
+            mcpName: currentStep.mcp,
+            actionName: actualToolName,
+            input: typeof processedInput === 'object' ? JSON.stringify(processedInput) : processedInput,
+            // 🔧 保留智能引擎的增强字段
             agentName: 'WorkflowEngine',
             message: `Executing workflow step ${currentStep.step}: ${currentStep.mcp}.${actualToolName}`,
             toolDetails: {
               toolType: toolType,
               toolName: actualToolName,
               mcpName: mcpName,
-              // 🔧 使用预处理的参数
               args: processedInput,
               expectedOutput: expectedOutput,
               reasoning: reasoning,
@@ -302,16 +303,17 @@ export class EnhancedIntelligentTaskEngine {
               actualToolName
             );
 
-                      for await (const chunk of formatGenerator) {
-            yield {
-              event: 'final_result',
-              data: {
-                step: currentStep.step,
-                chunk,
-                agentName: 'WorkflowEngine'
-              }
-            };
-          }
+            for await (const chunk of formatGenerator) {
+              yield {
+                event: currentStep.step === state.totalSteps ? 'final_result_chunk' : 'step_result_chunk',
+                data: {
+                  chunk,
+                  // 🔧 保留智能引擎的增强字段
+                  step: currentStep.step,
+                  agentName: 'WorkflowEngine'
+                }
+              };
+            }
           }
 
           // 🔧 生成完整的格式化结果用于存储和最终事件
@@ -321,9 +323,9 @@ export class EnhancedIntelligentTaskEngine {
             actualToolName
           );
 
-          // 🔧 发送格式化结果事件 - 与Agent引擎完全一致的结构
+          // 🔧 保留智能引擎的格式化结果事件（增强功能）
           yield {
-            event: 'final_result',
+            event: 'step_formatted_result',
             data: {
               step: currentStep.step,
               success: true,
@@ -362,19 +364,17 @@ export class EnhancedIntelligentTaskEngine {
           currentStep.status = 'completed';
           state.completedSteps++;
           
-          // 🔧 发送step_complete事件 - 统一字段结构，与Agent引擎一致
+          // 🔧 发送step_complete事件 - 对齐传统任务执行格式
           yield {
             event: 'step_complete',
             data: {
               step: currentStep.step,
               success: true,
-              result: executionResult.result, // 原始结果用于上下文传递
-              formattedResult: formattedResult || executionResult.result, // 格式化结果供前端显示
-              rawResult: executionResult.result,
-              // 🔧 统一字段：添加agentName和message，与Agent引擎一致
+              result: formattedResult || executionResult.result, // 格式化结果供前端显示
+              rawResult: executionResult.result, // 保留原始MCP结果供调试
+              // 🔧 保留智能引擎的增强字段
               agentName: 'WorkflowEngine',
               message: `WorkflowEngine completed step ${currentStep.step} successfully`,
-              // 🔧 保留工作流特有的进度信息
               progress: {
                 completed: state.completedSteps,
                 total: state.totalSteps,
@@ -400,16 +400,16 @@ export class EnhancedIntelligentTaskEngine {
             };
           }
 
-          // 🔧 发送step_error事件 - 统一字段结构，与Agent引擎一致
+          // 🔧 发送step_error事件 - 对齐传统任务执行格式
           yield {
             event: 'step_error',
             data: {
               step: currentStep.step,
-              success: false,
               error: executionResult.error,
+              // 🔧 保留智能引擎的增强字段
+              success: false,
               mcpName: currentStep.mcp,
               action: currentStep.action,
-              // 🔧 统一字段：添加agentName和message，与Agent引擎一致
               agentName: 'WorkflowEngine',
               message: `WorkflowEngine failed at step ${currentStep.step}`,
               attempts: currentStep.attempts || 1
@@ -523,17 +523,39 @@ export class EnhancedIntelligentTaskEngine {
       // 🔧 生成最终结果
       const finalResult = this.generateWorkflowFinalResult(state);
       
+      // 🔧 对齐传统任务执行：发送final_result事件
       yield {
         event: 'final_result',
         data: {
           finalResult,
-          success: state.completedSteps > 0,
+          message: 'Final execution result available'
+        }
+      };
+
+      // 🔧 对齐传统任务执行：发送workflow_complete事件
+      const overallSuccess = state.completedSteps > 0;
+      yield {
+        event: 'workflow_complete',
+        data: {
+          success: overallSuccess,
+          message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors',
+          finalResult: finalResult,
+          // 🔧 保留智能引擎的增强字段
           executionSummary: {
             totalSteps: state.totalSteps,
             completedSteps: state.completedSteps,
             failedSteps: state.failedSteps,
             successRate: Math.round((state.completedSteps / state.totalSteps) * 100)
           }
+        }
+      };
+
+      // 🔧 对齐传统任务执行：发送task_complete事件
+      yield {
+        event: 'task_complete',
+        data: {
+          taskId,
+          success: overallSuccess
         }
       };
 
@@ -546,7 +568,7 @@ export class EnhancedIntelligentTaskEngine {
       logger.error(`❌ Enhanced workflow execution failed:`, error);
       
       yield {
-        event: 'task_execution_error',
+        event: 'error',
         data: {
           message: 'Enhanced workflow execution failed',
           details: error instanceof Error ? error.message : String(error)
