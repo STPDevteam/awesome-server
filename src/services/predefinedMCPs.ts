@@ -3841,7 +3841,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "web3-research-mcp",
         "description": "Web3 Research MCP Server - provides blockchain data, transaction history, smart contract interactions, wallet analytics, and DeFi/NFT metrics using Alchemy and other Web3 APIs (LOCAL BUILD)",
-        "command": "npx",
+        "command": "/home/ubuntu/.nvm/versions/node/v20.19.3/bin/npx",
         "args": ["-y", "web3-research-mcp@latest"],
         "env": {},
         "connected": false,
@@ -4444,7 +4444,9 @@ export const predefinedMCPs: MCPService[] = [
         "description": "Crypto Sentiment MCP Server - provides cryptocurrency sentiment analysis to AI agents, leveraging Santiment's aggregated social media and news data to track market mood and detect emerging trends (LOCAL BUILD)",
         "command": "/home/ubuntu/.local/bin/uv",
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-sentiment-mcp", "run", "main.py"],
-        "env": {},
+        "env": {
+            SANTIMENT_API_KEY: process.env.SANTIMENT_API_KEY || ''
+        },
         "connected": false,
         "category": "Crypto Tools",
         "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-sentiment.png",
