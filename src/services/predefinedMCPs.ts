@@ -3816,7 +3816,7 @@ export const predefinedMCPs: MCPService[] = [
         "name": "web-search-mcp",
         "description": "Web Search MCP Server - provides internet search capabilities using Serper.dev API for querying web results, snippets, and related searches (LOCAL BUILD)",
         "command": "node",
-        "args": ["/path/to/web-search/build/index.js"], // Adjust to your local build path, e.g., /home/ubuntu/mcp-tools/web-search/dist/index.js
+        "args": ["/home/ubuntu/mcp-tools/web-search/build/index.js"], // Adjust to your local build path, e.g., /home/ubuntu/mcp-tools/web-search/dist/index.js
         "env": {},
         "connected": false,
         "category": "Search Tools",
