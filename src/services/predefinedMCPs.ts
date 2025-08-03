@@ -3930,7 +3930,7 @@ export const predefinedMCPs: MCPService[] = [
         "name": "demcp-defillama-mcp",
         "description": "DeFiLlama MCP Server (demcp variant) - provides DeFi protocol data, TVL analytics, chain data, token prices, and liquidity pool information using FastMCP framework for AI integration (LOCAL BUILD)",
         "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
-        "args": ["/home/ubuntu/mcp-tools/demcp-defillama-mcp/defillama.py"],
+        "args": ["/home/ubuntu/mcp-tools/defillama-mcp/defillama.py"],
         "env": {},
         "connected": false,
         "category": "Market Data",
