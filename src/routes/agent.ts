@@ -264,9 +264,27 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 
     const result = await agentService.getAgents(query);
 
+    // Count category information from current query results
+    const categoryMap = new Map<string, number>();
+    result.agents.forEach(agent => {
+      if (agent.categories && Array.isArray(agent.categories)) {
+        agent.categories.forEach(category => {
+          categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+        });
+      }
+    });
+
+    // Convert to array and sort by count in descending order
+    const categories = Array.from(categoryMap.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+
     res.json({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        categories
+      },
       pagination: {
         offset,
         limit,
