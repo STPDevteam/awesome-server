@@ -550,101 +550,6 @@ export class AgentIntelligentEngine {
       return false;
     }
   }
-  /**
-   * 🔧 新增：分析并分解任务
-   */
-  private async analyzeAndBreakdownTask(query: string): Promise<TaskComponent[]> {
-    try {
-      const analysisPrompt = `Analyze the user's task and break it down into logical components.
-
-**User Task**: "${query}"
-
-**Component Types**:
-1. **data_collection** - Gathering information or data
-2. **data_processing** - Analyzing, transforming, or combining data  
-3. **action_execution** - Performing actions or operations
-4. **analysis** - Drawing insights or conclusions
-5. **output** - Creating final deliverables or results
-
-**Breakdown Principles**:
-- Identify distinct logical steps needed to complete the task
-- Consider what data/information is needed and how to obtain it
-- Determine if any processing or analysis is required
-- Identify if actions need to be performed
-- Consider dependencies between components
-
-**Output Format** (JSON array):
-[
-  {
-    "id": "unique_id",
-    "type": "component_type",
-    "description": "What this component does",
-    "dependencies": ["prerequisite_component_ids"],
-    "requiredData": ["data_types_needed"],
-    "outputData": ["data_types_produced"]
-  }
-]
-
-Analyze and break down the task:`;
-
-      const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
-      
-      let breakdown: TaskComponent[];
-      try {
-        const responseText = response.content.toString().trim();
-        let cleanedJson = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-        const jsonMatch = cleanedJson.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          cleanedJson = jsonMatch[0];
-        }
-        
-        const parsedBreakdown = JSON.parse(cleanedJson);
-        breakdown = parsedBreakdown.map((component: any, index: number) => ({
-          id: component.id || `component_${index + 1}`,
-          type: component.type || 'analysis',
-          description: component.description || `Task component ${index + 1}`,
-          isCompleted: false,
-          completedStepNumbers: [],
-          dependencies: component.dependencies || [],
-          requiredData: component.requiredData || [],
-          outputData: component.outputData || []
-        }));
-        
-        logger.info(`📋 Task breakdown completed: ${breakdown.length} components identified`);
-        breakdown.forEach((comp, i) => {
-          logger.info(`   ${i + 1}. ${comp.description} (${comp.type})`);
-        });
-        
-        return breakdown;
-      } catch (parseError) {
-        logger.warn(`Task breakdown parsing failed: ${parseError}`);
-        // 降级处理：创建简单的单组件任务
-        return [{
-          id: 'main_task',
-          type: 'analysis',
-          description: query,
-          isCompleted: false,
-          completedStepNumbers: [],
-          dependencies: [],
-          requiredData: [],
-          outputData: []
-        }];
-      }
-    } catch (error) {
-      logger.error(`Task breakdown analysis failed:`, error);
-      // 最基础的降级处理
-      return [{
-        id: 'fallback_task',
-        type: 'analysis',
-        description: 'Complete user request',
-        isCompleted: false,
-        completedStepNumbers: [],
-        dependencies: [],
-        requiredData: [],
-        outputData: []
-      }];
-    }
-  }
 
   /**
    * 准备Agent任务 - 应用Agent的MCP工作流配置
@@ -815,7 +720,19 @@ Analyze and break down the task:`;
       let result: any;
       let actualExecution: any = undefined;
 
-      if (state.currentPlan.toolType === 'mcp') {
+      if (state.currentPlan.tool === 'task_complete') {
+        // 🎯 处理任务完成指令
+        result = `Task completed successfully by ${this.agent.name}. All required information has been collected and the user's request has been satisfied.`;
+        actualExecution = {
+          toolName: 'task_complete',
+          args: state.currentPlan.args
+        };
+        
+        // 标记任务为完成
+        state.isComplete = true;
+        logger.info(`🎯 Agent ${this.agent.name} marked task as complete via task_complete tool`);
+        
+      } else if (state.currentPlan.toolType === 'mcp') {
         // 🔧 执行MCP工具
         const mcpResult = await this.executeAgentMCPTool(state.currentPlan, state);
         result = mcpResult.result;
@@ -1219,107 +1136,90 @@ What is the most logical next step for ${this.agent.name} to take?`;
     // 🔧 失败分析
     const recentFailures = state.failureHistory.filter(f => f.attemptCount > 0);
     
-    return `You are **${this.agent.name}**, an intelligent AI assistant with specialized capabilities.
+    return `You are **${this.agent.name}**, a specialized AI agent executing an intelligent workflow.
 
-**AGENT IDENTITY**:
-- Name: ${this.agent.name}
-- Description: ${this.agent.description || 'Specialized AI Assistant'}
-- Role: Intelligent workflow executor with access to advanced tools
+## 🎯 Agent Profile
+**Name**: ${this.agent.name}
+**Expertise**: ${this.agent.description || 'Specialized AI Assistant'}
+**Mission**: ${state.originalQuery}
 
-**USER TASK**: "${state.originalQuery}"
+## 📊 Current Status
+**Progress**: ${successfulSteps.length}/${totalSteps} steps completed
+**Data Collected**: ${hasDataInStore ? 'Available' : 'None'}
+**Last Action**: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? '✅ Success' : '❌ Failed'})` : 'Starting task'}
 
-**🔧 SIMPLIFIED EXECUTION ANALYSIS**:
-
-## Execution Progress
-- **Total Steps**: ${totalSteps}
-- **Successful Steps**: ${successfulSteps.length}
-- **Data Available**: ${hasDataInStore ? 'Yes' : 'No'}
-- **Last Step**: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? 'Success' : 'Failed'})` : 'None'}
-
-## Execution History & Data Analysis
-- Steps completed: ${totalSteps}
-- Available data: ${hasData ? Object.keys(state.dataStore).filter(k => k !== 'lastResult').join(', ') : 'None'}
-- Last step: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? 'Success' : 'Failed'})` : 'None'}
-${lastStepResult?.result ? `- Last result data available: Yes (${typeof lastStepResult.result})` : ''}
-
-## Failure Analysis & Strategy
-${recentFailures.length > 0 ? 
-  recentFailures.map(f => 
-    `- ${f.tool}: Failed ${f.attemptCount} time(s), Strategy: ${f.suggestedStrategy}`
-  ).join('\n') 
-  : '- No recent failures'}
-
-**AVAILABLE MCP SERVICES FOR ${this.agent.name.toUpperCase()}**:
-${availableMCPs.map(mcp => {
-  const actualTools = mcpToolsInfo.get(mcp.mcpName);
-  if (actualTools && actualTools.length > 0) {
-    return `- MCP Service: ${mcp.mcpName}
-  Description: ${mcp.description || 'General purpose tool'}
-  Available Tools: ${actualTools.map(tool => tool.name).join(', ')}
-  Tool Details:
-${actualTools.map(tool => `    * ${tool.name}: ${tool.description || 'No description'}`).join('\n')}`;
-  } else {
-    return `- MCP Service: ${mcp.mcpName}
-  Description: ${mcp.description || 'General purpose tool'}
-  Status: Not connected or no tools available`;
-  }
-}).join('\n\n')}
-
-**🔧 ENHANCED PLANNING PRINCIPLES**:
-
-### 1. **Avoid Redundant Work**
-- ✅ DO: Use existing data from completed components
-- ❌ DON'T: Re-collect data that was already successfully obtained
-- 🚨 **NEVER REPEAT**: Don't use the same tool if last step was successful
-- 🎯 **SUCCESS = MOVE ON**: If previous step succeeded, proceed to next phase
-- 🔍 CHECK: What data is already available in dataStore?
-
-### 2. **Handle Failures Intelligently**
-${recentFailures.length > 0 ? `
-Recent failure analysis:
-${recentFailures.map(f => `- ${f.tool}: ${f.suggestedStrategy === 'alternative' ? 'Try different approach' : f.suggestedStrategy === 'retry' ? 'Retry with modifications' : 'Skip this step'}`).join('\n')}
+${lastStepResult?.success ? `
+## ✅ Last Success
+**Tool**: ${lastStepResult.plan.tool}
+**Result**: Data successfully obtained
+**Next**: Build on this result (DO NOT repeat same tool)
+` : lastStepResult ? `
+## ⚠️ Last Attempt Failed
+**Tool**: ${lastStepResult.plan.tool}
+**Error**: ${lastStepResult.error}
+**Strategy**: Try alternative approach
 ` : ''}
 
-### 3. **Focus on Next Step**
-**Next logical step should**: ${lastStepResult && lastStepResult.success ? 'Build on successful results' : 'Address current task needs'}
+${recentFailures.length > 0 ? `## 🔧 Failure Recovery
+${recentFailures.map(f => `- ${f.tool}: ${f.suggestedStrategy === 'alternative' ? 'Use different tool' : f.suggestedStrategy === 'skip' ? 'Skip this step' : 'Retry with changes'}`).join('\n')}
+` : ''}
 
-### 4. **Smart Progression Logic**
-Ask yourself:
-- "What component needs to be completed next?"
-- "Do I have all required data for the next step?"
-- "Should I retry a failed step or try an alternative approach?"
-- "Can I skip a problematic step and still achieve the user's goal?"
+## 🛠️ Available Tools
+**task_complete**: Use when user's request is fully satisfied (special completion tool)
+${availableMCPs.map(mcp => {
+  const tools = mcpToolsInfo.get(mcp.mcpName);
+  if (tools && tools.length > 0) {
+    return `**${mcp.mcpName}**: ${tools.map(t => t.name).join(', ')}`;
+  }
+  return `**${mcp.mcpName}**: Connection needed`;
+}).join('\n')}
 
-**DECISION LOGIC as ${this.agent.name}**:
+## 🧠 Intelligent Decision Framework
 
-Based on the task breakdown and current progress, determine the most logical next step:
+**🎯 FIRST: Task Completion Check**
+- Has the user's request been fully satisfied with current data?
+- Can you provide a complete answer based on what's already collected?
+- If YES → Use "task_complete" as your tool to finalize
 
-🚨 **FIRST CHECK**: If last step was successful with same tool, choose different tool or complete task
-1. **If data collection is incomplete**: Collect missing data (but NOT with same tool as successful last step)
-2. **If data is available but processing is incomplete**: Process/analyze the data  
-3. **If processing is done but action is incomplete**: Execute the final action
-4. **If a step failed**: Apply the suggested failure strategy
-5. **If all components are complete OR last step succeeded**: Verify completion or conclude
+**Step 1: Assess Current State** (if task not complete)
+- What specific information or action is still needed?
+- What gaps remain in the current data?
 
-**OUTPUT FORMAT** (JSON only):
+**Step 2: Choose Optimal Tool** (if task not complete)
+- Select the most direct tool for the remaining need
+- Consider alternative tools if primary tool failed
+
+**Step 3: Plan Execution** (if task not complete)
+- Use existing data from dataStore when applicable
+- Ensure parameters match the tool's requirements
+- Focus on completing the user's core request
+
+## 📋 Decision Rules
+1. **Task Complete → Finalize**: If user's request is satisfied, use "task_complete"
+2. **Success → Progress**: If last step succeeded, assess if more is needed
+3. **Failure → Alternative**: If tool failed, choose different approach  
+4. **Data Available → Analysis**: If data exists but incomplete, collect more
+5. **Missing Data → Collection**: If data needed, collect efficiently
+
+## 🎯 Output Format (JSON only)
 {
-  "tool": "specific-function-name-like-getUserTweets-or-sendTweet",
-  "toolType": "mcp" or "llm",
-  "mcpName": "mcp-service-name-from-list-above",
+  "tool": "exact-function-name-or-task_complete",
+  "toolType": "mcp" or "llm" or "completion",
+  "mcpName": "service-name-from-above-or-null",
   "args": {
-    // Parameters specific to this tool/action
-    // Use available data from dataStore when applicable
+    // Specific parameters for this tool (empty {} for task_complete)
   },
-  "expectedOutput": "What this step should accomplish",
-  "reasoning": "Why ${this.agent.name} chose this specific step (reference task breakdown and avoid redundant work)",
-  "agentContext": "How this relates to completing the remaining task components"
+  "expectedOutput": "What this accomplishes",
+  "reasoning": "Why this is the optimal next step",
+  "agentContext": "How this advances the mission"
 }
 
-**CRITICAL INSTRUCTIONS**:
-❌ WRONG: {"tool": "twitter-client-mcp", "mcpName": "getUserTweets"}
-✅ CORRECT: {"tool": "getUserTweets", "mcpName": "twitter-client-mcp"}
+**🔑 Critical Format Rules**:
+- tool = function name (getUserTweets, not twitter-client-mcp)
+- mcpName = service name (twitter-client-mcp, not getUserTweets)
+- For task completion: {"tool": "task_complete", "toolType": "completion", "mcpName": null}
 
-What is the most logical next step for ${this.agent.name} to take?`;
+As ${this.agent.name}, what is your next strategic move?`;
   }
 
   /**
@@ -2346,25 +2246,33 @@ This is a large dataset. Apply smart filtering:
    * 生成大数据的智能摘要
    */
   private async generateDataSummary(step: AgentExecutionStep, dataString: string): Promise<string> {
-    const summaryPrompt = `You are a data analyst. Create a concise summary of this execution step result.
+    const summaryPrompt = `You are analyzing step results for an AI agent's task execution. Create a focused data summary.
 
-**Step Information:**
-- Step Number: ${step.stepNumber}
-- Tool Used: ${step.plan.tool}
-- Tool Type: ${step.plan.toolType}
+**Agent Context:**
+- Agent: ${this.agent.name}
+- Step #${step.stepNumber}: ${step.plan.tool} (${step.plan.toolType})
 - Purpose: ${step.plan.reasoning}
+- Data Size: ${Math.round(dataString.length / 1000)}K characters
 
-**Data to Summarize:**
-${dataString.substring(0, 3000)}${dataString.length > 3000 ? '... [truncated]' : ''}
+**Raw Data:**
+${dataString.substring(0, 3000)}${dataString.length > 3000 ? '... [content truncated for analysis]' : ''}
 
-**Summary Requirements:**
-1. Extract the most important information and key data points
-2. Identify numerical values, names, dates, and critical metrics
-3. Summarize trends, patterns, or significant findings
-4. Keep the summary under 300 words
-5. Use clear markdown formatting
+**Analysis Requirements:**
+Create a structured summary that extracts:
 
-Provide a structured summary:`;
+1. **Key Data Points**: Most important values, metrics, counts, amounts
+2. **Critical Information**: Names, IDs, statuses, dates, addresses
+3. **Insights**: Patterns, trends, anomalies, significant findings  
+4. **Context**: What this data tells us about the task objective
+
+**Format Guidelines:**
+- Use bullet points for key findings
+- Include specific numbers and percentages when available
+- Highlight unexpected or notable results
+- Keep total length under 250 words
+- Focus on actionable information
+
+Provide your data analysis summary:`;
 
     try {
       const response = await this.llm.invoke([new SystemMessage(summaryPrompt)]);
@@ -2469,37 +2377,48 @@ ${preview}${dataString.length > 200 ? '...' : ''}
     try {
       // 🔧 新增：为每个步骤生成智能摘要
       const stepSummaries = await this.generateStepSummaries(state);
-      
+
       // 构建包含步骤摘要的增强总结提示词
-      const summaryPrompt = `You are ${this.agent.name}, providing a comprehensive task execution report.
+      const summaryPrompt = `You are ${this.agent.name}, a specialized AI agent providing a professional analysis report.
 
-## 📋 Task Overview
-**Agent**: ${this.agent.name}
-**Description**: ${this.agent.description}
-**Original Query**: ${state.originalQuery}
-**Execution Status**: ${state.executionHistory.filter(s => s.success).length}/${state.executionHistory.length} steps successful
+## 🔍 Task Context
+**Your Role**: ${this.agent.name}
+**Expertise**: ${this.agent.description}
+**User's Request**: "${state.originalQuery}"
+**Execution Result**: ${state.executionHistory.filter(s => s.success).length}/${state.executionHistory.length} steps completed successfully
 
-## 🔍 Step-by-Step Execution Report
+## 📊 Detailed Step-by-Step Analysis
 
 ${stepSummaries.map(summary => summary.content).join('\n\n')}
 
-## 📊 Execution Summary
-**Total Steps**: ${state.executionHistory.length}
-**Successful Steps**: ${state.executionHistory.filter(s => s.success).length}
-**Failed Steps**: ${state.executionHistory.filter(s => !s.success).length}
+## 🎯 Your Professional Analysis Task
 
-## 🎯 Final Report Requirements
-As ${this.agent.name}, provide a comprehensive final report that includes:
+Based on the detailed execution data above, provide a professional analysis report as ${this.agent.name}:
 
-1. **Executive Summary**: Brief overview of what was accomplished
-2. **Key Findings**: Most important data/insights discovered
-3. **Step Results**: Summary of each step's contribution
-4. **Conclusions**: Professional conclusions based on collected data
-5. **Recommendations**: If applicable, suggest next steps or insights
+### 📋 Executive Summary
+Provide a concise overview of what was accomplished and the key outcomes.
 
-Format your response in clear, professional sections using markdown. Maintain your expertise as ${this.agent.name}.
+### 🔍 Key Insights & Findings  
+Extract and highlight the most important discoveries, patterns, or insights from all collected data. Focus on actionable intelligence.
 
-Generate the final comprehensive report:`;
+### 📈 Data Analysis
+Analyze trends, relationships, and significant metrics found in the execution results.
+
+### 💡 Professional Conclusions
+Draw expert conclusions based on your specialized knowledge as ${this.agent.name}.
+
+### 🎯 Recommendations (if applicable)
+Suggest next steps, opportunities, or actions based on your analysis.
+
+**Output Requirements:**
+- Write in your professional capacity as ${this.agent.name}
+- Focus on insights and analysis, not step repetition
+- Use clear markdown formatting
+- Be concise but comprehensive
+- Highlight actionable information
+- Maintain your expertise tone
+
+Generate your professional analysis report:`;
 
       // 使用流式LLM生成增强总结
       const stream = await this.llm.stream([new SystemMessage(summaryPrompt)]);
