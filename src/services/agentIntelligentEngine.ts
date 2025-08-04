@@ -2373,52 +2373,107 @@ ${preview}${dataString.length > 200 ? '...' : ''}
 **Note**: Full data available but summarized for readability.`;
   }
 
+  /**
+   * 🔧 新增：提取核心数据用于直接回答用户问题
+   */
+  private extractCoreDataForAnswer(state: AgentWorkflowState): string {
+    const successfulSteps = state.executionHistory.filter(step => step.success && step.result);
+    
+    if (successfulSteps.length === 0) {
+      return "No data was successfully collected.";
+    }
+
+    return successfulSteps.map((step, index) => {
+      // 提取实际数据内容
+      const dataContent = this.extractDataContent(step.result);
+      const dataSize = JSON.stringify(step.result).length;
+      
+      return `**Data Source ${index + 1}** (from ${step.plan.tool}):
+${dataContent}`;
+    }).join('\n\n');
+  }
+
+  /**
+   * 提取数据的核心内容用于回答问题
+   */
+  private extractDataContent(result: any): string {
+    try {
+      // 如果是字符串，直接返回（但限制长度）
+      if (typeof result === 'string') {
+        return result.length > 2000 ? result.substring(0, 2000) + '...' : result;
+      }
+
+      // 如果是对象，智能提取关键信息
+      if (typeof result === 'object' && result !== null) {
+        // 检查MCP标准格式
+        if (result.content && Array.isArray(result.content)) {
+          const textContent = result.content
+            .filter((item: any) => item.type === 'text' && item.text)
+            .map((item: any) => item.text)
+            .join('\n');
+          
+          if (textContent) {
+            return textContent.length > 2000 ? textContent.substring(0, 2000) + '...' : textContent;
+          }
+        }
+
+        // 尝试提取核心字段
+        const coreFields = ['data', 'result', 'results', 'items', 'content', 'value', 'price', 'amount'];
+        for (const field of coreFields) {
+          if (result[field] !== undefined) {
+            const fieldData = JSON.stringify(result[field], null, 2);
+            return fieldData.length > 2000 ? fieldData.substring(0, 2000) + '...' : fieldData;
+          }
+        }
+
+        // 如果没有找到核心字段，返回整个对象的格式化版本
+        const fullData = JSON.stringify(result, null, 2);
+        return fullData.length > 2000 ? fullData.substring(0, 2000) + '...' : fullData;
+      }
+
+      // 其他类型直接转换为字符串
+      return String(result);
+
+    } catch (error) {
+      return `[Data extraction error: ${error}]`;
+    }
+  }
+
   private async *generateAgentFinalResultStream(state: AgentWorkflowState): AsyncGenerator<string, string, unknown> {
     try {
-      // 🔧 新增：为每个步骤生成智能摘要
-      const stepSummaries = await this.generateStepSummaries(state);
+            // 🔧 直接提取核心数据用于回答用户问题
+      const coreDataSummary = this.extractCoreDataForAnswer(state);
+      
+      // 构建直接回答用户问题的提示词
+      const summaryPrompt = `You are ${this.agent.name}, and you need to directly answer the user's question based on all the data you've collected.
 
-      // 构建包含步骤摘要的增强总结提示词
-      const summaryPrompt = `You are ${this.agent.name}, a specialized AI agent providing a professional analysis report.
+## 🎯 User's Question
+"${state.originalQuery}"
 
-## 🔍 Task Context
-**Your Role**: ${this.agent.name}
-**Expertise**: ${this.agent.description}
-**User's Request**: "${state.originalQuery}"
-**Execution Result**: ${state.executionHistory.filter(s => s.success).length}/${state.executionHistory.length} steps completed successfully
+## 📊 All Collected Data
+${coreDataSummary}
 
-## 📊 Detailed Step-by-Step Analysis
+## 🎯 Your Task: Answer the User's Question
 
-${stepSummaries.map(summary => summary.content).join('\n\n')}
+Based on ALL the data collected above, provide a direct, comprehensive answer to the user's question as ${this.agent.name}:
 
-## 🎯 Your Professional Analysis Task
+**Critical Requirements:**
+1. **Direct Answer**: Address the user's question directly, don't describe your execution process
+2. **Use All Data**: Synthesize information from all successful data collection steps
+3. **Be Specific**: Include concrete numbers, names, dates, and details from the collected data
+4. **Stay On Topic**: Focus only on what the user actually asked for
+5. **Professional Insight**: Apply your expertise as ${this.agent.name} to provide valuable analysis
 
-Based on the detailed execution data above, provide a professional analysis report as ${this.agent.name}:
+**Format Guidelines:**
+- Start by directly answering the core question
+- Present key information clearly and organized
+- Include specific data points and metrics
+- Provide context and interpretation where helpful
+- End with any relevant insights or implications
 
-### 📋 Executive Summary
-Provide a concise overview of what was accomplished and the key outcomes.
+**Remember**: The user wants an answer to their question, not a report about how you executed the task. Use your collected data to give them exactly what they asked for.
 
-### 🔍 Key Insights & Findings  
-Extract and highlight the most important discoveries, patterns, or insights from all collected data. Focus on actionable intelligence.
-
-### 📈 Data Analysis
-Analyze trends, relationships, and significant metrics found in the execution results.
-
-### 💡 Professional Conclusions
-Draw expert conclusions based on your specialized knowledge as ${this.agent.name}.
-
-### 🎯 Recommendations (if applicable)
-Suggest next steps, opportunities, or actions based on your analysis.
-
-**Output Requirements:**
-- Write in your professional capacity as ${this.agent.name}
-- Focus on insights and analysis, not step repetition
-- Use clear markdown formatting
-- Be concise but comprehensive
-- Highlight actionable information
-- Maintain your expertise tone
-
-Generate your professional analysis report:`;
+Provide your direct answer:`;
 
       // 使用流式LLM生成增强总结
       const stream = await this.llm.stream([new SystemMessage(summaryPrompt)]);
