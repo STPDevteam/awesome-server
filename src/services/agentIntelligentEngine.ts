@@ -56,9 +56,7 @@ export interface AgentWorkflowState {
   currentIteration: number;
   errors: string[];
   lastError: string | null;
-  // 🔧 新增：任务分解和状态跟踪
-  taskBreakdown: TaskComponent[];     // 任务分解结构
-  completedComponents: string[];      // 已完成的组件ID
+  // 🔧 简化：只保留失败处理
   failureHistory: FailureRecord[];    // 失败记录和处理策略
 }
 
@@ -120,15 +118,12 @@ export class AgentIntelligentEngine {
   async *executeAgentTask(
     taskId: string,
     query: string,
-    maxIterations: number = 8
+    maxIterations: number = 20  // 🔧 提高上限，作为安全网
   ): AsyncGenerator<{ event: string; data: any }, boolean, unknown> {
     logger.info(`🤖 Starting Agent intelligent execution [Task: ${taskId}, Agent: ${this.agent.name}]`);
 
-    // 🧠 智能任务复杂度分析
-    const taskComplexity = await this.analyzeTaskComplexity(query);
-    const smartMaxIterations = Math.min(maxIterations, taskComplexity.recommendedSteps);
-    
-    logger.info(`🎯 Task complexity analysis: ${taskComplexity.type} (${smartMaxIterations} steps recommended)`);
+    // 🧠 智能执行：动态判断，不预设步数限制
+    logger.info(`🎯 Starting intelligent execution (max ${maxIterations} steps if needed)`);
 
     // 🔧 Agent专用：发送execution_start事件
     yield {
@@ -136,15 +131,13 @@ export class AgentIntelligentEngine {
       data: {
         taskId,
         agentName: this.agent.name,
-        taskComplexity: taskComplexity.type,
-        maxSteps: smartMaxIterations,
+        maxSteps: maxIterations,
         timestamp: new Date().toISOString(),
         message: `Starting intelligent execution with ${this.agent.name}...`
       }
     };
 
-    // 🔧 新增：初始化任务分解
-    const taskBreakdown = await this.analyzeAndBreakdownTask(query);
+    // 🧠 移除预设任务分解，采用动态智能规划
     
     // 初始化Agent工作流状态
     const state: AgentWorkflowState = {
@@ -157,24 +150,30 @@ export class AgentIntelligentEngine {
       dataStore: {},
       currentPlan: null,
       isComplete: false,
-      maxIterations: smartMaxIterations,
+      maxIterations: maxIterations,
       currentIteration: 0,
       errors: [],
       lastError: null,
-      // 🔧 新增：任务跟踪相关字段
-      taskBreakdown,
-      completedComponents: [],
+      // 🔧 简化：只保留必要的跟踪字段
       failureHistory: []
     };
 
     let stepCounter = 0;
+    
+    // 🧠 智能进展监控
+    let progressMonitor = {
+      lastProgressStep: 0,
+      consecutiveFailures: 0,
+      stagnationCount: 0,
+      repeatedActions: new Map<string, number>()
+    };
 
     try {
       // 🔧 获取任务并应用Agent的MCP工作流配置
       await this.prepareAgentTask(taskId, state);
 
-      // 🔧 Agent智能执行主循环
-      while (!state.isComplete && state.currentIteration < smartMaxIterations) {
+      // 🔧 Agent智能执行主循环 - 动态控制而非硬性限制
+      while (!state.isComplete && this.shouldContinueExecution(state, progressMonitor, maxIterations)) {
         state.currentIteration++;
         stepCounter++;
 
@@ -366,8 +365,10 @@ export class AgentIntelligentEngine {
 
         state.executionHistory.push(executionStep);
 
-        // 🔧 新增：更新任务组件完成状态
-        await this.updateTaskComponentStatus(state, executionStep);
+        // 🧠 更新进展监控
+        this.updateProgressMonitor(progressMonitor, executionStep, state);
+
+        // 🔧 组件状态跟踪已移除 - 使用动态智能判断
 
         // 🔧 新增：记录失败并生成处理策略
         if (!executionResult.success) {
@@ -408,15 +409,11 @@ export class AgentIntelligentEngine {
             message: executionResult.success 
               ? `${this.agent.name} completed step ${stepCounter} successfully`
               : `${this.agent.name} failed at step ${stepCounter}`,
-            // 🔧 新增：任务进度信息
-            taskProgress: {
-              completedComponents: state.completedComponents.length,
-              totalComponents: state.taskBreakdown.length,
-              componentDetails: state.taskBreakdown.map(c => ({
-                id: c.id,
-                description: c.description,
-                isCompleted: c.isCompleted
-              }))
+            // 🔧 简化：基于执行历史的进度信息
+            executionProgress: {
+              totalSteps: state.executionHistory.length,
+              successfulSteps: state.executionHistory.filter(s => s.success).length,
+              hasData: Object.keys(state.dataStore).length > 1
             }
           }
         };
@@ -480,8 +477,8 @@ export class AgentIntelligentEngine {
         // 🔧 保存步骤结果到数据库（使用格式化结果）
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
-        // 🔧 第三步：Agent观察阶段（增强版） - 判断是否完成，考虑任务复杂度
-        const observationResult = await this.agentObservationPhaseEnhanced(state, taskComplexity);
+        // 🔧 第三步：Agent观察阶段（增强版） - 智能判断是否完成
+        const observationResult = await this.agentObservationPhaseEnhanced(state);
         state.isComplete = observationResult.isComplete;
         
         if (observationResult.nextObjective) {
@@ -553,140 +550,6 @@ export class AgentIntelligentEngine {
       return false;
     }
   }
-
-  /**
-   * 🧠 智能任务复杂度分析
-   */
-  private async analyzeTaskComplexity(query: string): Promise<{
-    type: 'simple_query' | 'medium_task' | 'complex_workflow';
-    recommendedSteps: number;
-    reasoning: string;
-  }> {
-    try {
-      // 🔍 基于模式的快速分析
-      const quickAnalysis = this.quickComplexityAnalysis(query);
-      if (quickAnalysis) {
-        return quickAnalysis;
-      }
-
-      // 🧠 LLM深度分析（用于边缘情况）
-      const analysisPrompt = `Analyze the task complexity and recommend execution steps.
-
-**User Query**: "${query}"
-
-**Task Types:**
-1. **SIMPLE_QUERY** (1-2 steps):
-   - Direct data requests: "Show me...", "Get current...", "What is..."
-   - Single API calls: "Get user info", "Fetch latest price"
-   - Basic information lookup
-
-2. **MEDIUM_TASK** (3-5 steps):
-   - Multi-source data collection: "Compare X and Y"
-   - Basic analysis: "Analyze trends in..."
-   - Sequential operations: "First get X, then process Y"
-
-3. **COMPLEX_WORKFLOW** (6+ steps):
-   - Multi-step analysis with processing
-   - Complex decision trees
-   - Multiple interdependent operations
-   - Extensive data transformation
-
-**OUTPUT FORMAT (JSON only):**
-{
-  "type": "simple_query|medium_task|complex_workflow",
-  "recommendedSteps": 1-8,
-  "reasoning": "Brief explanation of complexity assessment"
-}`;
-
-      const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
-      const content = response.content as string;
-      
-      // 解析LLM响应
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return {
-          type: parsed.type || 'medium_task',
-          recommendedSteps: Math.min(8, Math.max(1, parsed.recommendedSteps || 3)),
-          reasoning: parsed.reasoning || 'LLM analysis completed'
-        };
-      }
-    } catch (error) {
-      logger.warn(`Task complexity analysis failed: ${error}`);
-    }
-
-    // 默认中等复杂度
-    return {
-      type: 'medium_task',
-      recommendedSteps: 3,
-      reasoning: 'Default complexity analysis'
-    };
-  }
-
-  /**
-   * 🔍 快速模式匹配复杂度分析
-   */
-  private quickComplexityAnalysis(query: string): {
-    type: 'simple_query' | 'medium_task' | 'complex_workflow';
-    recommendedSteps: number;
-    reasoning: string;
-  } | null {
-    const lowerQuery = query.toLowerCase().trim();
-
-    // 🟢 简单查询模式 (1-2 steps)
-    const simplePatterns = [
-      /^(show me|get|fetch|what is|current|latest)\s/,
-      /^(how much|how many|price of|value of)\s/,
-      /^(status of|info about|details of)\s/,
-      /\b(index|price|value|status|information)\s*(of|for)?\s*\w+$/,
-      /^(get current|show current|fetch latest)\s/
-    ];
-
-    if (simplePatterns.some(pattern => pattern.test(lowerQuery))) {
-      return {
-        type: 'simple_query',
-        recommendedSteps: 1,
-        reasoning: 'Direct data query - single API call expected'
-      };
-    }
-
-    // 🟡 中等任务模式 (3-5 steps)
-    const mediumPatterns = [
-      /\b(compare|analyze|calculate|process)\b/,
-      /\b(then|after|next|followed by)\b/,
-      /\b(both|all|multiple|several)\b/,
-      /\band\s+\w+\s+(also|too|as well)/,
-      /\b(summary|report|overview)\b/
-    ];
-
-    if (mediumPatterns.some(pattern => pattern.test(lowerQuery))) {
-      return {
-        type: 'medium_task',
-        recommendedSteps: 3,
-        reasoning: 'Multi-step task with analysis or comparison'
-      };
-    }
-
-    // 🔴 复杂工作流模式 (6+ steps)
-    const complexPatterns = [
-      /\b(workflow|pipeline|process.*step)\b/,
-      /\b(first.*then.*finally|step.*step.*step)\b/,
-      /\b(comprehensive|detailed|thorough)\s+(analysis|report|study)\b/,
-      /\b(multiple.*and.*then)\b/,
-      /\b(optimize|automate|integrate)\b/
-    ];
-
-    if (complexPatterns.some(pattern => pattern.test(lowerQuery)) || lowerQuery.length > 100) {
-      return {
-        type: 'complex_workflow',
-        recommendedSteps: 6,
-        reasoning: 'Complex multi-step workflow detected'
-      };
-    }
-
-    return null; // 需要LLM深度分析
-  }
-
   /**
    * 🔧 新增：分析并分解任务
    */
@@ -696,73 +559,33 @@ export class AgentIntelligentEngine {
 
 **User Task**: "${query}"
 
-**Analysis Framework**:
-Identify the major components in this task. Common patterns include:
+**Component Types**:
+1. **data_collection** - Gathering information or data
+2. **data_processing** - Analyzing, transforming, or combining data  
+3. **action_execution** - Performing actions or operations
+4. **analysis** - Drawing insights or conclusions
+5. **output** - Creating final deliverables or results
 
-1. **Data Collection**: Getting information from external sources
-   - Examples: "get tweets from user X", "fetch repository info", "retrieve price data"
-   - 🔧 CRITICAL FOR MULTI-TARGET TASKS: If multiple users/entities are mentioned, create SEPARATE data collection components for EACH target
-   
-2. **Data Processing**: Analyzing, combining, or transforming collected data
-   - Examples: "summarize the tweets", "compare the data", "analyze trends"
-   
-3. **Action Execution**: Performing actions based on processed data
-   - Examples: "send tweet", "create issue", "post to social media"
-   
-4. **Output Generation**: Creating final deliverables
-   - Examples: "generate report", "create summary", "format results"
+**Breakdown Principles**:
+- Identify distinct logical steps needed to complete the task
+- Consider what data/information is needed and how to obtain it
+- Determine if any processing or analysis is required
+- Identify if actions need to be performed
+- Consider dependencies between components
 
-**🚨 MULTI-TARGET ANALYSIS (CRITICAL)**:
-When the task mentions multiple users, accounts, or data sources:
-- For Twitter users: "@user1, @user2, @user3" → Create separate data_collection component for EACH user
-- For repositories: "repo1, repo2, repo3" → Create separate data_collection component for EACH repo
-- For any list of targets: Create individual components, do NOT group them into one generic component
-
-**Task Analysis Keywords**:
-Look for patterns that indicate multiple targets:
-- Comma-separated lists: "@user1, @user2, @user3"
-- "and" between targets: "@user1 and @user2"
-- Multiple verbs with targets: "get from A and B", "fetch from X, Y, Z"
-- List indicators: "these users", "several accounts", "multiple sources"
-
-**Component Dependencies**:
-- Individual Data Collection → Combined Data Processing → Action Execution
-- Multiple data collection components can run in parallel
-- Data processing depends on ALL data collection components being complete
-- Action execution depends on data processing being complete
-
-**SPECIFIC EXAMPLES**:
-
-Example 1: "Get tweets from @user1, @user2, and @user3"
-✅ CORRECT breakdown:
-[
-  {"id": "collect_user1", "type": "data_collection", "description": "Get tweets from @user1"},
-  {"id": "collect_user2", "type": "data_collection", "description": "Get tweets from @user2"},
-  {"id": "collect_user3", "type": "data_collection", "description": "Get tweets from @user3"},
-  {"id": "process_all", "type": "data_processing", "description": "Process and analyze all collected tweets", "dependencies": ["collect_user1", "collect_user2", "collect_user3"]}
-]
-
-❌ WRONG breakdown:
-[
-  {"id": "collect_all", "type": "data_collection", "description": "Get tweets from multiple users"}
-]
-
-**Output Format**:
-Return a JSON array of task components:
+**Output Format** (JSON array):
 [
   {
-    "id": "unique_component_id",
-    "type": "data_collection|data_processing|action_execution|analysis|output",
-    "description": "Clear, specific description of what this component does (include specific target if applicable)",
-    "dependencies": ["id_of_required_component"],
-    "requiredData": ["type_of_data_needed"],
-    "outputData": ["type_of_data_produced"]
+    "id": "unique_id",
+    "type": "component_type",
+    "description": "What this component does",
+    "dependencies": ["prerequisite_component_ids"],
+    "requiredData": ["data_types_needed"],
+    "outputData": ["data_types_produced"]
   }
 ]
 
-🔧 REMEMBER: For multi-target tasks, create separate components for each target to ensure complete data collection!
-
-Analyze the task now:`;
+Analyze and break down the task:`;
 
       const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
       
@@ -820,89 +643,6 @@ Analyze the task now:`;
         requiredData: [],
         outputData: []
       }];
-    }
-  }
-
-  /**
-   * 🔧 示例：流式规划阶段改进版本
-   */
-  private async agentPlanningPhaseStreaming(state: AgentWorkflowState): Promise<{
-    success: boolean;
-    plan?: AgentExecutionPlan;
-    error?: string;
-  }> {
-    try {
-      const availableMCPs = await this.getAgentAvailableMCPs(state.taskId, state.agentId);
-      const plannerPrompt = this.buildAgentPlannerPrompt(state, availableMCPs);
-
-      // 🔄 使用流式LLM调用
-      const stream = await this.llm.stream([new SystemMessage(plannerPrompt)]);
-      let planningContent = '';
-      
-      for await (const chunk of stream) {
-        if (chunk.content) {
-          planningContent += chunk.content;
-          
-          // 发送规划思考过程
-          // yield {
-          //   event: 'planning_thinking_chunk',
-          //   data: {
-          //     chunk: chunk.content,
-          //     agentName: this.agent.name
-          //   }
-          // };
-        }
-      }
-
-      const plan = this.parseAgentPlan(planningContent, state.agentName);
-      return { success: true, plan };
-
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : String(error) 
-      };
-    }
-  }
-
-  /**
-   * 🔧 示例：流式观察阶段改进版本
-   */
-  private async agentObservationPhaseStreaming(state: AgentWorkflowState): Promise<{
-    isComplete: boolean;
-    nextObjective?: string;
-  }> {
-    try {
-      const observerPrompt = this.buildAgentObserverPrompt(state);
-      
-      // 🔄 使用流式LLM调用
-      const stream = await this.llm.stream([
-        new SystemMessage(observerPrompt),
-        new HumanMessage(`Please analyze whether ${this.agent.name} has completed the task successfully`)
-      ]);
-      
-      let observationContent = '';
-      
-      for await (const chunk of stream) {
-        if (chunk.content) {
-          observationContent += chunk.content;
-          
-          // 发送观察思考过程
-          // yield {
-          //   event: 'observation_thinking_chunk', 
-          //   data: {
-          //     chunk: chunk.content,
-          //     agentName: this.agent.name
-          //   }
-          // };
-        }
-      }
-
-      const observation = this.parseAgentObservation(observationContent);
-      return observation;
-
-    } catch (error) {
-      return { isComplete: false };
     }
   }
 
@@ -1134,23 +874,26 @@ Analyze the task now:`;
    * 🔧 新增：增强版观察阶段
    */
   private async agentObservationPhaseEnhanced(
-    state: AgentWorkflowState, 
-    taskComplexity?: { type: string; recommendedSteps: number; reasoning: string }
+    state: AgentWorkflowState
   ): Promise<{
     isComplete: boolean;
     nextObjective?: string;
   }> {
     try {
-      const observerPrompt = this.buildEnhancedAgentObserverPrompt(state, taskComplexity);
+      // 🧠 智能观察：基于数据充分性判断，而非预设规则
+      const observerPrompt = this.buildIntelligentDataSufficiencyPrompt(state);
       
       const response = await this.llm.invoke([
         new SystemMessage(observerPrompt),
-        new HumanMessage(`Please analyze whether ${this.agent.name} has completed the task successfully`)
+        new HumanMessage(`Based on the data collected so far, can ${this.agent.name} now answer the user's question completely?`)
       ]);
 
       const observation = this.parseAgentObservation(response.content as string);
       
-      logger.info(`🔍 Agent ${this.agent.name} observation: ${observation.isComplete ? 'Complete' : 'Continue'}`);
+      logger.info(`🔍 Agent ${this.agent.name} intelligent observation: ${observation.isComplete ? 'Complete' : 'Continue'}`);
+      if (observation.nextObjective) {
+        logger.info(`🎯 Next objective: ${observation.nextObjective}`);
+      }
       
       return observation;
 
@@ -1159,6 +902,230 @@ Analyze the task now:`;
       // 默认继续执行
       return { isComplete: false };
     }
+  }
+
+  /**
+   * 🧠 智能执行控制：判断是否应该继续执行
+   */
+  private shouldContinueExecution(
+    state: AgentWorkflowState, 
+    progressMonitor: any, 
+    maxIterations: number
+  ): boolean {
+    // 🔧 基础安全检查：超过绝对上限
+    if (state.currentIteration >= maxIterations) {
+      logger.warn(`🛑 Reached absolute iteration limit: ${maxIterations}`);
+      return false;
+    }
+
+    // 🔧 连续失败检查：连续5次失败就停止
+    if (progressMonitor.consecutiveFailures >= 5) {
+      logger.warn(`🛑 Too many consecutive failures: ${progressMonitor.consecutiveFailures}`);
+      return false;
+    }
+
+    // 🔧 停滞检查：超过8步没有进展
+    if (progressMonitor.stagnationCount >= 8) {
+      logger.warn(`🛑 Task appears stagnant: ${progressMonitor.stagnationCount} steps without progress`);
+      return false;
+    }
+
+    // 🔧 重复动作检查：同一工具重复使用超过5次
+    for (const [action, count] of progressMonitor.repeatedActions.entries()) {
+      if (count >= 5) {
+        logger.warn(`🛑 Action repeated too many times: ${action} (${count} times)`);
+        return false;
+      }
+    }
+
+    // 🚀 允许继续：任务在正常进展中
+    return true;
+  }
+
+  /**
+   * 🧠 更新进展监控状态
+   */
+  private updateProgressMonitor(
+    progressMonitor: any, 
+    executionStep: AgentExecutionStep, 
+    state: AgentWorkflowState
+  ): void {
+    // 🔧 更新连续失败计数
+    if (executionStep.success) {
+      progressMonitor.consecutiveFailures = 0;
+      progressMonitor.lastProgressStep = state.currentIteration;
+    } else {
+      progressMonitor.consecutiveFailures++;
+    }
+
+    // 🔧 更新停滞计数
+    const stepsSinceProgress = state.currentIteration - progressMonitor.lastProgressStep;
+    progressMonitor.stagnationCount = stepsSinceProgress;
+
+    // 🔧 更新重复动作计数
+    const actionKey = `${executionStep.plan.tool}_${executionStep.plan.mcpName || 'llm'}`;
+    const currentCount = progressMonitor.repeatedActions.get(actionKey) || 0;
+    progressMonitor.repeatedActions.set(actionKey, currentCount + 1);
+
+    // 🔧 记录进展状态
+    const repeatedActionsStr = Array.from(progressMonitor.repeatedActions.entries() as IterableIterator<[string, number]>)
+      .map(([k, v]) => `${k}:${v}`)
+      .join(', ');
+    logger.info(`📊 Progress Monitor: failures=${progressMonitor.consecutiveFailures}, stagnation=${progressMonitor.stagnationCount}, repeated=${repeatedActionsStr}`);
+  }
+
+  /**
+   * 🧠 新增：智能数据充分性判断提示词构建器
+   */
+  private buildIntelligentDataSufficiencyPrompt(state: AgentWorkflowState): string {
+    const lastStep = state.executionHistory[state.executionHistory.length - 1];
+    
+    // 构建所有已收集数据的摘要
+    const collectedDataSummary = this.buildCollectedDataSummary(state);
+    
+    return `You are **${this.agent.name}**, analyzing whether sufficient data has been collected to answer the user's question.
+
+## 📋 USER'S ORIGINAL QUESTION
+"${state.originalQuery}"
+
+## 📊 DATA COLLECTION ANALYSIS
+
+### Execution History
+${state.executionHistory.map(step => `
+**Step ${step.stepNumber}**: ${step.plan.tool} (${step.plan.toolType})
+- Status: ${step.success ? '✅ Success' : '❌ Failed'}
+- Tool: ${step.plan.tool}
+- Data Retrieved: ${step.success && step.result ? 'Yes' : 'No'}
+${step.success && step.result ? `- Data Summary: ${this.summarizeStepData(step.result)}` : ''}
+${step.error ? `- Error: ${step.error}` : ''}
+`).join('\n')}
+
+### All Collected Data Summary
+${collectedDataSummary}
+
+## 🧠 INTELLIGENT ANALYSIS REQUIRED
+
+**Critical Question**: Based on ALL the data collected above, can you now provide a complete and accurate answer to the user's question?
+
+**Analysis Framework**:
+
+1. **Data Completeness Check**:
+   - Does the collected data contain all necessary information to answer the user's question?
+   - Are there any missing pieces of information still needed?
+
+2. **Quality Assessment**:
+   - Is the data recent and relevant?
+   - Is the data sufficient in quantity/scope for the user's request?
+
+3. **Specific Requirements Check**:
+   ${this.buildSpecificRequirementsCheck(state.originalQuery)}
+
+## 🎯 DECISION LOGIC
+
+**Complete the task IF**:
+- ✅ You have sufficient data to fully answer the user's question
+- ✅ The data quality and completeness meets the user's needs
+- ✅ No critical information is missing
+
+**Continue execution IF**:
+- ❌ Key information is still missing
+- ❌ Data quality is insufficient 
+- ❌ User's specific requirements are not met
+- ❌ Need different approach/tool to get better data
+
+**OUTPUT FORMAT (JSON only)**:
+{
+  "isComplete": true/false,
+  "reasoning": "Detailed analysis of data sufficiency based on user's specific question",
+  "nextObjective": "If not complete, what specific information is still needed?"
+}
+
+**Remember**: Base your decision purely on data sufficiency, not on execution count or arbitrary rules.`;
+  }
+
+  /**
+   * 构建已收集数据的摘要
+   */
+  private buildCollectedDataSummary(state: AgentWorkflowState): string {
+    if (state.executionHistory.length === 0) {
+      return "No data collected yet.";
+    }
+
+    const successfulSteps = state.executionHistory.filter(step => step.success && step.result);
+    
+    if (successfulSteps.length === 0) {
+      return "No successful data collection yet.";
+    }
+
+    return successfulSteps.map(step => {
+      const dataType = this.detectDataType(step.result);
+      const dataSize = JSON.stringify(step.result).length;
+      return `- Step ${step.stepNumber} (${step.plan.tool}): ${dataType} data, ${dataSize} characters`;
+    }).join('\n');
+  }
+
+  /**
+   * 构建针对具体问题的需求检查
+   */
+  private buildSpecificRequirementsCheck(originalQuery: string): string {
+    const lowerQuery = originalQuery.toLowerCase();
+    
+    // 针对不同类型的查询构建具体的需求检查
+    if (lowerQuery.includes('identify') && lowerQuery.includes('top') && /\d+/.test(lowerQuery)) {
+      const numberMatch = lowerQuery.match(/\d+/);
+      const number = numberMatch ? numberMatch[0] : 'X';
+      return `- Do you have data that allows you to identify the top ${number} items requested?
+   - Is the data sorted/rankable to determine which are "top"?
+   - Are the specific criteria mentioned in the query satisfied?`;
+    }
+    
+    if (lowerQuery.includes('current') || lowerQuery.includes('latest')) {
+      return `- Is the data current/recent as requested?
+   - Does it represent the latest state as of now?`;
+    }
+    
+    if (lowerQuery.includes('compare') || lowerQuery.includes('vs')) {
+      return `- Do you have data for all items to be compared?
+   - Is the data comparable (same timeframe, metrics, etc.)?`;
+    }
+    
+    return `- Does the data directly address what the user is asking for?
+   - Are all key terms from the user's question covered by the data?`;
+  }
+
+  /**
+   * 检测数据类型
+   */
+  private detectDataType(data: any): string {
+    if (typeof data === 'string') {
+      if (data.includes('block') || data.includes('hash')) return 'Blockchain';
+      if (data.includes('price') || data.includes('token')) return 'Cryptocurrency';
+      if (data.includes('fear') || data.includes('greed')) return 'Market Sentiment';
+      return 'Text';
+    }
+    
+    if (Array.isArray(data)) {
+      return `List (${data.length} items)`;
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+      const keys = Object.keys(data);
+      if (keys.includes('result') || keys.includes('data')) return 'Structured API Response';
+      return 'Object';
+    }
+    
+    return 'Unknown';
+  }
+
+  /**
+   * 总结步骤数据
+   */
+  private summarizeStepData(data: any): string {
+    const dataStr = JSON.stringify(data);
+    if (dataStr.length > 200) {
+      return `${dataStr.substring(0, 200)}... (${dataStr.length} chars total)`;
+    }
+    return dataStr;
   }
 
   /**
@@ -1198,6 +1165,8 @@ ${availableMCPs.map(mcp => `- MCP Service: ${mcp.mcpName}
 3. **Smart Progression**: 
    - Use ${this.agent.name}'s tools effectively
    - Build intelligently on previous results
+   - 🚨 **AVOID REPETITION**: Never repeat the same tool if previous step was successful
+   - 🎯 **DATA CHECK**: If data already collected, proceed to analysis or completion
    - Consider if the task is complete from ${this.agent.name}'s perspective
 
 4. **Agent Context**: Always remember you are ${this.agent.name} with specific capabilities and expertise.
@@ -1243,9 +1212,9 @@ What is the most logical next step for ${this.agent.name} to take?`;
     const hasData = Object.keys(state.dataStore).length > 1;
     const lastStepResult = totalSteps > 0 ? state.executionHistory[totalSteps - 1] : null;
     
-    // 🔧 任务组件分析
-    const completedComponents = state.taskBreakdown.filter(c => c.isCompleted);
-    const remainingComponents = state.taskBreakdown.filter(c => !c.isCompleted);
+    // 🔧 简化：基于执行历史分析  
+    const successfulSteps = state.executionHistory.filter(s => s.success);
+    const hasDataInStore = Object.keys(state.dataStore).length > 1;
     
     // 🔧 失败分析
     const recentFailures = state.failureHistory.filter(f => f.attemptCount > 0);
@@ -1259,15 +1228,13 @@ What is the most logical next step for ${this.agent.name} to take?`;
 
 **USER TASK**: "${state.originalQuery}"
 
-**🔧 ENHANCED TASK ANALYSIS**:
+**🔧 SIMPLIFIED EXECUTION ANALYSIS**:
 
-## Task Breakdown Status
-${state.taskBreakdown.map(comp => 
-  `- ${comp.isCompleted ? '✅' : '⏳'} ${comp.description} (${comp.type})`
-).join('\n')}
-
-**Completed Components**: ${completedComponents.length}/${state.taskBreakdown.length}
-**Remaining Components**: ${remainingComponents.map(c => c.description).join(', ')}
+## Execution Progress
+- **Total Steps**: ${totalSteps}
+- **Successful Steps**: ${successfulSteps.length}
+- **Data Available**: ${hasDataInStore ? 'Yes' : 'No'}
+- **Last Step**: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? 'Success' : 'Failed'})` : 'None'}
 
 ## Execution History & Data Analysis
 - Steps completed: ${totalSteps}
@@ -1303,6 +1270,8 @@ ${actualTools.map(tool => `    * ${tool.name}: ${tool.description || 'No descrip
 ### 1. **Avoid Redundant Work**
 - ✅ DO: Use existing data from completed components
 - ❌ DON'T: Re-collect data that was already successfully obtained
+- 🚨 **NEVER REPEAT**: Don't use the same tool if last step was successful
+- 🎯 **SUCCESS = MOVE ON**: If previous step succeeded, proceed to next phase
 - 🔍 CHECK: What data is already available in dataStore?
 
 ### 2. **Handle Failures Intelligently**
@@ -1311,8 +1280,8 @@ Recent failure analysis:
 ${recentFailures.map(f => `- ${f.tool}: ${f.suggestedStrategy === 'alternative' ? 'Try different approach' : f.suggestedStrategy === 'retry' ? 'Retry with modifications' : 'Skip this step'}`).join('\n')}
 ` : ''}
 
-### 3. **Focus on Incomplete Components**
-**Next logical step should address**: ${remainingComponents.length > 0 ? remainingComponents[0].description : 'Task completion verification'}
+### 3. **Focus on Next Step**
+**Next logical step should**: ${lastStepResult && lastStepResult.success ? 'Build on successful results' : 'Address current task needs'}
 
 ### 4. **Smart Progression Logic**
 Ask yourself:
@@ -1325,11 +1294,12 @@ Ask yourself:
 
 Based on the task breakdown and current progress, determine the most logical next step:
 
-1. **If data collection is incomplete**: Collect missing data
+🚨 **FIRST CHECK**: If last step was successful with same tool, choose different tool or complete task
+1. **If data collection is incomplete**: Collect missing data (but NOT with same tool as successful last step)
 2. **If data is available but processing is incomplete**: Process/analyze the data  
 3. **If processing is done but action is incomplete**: Execute the final action
 4. **If a step failed**: Apply the suggested failure strategy
-5. **If all components are complete**: Verify completion or conclude
+5. **If all components are complete OR last step succeeded**: Verify completion or conclude
 
 **OUTPUT FORMAT** (JSON only):
 {
@@ -1417,8 +1387,8 @@ For **COMPLEX TASKS** (multi-step analysis, processing):
     taskComplexity?: { type: string; recommendedSteps: number; reasoning: string }
   ): string {
     const lastStep = state.executionHistory[state.executionHistory.length - 1];
-    const completedComponents = state.taskBreakdown.filter(c => c.isCompleted);
-    const totalComponents = state.taskBreakdown.length;
+    const totalSteps = state.executionHistory.length;
+    const successfulSteps = state.executionHistory.filter(s => s.success);
     
     return `You are observing the execution progress of **${this.agent.name}** to determine task completion status with enhanced analysis.
 
@@ -1430,17 +1400,13 @@ For **COMPLEX TASKS** (multi-step analysis, processing):
 - **Current Objective**: ${state.currentObjective}
 - **Executed Steps**: ${state.executionHistory.length}
 
-## 🔧 ENHANCED TASK COMPONENT ANALYSIS
+## 🔧 SIMPLIFIED EXECUTION ANALYSIS
 
-### Component Completion Status
-${state.taskBreakdown.map(comp => `
-**Component**: ${comp.description} (${comp.type})
-- Status: ${comp.isCompleted ? '✅ COMPLETED' : '⏳ PENDING'}
-- Completed in steps: ${comp.completedStepNumbers.join(', ') || 'None'}
-- Dependencies: ${comp.dependencies.join(', ') || 'None'}
-`).join('\n')}
-
-**Overall Progress**: ${completedComponents.length}/${totalComponents} components completed
+### Execution Status
+- **Total Steps Executed**: ${totalSteps}
+- **Successful Steps**: ${successfulSteps.length}
+- **Success Rate**: ${totalSteps > 0 ? `${Math.round((successfulSteps.length / totalSteps) * 100)}%` : 'N/A'}
+- **Data Collected**: ${Object.keys(state.dataStore).length > 1 ? 'Yes' : 'No'}
 
 ### Execution History Analysis
 ${state.executionHistory.map(step => `
@@ -1492,7 +1458,7 @@ ${taskComplexity?.type === 'simple_query' ? `
 ### Latest Step Analysis
 ${lastStep ? `
 **Step ${lastStep.stepNumber}**: ${lastStep.plan.tool}
-- Status: ${lastStep.success ? '✅ Success' : '❌ Failed'}  
+- Status: ${lastStep.success ? '✅ Success' : '❌ Failed'}
 - Result: ${lastStep.success ? 'Data available' : lastStep.error}
 ${taskComplexity?.type === 'simple_query' && lastStep.success ? '- 🎯 **SIMPLE QUERY + SUCCESS = SHOULD COMPLETE**' : ''}
 ` : 'No execution history yet'}
@@ -1926,7 +1892,7 @@ ${Object.entries(plan.args).map(([key, value]) =>
 ${contextData.summary}
 
 ### Execution Environment
-- **Completed Tasks**: ${state.completedComponents.length}/${state.taskBreakdown.length}
+- **Execution Progress**: ${state.executionHistory.filter(s => s.success).length}/${state.executionHistory.length} steps successful
 - **Data Sources**: ${contextData.sourceCount}
 - **Context Type**: ${contextData.type}
 
@@ -2302,46 +2268,240 @@ This is a large dataset. Apply smart filtering:
   /**
    * 🔧 新增：流式生成Agent最终结果
    */
+  /**
+   * 🔧 新增：为每个步骤生成智能摘要
+   */
+  private async generateStepSummaries(state: AgentWorkflowState): Promise<Array<{
+    stepNumber: number;
+    toolName: string;
+    success: boolean;
+    content: string;
+    dataSize: 'small' | 'medium' | 'large';
+  }>> {
+    const summaries = [];
+    
+    for (const step of state.executionHistory) {
+      try {
+        // 确定数据大小
+        const resultString = typeof step.result === 'string' ? step.result : JSON.stringify(step.result);
+        const dataSize = this.determineDataSize(resultString);
+        
+        let summaryContent = '';
+        
+        if (step.success) {
+          if (dataSize === 'large') {
+            // 大数据：生成智能摘要
+            summaryContent = await this.generateDataSummary(step, resultString);
+          } else if (dataSize === 'medium') {
+            // 中等数据：生成简化版本
+            summaryContent = await this.generateSimplifiedSummary(step, resultString);
+          } else {
+            // 小数据：直接使用原始数据
+            summaryContent = this.formatSmallData(step, resultString);
+          }
+        } else {
+          // 失败步骤：显示错误信息
+          summaryContent = `### ❌ Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: Failed
+**Error**: ${step.error || 'Unknown error'}
+**Attempted Action**: ${step.plan.reasoning}`;
+        }
+        
+        summaries.push({
+          stepNumber: step.stepNumber,
+          toolName: step.plan.tool,
+          success: step.success,
+          content: summaryContent,
+          dataSize
+        });
+        
+      } catch (error) {
+        logger.warn(`Failed to generate summary for step ${step.stepNumber}:`, error);
+        summaries.push({
+          stepNumber: step.stepNumber,
+          toolName: step.plan.tool,
+          success: step.success,
+          content: `### Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: ${step.success ? 'Success' : 'Failed'}
+**Note**: Summary generation failed, using basic info`,
+          dataSize: 'small' as const
+        });
+      }
+    }
+    
+    return summaries;
+  }
+
+  /**
+   * 确定数据大小
+   */
+  private determineDataSize(dataString: string): 'small' | 'medium' | 'large' {
+    const length = dataString.length;
+    if (length > 5000) return 'large';
+    if (length > 1500) return 'medium';
+    return 'small';
+  }
+
+  /**
+   * 生成大数据的智能摘要
+   */
+  private async generateDataSummary(step: AgentExecutionStep, dataString: string): Promise<string> {
+    const summaryPrompt = `You are a data analyst. Create a concise summary of this execution step result.
+
+**Step Information:**
+- Step Number: ${step.stepNumber}
+- Tool Used: ${step.plan.tool}
+- Tool Type: ${step.plan.toolType}
+- Purpose: ${step.plan.reasoning}
+
+**Data to Summarize:**
+${dataString.substring(0, 3000)}${dataString.length > 3000 ? '... [truncated]' : ''}
+
+**Summary Requirements:**
+1. Extract the most important information and key data points
+2. Identify numerical values, names, dates, and critical metrics
+3. Summarize trends, patterns, or significant findings
+4. Keep the summary under 300 words
+5. Use clear markdown formatting
+
+Provide a structured summary:`;
+
+    try {
+      const response = await this.llm.invoke([new SystemMessage(summaryPrompt)]);
+      const summary = response.content as string;
+      
+      return `### ✅ Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: Success  
+**Data Size**: Large (${Math.round(dataString.length / 1000)}K characters)
+
+${summary}`;
+
+    } catch (error) {
+      logger.warn(`Failed to generate LLM summary for step ${step.stepNumber}:`, error);
+      return this.generateFallbackSummary(step, dataString);
+    }
+  }
+
+  /**
+   * 生成中等数据的简化摘要
+   */
+  private async generateSimplifiedSummary(step: AgentExecutionStep, dataString: string): Promise<string> {
+    // 尝试解析JSON结构
+    try {
+      const data = JSON.parse(dataString);
+      const keyPoints = this.extractKeyPoints(data);
+      
+      return `### ✅ Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: Success
+**Data Size**: Medium (${Math.round(dataString.length / 1000)}K characters)
+
+**Key Information:**
+${keyPoints.map(point => `- ${point}`).join('\n')}
+
+**Raw Data Preview:**
+\`\`\`json
+${dataString.substring(0, 500)}${dataString.length > 500 ? '...' : ''}
+\`\`\``;
+
+    } catch (error) {
+      return `### ✅ Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: Success
+**Data Size**: Medium (${Math.round(dataString.length / 1000)}K characters)
+
+**Data Preview:**
+${dataString.substring(0, 800)}${dataString.length > 800 ? '...' : ''}`;
+    }
+  }
+
+  /**
+   * 格式化小数据
+   */
+  private formatSmallData(step: AgentExecutionStep, dataString: string): string {
+    return `### ✅ Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: Success
+**Data Size**: Small
+
+**Complete Result:**
+${dataString}`;
+  }
+
+  /**
+   * 提取关键点（用于中等数据）
+   */
+  private extractKeyPoints(data: any): string[] {
+    const points: string[] = [];
+    
+    if (typeof data === 'object' && data !== null) {
+      // 提取顶级键值
+      Object.keys(data).slice(0, 8).forEach(key => {
+        const value = data[key];
+        if (typeof value === 'string' || typeof value === 'number') {
+          points.push(`${key}: ${value}`);
+        } else if (Array.isArray(value)) {
+          points.push(`${key}: Array with ${value.length} items`);
+        } else if (typeof value === 'object') {
+          points.push(`${key}: Object with ${Object.keys(value).length} properties`);
+        }
+      });
+    }
+    
+    return points.length > 0 ? points : [`Data type: ${typeof data}`, `Content length: ${JSON.stringify(data).length} characters`];
+  }
+
+  /**
+   * 生成备用摘要（当LLM失败时）
+   */
+  private generateFallbackSummary(step: AgentExecutionStep, dataString: string): string {
+    const preview = dataString.substring(0, 200);
+    const wordCount = dataString.split(' ').length;
+    
+    return `### ✅ Step ${step.stepNumber}: ${step.plan.tool}
+**Status**: Success
+**Data Size**: Large (~${Math.round(dataString.length / 1000)}K characters, ~${wordCount} words)
+
+**Data Preview:**
+${preview}${dataString.length > 200 ? '...' : ''}
+
+**Note**: Full data available but summarized for readability.`;
+  }
+
   private async *generateAgentFinalResultStream(state: AgentWorkflowState): AsyncGenerator<string, string, unknown> {
     try {
-      // 如果有可用的结果，使用LLM进行智能总结并流式输出
-      const executionData = {
-        agentName: this.agent.name,
-        agentDescription: this.agent.description,
-        originalQuery: state.originalQuery,
-        executionSteps: state.executionHistory.length,
-        successfulSteps: state.executionHistory.filter(s => s.success).length,
-        lastResult: state.dataStore.lastResult,
-        allResults: state.executionHistory.filter(s => s.success).map(s => s.result)
-      };
+      // 🔧 新增：为每个步骤生成智能摘要
+      const stepSummaries = await this.generateStepSummaries(state);
+      
+      // 构建包含步骤摘要的增强总结提示词
+      const summaryPrompt = `You are ${this.agent.name}, providing a comprehensive task execution report.
 
-      // 构建Agent专用的总结提示词
-      const summaryPrompt = `You are ${this.agent.name}, summarizing your task execution results.
-
-## Agent Information
-**Name**: ${this.agent.name}
+## 📋 Task Overview
+**Agent**: ${this.agent.name}
 **Description**: ${this.agent.description}
-
-## Task Execution Summary
 **Original Query**: ${state.originalQuery}
-**Execution Steps**: ${state.executionHistory.length}
+**Execution Status**: ${state.executionHistory.filter(s => s.success).length}/${state.executionHistory.length} steps successful
+
+## 🔍 Step-by-Step Execution Report
+
+${stepSummaries.map(summary => summary.content).join('\n\n')}
+
+## 📊 Execution Summary
+**Total Steps**: ${state.executionHistory.length}
 **Successful Steps**: ${state.executionHistory.filter(s => s.success).length}
+**Failed Steps**: ${state.executionHistory.filter(s => !s.success).length}
 
-## Execution Results
-${state.executionHistory.filter(s => s.success).map((step, index) => 
-  `**Step ${step.stepNumber}**: ${step.plan.tool}\nResult: ${step.result}`
-).join('\n\n')}
+## 🎯 Final Report Requirements
+As ${this.agent.name}, provide a comprehensive final report that includes:
 
-## Final Output Requirements
-As ${this.agent.name}, provide a clear, concise summary of what was accomplished:
-1. Summarize the key results achieved
-2. Highlight the most important information
-3. Maintain your agent's personality and expertise
-4. Format the response in a user-friendly way
+1. **Executive Summary**: Brief overview of what was accomplished
+2. **Key Findings**: Most important data/insights discovered
+3. **Step Results**: Summary of each step's contribution
+4. **Conclusions**: Professional conclusions based on collected data
+5. **Recommendations**: If applicable, suggest next steps or insights
 
-Generate a comprehensive but concise summary:`;
+Format your response in clear, professional sections using markdown. Maintain your expertise as ${this.agent.name}.
 
-      // 使用流式LLM生成总结
+Generate the final comprehensive report:`;
+
+      // 使用流式LLM生成增强总结
       const stream = await this.llm.stream([new SystemMessage(summaryPrompt)]);
       let fullResult = '';
 
@@ -2448,14 +2608,14 @@ ${JSON.stringify(rawResult, null, 2)}`;
           content: rawContent,
           type: MessageType.ASSISTANT,
           intent: MessageIntent.TASK,
-          taskId,
+        taskId,
           metadata: {
             stepType: MessageStepType.EXECUTION,
             stepNumber: stepNumber,
             stepName: plan.tool,
             taskPhase: 'execution',
             contentType: 'raw_result',
-            agentName: this.agent.name,
+          agentName: this.agent.name,
             isComplete: true,
             toolDetails: {
               toolType: plan.toolType,
@@ -2565,144 +2725,17 @@ ${formattedResult}`;
     } catch (error) {
       logger.error(`Failed to save Agent final result:`, error);
     }
-  }
+    }
+    
+  // 🔧 组件状态跟踪已移除 - 使用动态智能判断代替预设组件分解
 
-  /**
-   * 🔧 新增：更新任务组件完成状态
-   */
-  private async updateTaskComponentStatus(state: AgentWorkflowState, step: AgentExecutionStep): Promise<void> {
-    if (!step.success) return;
+  // checkComponentCompletion 方法已删除
 
-    // 根据步骤结果和工具类型判断完成了哪个组件
-    for (const component of state.taskBreakdown) {
-      if (component.isCompleted) continue;
+  // checkDataCollectionCompletion 方法已删除
 
-      const isComponentCompleted = this.checkComponentCompletion(component, step, state);
-      
-      if (isComponentCompleted) {
-        component.isCompleted = true;
-        component.completedStepNumbers.push(step.stepNumber);
-        state.completedComponents.push(component.id);
-        
-        logger.info(`✅ Task component completed: ${component.description}`);
-      }
-    }
-  }
+  // checkTargetMatch 方法已删除
 
-  /**
-   * 🔧 新增：检查组件是否完成
-   */
-  private checkComponentCompletion(component: TaskComponent, step: AgentExecutionStep, state: AgentWorkflowState): boolean {
-    const tool = step.plan.tool.toLowerCase();
-    const componentType = component.type;
-    const componentDesc = component.description.toLowerCase();
-
-    // 基于工具类型和组件类型的匹配逻辑
-    switch (componentType) {
-      case 'data_collection':
-        // 🔧 修复：精确检查数据收集组件是否完成
-        return this.checkDataCollectionCompletion(component, step, state);
-        
-      case 'data_processing':
-      case 'analysis':
-        // 数据处理组件：使用了LLM分析或处理工具
-        return step.plan.toolType === 'llm' || tool.includes('analyze') || tool.includes('process') || tool.includes('summarize');
-        
-      case 'action_execution':
-        // 行动执行组件：成功执行了发送、创建、发布等操作
-        return tool.includes('send') || tool.includes('create') || tool.includes('post') || tool.includes('publish') || tool.includes('save');
-        
-      case 'output':
-        // 输出组件：成功生成了最终输出
-        return tool.includes('generate') || tool.includes('format') || tool.includes('export');
-        
-      default:
-        return false;
-    }
-  }
-
-  /**
-   * 🔧 新增：精确检查数据收集组件是否完成
-   */
-  private checkDataCollectionCompletion(component: TaskComponent, step: AgentExecutionStep, state: AgentWorkflowState): boolean {
-    const tool = step.plan.tool.toLowerCase();
-    const componentDesc = component.description.toLowerCase();
-    
-    // 1. 基础检查：是否是数据获取工具
-    const isDataTool = tool.includes('get') || tool.includes('fetch') || tool.includes('search') || tool.includes('retrieve');
-    if (!isDataTool) {
-      return false;
-    }
-    
-    // 2. 🔧 关键修复：检查是否匹配特定目标
-    const targetMatches = this.checkTargetMatch(componentDesc, step);
-    if (!targetMatches) {
-      logger.info(`❌ Component "${component.description}" target does not match step execution`);
-      return false;
-    }
-    
-    // 3. 检查执行结果是否包含有效数据
-    const hasValidData = this.checkValidDataInResult(step.result);
-    if (!hasValidData) {
-      logger.info(`❌ Component "${component.description}" execution did not return valid data`);
-      return false;
-    }
-    
-    logger.info(`✅ Component "${component.description}" completed successfully`);
-    return true;
-  }
-
-  /**
-   * 🔧 新增：检查目标是否匹配
-   */
-  private checkTargetMatch(componentDesc: string, step: AgentExecutionStep): boolean {
-    // 提取组件描述中的用户名/目标
-    const targets = this.extractTargetsFromDescription(componentDesc);
-    
-    if (targets.length === 0) {
-      // 如果没有特定目标，使用基础检查
-      return true;
-    }
-    
-    // 检查步骤参数中是否包含目标
-    const stepArgsString = JSON.stringify(step.plan.args).toLowerCase();
-    const stepReasoningString = step.plan.reasoning.toLowerCase();
-    
-    // 检查是否有任何目标匹配
-    return targets.some(target => {
-      const normalizedTarget = target.replace('@', '').toLowerCase();
-      return stepArgsString.includes(normalizedTarget) || 
-             stepReasoningString.includes(normalizedTarget) ||
-             stepArgsString.includes(target.toLowerCase());
-    });
-  }
-
-  /**
-   * 🔧 新增：从组件描述中提取目标用户/实体
-   */
-  private extractTargetsFromDescription(description: string): string[] {
-    const targets: string[] = [];
-    
-    // 提取@用户名
-    const usernameMatches = description.match(/@[a-zA-Z0-9_]+/g);
-    if (usernameMatches) {
-      targets.push(...usernameMatches);
-    }
-    
-    // 提取其他可能的目标标识
-    const quotedMatches = description.match(/"([^"]+)"/g);
-    if (quotedMatches) {
-      targets.push(...quotedMatches.map(m => m.replace(/"/g, '')));
-    }
-    
-    // 提取仓库名或其他实体（如果适用）
-    const entityMatches = description.match(/\b[a-zA-Z0-9_-]+\/[a-zA-Z0-9_-]+\b/g);
-    if (entityMatches) {
-      targets.push(...entityMatches);
-    }
-    
-    return targets;
-  }
+  // extractTargetsFromDescription 方法已删除
 
   /**
    * 🔧 新增：检查执行结果是否包含有效数据
