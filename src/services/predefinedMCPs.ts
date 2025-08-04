@@ -3883,10 +3883,12 @@ export const predefinedMCPs: MCPService[] = [
         name: 'dune-mcp-v2',
         description: 'Dune Analytics MCP server v2 - enhanced blockchain data access for AI agents (kukapay implementation)',
         command: 'npx',
-        args: ['-y', '@kukapay/dune-analytics-mcp'],
-        env: {},
+        args: ['-y', '@smithery/cli', 'run', '@kukapay/dune-analytics-mcp'],
+        env: {
+            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
+        },
         connected: false,
-        category: 'Crypto Tools',
+        category: 'Market Data',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png',
         githubUrl: 'https://github.com/kukapay/dune-analytics-mcp',
         authRequired: true,
@@ -4179,14 +4181,16 @@ export const predefinedMCPs: MCPService[] = [
         "description": "Hyperliquid MCP server v2 - advanced onchain tools with comprehensive trading operations, account management, and market data using Hyperliquid SDK",
         "command": "node",
         "args": ["/home/ubuntu/mcp-tools/hyperliquid-mcp/dist/index.js"],
-        "env": {},
+        "env": {
+            PRIVATE_KEY: process.env.HYPERLIQUID_PRIVATE_KEY || ''
+        },
         "connected": false,
         "category": "Trading",
         "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-hyperliquid.png",
         "githubUrl": "https://github.com/Impa-Ventures/hyperliquid-mcp",
         "authRequired": true,
         "authParams": {
-            PRIVATE_KEY: "This is your wallet private key"
+            HYPERLIQUID_PRIVATE_KEY: "HYPERLIQUID_PRIVATE_KEY"
         },
         "predefinedTools": [
             {
@@ -4952,7 +4956,8 @@ export const mcpNameMapping: Record<string, string> = {
     'dune-mcp': 'dune-mcp-v2', // 默认使用v2版本
     'dune-v1': 'dune-mcp-v1',
     'dune-v2': 'dune-mcp-v2',
-    'dune-analytics-mcp': 'dune-mcp-v2',
+    'dune-analytics-mcp': 'dune-mcp-v2', // kukapay implementation
+    '@kukapay/dune-analytics-mcp': 'dune-mcp-v2', // handle npm package name
     'binance-mcp-server': 'binance-mcp',
     'base-mcp-server': 'base-mcp',
     'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
