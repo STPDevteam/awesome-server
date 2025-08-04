@@ -81,6 +81,9 @@ export class EnhancedIntelligentTaskEngine {
     taskId: string,
     mcpWorkflow: any
   ): AsyncGenerator<{ event: string; data: any }, boolean, unknown> {
+    
+    // 🔧 CRITICAL DEBUG: 确认进入Enhanced引擎
+    logger.info(`🚨 ENHANCED ENGINE STARTED - Task: ${taskId}`);
     logger.info(`🚀 Starting enhanced workflow execution [Task: ${taskId}]`);
 
     // 🔧 验证工作流结构
@@ -95,6 +98,16 @@ export class EnhancedIntelligentTaskEngine {
       return false;
     }
 
+    // 🧠 智能任务复杂度分析
+    const task = await this.taskService.getTaskById(taskId);
+    const taskQuery = task?.content || '';
+    const taskComplexity = await this.analyzeTaskComplexity(taskQuery, mcpWorkflow.workflow.length);
+    
+    logger.info(`🎯 Task complexity analysis: ${taskComplexity.type} (${taskComplexity.recommendedObservation})`);
+
+    // 🔧 根据复杂度调整执行策略
+    const shouldObserveEveryStep = taskComplexity.type !== 'simple_query';
+
     // 🔧 发送执行开始事件 - 统一字段结构，与Agent引擎一致
     yield {
       event: 'execution_start',
@@ -102,6 +115,8 @@ export class EnhancedIntelligentTaskEngine {
         taskId,
         // 🔧 统一字段：添加agentName，与Agent引擎一致
         agentName: 'WorkflowEngine',
+        taskComplexity: taskComplexity.type,
+        observationStrategy: taskComplexity.recommendedObservation,
         timestamp: new Date().toISOString(),
         message: `Starting enhanced workflow execution with ${mcpWorkflow.workflow.length} steps...`,
         mode: 'enhanced',
@@ -190,21 +205,20 @@ export class EnhancedIntelligentTaskEngine {
           : `Execute ${actualToolName} on ${currentStep.mcp}`;
         const reasoning = `Workflow step ${currentStep.step}`;
 
-        // 🔧 发送步骤开始事件 - 使用实际推断的工具名称，与Agent引擎一致
+        // 🔧 发送步骤开始事件 - 对齐传统任务执行的事件名称
         const stepId = `workflow_step_${currentStep.step}_${Date.now()}`;
         yield {
           event: 'step_executing',
           data: {
             step: currentStep.step,
             tool: actualToolName,
-            // 🔧 统一字段：使用agentName而不是taskId，与Agent引擎一致
             agentName: 'WorkflowEngine',
-            message: `Executing workflow step ${currentStep.step}: ${currentStep.mcp}.${actualToolName}`,
+            message: `WorkflowEngine is executing step ${currentStep.step}: ${actualToolName}`,
+            // 🔧 与Agent引擎完全一致的toolDetails结构
             toolDetails: {
               toolType: toolType,
               toolName: actualToolName,
               mcpName: mcpName,
-              // 🔧 使用预处理的参数
               args: processedInput,
               expectedOutput: expectedOutput,
               reasoning: reasoning,
@@ -289,10 +303,11 @@ export class EnhancedIntelligentTaskEngine {
 
             for await (const chunk of formatGenerator) {
               yield {
-                event: 'step_result_chunk',
+                event: currentStep.step === state.totalSteps ? 'final_result_chunk' : 'step_result_chunk',
                 data: {
-                  step: currentStep.step,
                   chunk,
+                  // 🔧 保留智能引擎的增强字段
+                  step: currentStep.step,
                   agentName: 'WorkflowEngine'
                 }
               };
@@ -306,7 +321,7 @@ export class EnhancedIntelligentTaskEngine {
             actualToolName
           );
 
-          // 🔧 发送格式化结果事件 - 与Agent引擎完全一致的结构
+          // 🔧 保留智能引擎的格式化结果事件（增强功能）
           yield {
             event: 'step_formatted_result',
             data: {
@@ -347,19 +362,17 @@ export class EnhancedIntelligentTaskEngine {
           currentStep.status = 'completed';
           state.completedSteps++;
           
-          // 🔧 发送step_complete事件 - 统一字段结构，与Agent引擎一致
+          // 🔧 发送step_complete事件 - 对齐传统任务执行格式
           yield {
             event: 'step_complete',
             data: {
               step: currentStep.step,
               success: true,
-              result: executionResult.result, // 原始结果用于上下文传递
-              formattedResult: formattedResult || executionResult.result, // 格式化结果供前端显示
-              rawResult: executionResult.result,
-              // 🔧 统一字段：添加agentName和message，与Agent引擎一致
+              result: formattedResult || executionResult.result, // 格式化结果供前端显示
+              rawResult: executionResult.result, // 保留原始MCP结果供调试
+              // 🔧 保留智能引擎的增强字段
               agentName: 'WorkflowEngine',
               message: `WorkflowEngine completed step ${currentStep.step} successfully`,
-              // 🔧 保留工作流特有的进度信息
               progress: {
                 completed: state.completedSteps,
                 total: state.totalSteps,
@@ -385,16 +398,16 @@ export class EnhancedIntelligentTaskEngine {
             };
           }
 
-          // 🔧 发送step_error事件 - 统一字段结构，与Agent引擎一致
+          // 🔧 发送step_error事件 - 对齐传统任务执行格式
           yield {
             event: 'step_error',
             data: {
               step: currentStep.step,
-              success: false,
               error: executionResult.error,
+              // 🔧 保留智能引擎的增强字段
+              success: false,
               mcpName: currentStep.mcp,
               action: currentStep.action,
-              // 🔧 统一字段：添加agentName和message，与Agent引擎一致
               agentName: 'WorkflowEngine',
               message: `WorkflowEngine failed at step ${currentStep.step}`,
               attempts: currentStep.attempts || 1
@@ -402,24 +415,56 @@ export class EnhancedIntelligentTaskEngine {
           };
         }
 
-        // 🧠 任务观察阶段 - 与Agent引擎一致，每步执行后都进行观察
-        logger.info(`🔍 Performing task observation after step ${currentStep.step}...`);
+        // 🧠 智能观察阶段 - 根据任务复杂度决定观察频率和策略
+        let shouldObserve = false;
         
-        const observation = await this.taskObservationPhase(state);
-        
-        // 发送观察结果事件
-        yield {
-          event: 'task_observation',
-          data: {
-            taskId,
-            stepIndex: i,
-            shouldContinue: observation.shouldContinue,
-            shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
-            adaptationReason: observation.adaptationReason,
-            agentName: 'WorkflowEngine',
-            timestamp: new Date().toISOString()
-          }
+        if (taskComplexity.type === 'simple_query') {
+          // 简单查询：只在第一步完成后观察
+          shouldObserve = (i === 0 && executionResult.success) || !executionResult.success;
+        } else if (taskComplexity.type === 'medium_task') {
+          // 中等任务：每2步或失败时观察
+          shouldObserve = (i % 2 === 0) || !executionResult.success || (i === state.workflow.length - 1);
+        } else {
+          // 复杂工作流：每步都观察
+          shouldObserve = true;
+        }
+
+        let observation: {
+          shouldContinue: boolean;
+          shouldAdaptWorkflow: boolean;
+          adaptationReason?: string;
+          newObjective?: string;
+        } = {
+          shouldContinue: true,
+          shouldAdaptWorkflow: false
         };
+
+        if (shouldObserve) {
+          logger.info(`🔍 Performing task observation after step ${currentStep.step} (${taskComplexity.type} strategy)...`);
+          
+          observation = await this.taskObservationPhase(state, taskComplexity);
+          
+          // 发送观察结果事件
+          yield {
+            event: 'task_observation',
+            data: {
+              taskId,
+              stepIndex: i,
+              shouldContinue: observation.shouldContinue,
+              shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
+              adaptationReason: observation.adaptationReason,
+              agentName: 'WorkflowEngine',
+              complexityType: taskComplexity.type,
+              timestamp: new Date().toISOString()
+            }
+          };
+        } else {
+          // 简单查询且第一步成功 - 直接完成
+          if (taskComplexity.type === 'simple_query' && executionResult.success && i === 0) {
+            logger.info(`🎯 Simple query completed successfully after first step, stopping execution`);
+            observation.shouldContinue = false;
+          }
+        }
         
         // 🔄 如果需要调整工作流，进行动态规划
         if (observation.shouldAdaptWorkflow) {
@@ -476,17 +521,39 @@ export class EnhancedIntelligentTaskEngine {
       // 🔧 生成最终结果
       const finalResult = this.generateWorkflowFinalResult(state);
       
+      // 🔧 对齐传统任务执行：发送final_result事件
       yield {
         event: 'final_result',
         data: {
           finalResult,
-          success: state.completedSteps > 0,
+          message: 'Final execution result available'
+        }
+      };
+
+      // 🔧 对齐传统任务执行：发送workflow_complete事件
+      const overallSuccess = state.completedSteps > 0;
+      yield {
+        event: 'workflow_complete',
+        data: {
+          success: overallSuccess,
+          message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors',
+          finalResult: finalResult,
+          // 🔧 保留智能引擎的增强字段
           executionSummary: {
             totalSteps: state.totalSteps,
             completedSteps: state.completedSteps,
             failedSteps: state.failedSteps,
             successRate: Math.round((state.completedSteps / state.totalSteps) * 100)
           }
+        }
+      };
+
+      // 🔧 对齐传统任务执行：发送task_complete事件
+      yield {
+        event: 'task_complete',
+        data: {
+          taskId,
+          success: overallSuccess
         }
       };
 
@@ -499,7 +566,7 @@ export class EnhancedIntelligentTaskEngine {
       logger.error(`❌ Enhanced workflow execution failed:`, error);
       
       yield {
-        event: 'task_execution_error',
+        event: 'error',
         data: {
           message: 'Enhanced workflow execution failed',
           details: error instanceof Error ? error.message : String(error)
@@ -911,9 +978,159 @@ Select the best matching tool now:`;
     // 如果没有找到完整的JSON对象，返回null
     logger.warn(`⚠️ Could not find complete JSON object`);
     return null;
+    }
+
+  /**
+   * 🧠 智能任务复杂度分析（针对任务引擎优化）
+   */
+  private async analyzeTaskComplexity(
+    query: string, 
+    workflowSteps: number
+  ): Promise<{
+    type: 'simple_query' | 'medium_task' | 'complex_workflow';
+    recommendedObservation: 'fast' | 'balanced' | 'thorough';
+    shouldCompleteEarly: boolean;
+    reasoning: string;
+  }> {
+    try {
+      // 🔍 基于模式的快速分析
+      const quickAnalysis = this.quickTaskComplexityAnalysis(query, workflowSteps);
+      if (quickAnalysis) {
+        return quickAnalysis;
+      }
+
+      // 🧠 LLM深度分析（用于边缘情况）
+      const analysisPrompt = `Analyze the task complexity for workflow execution and recommend observation strategy.
+
+**User Query**: "${query}"
+**Workflow Steps**: ${workflowSteps} steps
+
+**Task Types:**
+1. **SIMPLE_QUERY** (Direct data requests):
+   - "Show me...", "Get current...", "What is..."
+   - Single data point requests
+   - Basic information lookup
+   - Observation: Fast - complete after first success
+
+2. **MEDIUM_TASK** (Multi-step operations):
+   - "Compare X and Y", "Analyze trends"
+   - Data processing and basic analysis
+   - Sequential operations with dependencies
+   - Observation: Balanced - observe key checkpoints
+
+3. **COMPLEX_WORKFLOW** (Comprehensive tasks):
+   - Multi-source analysis with transformations
+   - Complex decision workflows
+   - Extensive data processing chains
+   - Observation: Thorough - observe every step
+
+**OUTPUT FORMAT (JSON only):**
+{
+  "type": "simple_query|medium_task|complex_workflow",
+  "recommended_observation": "fast|balanced|thorough",
+  "should_complete_early": true/false,
+  "reasoning": "Brief explanation of complexity assessment"
+}`;
+
+      const response = await this.llm.invoke([new SystemMessage(analysisPrompt)]);
+      const content = response.content as string;
+      
+      // 解析LLM响应
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          type: parsed.type || 'medium_task',
+          recommendedObservation: parsed.recommended_observation || 'balanced',
+          shouldCompleteEarly: parsed.should_complete_early || false,
+          reasoning: parsed.reasoning || 'LLM analysis completed'
+        };
+      }
+    } catch (error) {
+      logger.warn(`Task complexity analysis failed: ${error}`);
+    }
+
+    // 默认中等复杂度
+    return {
+      type: 'medium_task',
+      recommendedObservation: 'balanced',
+      shouldCompleteEarly: false,
+      reasoning: 'Default complexity analysis'
+    };
   }
 
   /**
+   * 🔍 快速模式匹配复杂度分析（针对任务引擎）
+   */
+  private quickTaskComplexityAnalysis(
+    query: string, 
+    workflowSteps: number
+  ): {
+    type: 'simple_query' | 'medium_task' | 'complex_workflow';
+    recommendedObservation: 'fast' | 'balanced' | 'thorough';
+    shouldCompleteEarly: boolean;
+    reasoning: string;
+  } | null {
+    const lowerQuery = query.toLowerCase().trim();
+
+    // 🟢 简单查询模式 (1-2 steps, fast completion)
+    const simplePatterns = [
+      /^(show me|get|fetch|what is|current|latest)\s/,
+      /^(how much|how many|price of|value of)\s/,
+      /^(status of|info about|details of)\s/,
+      /\b(index|price|value|status|information)\s*(of|for)?\s*\w+$/,
+      /^(get current|show current|fetch latest)\s/
+    ];
+
+    if (simplePatterns.some(pattern => pattern.test(lowerQuery)) || workflowSteps <= 2) {
+      return {
+        type: 'simple_query',
+        recommendedObservation: 'fast',
+        shouldCompleteEarly: true,
+        reasoning: 'Direct data query - fast completion after first success'
+      };
+    }
+
+    // 🟡 中等任务模式 (3-5 steps, balanced observation)
+    const mediumPatterns = [
+      /\b(compare|analyze|calculate|process)\b/,
+      /\b(then|after|next|followed by)\b/,
+      /\b(both|all|multiple|several)\b/,
+      /\band\s+\w+\s+(also|too|as well)/,
+      /\b(summary|report|overview)\b/
+    ];
+
+    if (mediumPatterns.some(pattern => pattern.test(lowerQuery)) || (workflowSteps >= 3 && workflowSteps <= 5)) {
+      return {
+        type: 'medium_task',
+        recommendedObservation: 'balanced',
+        shouldCompleteEarly: false,
+        reasoning: 'Multi-step task requiring balanced observation'
+      };
+    }
+
+    // 🔴 复杂工作流模式 (6+ steps, thorough observation)
+    const complexPatterns = [
+      /\b(workflow|pipeline|process.*step)\b/,
+      /\b(first.*then.*finally|step.*step.*step)\b/,
+      /\b(comprehensive|detailed|thorough)\s+(analysis|report|study)\b/,
+      /\b(multiple.*and.*then)\b/,
+      /\b(optimize|automate|integrate)\b/
+    ];
+
+    if (complexPatterns.some(pattern => pattern.test(lowerQuery)) || workflowSteps > 5 || lowerQuery.length > 100) {
+      return {
+        type: 'complex_workflow',
+        recommendedObservation: 'thorough',
+        shouldCompleteEarly: false,
+        reasoning: 'Complex multi-step workflow requiring thorough observation'
+      };
+    }
+
+    return null; // 需要LLM深度分析
+  }
+
+/**
  * 🧠 新增：动态规划阶段（参考Agent引擎，使任务引擎也具备智能规划能力）
  */
 private async taskDynamicPlanningPhase(
@@ -955,7 +1172,8 @@ private async taskDynamicPlanningPhase(
  * 🧠 新增：任务观察阶段（参考Agent引擎，智能分析当前进度和调整策略）
  */
 private async taskObservationPhase(
-  state: EnhancedWorkflowState
+  state: EnhancedWorkflowState,
+  taskComplexity?: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
 ): Promise<{
   shouldContinue: boolean;
   shouldAdaptWorkflow: boolean;
@@ -963,7 +1181,7 @@ private async taskObservationPhase(
   newObjective?: string;
 }> {
   try {
-    const observerPrompt = this.buildTaskObserverPrompt(state);
+    const observerPrompt = this.buildTaskObserverPrompt(state, taskComplexity);
     const response = await this.llm.invoke([new SystemMessage(observerPrompt)]);
     
     return this.parseTaskObservation(response.content.toString());
@@ -1027,9 +1245,12 @@ Respond with valid JSON in this exact format:
 }
 
 /**
- * 🔧 构建任务观察提示词
+ * 🔧 构建任务观察提示词（智能复杂度感知）
  */
-private buildTaskObserverPrompt(state: EnhancedWorkflowState): string {
+private buildTaskObserverPrompt(
+  state: EnhancedWorkflowState,
+  taskComplexity?: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
+): string {
   const completedStepsInfo = state.executionHistory
     .filter(step => step.success)
     .map(step => `Step ${step.stepNumber}: ${step.action} -> Success`)
@@ -1040,11 +1261,34 @@ private buildTaskObserverPrompt(state: EnhancedWorkflowState): string {
     .map(step => `Step ${step.stepNumber}: ${step.action} -> Failed: ${step.error}`)
     .join('\n');
 
-  return `You are an intelligent task execution observer analyzing workflow progress after each step. Make smart decisions about continuation, completion, and adaptation.
+  return `You are an intelligent task execution observer analyzing workflow progress. Make smart decisions based on task complexity.
 
 **Original Task**: ${state.originalQuery}
+**Task Complexity**: ${taskComplexity ? `${taskComplexity.type} (${taskComplexity.recommendedObservation} observation)` : 'Unknown'}
 
 **Current Progress**: Step ${state.currentStepIndex + 1}/${state.totalSteps} (${Math.round(((state.currentStepIndex + 1) / state.totalSteps) * 100)}%)
+
+**COMPLEXITY-BASED COMPLETION CRITERIA**:
+
+${taskComplexity?.type === 'simple_query' ? `
+🟢 **SIMPLE QUERY MODE** - Fast completion priority:
+- ✅ **COMPLETE IMMEDIATELY** if first step returned valid data
+- ✅ **COMPLETE IMMEDIATELY** if user's question is answered
+- ❌ Continue only if NO data retrieved or complete failure
+- 🎯 Priority: Speed over perfection for data requests
+` : taskComplexity?.type === 'medium_task' ? `
+🟡 **MEDIUM TASK MODE** - Balanced approach:
+- ✅ Complete if main objectives achieved (50%+ steps successful)
+- ✅ Complete if sufficient data collected for analysis
+- ❌ Continue if key analysis or comparison still needed
+- 🎯 Priority: Balance speed with thoroughness
+` : `
+🔴 **COMPLEX WORKFLOW MODE** - Thorough completion:
+- ✅ Complete only if all major workflow components finished
+- ✅ Complete if comprehensive analysis delivered
+- ❌ Continue if significant workflow steps remain
+- 🎯 Priority: Comprehensive completion over speed
+`}
 
 **Execution Summary**:
 - Completed Steps: ${state.completedSteps}
@@ -1227,26 +1471,40 @@ private async getAvailableMCPsForPlanning(taskId: string): Promise<any[]> {
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 🔧 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
-      const formatPrompt = `Please format the following MCP tool execution result into a clear, readable markdown format.
+      // 🔧 纯粹的格式转换：JSON → Markdown（智能长度控制）
+      const dataString = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2);
+      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      
+      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
 
-**Tool Information:**
-- MCP Service: ${mcpName}
-- Tool/Action: ${toolName}
+**Data to format:**
+${dataString}
 
-**Raw Result:**
-${typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2)}
+**Formatting rules:**
+- Convert JSON structure to clear Markdown
+- Use tables for object data when helpful
+- Use lists for arrays
+- Make long numbers readable with commas
+- Output the formatted Markdown directly
+- DO NOT wrap in code blocks or backticks
+- DO NOT add explanations or descriptions
 
-**Format Requirements:**
-1. Use proper markdown formatting (headers, lists, code blocks, etc.)
-2. Make the content easy to read and understand
-3. Highlight important information
-4. Structure the data logically
-5. If the result contains data, format it in tables or lists
-6. If it's an error, clearly explain what happened
-7. Keep the formatting professional and clean
+${isLongData ? `
+**IMPORTANT - Data Length Control:**
+This is a large dataset. Apply smart filtering:
+- Show only the most important/commonly used fields
+- For blockchain data: show hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
+- Skip verbose fields like logsBloom, extraData, mix_hash unless they contain short meaningful values
+- For large objects: show top 10-15 most relevant fields
+- Always prioritize user-actionable or identifying information
+- Keep the output concise and focused
+` : `
+**Standard formatting:**
+- Keep ALL original data values
+- Format all available fields
+`}
+- ONLY return the formatted data`;
 
-Format the result now:`;
 
       // 使用流式LLM生成格式化结果
       const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
@@ -1269,13 +1527,38 @@ Format the result now:`;
    */
   private async generateFormattedResult(rawResult: any, mcpName: string, action: string): Promise<string> {
     try {
-      const prompt = `Format the following MCP result for better readability:
+      const dataString = JSON.stringify(rawResult, null, 2);
+      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      
+      const prompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
 
-**MCP**: ${mcpName}
-**Action**: ${action}
-**Raw Result**: ${JSON.stringify(rawResult, null, 2)}
+**Data to format:**
+${dataString}
 
-Please format this result in a clear, user-friendly way with appropriate markdown formatting.`;
+**Formatting rules:**
+- Convert JSON structure to clear Markdown
+- Use tables for object data when helpful
+- Use lists for arrays
+- Make long numbers readable with commas
+- Output the formatted Markdown directly
+- DO NOT wrap in code blocks or backticks
+- DO NOT add explanations or descriptions
+
+${isLongData ? `
+**IMPORTANT - Data Length Control:**
+This is a large dataset. Apply smart filtering:
+- Show only the most important/commonly used fields
+- For blockchain data: show hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
+- Skip verbose fields like logsBloom, extraData, mix_hash unless they contain short meaningful values
+- For large objects: show top 10-15 most relevant fields
+- Always prioritize user-actionable or identifying information
+- Keep the output concise and focused
+` : `
+**Standard formatting:**
+- Keep ALL original data values
+- Format all available fields
+`}
+- ONLY return the formatted data`;
 
       const response = await this.llm.invoke([new SystemMessage(prompt)]);
       return response.content as string;
@@ -1502,7 +1785,14 @@ export class EnhancedIntelligentTaskService {
       // 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
       if (!task) {
-        stream({ event: 'error', data: { message: 'Task not found' } });
+        // 🔧 直接发送错误事件，不包装
+        stream({ 
+          event: 'error', 
+          data: { 
+            message: 'Task not found',
+            agentName: 'WorkflowEngine'
+          }
+        });
         return false;
       }
 
@@ -1512,19 +1802,28 @@ export class EnhancedIntelligentTaskService {
         : task.mcpWorkflow;
 
       if (!skipAnalysisCheck && (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0)) {
+        // 🔧 直接发送错误事件，不包装
         stream({ 
           event: 'error', 
           data: { 
             message: 'No workflow found. Please analyze the task first.',
-            details: 'Call /api/task/:id/analyze to generate a workflow before execution.'
-          } 
+            details: 'Call /api/task/:id/analyze to generate a workflow before execution.',
+            agentName: 'WorkflowEngine'
+          }
         });
         return false;
       }
 
       // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
-      stream({ event: 'status_update', data: { status: 'in_progress' } });
+      // 🔧 直接发送状态更新事件，不包装
+      stream({ 
+        event: 'status_update', 
+        data: { 
+          status: 'in_progress',
+          agentName: 'WorkflowEngine'
+        }
+      });
 
       // 使用增强引擎执行工作流
       const executionGenerator = this.engine.executeWorkflowEnhanced(taskId, mcpWorkflow);
@@ -1532,7 +1831,7 @@ export class EnhancedIntelligentTaskService {
       let finalSuccess = false;
 
       for await (const result of executionGenerator) {
-        // 转发所有事件到流
+        // 🔧 直接流式传输原始事件，不包装
         stream(result);
         
         // 记录最终执行结果
@@ -1547,17 +1846,32 @@ export class EnhancedIntelligentTaskService {
         finalSuccess ? 'completed' : 'failed'
       );
 
+      // 🔧 直接发送执行完成事件，不包装
+      stream({
+        event: 'task_execution_complete',
+        data: {
+          success: finalSuccess,
+          message: finalSuccess ? 
+            'WorkflowEngine task execution completed successfully' : 
+            'WorkflowEngine task execution failed',
+          agentName: 'WorkflowEngine',
+          timestamp: new Date().toISOString()
+        }
+      });
+
       logger.info(`✅ Enhanced workflow execution completed [Task: ${taskId}, Success: ${finalSuccess}]`);
       return finalSuccess;
 
     } catch (error) {
       logger.error(`❌ Enhanced workflow execution failed:`, error);
       
+      // 🔧 直接发送错误事件，不包装
       stream({
         event: 'error',
         data: {
           message: 'Enhanced workflow execution failed',
-          details: error instanceof Error ? error.message : String(error)
+          details: error instanceof Error ? error.message : String(error),
+          agentName: 'WorkflowEngine'
         }
       });
 
