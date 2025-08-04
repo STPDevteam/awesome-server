@@ -12,6 +12,7 @@ import { MCPManager } from './mcpManager.js';
 import { messageDao } from '../dao/messageDao.js';
 import { MessageType, MessageIntent, MessageStepType } from '../models/conversation.js';
 import { conversationDao } from '../dao/conversationDao.js';
+import { resolveUserLanguage, getLanguageInstruction, SupportedLanguage } from '../utils/languageDetector.js';
 
 import { MCPInfo } from '../models/mcp.js';
 import { MCPToolAdapter } from './mcpToolAdapter.js';
@@ -1056,7 +1057,7 @@ Transform the data now:`;
    * @param actionName 动作名称
    * @returns 格式化后的Markdown内容
    */
-  private async formatResultWithLLM(rawResult: any, mcpName: string, actionName: string): Promise<string> {
+  private async formatResultWithLLM(rawResult: any, mcpName: string, actionName: string, userLanguage?: SupportedLanguage): Promise<string> {
     try {
       logger.info(`🤖 Using LLM to format result for ${mcpName}/${actionName}`);
       
@@ -1070,6 +1071,11 @@ Transform the data now:`;
         } else {
           actualContent = rawResult.content;
         }
+      }
+      
+      // 🌍 如果没有传入用户语言，尝试从原始数据中检测
+      if (!userLanguage && typeof actualContent === 'string') {
+        userLanguage = resolveUserLanguage(actualContent);
       }
       
       // 构建格式化提示词
@@ -1129,7 +1135,7 @@ Example of WRONG output:
 Here are the recent tweets...
 \`\`\`
 
-IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.`;
+IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
 
       const response = await this.llm.invoke([
         new SystemMessage(formatPrompt)
@@ -1222,7 +1228,7 @@ Based on the above task execution information, please generate a complete execut
    * @param taskId 任务ID
    * @param conversationId 会话ID
    * @param stream 流式输出回调
-   * @returns LangChain的RunnableSequence
+   * @returns LangChain的RunnableSequenceideal_face_score
    */
   private async buildLangChainWorkflowChainWithMessages(
     workflow: Array<{ step: number; mcp: string; action: string; input?: any }>,
@@ -2422,7 +2428,8 @@ Transform the data now:`;
     rawResult: any, 
     mcpName: string, 
     actionName: string,
-    streamCallback: (chunk: string) => void
+    streamCallback: (chunk: string) => void,
+    userLanguage?: SupportedLanguage
   ): Promise<string> {
     try {
       logger.info(`🤖 Using LLM to format result for ${mcpName}/${actionName} (streaming)`);
@@ -2437,6 +2444,11 @@ Transform the data now:`;
         } else {
           actualContent = rawResult.content;
         }
+      }
+      
+      // 🌍 如果没有传入用户语言，尝试从原始数据中检测
+      if (!userLanguage && typeof actualContent === 'string') {
+        userLanguage = resolveUserLanguage(actualContent);
       }
       
       // 检查内容长度，避免超出限制
@@ -2486,7 +2498,7 @@ FORMATTING RULES:
 ❌ DO NOT wrap your response in \`\`\`markdown \`\`\` or \`\`\` \`\`\` blocks.
 ✅ Return the markdown content directly, ready for immediate display.
 
-IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.`;
+IMPORTANT: Your response should be ready-to-display markdown content, not wrapped in any code blocks.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
 
       // 创建流式LLM实例
       const streamingLLM = new ChatOpenAI({

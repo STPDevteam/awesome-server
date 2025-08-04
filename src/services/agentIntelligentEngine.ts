@@ -11,6 +11,7 @@ import { taskExecutorDao } from '../dao/taskExecutorDao.js';
 import { messageDao } from '../dao/messageDao.js';
 import { conversationDao } from '../dao/conversationDao.js';
 import { MessageType, MessageIntent, MessageStepType } from '../models/conversation.js';
+import { resolveUserLanguage, getLanguageInstruction, SupportedLanguage } from '../utils/languageDetector.js';
 
 /**
  * Agent执行计划
@@ -58,6 +59,7 @@ export interface AgentWorkflowState {
   lastError: string | null;
   // 🔧 简化：只保留失败处理
   failureHistory: FailureRecord[];    // 失败记录和处理策略
+  userLanguage?: SupportedLanguage;   // 🌍 用户语言
 }
 
 /**
@@ -118,7 +120,8 @@ export class AgentIntelligentEngine {
   async *executeAgentTask(
     taskId: string,
     query: string,
-    maxIterations: number = 20  // 🔧 提高上限，作为安全网
+    maxIterations: number = 20,  // 🔧 提高上限，作为安全网
+    userLanguage?: SupportedLanguage  // 🌍 用户语言
   ): AsyncGenerator<{ event: string; data: any }, boolean, unknown> {
     logger.info(`🤖 Starting Agent intelligent execution [Task: ${taskId}, Agent: ${this.agent.name}]`);
 
@@ -155,7 +158,8 @@ export class AgentIntelligentEngine {
       errors: [],
       lastError: null,
       // 🔧 简化：只保留必要的跟踪字段
-      failureHistory: []
+      failureHistory: [],
+      userLanguage  // 🌍 用户语言
     };
 
     let stepCounter = 0;
@@ -900,6 +904,9 @@ export class AgentIntelligentEngine {
     // 构建所有已收集数据的摘要
     const collectedDataSummary = this.buildCollectedDataSummary(state);
     
+    // 🌍 使用state中的用户语言
+    const userLanguage = state.userLanguage;
+    
     return `You are **${this.agent.name}**, analyzing whether sufficient data has been collected to answer the user's question.
 
 ## 📋 USER'S ORIGINAL QUESTION
@@ -957,7 +964,7 @@ ${collectedDataSummary}
   "nextObjective": "If not complete, what specific information is still needed?"
 }
 
-**Remember**: Base your decision purely on data sufficiency, not on execution count or arbitrary rules.`;
+**Remember**: Base your decision purely on data sufficiency, not on execution count or arbitrary rules.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
 
   /**
@@ -1136,6 +1143,9 @@ What is the most logical next step for ${this.agent.name} to take?`;
     // 🔧 失败分析
     const recentFailures = state.failureHistory.filter(f => f.attemptCount > 0);
     
+    // 🌍 使用state中的用户语言
+    const userLanguage = state.userLanguage;
+    
     return `You are **${this.agent.name}**, a specialized AI agent executing an intelligent workflow.
 
 ## 🎯 Agent Profile
@@ -1219,7 +1229,7 @@ ${availableMCPs.map(mcp => {
 - mcpName = service name (twitter-client-mcp, not getUserTweets)
 - For task completion: {"tool": "task_complete", "toolType": "completion", "mcpName": null}
 
-As ${this.agent.name}, what is your next strategic move?`;
+As ${this.agent.name}, what is your next strategic move?${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
 
   /**
@@ -1762,6 +1772,8 @@ ${taskComplexity?.type === 'simple_query' ? 'For simple queries: Success = Compl
    * 🔧 新增：构建通用且健壮的LLM提示词（适用于所有LLM任务：分析、摘要、总结、提取、格式化等）
    */
   private buildUniversalLLMPrompt(toolName: string, plan: AgentExecutionPlan, state: AgentWorkflowState): string {
+    // 🌍 使用state中的用户语言
+    const userLanguage = state.userLanguage;
     // 🔧 智能上下文处理：如果上下文过长，先进行摘要
     const contextData = this.prepareContextData(state);
     
@@ -1829,7 +1841,7 @@ Execute the "${toolName}" task now using:
 - All provided context data and parameters
 - Universal quality standards and platform requirements
 
-**Generate your response:**`;
+**Generate your response:**${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
 
   /**
@@ -2444,6 +2456,9 @@ ${dataContent}`;
             // 🔧 直接提取核心数据用于回答用户问题
       const coreDataSummary = this.extractCoreDataForAnswer(state);
       
+      // 🌍 使用state中的用户语言
+      const userLanguage = state.userLanguage;
+      
       // 构建直接回答用户问题的提示词
       const summaryPrompt = `You are ${this.agent.name}, and you need to directly answer the user's question based on all the data you've collected.
 
@@ -2473,7 +2488,7 @@ Based on ALL the data collected above, provide a direct, comprehensive answer to
 
 **Remember**: The user wants an answer to their question, not a report about how you executed the task. Use your collected data to give them exactly what they asked for.
 
-Provide your direct answer:`;
+Provide your direct answer:${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
 
       // 使用流式LLM生成增强总结
       const stream = await this.llm.stream([new SystemMessage(summaryPrompt)]);
@@ -3444,7 +3459,8 @@ export class AgentIntelligentTaskService {
    */
   async executeAgentTaskIntelligently(
     taskId: string,
-    stream: (data: any) => void
+    stream: (data: any) => void,
+    userLanguage?: SupportedLanguage
   ): Promise<boolean> {
     try {
       logger.info(`🚀 Starting Agent intelligent task execution [Task: ${taskId}, Agent: ${this.agent.name}]`);
@@ -3462,8 +3478,8 @@ export class AgentIntelligentTaskService {
         return false;
       }
 
-      // 使用Agent专用智能引擎执行
-      const executionGenerator = this.engine.executeAgentTask(taskId, task.content, 15);
+      // 使用Agent专用智能引擎执行 (传递用户语言)
+      const executionGenerator = this.engine.executeAgentTask(taskId, task.content, 15, userLanguage);
       
       let result = false;
       for await (const executionEvent of executionGenerator) {
