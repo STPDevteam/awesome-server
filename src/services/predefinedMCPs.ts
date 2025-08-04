@@ -1061,8 +1061,8 @@ export const predefinedMCPs: MCPService[] = [
     },
 
     {
-        name: 'coingecko-mcp',
-        description: 'CoinGecko official MCP server for cryptocurrency market data, historical prices, and OHLC candlestick data (LOCAL BUILD)',
+        name: 'coingecko-mcp-v1',
+        description: 'CoinGecko MCP server v1 for cryptocurrency market data, historical prices, and OHLC candlestick data',
         command: 'node',
         args: [`/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js`],
         env: {
@@ -1804,8 +1804,8 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        name: 'defillama-mcp',
-        description: 'DeFiLlama DeFi protocol data and TVL analytics - provides protocol TVL, chain data, token prices, and stablecoin information (LOCAL BUILD)',
+        name: 'defillama-mcp-v1',
+        description: 'DeFiLlama MCP server v1 - provides DeFi protocol data, TVL analytics, chain data, token prices, and stablecoin information',
         command: 'node',
         args: [`/home/ubuntu/mcp-tools/mcp-server-defillama/dist/index.js`],
         env: {},
@@ -2123,8 +2123,8 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        name: 'dune-mcp',
-        description: 'Dune Analytics blockchain data queries and dashboards',
+        name: 'dune-mcp-v1',
+        description: 'Dune Analytics MCP server v1 - blockchain data queries and dashboards (ekailabs implementation)',
         command: 'node',
         args: [`/home/ubuntu/mcp-tools/dune-mcp-server/dist/index.js`],
         env: {
@@ -3378,8 +3378,8 @@ export const predefinedMCPs: MCPService[] = [
         }
     },
     {
-        name: 'hyperliquid-mcp',
-        description: 'Hyperliquid decentralized perpetuals trading',
+        name: 'hyperliquid-mcp-v1',
+        description: 'Hyperliquid MCP server v1 - decentralized perpetuals trading (simple version)',
         command: 'npx',
         args: ['-y', '@mektigboy/server-hyperliquid'],
         env: {},
@@ -3796,8 +3796,8 @@ export const predefinedMCPs: MCPService[] = [
     },
     // new mcp
     {
-        "name": "new-coingecko-mcp",
-        "description": "CoinGecko cryptocurrency data and market analytics - provides prices, market data, trends, historical data, and crypto categories (REMOTE PUBLIC or LOCAL BUILD)",
+        "name": "coingecko-mcp-v2",
+        "description": "CoinGecko MCP server v2 - provides cryptocurrency data and market analytics with enhanced features",
         "command": "npx",
         "args": ["-y", "@coingecko/coingecko-mcp"],
         "env": {
@@ -3880,15 +3880,15 @@ export const predefinedMCPs: MCPService[] = [
         },
     },
     {
-        name: 'new-dune-analytics-mcp',
-        description: 'Dune Analytics MCP Server - provides access to blockchain data queries and results from Dune Analytics for AI agents, including fetching latest results and executing queries',
+        name: 'dune-mcp-v2',
+        description: 'Dune Analytics MCP server v2 - enhanced blockchain data access for AI agents (kukapay implementation)',
         command: 'npx',
         args: ['-y', '@kukapay/dune-analytics-mcp'],
         env: {},
         connected: false,
         category: 'Crypto Tools',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png',
-        githubUrl: 'https://·github.com/kukapay/dune-analytics-mcp',
+        githubUrl: 'https://github.com/kukapay/dune-analytics-mcp',
         authRequired: true,
         authParams: {
             DUNE_API_KEY: "DUNE_API_KEY"
@@ -3927,8 +3927,8 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        "name": "demcp-defillama-mcp",
-        "description": "DeFiLlama MCP Server (demcp variant) - provides DeFi protocol data, TVL analytics, chain data, token prices, and liquidity pool information using FastMCP framework for AI integration (LOCAL BUILD)",
+        "name": "defillama-mcp-v2",
+        "description": "DeFiLlama MCP server v2 (demcp variant) - provides DeFi protocol data, TVL analytics with FastMCP framework for enhanced AI integration",
         "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
         "args": ["/home/ubuntu/mcp-tools/defillama-mcp/defillama.py"],
         "env": {},
@@ -4175,8 +4175,8 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        "name": "new-hyperliquid-mcp",
-        "description": "Hyperliquid MCP Server - provides onchain tools for AI applications to interact with Hyperliquid, including account states, order management, trading operations, and market data using Hyperliquid SDK (LOCAL BUILD)",
+        "name": "hyperliquid-mcp-v2",
+        "description": "Hyperliquid MCP server v2 - advanced onchain tools with comprehensive trading operations, account management, and market data using Hyperliquid SDK",
         "command": "node",
         "args": ["/home/ubuntu/mcp-tools/hyperliquid-mcp/dist/index.js"],
         "env": {},
@@ -4937,20 +4937,34 @@ export const mcpNameMapping: Record<string, string> = {
     'playwright-mcp-server': 'playwright',
     'cook-mcp-server': 'cook-mcp',
     'dexscreener-mcp-server': 'dexscreener-mcp',
-    'mcp-coingecko-server': 'coingecko-mcp',
+    'mcp-coingecko-server': 'coingecko-mcp-v1',
     'pumpfun-mcp-server': 'pumpfun-mcp',
     'uniswap-trader-mcp': 'uniswap-mcp',
     'playwright-mcp-service': 'playwright',
-    'coingecko-server': 'coingecko-mcp',
-    'coingecko-mcp-service': 'coingecko-mcp',
+    'coingecko-server': 'coingecko-mcp-v1',
+    'coingecko-mcp-service': 'coingecko-mcp-v1',
+    'coingecko-mcp': 'coingecko-mcp-v2', // 默认使用v2版本
+    'coingecko-v1': 'coingecko-mcp-v1',
+    'coingecko-v2': 'coingecko-mcp-v2',
     'evm-mcp-server': 'evm-mcp',
     'evm-mcp-service': 'evm-mcp',
-    'dune-mcp-server': 'dune-mcp',
+    'dune-mcp-server': 'dune-mcp-v1',
+    'dune-mcp': 'dune-mcp-v2', // 默认使用v2版本
+    'dune-v1': 'dune-mcp-v1',
+    'dune-v2': 'dune-mcp-v2',
+    'dune-analytics-mcp': 'dune-mcp-v2',
     'binance-mcp-server': 'binance-mcp',
     'base-mcp-server': 'base-mcp',
     'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
     'coinmarketcap_mcp_service': 'coinmarketcap-mcp',
-    'defillama-mcp-service': 'mcp-server-defillama',
+    'defillama-mcp-service': 'defillama-mcp-v1',
+    'defillama-mcp': 'defillama-mcp-v2', // 默认使用v2版本
+    'defillama-v1': 'defillama-mcp-v1',
+    'defillama-v2': 'defillama-mcp-v2',
+    'demcp-defillama-mcp': 'defillama-mcp-v2',
+    'hyperliquid-mcp': 'hyperliquid-mcp-v2', // 默认使用v2版本
+    'hyperliquid-v1': 'hyperliquid-mcp-v1',
+    'hyperliquid-v2': 'hyperliquid-mcp-v2',
     'chainlink-feeds-mcp-service': 'chainlink-feeds-mcp',
     'rug-check-mcp-service': 'rugcheck-mcp',
     'crypto-feargreed-mcp-service': 'crypto-feargreed-mcp',
