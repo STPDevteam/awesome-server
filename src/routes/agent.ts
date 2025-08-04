@@ -17,6 +17,22 @@ import {
 
 const router = Router();
 
+// Categories cache
+interface CategoriesCache {
+  data: Array<{ name: string; count: number }>;
+  timestamp: number;
+  ttl: number; // Time to live in milliseconds
+}
+
+let categoriesCache: CategoriesCache | null = null;
+const CATEGORIES_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Helper function to clear categories cache
+const clearCategoriesCache = () => {
+  categoriesCache = null;
+  logger.info('Categories cache cleared');
+};
+
 // Initialize services
 let agentService: ReturnType<typeof getAgentService>;
 const mcpAuthService = new MCPAuthService();
@@ -148,17 +164,24 @@ router.post('/', requireAuth, async (req: Request, res: Response) => {
  * GET /api/agent
  * 
  * Query Parameters:
- * - queryType: 'public' | 'my-private' | 'my-saved' | 'all'
+ * - queryType: 'public' | 'my-private' | 'my-saved' | 'all' (default: 'public')
  *   - public: Public Agents (no login required)
  *   - my-private: My Private Agents (login required)
  *   - my-saved: My Saved Agents (login required)
  *   - all: All Visible Agents (login required)
+ * - search: 搜索关键词
+ * - category: 分类过滤
+ * - orderBy: 排序字段 ('createdAt' | 'updatedAt' | 'usageCount' | 'name')
+ * - order: 排序方向 ('asc' | 'desc')
+ * - offset: 分页偏移量 (默认: 0)
+ * - limit: 每页数量 (默认: 20, 最大: 100)
  */
 router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
-    let queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'all';
+    // 参数验证和默认值
+    let queryType = req.query.queryType as 'public' | 'my-private' | 'my-saved' | 'all' || 'public';
     
-    // Compatibility handling: if status parameter is a query type, map it to queryType
+    // 兼容性处理: 如果status参数是查询类型，映射到queryType
     const statusParam = req.query.status as string;
     if (statusParam && ['public', 'my-private', 'my-saved'].includes(statusParam)) {
       queryType = statusParam as 'public' | 'my-private' | 'my-saved';
@@ -166,12 +189,64 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 
     const userId = req.user?.id;
     
-    // Check query types that require login
+    // 检查需要登录的查询类型
     if (['my-private', 'my-saved', 'all'].includes(queryType) && !userId) {
       return res.status(401).json({
         success: false,
         error: 'UNAUTHORIZED',
         message: 'User not authenticated'
+      });
+    }
+    
+    // 参数验证
+    const rawOffset = req.query.offset as string;
+    const rawLimit = req.query.limit as string;
+    
+    let offset = 0;
+    let limit = 20;
+    
+    if (rawOffset) {
+      const parsedOffset = parseInt(rawOffset);
+      if (isNaN(parsedOffset) || parsedOffset < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'INVALID_PARAMETER',
+          message: 'offset must be a non-negative integer'
+        });
+      }
+      offset = parsedOffset;
+    }
+    
+    if (rawLimit) {
+      const parsedLimit = parseInt(rawLimit);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+        return res.status(400).json({
+          success: false,
+          error: 'INVALID_PARAMETER',
+          message: 'limit must be an integer between 1 and 100'
+        });
+      }
+      limit = parsedLimit;
+    }
+    
+    // 验证orderBy参数
+    const validOrderBy = ['createdAt', 'updatedAt', 'usageCount', 'name'];
+    const orderBy = req.query.orderBy as string;
+    if (orderBy && !validOrderBy.includes(orderBy)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_PARAMETER',
+        message: `orderBy must be one of: ${validOrderBy.join(', ')}`
+      });
+    }
+    
+    // 验证order参数
+    const order = req.query.order as string;
+    if (order && !['asc', 'desc'].includes(order)) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_PARAMETER',
+        message: 'order must be either "asc" or "desc"'
       });
     }
     
@@ -181,34 +256,22 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       status: ['public', 'my-private', 'my-saved'].includes(statusParam) ? undefined : req.query.status as any,
       search: req.query.search as string,
       category: req.query.category as string,
-      orderBy: req.query.orderBy as any,
-      order: req.query.order as any,
-      offset: req.query.offset ? parseInt(req.query.offset as string) : undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : undefined
+      orderBy: orderBy as any,
+      order: order as any,
+      offset,
+      limit
     };
 
     const result = await agentService.getAgents(query);
 
-    // Count category information from current query results
-    const categoryMap = new Map<string, number>();
-    result.agents.forEach(agent => {
-      if (agent.categories && Array.isArray(agent.categories)) {
-        agent.categories.forEach(category => {
-          categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
-        });
-      }
-    });
-
-    // Convert to array and sort by count in descending order
-    const categories = Array.from(categoryMap.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-
     res.json({
       success: true,
-      data: {
-        ...result,
-        categories
+      data: result,
+      pagination: {
+        offset,
+        limit,
+        total: result.total,
+        hasMore: offset + limit < result.total
       }
     });
   } catch (error) {
@@ -255,25 +318,41 @@ router.get('/stats', requireAuth, async (req: Request, res: Response) => {
 /**
  * Get All Agent Categories List
  * GET /api/agent/categories
+ * 获取所有Agent分类列表，按使用频次排序
+ * 
+ * Query Parameters:
+ * - fresh: 'true' | 'false' - 强制刷新缓存 (默认: false)
  */
 router.get('/categories', async (req: Request, res: Response) => {
   try {
-    // Use statistics endpoint to get category information (does not require user authentication for global stats)
-    const marketplace = await agentService.getAgentMarketplace({
-      limit: 1 // Only need category statistics, not specific Agent data
-    });
-
-    // Extract all categories from public Agents
-    const categories = new Set<string>();
-    // Note: Need to add logic to get all categories in agentService
-    // Temporarily return empty array, need to implement in service layer
-    const categoryList: Array<{name: string, count: number}> = [];
+    const forceFresh = req.query.fresh === 'true';
+    const now = Date.now();
+    
+    // 检查缓存是否有效
+    if (!forceFresh && categoriesCache && (now - categoriesCache.timestamp < categoriesCache.ttl)) {
+      return res.json({
+        success: true,
+        data: categoriesCache.data,
+        cached: true,
+        cachedAt: new Date(categoriesCache.timestamp).toISOString()
+      });
+    }
+    
+    // 获取最新数据
+    const categories = await agentService.getAllCategories();
+    
+    // 更新缓存
+    categoriesCache = {
+      data: categories,
+      timestamp: now,
+      ttl: CATEGORIES_CACHE_TTL
+    };
 
     res.json({
       success: true,
-      data: categoryList,
-      message: 'Category list functionality is under development'
-        });
+      data: categories,
+      cached: false
+    });
   } catch (error) {
     logger.error('Failed to get Agent categories:', error);
     res.status(500).json({
