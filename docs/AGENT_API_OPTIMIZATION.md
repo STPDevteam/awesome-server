@@ -23,9 +23,9 @@
 - 缺少合理的默认值
 
 **解决方案**：
-- **移除低效的 categories 计算**：不再在主接口中计算分类统计
+- **保留 categories 计算**：基于当前查询结果统计分类信息
 - **优化默认值**：queryType 默认为 'public' 而非 'all'
-- **简化响应结构**：移除 categories 字段，客户端需要时可单独调用 categories 接口
+- **优化响应结构**：保留 categories 字段，同时添加分页信息
 - **添加分页信息**：在响应中增加 pagination 对象，包含 hasMore 等有用信息
 
 ### 3. 加强参数验证 ✅
@@ -81,8 +81,9 @@ GET /api/agent/categories?fresh=true
 ## 性能提升
 
 ### 1. 查询优化
-- 移除了每次请求中的 categories 统计计算
-- 减少了不必要的数据传输
+- 保留了基于当前查询结果的 categories 统计计算
+- 优化了参数验证逻辑，减少无效查询
+- 添加了智能缓存机制
 
 ### 2. 缓存效果
 - Categories 接口响应时间从 ~100ms 降低到 ~1ms（缓存命中时）
@@ -129,12 +130,13 @@ ON agent_favorites (agent_id, user_id);
 ## 兼容性说明
 
 ### 向后兼容
+- 保留了 `categories` 字段的计算和返回
 - 保留了 `status` 参数的兼容性处理
 - 所有现有的查询参数都继续支持
 
 ### 破坏性变更
-- **响应格式变更**：主接口不再返回 `categories` 字段
 - **默认值变更**：queryType 默认值从 'all' 改为 'public'
+- **字段移除**：Agent模型中移除了 `metadata.executionResults` 字段
 
 ## 监控建议
 
@@ -154,6 +156,20 @@ ON agent_favorites (agent_id, user_id);
 4. **数据库查询**：
    - 慢查询监控（> 1s）
    - 查询计划分析
+
+## 📝 最新修复
+
+### 用户反馈修复 (2024-01-15)
+
+1. **恢复 categories 字段**：
+   - 根据用户反馈，保留主接口中的 categories 字段计算
+   - 基于当前查询结果统计分类信息
+   - 维持原有的前端集成体验
+
+2. **移除 executionResults 字段**：
+   - 从 Agent 模型的 metadata 中移除 executionResults 字段
+   - 简化响应结构，减少不必要的数据传输
+   - 保持 API 响应的清洁性
 
 ## 后续优化方向
 
