@@ -282,6 +282,78 @@ export function resolveUserLanguage(
 }
 
 /**
+ * 🎯 增强版语言解析：优先解析语言指令，然后检测输入语言
+ * 这是推荐的主要入口函数
+ */
+export async function resolveUserLanguageWithInstruction(
+  userInput: string,
+  agentLanguage?: string,
+  conversationLanguage?: string,
+  browserLanguage?: string
+): Promise<SupportedLanguage> {
+  // 1. 最高优先级：用户在消息中明确指定的回复语言
+  const instructedLanguage = await parseLanguageInstruction(userInput);
+  if (instructedLanguage) {
+    return instructedLanguage;
+  }
+  
+  // 2. 次优先级：使用原有的语言解析逻辑
+  return await resolveUserLanguageAsync(
+    userInput,
+    agentLanguage, 
+    conversationLanguage,
+    browserLanguage
+  );
+}
+
+/**
+ * 🎯 解析用户消息中的语言指令
+ * 识别用户是否明确指定了回复语言，如："用英语回答"、"Please answer in Korean"等
+ */
+export async function parseLanguageInstruction(userMessage: string): Promise<SupportedLanguage | null> {
+  try {
+    const detector = new LanguageDetector();
+    
+    const prompt = `Analyze the following user message and determine if they specified which language they want the response in.
+
+User message: "${userMessage}"
+
+Your task:
+1. Look for explicit language instructions in the message
+2. Common patterns include:
+   - "用[语言]回答" / "用[语言]回复" 
+   - "Please answer in [language]" / "Reply in [language]"
+   - "한국어로 답변해주세요" / "日本語で答えて"
+   - "[language]로 대답해줘" / "[language]で回答して"
+   - "Répondez en [language]" / "Responda en [language]"
+
+3. If you find a language instruction, return the ISO 639-1 code
+4. If no specific language is requested, return "none"
+
+Supported languages and their codes:
+${Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => `- ${code}: ${name}`).join('\n')}
+
+Respond with ONLY the language code (e.g., "zh", "en", "ja") or "none".`;
+
+    const response = await detector['llm'].invoke([{ role: 'user', content: prompt }]);
+    const result = (response.content as string).trim().toLowerCase();
+    
+    if (result === 'none' || !result) {
+      return null;
+    }
+    
+    if (isValidLanguageCode(result)) {
+      return result;
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn('Failed to parse language instruction:', error);
+    return null;
+  }
+}
+
+/**
  * 🚀 异步版本：智能解析用户偏好语言 (推荐使用，更准确)
  */
 export async function resolveUserLanguageAsync(

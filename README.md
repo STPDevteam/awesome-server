@@ -9,6 +9,7 @@ MCP-LangChain是一个基于Model Context Protocol (MCP)和LangChain的智能任
 - 🔧 **MCP 集成** - 支持 Model Context Protocol 工具调用
 - ⚡ **增强任务引擎** - 智能重试、参数推导、双重结果格式化 🆕
 - 🎯 **智能代理** - Agent专用多轮对话和任务执行
+- 🌍 **多语言支持** - 智能语言检测，支持11种主要语言 🆕
 - 👤 **用户管理** - 用户信息、头像、余额管理
 - 🛡️ **安全保护** - JWT 令牌、速率限制、签名验证
 - 📱 **多登录支持** - 预留 Google、GitHub 等登录方式
@@ -160,6 +161,7 @@ mcp-server/
 - 📋 **[API 概览](./docs/API_OVERVIEW.md)** - 快速查看所有端点
 - ⚡ **[增强任务引擎指南](./docs/ENHANCED_TASK_ENGINE_GUIDE.md)** - 智能任务执行系统完整指南 🆕
 - 🚀 **[增强引擎快速开始](./docs/ENHANCED_TASK_ENGINE_QUICKSTART.md)** - 5分钟上手指南 🆕
+- 🌍 **[多语言支持文档](./docs/MULTILINGUAL_SUPPORT_IMPLEMENTATION.md)** - 11种语言智能检测与适配 🆕
 - 🔧 **[Postman 集合](./docs/MCP_LangChain_API.postman_collection.json)** - 导入 Postman 进行 API 测试
 - 🔐 **[认证设置](./docs/AUTH_SETUP.md)** - 认证系统设置指南
 - 🗄️ **[数据库设置](./docs/DATABASE_SETUP.md)** - 数据库配置指南

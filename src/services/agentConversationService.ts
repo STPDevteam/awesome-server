@@ -31,7 +31,7 @@ import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
 import { IntelligentTaskService } from './intelligentTaskService.js';
 import { createAgentIntelligentTaskService, AgentIntelligentTaskService } from './agentIntelligentEngine.js';
-import { resolveUserLanguageAsync, SupportedLanguage, getLanguageInstruction } from '../utils/languageDetector.js';
+import { resolveUserLanguageWithInstruction, SupportedLanguage, getLanguageInstruction } from '../utils/languageDetector.js';
 
 
 /**
@@ -224,15 +224,15 @@ export class AgentConversationService {
       // Increment message count
       await conversationDao.incrementMessageCount(conversationId);
 
-      // 🌍 检测用户消息语言
-      const userLanguage = await resolveUserLanguageAsync(
+      // 🌍 智能解析用户语言（包括语言指令检测）
+      const userLanguage = await resolveUserLanguageWithInstruction(
         content,
         agent.language,
         undefined, // TODO: 从conversation中获取语言设置
         undefined  // TODO: 从请求头中获取浏览器语言
       );
 
-      logger.info(`🌍 Detected user language: ${userLanguage} for message: "${content.slice(0, 50)}..."`);
+      logger.info(`🌍 Resolved user language: ${userLanguage} for message: "${content.slice(0, 50)}..."`);
 
       // Analyze user intent
       const intent = await this.analyzeAgentUserIntent(content, agent);
@@ -409,15 +409,15 @@ export class AgentConversationService {
       // Increment message count
       await conversationDao.incrementMessageCount(conversationId);
 
-      // 🌍 检测用户消息语言
-      const userLanguage = await resolveUserLanguageAsync(
+      // 🌍 智能解析用户语言（包括语言指令检测）
+      const userLanguage = await resolveUserLanguageWithInstruction(
         content,
         agent.language,
         undefined, // TODO: 从conversation中获取语言设置
         undefined  // TODO: 从请求头中获取浏览器语言
       );
 
-      logger.info(`🌍 Detected user language: ${userLanguage} for streaming message: "${content.slice(0, 50)}..."`);
+      logger.info(`🌍 Resolved user language: ${userLanguage} for streaming message: "${content.slice(0, 50)}..."`);
 
       // Analyze user intent
       streamCallback({
@@ -599,10 +599,10 @@ Respond with ONLY a JSON object:
     }
   }
 
-    /**
+  /**
    * Execute Agent task
    */
-private async executeAgentTask(
+  private async executeAgentTask(
     content: string, 
     agent: Agent, 
     userId: string, 
@@ -1064,10 +1064,10 @@ The task has been processed, but I encountered an issue formatting the detailed 
     logger.info(`✅ All required MCP services connected for Agent ${agent.name} (User: ${userId})`);
   }
 
-    /**
+  /**
    * Chat with Agent
    */
-private async chatWithAgent(
+  private async chatWithAgent(
     content: string, 
     agent: Agent, 
     conversationId: string,
