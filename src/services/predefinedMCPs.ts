@@ -3882,8 +3882,8 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'dune-mcp-v2',
         description: 'Dune Analytics MCP server v2 - enhanced blockchain data access for AI agents (kukapay implementation)',
-        command: 'npx',
-        args: ['-y', '@smithery/cli', 'run', '@kukapay/dune-analytics-mcp'],
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/mcp',
+        args: ["dev", "/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
             DUNE_API_KEY: process.env.DUNE_API_KEY || ''
         },
