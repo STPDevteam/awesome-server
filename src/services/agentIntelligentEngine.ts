@@ -2114,39 +2114,67 @@ ${summaries.join('\n\n')}
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 🔧 纯粹的格式转换：JSON → Markdown（智能长度控制）
-      const dataString = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2);
-      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      // 🚀 优化：让LLM直接处理原始数据，避免昂贵的JSON.stringify预处理
+      // LLM可以直接理解JavaScript对象，无需预格式化
       
-      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
+      // 🔧 智能数据大小检测（避免阻塞序列化）
+      let dataSize = 'unknown';
+      let shouldTruncate = false;
+      
+      try {
+        if (typeof rawResult === 'string') {
+          dataSize = rawResult.length.toString();
+          shouldTruncate = rawResult.length > 100000; // 100K字符
+        } else if (typeof rawResult === 'object' && rawResult !== null) {
+          const keys = Object.keys(rawResult);
+          if (keys.length > 1000) {
+            dataSize = 'very_large';
+            shouldTruncate = true;
+          } else {
+            // 只对小对象进行精确计算
+            const quickSample = JSON.stringify(rawResult).substring(0, 1000);
+            dataSize = `estimated_${keys.length * 50}`;
+            shouldTruncate = keys.length > 200;
+          }
+        }
+      } catch (error) {
+        dataSize = 'large';
+        shouldTruncate = true;
+      }
+
+      // 🔧 构建智能提示词（基于数据大小动态调整）
+      const formatPrompt = shouldTruncate 
+        ? `You are given data from ${mcpName} ${toolName}. Convert it to clean, readable Markdown format.
+
+**IMPORTANT - Large Data Handling:**
+The data appears to be large (${dataSize}). Apply smart filtering:
+- For blockchain data: focus on hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
+- For API responses: show only the most important/commonly used fields  
+- For large arrays: show first 5-10 items with "..." indicator
+- Skip verbose fields like logsBloom, extraData unless they contain short meaningful values
+- Always prioritize user-actionable or identifying information
 
 **Data to format:**
-${dataString}
+${JSON.stringify(rawResult)}
+
+**Formatting rules:**
+- Convert to clear Markdown (tables for objects, lists for arrays)
+- Output directly without code blocks or explanations
+- Keep important data, intelligently filter verbose fields
+- Make numbers readable with commas where appropriate`
+
+        : `Convert this data from ${mcpName} ${toolName} to clean, readable Markdown format:
+
+**Data to format:**
+${JSON.stringify(rawResult)}
 
 **Formatting rules:**
 - Convert JSON structure to clear Markdown
 - Use tables for object data when helpful
-- Use lists for arrays
-- Make long numbers readable with commas
-- Output the formatted Markdown directly
-- DO NOT wrap in code blocks or backticks
-- DO NOT add explanations or descriptions
-
-${isLongData ? `
-**IMPORTANT - Data Length Control:**
-This is a large dataset. Apply smart filtering:
-- Show only the most important/commonly used fields
-- For blockchain data: show hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
-- Skip verbose fields like logsBloom, extraData, mix_hash unless they contain short meaningful values
-- For large objects: show top 10-15 most relevant fields
-- Always prioritize user-actionable or identifying information
-- Keep the output concise and focused
-` : `
-**Standard formatting:**
+- Use lists for arrays  
 - Keep ALL original data values
-- Format all available fields
-`}
-- ONLY return the formatted data`;
+- Output directly without code blocks or explanations
+- Make long numbers readable with commas`;
 
       // 使用流式LLM生成格式化结果
       const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
@@ -2174,39 +2202,65 @@ This is a large dataset. Apply smart filtering:
     toolName: string
   ): Promise<string> {
     try {
-      // 🔧 纯粹的格式转换，与流式版本保持一致（智能长度控制）
-      const dataString = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2);
-      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      // 🚀 优化：与流式版本保持一致，避免昂贵的JSON.stringify预处理
+      // 智能数据大小检测（避免阻塞序列化）
+      let dataSize = 'unknown';
+      let shouldTruncate = false;
       
-      const formatPrompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
+      try {
+        if (typeof rawResult === 'string') {
+          dataSize = rawResult.length.toString();
+          shouldTruncate = rawResult.length > 100000; // 100K字符
+        } else if (typeof rawResult === 'object' && rawResult !== null) {
+          const keys = Object.keys(rawResult);
+          if (keys.length > 1000) {
+            dataSize = 'very_large';
+            shouldTruncate = true;
+          } else {
+            // 只对小对象进行精确计算
+            const quickSample = JSON.stringify(rawResult).substring(0, 1000);
+            dataSize = `estimated_${keys.length * 50}`;
+            shouldTruncate = keys.length > 200;
+          }
+        }
+      } catch (error) {
+        dataSize = 'large';
+        shouldTruncate = true;
+      }
+
+      // 构建智能提示词（基于数据大小动态调整）
+      const formatPrompt = shouldTruncate 
+        ? `You are given data from ${mcpName} ${toolName}. Convert it to clean, readable Markdown format.
+
+**IMPORTANT - Large Data Handling:**
+The data appears to be large (${dataSize}). Apply smart filtering:
+- For blockchain data: focus on hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
+- For API responses: show only the most important/commonly used fields  
+- For large arrays: show first 5-10 items with "..." indicator
+- Skip verbose fields like logsBloom, extraData unless they contain short meaningful values
+- Always prioritize user-actionable or identifying information
 
 **Data to format:**
-${dataString}
+${JSON.stringify(rawResult)}
+
+**Formatting rules:**
+- Convert to clear Markdown (tables for objects, lists for arrays)
+- Output directly without code blocks or explanations
+- Keep important data, intelligently filter verbose fields
+- Make numbers readable with commas where appropriate`
+
+        : `Convert this data from ${mcpName} ${toolName} to clean, readable Markdown format:
+
+**Data to format:**
+${JSON.stringify(rawResult)}
 
 **Formatting rules:**
 - Convert JSON structure to clear Markdown
 - Use tables for object data when helpful
-- Use lists for arrays
-- Make long numbers readable with commas
-- Output the formatted Markdown directly
-- DO NOT wrap in code blocks or backticks
-- DO NOT add explanations or descriptions
-
-${isLongData ? `
-**IMPORTANT - Data Length Control:**
-This is a large dataset. Apply smart filtering:
-- Show only the most important/commonly used fields
-- For blockchain data: show hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
-- Skip verbose fields like logsBloom, extraData, mix_hash unless they contain short meaningful values
-- For large objects: show top 10-15 most relevant fields
-- Always prioritize user-actionable or identifying information
-- Keep the output concise and focused
-` : `
-**Standard formatting:**
+- Use lists for arrays  
 - Keep ALL original data values
-- Format all available fields
-`}
-- ONLY return the formatted data`;
+- Output directly without code blocks or explanations
+- Make long numbers readable with commas`;
 
       // 使用非流式LLM生成格式化结果
       const response = await this.llm.invoke([new SystemMessage(formatPrompt)]);
