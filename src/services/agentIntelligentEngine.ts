@@ -183,7 +183,7 @@ export class AgentIntelligentEngine {
 
         logger.info(`🧠 Agent ${this.agent.name} - Iteration ${state.currentIteration}`);
 
-        // 🔧 第一步：Agent智能规划（增强版）
+        // 🔧 第一步：直接的任务完成感知和智能规划
         const planResult = await this.agentPlanningPhaseEnhanced(state);
         if (!planResult.success) {
           yield {
@@ -198,6 +198,27 @@ export class AgentIntelligentEngine {
         }
 
         state.currentPlan = planResult.plan || null;
+
+        // 🎯 直接完成感知：如果规划阶段判断任务已完成，立即退出
+        if (state.currentPlan?.tool === 'task_complete') {
+          logger.info(`🎯 Agent ${this.agent.name} determined task is complete. Finalizing...`);
+          state.isComplete = true;
+          
+          // 发送任务完成事件
+          yield {
+            event: 'step_complete',
+            data: {
+              step: stepCounter,
+              success: true,
+              result: `Task completed successfully by ${this.agent.name}. All required information has been collected and the user's request has been satisfied.`,
+              agentName: this.agent.name,
+              message: `${this.agent.name} has determined the task is complete`,
+              taskComplete: true
+            }
+          };
+          
+          break; // 直接退出循环，不需要额外的观察阶段
+        }
 
         // 🔧 发送Agent格式的step_start事件
         const stepId = `agent_step_${stepCounter}_${Date.now()}`;
@@ -485,24 +506,8 @@ export class AgentIntelligentEngine {
         // 🔧 保存步骤结果到数据库（使用格式化结果）
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
-        // 🔧 第三步：Agent观察阶段（增强版） - 智能判断是否完成
-        
-        // 🔧 检查是否有重复的task_complete，如果有则强制完成
-        const taskCompleteAttempts = state.executionHistory.filter(step => 
-          step.plan.tool === 'task_complete'
-        ).length;
-        
-        if (taskCompleteAttempts >= 2) {
-          logger.warn(`🚨 Detected ${taskCompleteAttempts} task_complete attempts. Forcing task completion to prevent infinite loop.`);
-          state.isComplete = true;
-        } else {
-          const observationResult = await this.agentObservationPhaseEnhanced(state);
-          state.isComplete = observationResult.isComplete;
-          
-          if (observationResult.nextObjective) {
-            state.currentObjective = observationResult.nextObjective;
-          }
-        }
+        // 🔧 简化：任务完成判断已前置到规划阶段，这里只需更新进度监控
+        this.updateProgressMonitor(progressMonitor, executionStep, state);
 
         // 🔧 更新数据存储
         if (executionResult.success && executionResult.result) {
@@ -1005,7 +1010,7 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
   }
 
   /**
-   * 🔧 新增：构建数据内容分析
+   * 🔧 构建通用数据内容分析
    */
   private buildDataContentAnalysis(state: AgentWorkflowState): string {
     const successfulSteps = state.executionHistory.filter(step => step.success && step.result);
@@ -1016,40 +1021,26 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
 
     return successfulSteps.map(step => {
       const resultData = step.result;
-      let contentDescription = "Data collected";
+      const dataType = this.detectDataType(resultData);
+      const dataSize = JSON.stringify(resultData).length;
       
-      // 分析数据内容类型和关键信息
-      if (typeof resultData === 'string') {
-        contentDescription = `Text data (${resultData.length} chars)`;
-        if (resultData.includes('token') || resultData.includes('coin')) {
-          contentDescription += " - Contains token/coin information";
-        }
-        if (resultData.includes('price') || resultData.includes('$')) {
-          contentDescription += " - Contains price information";
-        }
-      } else if (Array.isArray(resultData)) {
-        contentDescription = `Array of ${resultData.length} items`;
-        if (resultData.length > 0) {
-          const firstItem = resultData[0];
-          if (typeof firstItem === 'object' && firstItem !== null) {
-            const keys = Object.keys(firstItem);
-            contentDescription += ` - Sample fields: ${keys.slice(0, 3).join(', ')}`;
-            
-            // 检测特定的数据类型
-            if (keys.some(k => k.includes('token') || k.includes('coin') || k.includes('symbol'))) {
-              contentDescription += " [TOKEN DATA]";
-            }
-            if (keys.some(k => k.includes('price') || k.includes('value') || k.includes('amount'))) {
-              contentDescription += " [PRICE DATA]";
-            }
-            if (keys.some(k => k.includes('url') || k.includes('link'))) {
-              contentDescription += " [URL DATA]";
-            }
+      let contentDescription = `${dataType} data (${dataSize} characters)`;
+      
+      // 通用的结构化数据分析
+      if (Array.isArray(resultData) && resultData.length > 0) {
+        contentDescription += ` - ${resultData.length} items`;
+        const firstItem = resultData[0];
+        if (typeof firstItem === 'object' && firstItem !== null) {
+          const keys = Object.keys(firstItem);
+          if (keys.length > 0) {
+            contentDescription += `, sample fields: ${keys.slice(0, 3).join(', ')}`;
           }
         }
       } else if (typeof resultData === 'object' && resultData !== null) {
         const keys = Object.keys(resultData);
-        contentDescription = `Object with fields: ${keys.slice(0, 5).join(', ')}`;
+        if (keys.length > 0) {
+          contentDescription += `, fields: ${keys.slice(0, 5).join(', ')}`;
+        }
       }
       
       return `- Step ${step.stepNumber} (${step.plan.tool}): ${contentDescription}`;
@@ -1107,24 +1098,27 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
   }
 
   /**
-   * 检测数据类型
+   * 通用数据类型检测
    */
   private detectDataType(data: any): string {
     if (typeof data === 'string') {
-      if (data.includes('block') || data.includes('hash')) return 'Blockchain';
-      if (data.includes('price') || data.includes('token')) return 'Cryptocurrency';
-      if (data.includes('fear') || data.includes('greed')) return 'Market Sentiment';
       return 'Text';
     }
     
     if (Array.isArray(data)) {
-      return `List (${data.length} items)`;
+      return 'Array';
     }
     
     if (typeof data === 'object' && data !== null) {
-      const keys = Object.keys(data);
-      if (keys.includes('result') || keys.includes('data')) return 'Structured API Response';
       return 'Object';
+    }
+    
+    if (typeof data === 'number') {
+      return 'Number';
+    }
+    
+    if (typeof data === 'boolean') {
+      return 'Boolean';
     }
     
     return 'Unknown';
@@ -1275,23 +1269,22 @@ ${availableMCPs.map(mcp => {
 
 ## 🧠 Intelligent Decision Framework
 
-**🎯 FIRST: Task Completion Check**
-- Has the user's request been fully satisfied with current data?
-- Can you provide a complete answer based on what's already collected?
-- If YES → Use "task_complete" as your tool to finalize
+**🎯 PRIMARY: Direct Task Completion Assessment**
+Based on the current data and execution history, make ONE of these decisions:
 
-**Step 1: Assess Current State** (if task not complete)
-- What specific information or action is still needed?
-- What gaps remain in the current data?
+**A) TASK IS COMPLETE** → Use "task_complete" tool
+- Current data fully answers the user's question
+- All requested information has been successfully collected
+- User's specific requirements are satisfied
+- No additional data or processing is needed
 
-**Step 2: Choose Optimal Tool** (if task not complete)
-- Select the most direct tool for the remaining need
-- Consider alternative tools if primary tool failed
-
-**Step 3: Plan Execution** (if task not complete)
+**B) TASK NEEDS MORE WORK** → Choose appropriate MCP tool
+- Identify exactly what information is still missing
+- Select the most direct tool to get that information
 - Use existing data from dataStore when applicable
-- Ensure parameters match the tool's requirements
-- Focus on completing the user's core request
+- Focus on the specific gap in current data
+
+**🚨 CRITICAL**: Make this decision based on actual data sufficiency, not execution count or complexity
 
 ## 📋 Decision Rules
 1. **Task Complete → Finalize**: If user's request is satisfied, use "task_complete"
