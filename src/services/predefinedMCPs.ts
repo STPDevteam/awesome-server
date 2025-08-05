@@ -3795,7 +3795,7 @@ export const predefinedMCPs: MCPService[] = [
         authParams: {}
     },
     // new mcp
-    {
+    /* {
         "name": "coingecko-mcp-v2",
         "description": "CoinGecko MCP server v2 - provides cryptocurrency data and market analytics with enhanced features",
         "command": "npx",
@@ -4931,7 +4931,7 @@ export const predefinedMCPs: MCPService[] = [
                 }
             }
         ]
-    }
+    } */
 
 ];
 
