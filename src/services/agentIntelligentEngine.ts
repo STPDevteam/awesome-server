@@ -486,11 +486,22 @@ export class AgentIntelligentEngine {
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
         // 🔧 第三步：Agent观察阶段（增强版） - 智能判断是否完成
-        const observationResult = await this.agentObservationPhaseEnhanced(state);
-        state.isComplete = observationResult.isComplete;
         
-        if (observationResult.nextObjective) {
-          state.currentObjective = observationResult.nextObjective;
+        // 🔧 检查是否有重复的task_complete，如果有则强制完成
+        const taskCompleteAttempts = state.executionHistory.filter(step => 
+          step.plan.tool === 'task_complete'
+        ).length;
+        
+        if (taskCompleteAttempts >= 2) {
+          logger.warn(`🚨 Detected ${taskCompleteAttempts} task_complete attempts. Forcing task completion to prevent infinite loop.`);
+          state.isComplete = true;
+        } else {
+          const observationResult = await this.agentObservationPhaseEnhanced(state);
+          state.isComplete = observationResult.isComplete;
+          
+          if (observationResult.nextObjective) {
+            state.currentObjective = observationResult.nextObjective;
+          }
         }
 
         // 🔧 更新数据存储
@@ -734,6 +745,15 @@ export class AgentIntelligentEngine {
       let actualExecution: any = undefined;
 
       if (state.currentPlan.tool === 'task_complete') {
+        // 🔧 检测重复的task_complete尝试
+        const taskCompleteAttempts = state.executionHistory.filter(step => 
+          step.plan.tool === 'task_complete'
+        ).length;
+        
+        if (taskCompleteAttempts >= 2) {
+          logger.warn(`🚨 Multiple task_complete attempts detected (${taskCompleteAttempts}). Forcing completion to prevent infinite loop.`);
+        }
+        
         // 🎯 处理任务完成指令
         result = `Task completed successfully by ${this.agent.name}. All required information has been collected and the user's request has been satisfied.`;
         actualExecution = {
@@ -743,7 +763,7 @@ export class AgentIntelligentEngine {
         
         // 标记任务为完成
         state.isComplete = true;
-        logger.info(`🎯 Agent ${this.agent.name} marked task as complete via task_complete tool`);
+        logger.info(`🎯 Agent ${this.agent.name} marked task as complete via task_complete tool (attempt ${taskCompleteAttempts + 1})`);
         
       } else if (state.currentPlan.toolType === 'mcp') {
         // 🔧 执行MCP工具
@@ -913,6 +933,14 @@ export class AgentIntelligentEngine {
     // 构建所有已收集数据的摘要
     const collectedDataSummary = this.buildCollectedDataSummary(state);
     
+    // 🔧 新增：检测重复的task_complete尝试
+    const taskCompleteAttempts = state.executionHistory.filter(step => 
+      step.plan.tool === 'task_complete'
+    ).length;
+    
+    // 🔧 新增：分析实际数据内容
+    const dataContentAnalysis = this.buildDataContentAnalysis(state);
+    
     // 🌍 使用state中的用户语言
     const userLanguage = state.userLanguage;
     
@@ -933,47 +961,99 @@ ${step.success && step.result ? `- Data Summary: ${this.summarizeStepData(step.r
 ${step.error ? `- Error: ${step.error}` : ''}
 `).join('\n')}
 
-### All Collected Data Summary
-${collectedDataSummary}
+### Data Content Analysis
+${dataContentAnalysis}
+
+${taskCompleteAttempts > 0 ? `
+### ⚠️ Task Completion History
+**Previous task_complete attempts**: ${taskCompleteAttempts}
+**CRITICAL**: If task_complete has been attempted multiple times, the task is likely complete!
+` : ''}
 
 ## 🧠 INTELLIGENT ANALYSIS REQUIRED
 
-**Critical Question**: Based on ALL the data collected above, can you now provide a complete and accurate answer to the user's question?
+**Critical Questions**: 
+1. Does the collected data contain the specific information requested by the user?
+2. Can you identify and extract the exact answer from the available data?
+3. Is the data recent, relevant, and sufficient in scope?
 
-**Analysis Framework**:
-
-1. **Data Completeness Check**:
-   - Does the collected data contain all necessary information to answer the user's question?
-   - Are there any missing pieces of information still needed?
-
-2. **Quality Assessment**:
-   - Is the data recent and relevant?
-   - Is the data sufficient in quantity/scope for the user's request?
-
-3. **Specific Requirements Check**:
-   ${this.buildSpecificRequirementsCheck(state.originalQuery)}
+**For "${state.originalQuery}"**:
+${this.buildSpecificRequirementsCheck(state.originalQuery)}
 
 ## 🎯 DECISION LOGIC
 
-**Complete the task IF**:
-- ✅ You have sufficient data to fully answer the user's question
-- ✅ The data quality and completeness meets the user's needs
-- ✅ No critical information is missing
+**✅ COMPLETE the task if ANY of these are true**:
+- You have specific data that directly answers the user's question
+- The data contains the requested items/information (e.g., top tokens, prices, etc.)
+- Previous task_complete attempts ≥ 2 (likely indicates task is actually complete)
+- Successful data collection step exists AND data is relevant to the query
 
-**Continue execution IF**:
-- ❌ Key information is still missing
-- ❌ Data quality is insufficient 
-- ❌ User's specific requirements are not met
-- ❌ Need different approach/tool to get better data
+**❌ CONTINUE execution ONLY if ALL of these are true**:
+- No relevant data has been collected yet
+- Critical information is clearly missing for the specific query
+- Previous attempts all failed to get any usable data
+- User's request requires multiple data points and only partial data exists
 
 **OUTPUT FORMAT (JSON only)**:
 {
   "isComplete": true/false,
-  "reasoning": "Detailed analysis of data sufficiency based on user's specific question",
-  "nextObjective": "If not complete, what specific information is still needed?"
+  "reasoning": "Focus on whether the specific user question can be answered with available data",
+  "nextObjective": "If not complete, what specific missing information is needed?"
 }
 
-**Remember**: Base your decision purely on data sufficiency, not on execution count or arbitrary rules.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
+**🚨 IMPORTANT**: Be more lenient in completion judgment. If relevant data exists, the task is likely complete.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
+  }
+
+  /**
+   * 🔧 新增：构建数据内容分析
+   */
+  private buildDataContentAnalysis(state: AgentWorkflowState): string {
+    const successfulSteps = state.executionHistory.filter(step => step.success && step.result);
+    
+    if (successfulSteps.length === 0) {
+      return "No successful data collection yet.";
+    }
+
+    return successfulSteps.map(step => {
+      const resultData = step.result;
+      let contentDescription = "Data collected";
+      
+      // 分析数据内容类型和关键信息
+      if (typeof resultData === 'string') {
+        contentDescription = `Text data (${resultData.length} chars)`;
+        if (resultData.includes('token') || resultData.includes('coin')) {
+          contentDescription += " - Contains token/coin information";
+        }
+        if (resultData.includes('price') || resultData.includes('$')) {
+          contentDescription += " - Contains price information";
+        }
+      } else if (Array.isArray(resultData)) {
+        contentDescription = `Array of ${resultData.length} items`;
+        if (resultData.length > 0) {
+          const firstItem = resultData[0];
+          if (typeof firstItem === 'object' && firstItem !== null) {
+            const keys = Object.keys(firstItem);
+            contentDescription += ` - Sample fields: ${keys.slice(0, 3).join(', ')}`;
+            
+            // 检测特定的数据类型
+            if (keys.some(k => k.includes('token') || k.includes('coin') || k.includes('symbol'))) {
+              contentDescription += " [TOKEN DATA]";
+            }
+            if (keys.some(k => k.includes('price') || k.includes('value') || k.includes('amount'))) {
+              contentDescription += " [PRICE DATA]";
+            }
+            if (keys.some(k => k.includes('url') || k.includes('link'))) {
+              contentDescription += " [URL DATA]";
+            }
+          }
+        }
+      } else if (typeof resultData === 'object' && resultData !== null) {
+        const keys = Object.keys(resultData);
+        contentDescription = `Object with fields: ${keys.slice(0, 5).join(', ')}`;
+      }
+      
+      return `- Step ${step.stepNumber} (${step.plan.tool}): ${contentDescription}`;
+    }).join('\n');
   }
 
   /**
@@ -1528,9 +1608,15 @@ ${taskComplexity?.type === 'simple_query' ? 'For simple queries: Success = Compl
       logger.warn(`Agent observation parsing failed: ${error}`);
     }
 
-    // 🔧 增强智能判断 - 对数据查询更敏感
-    const isComplete = /complete|finished|done|success|data.*retrieved|information.*available|result.*ready/i.test(content);
-    return { isComplete };
+    // 🔧 增强智能判断 - 更宽松的完成条件
+    const isComplete = /complete|finished|done|success|data.*retrieved|information.*available|result.*ready|sufficient.*data|answer.*question/i.test(content);
+    
+    // 🔧 如果包含明确的否定词，则认为未完成
+    const hasNegation = /not.*complete|insufficient|missing|need.*more|continue|require/i.test(content);
+    
+    return { 
+      isComplete: isComplete && !hasNegation 
+    };
   }
 
   /**
