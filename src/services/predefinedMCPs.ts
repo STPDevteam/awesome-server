@@ -4964,7 +4964,6 @@ export const mcpNameMapping: Record<string, string> = {
     'coinmarketcap_mcp_service': 'coinmarketcap-mcp',
     'defillama-mcp-service': 'defillama-mcp-v1',
     'defillama-mcp': 'defillama-mcp-v2', // 默认使用v2版本
-    'defillama-v1': 'defillama-mcp-v1',
     'defillama-v2': 'defillama-mcp-v2',
     'demcp-defillama-mcp': 'defillama-mcp-v2',
     'hyperliquid-mcp': 'hyperliquid-mcp-v2', // 默认使用v2版本
