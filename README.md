@@ -162,6 +162,7 @@ mcp-server/
 - ⚡ **[增强任务引擎指南](./docs/ENHANCED_TASK_ENGINE_GUIDE.md)** - 智能任务执行系统完整指南 🆕
 - 🚀 **[增强引擎快速开始](./docs/ENHANCED_TASK_ENGINE_QUICKSTART.md)** - 5分钟上手指南 🆕
 - 🌍 **[多语言支持文档](./docs/MULTILINGUAL_SUPPORT_IMPLEMENTATION.md)** - 11种语言智能检测与适配 🆕
+- 🎯 **[语言指令解析功能](./docs/LANGUAGE_INSTRUCTION_PARSING_FEATURE.md)** - 智能识别用户语言指令 🆕
 - 🔧 **[Postman 集合](./docs/MCP_LangChain_API.postman_collection.json)** - 导入 Postman 进行 API 测试
 - 🔐 **[认证设置](./docs/AUTH_SETUP.md)** - 认证系统设置指南
 - 🗄️ **[数据库设置](./docs/DATABASE_SETUP.md)** - 数据库配置指南

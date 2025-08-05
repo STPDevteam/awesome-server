@@ -257,21 +257,26 @@ export class AgentIntelligentEngine {
               success: true,
               result: executionResult.result,
                 agentName: this.agent.name,
-              // 🔧 新增详细信息 - 不破坏原有结构
+              // 🚀 优化：详细信息（避免数据重复存储）
               executionDetails: {
                 toolType: state.currentPlan!.toolType,
                 toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
                 mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
-                rawResult: executionResult.result,
                 args: executionResult.actualExecution?.args || state.currentPlan!.args,
                 expectedOutput: state.currentPlan!.expectedOutput,
+                dataSize: this.getDataSizeNonBlocking(executionResult.result),
                 timestamp: new Date().toISOString()
               }
               }
             };
 
-          // 🔧 存储原始结果消息
-          await this.saveStepRawResult(taskId, stepCounter, state.currentPlan!, executionResult.result);
+          // 🚀 优化：后台异步存储原始结果 - 不阻塞用户响应
+          setImmediate(() => {
+            this.saveStepRawResult(taskId, stepCounter, state.currentPlan!, executionResult.result)
+              .catch(error => {
+                logger.error(`Background save raw result failed [Step: ${stepCounter}, Task: ${taskId}]:`, error);
+              });
+          });
           }
 
         // 🔧 Streaming: 流式格式化和输出步骤结果（仅对MCP工具进行格式化）
@@ -318,16 +323,14 @@ export class AgentIntelligentEngine {
               success: true,
               formattedResult: formattedResultForStorage,
               agentName: this.agent.name,
-              // 🔧 新增详细信息 - 不破坏原有结构
+              // 🚀 优化：详细信息（避免数据重复存储）
               formattingDetails: {
                 toolType: state.currentPlan!.toolType,
                 toolName: executionResult.actualExecution?.toolName || state.currentPlan!.tool,
                 mcpName: executionResult.actualExecution?.mcpName || state.currentPlan!.mcpName || null,
-                originalResult: executionResult.result,
-                formattedResult: formattedResultForStorage,
                 args: executionResult.actualExecution?.args || state.currentPlan!.args,
                 processingInfo: {
-                  originalDataSize: JSON.stringify(executionResult.result).length,
+                  originalDataSize: this.getDataSizeNonBlocking(executionResult.result),
                   formattedDataSize: formattedResultForStorage.length,
                   processingTime: new Date().toISOString(),
                   needsFormatting: state.currentPlan!.toolType === 'mcp' // 标识是否进行了格式化
@@ -337,8 +340,13 @@ export class AgentIntelligentEngine {
             }
           };
 
-          // 🔧 存储格式化结果消息
-          await this.saveStepFormattedResult(taskId, stepCounter, state.currentPlan!, formattedResultForStorage);
+          // 🚀 优化：后台异步存储格式化结果 - 不阻塞用户响应
+          setImmediate(() => {
+            this.saveStepFormattedResult(taskId, stepCounter, state.currentPlan!, formattedResultForStorage)
+              .catch(error => {
+                logger.error(`Background save formatted result failed [Step: ${stepCounter}, Task: ${taskId}]:`, error);
+              });
+          });
         }
 
         // 🔧 Agent格式的step_thinking_complete事件
@@ -530,8 +538,13 @@ export class AgentIntelligentEngine {
         }
       };
 
-      // 🔧 保存Agent最终结果到数据库
-      await this.saveAgentFinalResult(taskId, state, finalResult);
+      // 🚀 优化：后台异步保存最终结果 - 不阻塞用户响应
+      setImmediate(() => {
+        this.saveAgentFinalResult(taskId, state, finalResult)
+          .catch(error => {
+            logger.error(`Background save final result failed [Task: ${taskId}]:`, error);
+          });
+      });
 
       const overallSuccess = state.isComplete && state.errors.length === 0;
       logger.info(`🎯 Agent ${this.agent.name} execution completed [Success: ${overallSuccess}]`);
@@ -2062,6 +2075,34 @@ ${summaries.join('\n\n')}
       .join('\n\n');
 
     return successfulResults || `${this.agent.name} execution completed`;
+  }
+
+  /**
+   * 🚀 优化：非阻塞数据大小计算
+   */
+  private getDataSizeNonBlocking(data: any): number {
+    try {
+      // 对于大数据，只估算前面部分的大小，避免完整序列化阻塞
+      if (typeof data === 'string') {
+        return data.length;
+      }
+      
+      if (typeof data === 'object' && data !== null) {
+        // 快速估算：只计算对象的键数量和基本属性
+        const keys = Object.keys(data);
+        if (keys.length > 100) {
+          // 大对象：估算而不精确计算
+          return keys.length * 50; // 估算每个键值对平均50字符
+        }
+        // 小对象：正常计算
+        return JSON.stringify(data).length;
+      }
+      
+      return String(data).length;
+    } catch (error) {
+      // 序列化失败时返回估算值
+      return 1000; // 默认估算值
+    }
   }
 
   /**

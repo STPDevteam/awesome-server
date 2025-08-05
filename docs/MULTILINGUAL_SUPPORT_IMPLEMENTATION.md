@@ -66,9 +66,18 @@ const SUPPORTED_LANGUAGES = {
 // 核心检测函数
 async function detectLanguage(text: string): Promise<SupportedLanguage>
 function detectLanguageSync(text: string): SupportedLanguage
-function resolveUserLanguageAsync(...): Promise<SupportedLanguage>
+
+// 语言指令解析 (新功能)
+async function parseLanguageInstruction(userMessage: string): Promise<SupportedLanguage | null>
+async function resolveUserLanguageWithInstruction(...): Promise<SupportedLanguage>
+
+// 传统语言解析
 function resolveUserLanguage(...): SupportedLanguage
+async function resolveUserLanguageAsync(...): Promise<SupportedLanguage>
+
+// 工具函数
 function getLanguageInstruction(lang: SupportedLanguage): string
+function isValidLanguageCode(langCode: string): boolean
 ```
 
 ### 服务层集成
@@ -218,13 +227,23 @@ const LANGUAGE_NAMES = {
 ## 🧪 测试和验证
 
 ### 测试场景
-1. **中文用户**：发送中文消息，期望中文回复
-2. **多语言切换**：在同一对话中切换语言
-3. **Agent默认语言**：创建带有默认语言的Agent
-4. **复杂任务**：多步骤任务的语言一致性
-5. **流式输出**：实时语言适配
+1. **语言指令解析**：测试各种语言指令模式的识别准确性
+2. **中文用户**：发送中文消息，期望中文回复
+3. **多语言切换**：在同一对话中切换语言
+4. **明确语言指令**：用户指定特定语言回复（如"用英语回答"）
+5. **Agent默认语言**：创建带有默认语言的Agent
+6. **复杂任务**：多步骤任务的语言一致性
+7. **流式输出**：实时语言适配
 
 ### 验证方法
+
+#### 1. 测试语言指令解析
+```bash
+# 运行语言指令解析测试
+node test-language-instruction-parsing.js
+```
+
+#### 2. API测试
 ```bash
 # 启动服务
 npm start
@@ -238,6 +257,16 @@ curl -X POST http://localhost:3000/api/agents \
 curl -X POST http://localhost:3000/api/conversations/{id}/messages/stream \
   -H "Content-Type: application/json" \
   -d '{"content": "你好，请帮我查询以太坊价格"}'
+
+# 测试语言指令
+curl -X POST http://localhost:3000/api/conversations/{id}/messages/stream \
+  -H "Content-Type: application/json" \
+  -d '{"content": "请用英语帮我分析比特币价格趋势"}'
+
+# 测试韩语指令  
+curl -X POST http://localhost:3000/api/conversations/{id}/messages/stream \
+  -H "Content-Type: application/json" \
+  -d '{"content": "한국어로 답변해주세요: 이더리움이 뭔가요?"}'
 ```
 
 ## 🔧 配置选项
