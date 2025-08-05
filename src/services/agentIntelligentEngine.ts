@@ -279,37 +279,33 @@ export class AgentIntelligentEngine {
           });
           }
 
-        // 🔧 Streaming: 流式格式化和输出步骤结果（仅对MCP工具进行格式化）
-        if (executionResult.success && executionResult.result && state.currentPlan!.toolType === 'mcp') {
-          // 只对MCP工具进行流式格式化，LLM工具已经返回格式化内容
-          const formatGenerator = this.formatAndStreamStepResult(
-            executionResult.result,
-            state.currentPlan!.mcpName || 'unknown',
-            state.currentPlan!.tool
-          );
-          
-          for await (const chunk of formatGenerator) {
-            yield {
-              event: 'step_result_chunk',
-              data: {
-                step: stepCounter,
-                chunk,
-                agentName: this.agent.name
-              }
-            };
-          }
-        }
-
-        // 🔧 获取格式化结果用于存储（区分MCP和LLM工具）
+        // 🚀 优化：流式格式化同时收集完整结果，避免重复格式化
         let formattedResultForStorage = '';
         if (executionResult.success && executionResult.result) {
           if (state.currentPlan!.toolType === 'mcp') {
-            // MCP工具：需要格式化JSON数据
-          formattedResultForStorage = await this.generateFormattedResult(
-            executionResult.result,
-            state.currentPlan!.mcpName || 'unknown',
-            state.currentPlan!.tool
-          );
+            // MCP工具：流式格式化同时收集完整结果
+            const formatGenerator = this.formatAndStreamStepResult(
+              executionResult.result,
+              state.currentPlan!.mcpName || 'unknown',
+              state.currentPlan!.tool
+            );
+            
+            const chunks: string[] = [];
+            for await (const chunk of formatGenerator) {
+              chunks.push(chunk); // 收集格式化片段
+              
+              yield {
+                event: 'step_result_chunk',
+                data: {
+                  step: stepCounter,
+                  chunk,
+                  agentName: this.agent.name
+                }
+              };
+            }
+            
+            // 组合完整的格式化结果用于存储
+            formattedResultForStorage = chunks.join('');
           } else {
             // LLM工具：直接使用原始结果（已经是格式化的）
             formattedResultForStorage = executionResult.result;
@@ -2114,55 +2110,25 @@ ${summaries.join('\n\n')}
     toolName: string
   ): AsyncGenerator<string, void, unknown> {
     try {
-      // 🚀 优化：让LLM直接处理原始数据，避免昂贵的JSON.stringify预处理
-      // LLM可以直接理解JavaScript对象，无需预格式化
+      // 🚀 激进优化：智能数据预处理，防止LLM卡死
+      const processedData = this.preprocessDataForFormatting(rawResult, mcpName, toolName);
       
-      // 🔧 智能数据大小检测（避免阻塞序列化）
-      let dataSize = 'unknown';
-      let shouldTruncate = false;
-      
-      try {
-        if (typeof rawResult === 'string') {
-          dataSize = rawResult.length.toString();
-          shouldTruncate = rawResult.length > 100000; // 100K字符
-        } else if (typeof rawResult === 'object' && rawResult !== null) {
-          const keys = Object.keys(rawResult);
-          if (keys.length > 1000) {
-            dataSize = 'very_large';
-            shouldTruncate = true;
-          } else {
-            // 只对小对象进行精确计算
-            const quickSample = JSON.stringify(rawResult).substring(0, 1000);
-            dataSize = `estimated_${keys.length * 50}`;
-            shouldTruncate = keys.length > 200;
-          }
-        }
-      } catch (error) {
-        dataSize = 'large';
-        shouldTruncate = true;
-      }
+      // 🔧 根据预处理结果构建提示词
+      const formatPrompt = processedData.wasTruncated 
+        ? `Convert this ${mcpName} ${toolName} data to clean, readable Markdown format.
 
-      // 🚀 彻底优化：让LLM直接处理原始对象，完全避免JSON.stringify
-      const basePrompt = shouldTruncate 
-        ? `You are given data from ${mcpName} ${toolName}. Convert it to clean, readable Markdown format.
-
-**IMPORTANT - Large Data Handling:**
-The data appears to be large (${dataSize}). Apply smart filtering:
-- For blockchain data: focus on hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
-- For API responses: show only the most important/commonly used fields  
-- For large arrays: show first 5-10 items with "..." indicator
-- Skip verbose fields like logsBloom, extraData unless they contain short meaningful values
-- Always prioritize user-actionable or identifying information
+**Important**: This data was intelligently filtered to show the most relevant information (${processedData.summary}).
 
 **Formatting rules:**
 - Convert to clear Markdown (tables for objects, lists for arrays)
 - Output directly without code blocks or explanations
-- Keep important data, intelligently filter verbose fields
 - Make numbers readable with commas where appropriate
+- Keep all provided data values
 
-The data object will be provided as context.`
+Data to format:
+${JSON.stringify(processedData.data)}`
 
-        : `Convert this data from ${mcpName} ${toolName} to clean, readable Markdown format:
+        : `Convert this ${mcpName} ${toolName} data to clean, readable Markdown format:
 
 **Formatting rules:**
 - Convert JSON structure to clear Markdown
@@ -2172,14 +2138,11 @@ The data object will be provided as context.`
 - Output directly without code blocks or explanations
 - Make long numbers readable with commas
 
-The data object will be provided as context.`;
+Data to format:
+${JSON.stringify(processedData.data)}`;
 
-      // 🚀 最优方案：使用简单JSON.stringify（无缩进），避免昂贵的格式化
-      // 这比JSON.stringify(data, null, 2)快3-4倍，且LLM完全可以处理紧凑JSON
-      const promptWithData = basePrompt + `\n\nData to format:\n${JSON.stringify(rawResult)}`;
-      
       // 使用流式LLM生成格式化结果
-      const stream = await this.llm.stream([new SystemMessage(promptWithData)]);
+      const stream = await this.llm.stream([new SystemMessage(formatPrompt)]);
 
       for await (const chunk of stream) {
         if (chunk.content) {
@@ -2188,88 +2151,253 @@ The data object will be provided as context.`;
       }
     } catch (error) {
       logger.error(`Failed to format step result:`, error);
-      // 降级处理：返回基本格式化
-      const fallbackResult = `### ${toolName} 执行结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      // 降级处理：返回基本信息
+      const fallbackResult = `### ${toolName} 执行结果\n\n✅ 数据获取成功，但格式化失败。原始数据类型: ${typeof rawResult}`;
       yield fallbackResult;
     }
   }
 
   /**
-   * 🔧 新增：生成完整的格式化结果（非流式，用于存储）
-   * 注意：此方法仅用于MCP工具的格式化，LLM工具已经返回格式化内容
+   * 🚀 新增：智能数据预处理 - 在发送给LLM前截断超大数据
    */
-  private async generateFormattedResult(
-    rawResult: any,
-    mcpName: string,
-    toolName: string
-  ): Promise<string> {
+  private preprocessDataForFormatting(rawResult: any, mcpName: string, toolName: string): {
+    data: any;
+    wasTruncated: boolean;
+    summary: string;
+  } {
     try {
-      // 🚀 优化：与流式版本保持一致，避免昂贵的JSON.stringify预处理
-      // 智能数据大小检测（避免阻塞序列化）
-      let dataSize = 'unknown';
-      let shouldTruncate = false;
+      // 快速大小估算（避免完整序列化）
+      const estimatedSize = this.estimateDataSize(rawResult);
       
-      try {
-        if (typeof rawResult === 'string') {
-          dataSize = rawResult.length.toString();
-          shouldTruncate = rawResult.length > 100000; // 100K字符
-        } else if (typeof rawResult === 'object' && rawResult !== null) {
-          const keys = Object.keys(rawResult);
-          if (keys.length > 1000) {
-            dataSize = 'very_large';
-            shouldTruncate = true;
-          } else {
-            // 只对小对象进行精确计算
-            const quickSample = JSON.stringify(rawResult).substring(0, 1000);
-            dataSize = `estimated_${keys.length * 50}`;
-            shouldTruncate = keys.length > 200;
-          }
-        }
-      } catch (error) {
-        dataSize = 'large';
-        shouldTruncate = true;
+      // 🔥 激进截断策略
+      if (estimatedSize > 50000) { // 50K字符阈值，更激进
+        return this.truncateDataIntelligently(rawResult, mcpName, toolName);
       }
-
-      // 构建智能提示词（基于数据大小动态调整）
-      const basePrompt = shouldTruncate 
-        ? `You are given data from ${mcpName} ${toolName}. Convert it to clean, readable Markdown format.
-
-**IMPORTANT - Large Data Handling:**
-The data appears to be large (${dataSize}). Apply smart filtering:
-- For blockchain data: focus on hash, number, gasUsed, gasLimit, miner, timestamp, parentHash
-- For API responses: show only the most important/commonly used fields  
-- For large arrays: show first 5-10 items with "..." indicator
-- Skip verbose fields like logsBloom, extraData unless they contain short meaningful values
-- Always prioritize user-actionable or identifying information
-
-**Formatting rules:**
-- Convert to clear Markdown (tables for objects, lists for arrays)
-- Output directly without code blocks or explanations
-- Keep important data, intelligently filter verbose fields
-- Make numbers readable with commas where appropriate`
-
-        : `Convert this data from ${mcpName} ${toolName} to clean, readable Markdown format:
-
-**Formatting rules:**
-- Convert JSON structure to clear Markdown
-- Use tables for object data when helpful
-- Use lists for arrays  
-- Keep ALL original data values
-- Output directly without code blocks or explanations
-- Make long numbers readable with commas`;
-
-      // 🚀 最优方案：使用简单JSON.stringify（无缩进），避免昂贵的格式化
-      const formatPrompt = basePrompt + `\n\nData to format:\n${JSON.stringify(rawResult)}`;
-
-      // 使用非流式LLM生成格式化结果
-      const response = await this.llm.invoke([new SystemMessage(formatPrompt)]);
-      return response.content as string;
+      
+      // 小数据直接返回
+      return {
+        data: rawResult,
+        wasTruncated: false,
+        summary: 'complete data'
+      };
     } catch (error) {
-      logger.error(`Failed to generate formatted result:`, error);
-      // 降级处理：返回基本格式化
-      return `### ${toolName} 执行结果\n\n\`\`\`json\n${JSON.stringify(rawResult, null, 2)}\n\`\`\``;
+      logger.error('Data preprocessing failed:', error);
+      // 极端降级：只返回数据类型信息
+      return {
+        data: { 
+          dataType: typeof rawResult,
+          message: 'Data too large to process safely',
+          keys: Array.isArray(rawResult) ? `Array[${rawResult.length}]` : 
+                typeof rawResult === 'object' && rawResult !== null ? 
+                `Object with ${Object.keys(rawResult).length} keys` : 'Simple value'
+        },
+        wasTruncated: true,
+        summary: 'safe fallback due to processing error'
+      };
     }
   }
+
+  /**
+   * 🔧 快速数据大小估算（避免完整序列化阻塞）
+   */
+  private estimateDataSize(data: any): number {
+    if (typeof data === 'string') {
+      return data.length;
+    }
+    
+    if (Array.isArray(data)) {
+      if (data.length > 100) return 100000; // 大数组立即标记为大数据
+      return data.length * 200; // 估算每个元素200字符
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+      const keys = Object.keys(data);
+      if (keys.length > 50) return 50000; // 超过50个字段立即标记为大数据
+      return keys.length * 300; // 估算每个字段300字符
+    }
+    
+    return 100; // 原始类型
+  }
+
+  /**
+   * 🎯 智能数据截断（针对不同MCP类型）
+   */
+  private truncateDataIntelligently(rawResult: any, mcpName: string, toolName: string): {
+    data: any;
+    wasTruncated: boolean;
+    summary: string;
+  } {
+    try {
+      // 🔧 基于MCP类型的智能截断策略
+      if (mcpName.includes('ethereum') || mcpName.includes('blockchain') || toolName.includes('block')) {
+        return this.truncateBlockchainData(rawResult);
+      }
+      
+      if (mcpName.includes('github') || toolName.includes('repo')) {
+        return this.truncateGithubData(rawResult);
+      }
+      
+      if (mcpName.includes('twitter') || mcpName.includes('social')) {
+        return this.truncateSocialData(rawResult);
+      }
+      
+      // 通用截断策略
+      return this.truncateGenericData(rawResult);
+    } catch (error) {
+      // 截断失败，返回最基本信息
+      return {
+        data: { 
+          error: 'Data truncation failed',
+          originalType: typeof rawResult,
+          mcpName,
+          toolName
+        },
+        wasTruncated: true,
+        summary: 'truncation failed, basic info only'
+      };
+    }
+  }
+
+  /**
+   * 🏗️ 区块链数据截断
+   */
+  private truncateBlockchainData(data: any): { data: any; wasTruncated: boolean; summary: string } {
+    if (typeof data === 'object' && data !== null) {
+      const truncated: any = {};
+      
+      // 保留最重要的区块链字段
+      const importantFields = ['hash', 'number', 'gasUsed', 'gasLimit', 'miner', 'timestamp', 'parentHash', 'difficulty', 'totalDifficulty', 'size', 'transactionCount'];
+      
+      importantFields.forEach(field => {
+        if (data[field] !== undefined) {
+          truncated[field] = data[field];
+        }
+      });
+      
+      // 交易数组只保留前3个
+      if (data.transactions && Array.isArray(data.transactions)) {
+        truncated.transactions = data.transactions.slice(0, 3);
+        if (data.transactions.length > 3) {
+          truncated.transactionsNote = `Showing 3 of ${data.transactions.length} total transactions`;
+        }
+      }
+      
+      return {
+        data: truncated,
+        wasTruncated: true,
+        summary: `${Object.keys(truncated).length} key blockchain fields`
+      };
+    }
+    
+    return { data, wasTruncated: false, summary: 'no truncation needed' };
+  }
+
+  /**
+   * 🐙 GitHub数据截断
+   */
+  private truncateGithubData(data: any): { data: any; wasTruncated: boolean; summary: string } {
+    if (Array.isArray(data)) {
+      // 列表数据只保留前10个
+      return {
+        data: data.slice(0, 10),
+        wasTruncated: data.length > 10,
+        summary: `showing 10 of ${data.length} items`
+      };
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+      const truncated: any = {};
+      
+      // 保留重要的GitHub字段
+      const importantFields = ['name', 'full_name', 'description', 'html_url', 'clone_url', 'stargazers_count', 'forks_count', 'language', 'created_at', 'updated_at', 'owner'];
+      
+      importantFields.forEach(field => {
+        if (data[field] !== undefined) {
+          truncated[field] = data[field];
+        }
+      });
+      
+      return {
+        data: truncated,
+        wasTruncated: true,
+        summary: `${Object.keys(truncated).length} key GitHub fields`
+      };
+    }
+    
+    return { data, wasTruncated: false, summary: 'no truncation needed' };
+  }
+
+  /**
+   * 📱 社交媒体数据截断
+   */
+  private truncateSocialData(data: any): { data: any; wasTruncated: boolean; summary: string } {
+    if (Array.isArray(data)) {
+      return {
+        data: data.slice(0, 20), // 社交媒体显示更多条目
+        wasTruncated: data.length > 20,
+        summary: `showing 20 of ${data.length} posts`
+      };
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+      const truncated: any = {};
+      
+      // 保留重要的社交媒体字段
+      const importantFields = ['id', 'text', 'created_at', 'author', 'user', 'likes', 'retweets', 'replies', 'url'];
+      
+      importantFields.forEach(field => {
+        if (data[field] !== undefined) {
+          truncated[field] = data[field];
+        }
+      });
+      
+      return {
+        data: truncated,
+        wasTruncated: true,
+        summary: `${Object.keys(truncated).length} key social media fields`
+      };
+    }
+    
+    return { data, wasTruncated: false, summary: 'no truncation needed' };
+  }
+
+  /**
+   * 🔧 通用数据截断
+   */
+  private truncateGenericData(data: any): { data: any; wasTruncated: boolean; summary: string } {
+    if (Array.isArray(data)) {
+      return {
+        data: data.slice(0, 15),
+        wasTruncated: data.length > 15,
+        summary: `showing 15 of ${data.length} items`
+      };
+    }
+    
+    if (typeof data === 'object' && data !== null) {
+      const keys = Object.keys(data);
+      if (keys.length <= 20) {
+        return { data, wasTruncated: false, summary: 'complete object' };
+      }
+      
+      // 只保留前20个字段
+      const truncated: any = {};
+      keys.slice(0, 20).forEach(key => {
+        truncated[key] = data[key];
+      });
+      
+      truncated._truncated_note = `Object truncated: showing 20 of ${keys.length} total fields`;
+      
+      return {
+        data: truncated,
+        wasTruncated: true,
+        summary: `20 of ${keys.length} fields`
+      };
+    }
+    
+    return { data, wasTruncated: false, summary: 'simple value' };
+  }
+
+
 
   /**
    * 🔧 新增：流式生成Agent最终结果
