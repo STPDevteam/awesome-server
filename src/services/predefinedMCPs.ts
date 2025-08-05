@@ -1803,7 +1803,7 @@ export const predefinedMCPs: MCPService[] = [
             }
         ]
     },
-    {
+    /* {
         name: 'defillama-mcp-v1',
         description: 'DeFiLlama MCP server v1 - provides DeFi protocol data, TVL analytics, chain data, token prices, and stablecoin information',
         command: 'node',
@@ -2121,7 +2121,7 @@ export const predefinedMCPs: MCPService[] = [
                 }
             }
         ]
-    },
+    }, */
     {
         name: 'dune-mcp-v1',
         description: 'Dune Analytics MCP server v1 - blockchain data queries and dashboards (ekailabs implementation)',
