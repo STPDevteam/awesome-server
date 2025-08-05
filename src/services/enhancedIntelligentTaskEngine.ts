@@ -201,7 +201,17 @@ export class EnhancedIntelligentTaskEngine {
             actionName: actualToolName,
             input: JSON.stringify(processedInput),
             agentName: 'WorkflowEngine',
-            message: `WorkflowEngine is executing step ${currentStep.step}: ${actualToolName}`
+            message: `WorkflowEngine is executing step ${currentStep.step}: ${actualToolName}`,
+            // 🔧 与Agent引擎完全一致的toolDetails结构
+            toolDetails: {
+              toolType: toolType,
+              toolName: actualToolName,
+              mcpName: mcpName,
+              args: processedInput,
+              expectedOutput: expectedOutput,
+              reasoning: reasoning,
+              timestamp: new Date().toISOString()
+            }
           }
         };
 
@@ -246,8 +256,18 @@ export class EnhancedIntelligentTaskEngine {
             event: 'step_raw_result',
             data: {
               step: currentStep.step,
-              result: executionResult.result,
-              agentName: 'WorkflowEngine'
+              success: true,
+              result: executionResult.result,  // 原始MCP数据结构
+              agentName: 'WorkflowEngine',
+              executionDetails: {
+                toolType: toolType,
+                toolName: actualToolName,
+                mcpName: mcpName,
+                // 🔧 移除rawResult重复 - 数据已在上面的result字段中
+                args: executionResult.actualArgs || currentStep.input || {},
+                expectedOutput: expectedOutput,
+                timestamp: new Date().toISOString()
+              }
             }
           };
 
@@ -323,8 +343,16 @@ export class EnhancedIntelligentTaskEngine {
             data: {
               step: currentStep.step,
               success: true,
-              result: formattedResult || JSON.stringify(executionResult.result, null, 2),
-              agentName: 'WorkflowEngine'
+              result: formattedResult || executionResult.result, // 格式化结果供前端显示
+              rawResult: executionResult.result, // 保留原始MCP结果供调试
+              // 🔧 保留智能引擎的增强字段
+              agentName: 'WorkflowEngine',
+              message: `WorkflowEngine completed step ${currentStep.step} successfully`,
+              progress: {
+                completed: state.completedSteps,
+                total: state.totalSteps,
+                percentage: Math.round((state.completedSteps / state.totalSteps) * 100)
+              }
             }
           };
         } else {
