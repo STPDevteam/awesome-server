@@ -977,11 +977,16 @@ ${step.success && step.result ? `- Raw Result Data: ${JSON.stringify(step.result
 ${step.error ? `- Error: ${step.error}` : ''}
 `).join('\n')}
 
-### Raw Data Available for Analysis
-**LLM ANALYSIS REQUIRED**: Review all the raw result data above to determine:
-1. What specific information was successfully collected?
-2. Which parts of the user's request have been fulfilled?
-3. What remains to be done to complete the user's request?
+### Critical Analysis Required
+**🔍 DETAILED COMPARISON NEEDED**:
+
+1. **Parse the user's original request** - What EXACTLY did they ask for?
+2. **Analyze the collected data** - What have we actually obtained so far?
+3. **Gap Analysis** - What is missing between request and current data?
+
+**🚨 CRITICAL**: For requests mentioning multiple items/users/targets:
+- Count how many were requested vs how many we have data for
+- Example: User asks for "A, B, C, D" but we only have data for "A, B" → INCOMPLETE!
 
 ${taskCompleteAttempts > 0 ? `
 ### ⚠️ Task Completion History
@@ -1097,15 +1102,15 @@ Ask yourself:
 4. What is the END GOAL the user wants to achieve?
 5. Has that end goal been fully achieved with current data/actions?
 
-**CRITICAL THINKING** (Analyze the raw data above):
-- Look at the user's specific words and requirements
-- Examine the ACTUAL DATA CONTENT in the raw result data above
-- Don't just check if "some data exists" - check if the COMPLETE request is satisfied
-- If user mentioned multiple items, examine the raw data to see which ones were actually retrieved
-- Compare the data content against what the user specifically asked for
-- Evaluate if any key actions (posting, creating, publishing, etc.) are still pending
-- Use your intelligence to analyze the relationship between user request and actual collected data
-- Think about whether the user would be satisfied with current results
+**CRITICAL THINKING** (Be extremely thorough):
+- Count EXACTLY what the user requested vs what we have
+- Don't assume "some data = complete" - verify COMPLETENESS
+- For multi-target requests: ALL targets must be processed
+- Examine each result summary above: does it contain the requested information?
+- Ask: "Would a reasonable person consider this request fully satisfied?"
+- If user asked for data on 8 users but we only have 2 → CLEARLY INCOMPLETE
+- If user asked for posting/publishing but only collected data → INCOMPLETE
+- Use logical reasoning: partial completion ≠ task completion
 
 Be thorough and honest in your analysis.`;
   }
@@ -1597,6 +1602,8 @@ ${taskComplexity?.type === 'simple_query' ? 'For simple queries: Success = Compl
   /**
    * 解析Agent观察结果
    */
+
+
   private parseAgentObservation(content: string): { isComplete: boolean; nextObjective?: string } {
     try {
       let jsonText = content.trim();
