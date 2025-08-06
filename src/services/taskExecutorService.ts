@@ -2451,15 +2451,17 @@ Transform the data now:`;
         userLanguage = resolveUserLanguage(actualContent);
       }
       
-      // 检查内容长度，避免超出限制
+      // 🔧 移除内容长度限制，允许处理完整数据
+      // 注释：为了获取完整的 MCP 数据，移除了之前的 50K 字符限制
       const contentStr = typeof actualContent === 'string' ? actualContent : JSON.stringify(actualContent, null, 2);
-      const MAX_CONTENT_LENGTH = 50000; // 50k字符限制
+      // const MAX_CONTENT_LENGTH = 50000; // 已移除 50k字符限制
       
       let processedContent = contentStr;
-      if (contentStr.length > MAX_CONTENT_LENGTH) {
-        processedContent = contentStr.substring(0, MAX_CONTENT_LENGTH) + '\n... (content truncated due to length)';
-        logger.warn(`Content truncated from ${contentStr.length} to ${MAX_CONTENT_LENGTH} characters`);
-      }
+      // 移除内容截断逻辑
+      // if (contentStr.length > MAX_CONTENT_LENGTH) {
+      //   processedContent = contentStr.substring(0, MAX_CONTENT_LENGTH) + '\n... (content truncated due to length)';
+      //   logger.warn(`Content truncated from ${contentStr.length} to ${MAX_CONTENT_LENGTH} characters`);
+      // }
       
       // 构建格式化提示词
       const formatPrompt = `You are a professional data presentation specialist. Your task is to extract useful information from raw API/tool responses and present it in a clean, readable Markdown format.

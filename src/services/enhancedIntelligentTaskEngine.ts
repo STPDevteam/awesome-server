@@ -1447,7 +1447,8 @@ This is a large dataset. Apply smart filtering:
   private async generateFormattedResult(rawResult: any, mcpName: string, action: string): Promise<string> {
     try {
       const dataString = JSON.stringify(rawResult, null, 2);
-      const isLongData = dataString.length > 3000; // 超过3000字符认为是长数据
+      // 🔧 移除长数据判断限制，允许处理任意长度的数据
+      const isLongData = false; // dataString.length > 3000; // 移除3000字符限制
       
       const prompt = `Convert this JSON data to clean, readable Markdown format. Output the formatted Markdown directly without any code blocks or wrappers.
 

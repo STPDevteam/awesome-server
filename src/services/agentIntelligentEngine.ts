@@ -2248,10 +2248,11 @@ ${JSON.stringify(processedData.data)}`;
       // 快速大小估算（避免完整序列化）
       const estimatedSize = this.estimateDataSize(rawResult);
       
-      // 🔥 激进截断策略
-      if (estimatedSize > 50000) { // 50K字符阈值，更激进
-        return this.truncateDataIntelligently(rawResult, mcpName, toolName);
-      }
+      // 🔧 移除数据截断限制，允许完整数据处理
+      // 注释：为了获取完整的 MCP 数据，移除了之前的 50K 字符限制
+      // if (estimatedSize > 50000) { 
+      //   return this.truncateDataIntelligently(rawResult, mcpName, toolName);
+      // }
       
       // 小数据直接返回
       return {
@@ -2285,13 +2286,15 @@ ${JSON.stringify(processedData.data)}`;
     }
     
     if (Array.isArray(data)) {
-      if (data.length > 100) return 100000; // 大数组立即标记为大数据
+      // 🔧 移除大数组立即标记限制，允许处理更大的数组
+      // if (data.length > 100) return 100000; // 移除大数组立即标记为大数据
       return data.length * 200; // 估算每个元素200字符
     }
     
     if (typeof data === 'object' && data !== null) {
       const keys = Object.keys(data);
-      if (keys.length > 50) return 50000; // 超过50个字段立即标记为大数据
+      // 🔧 移除大对象立即标记限制，允许处理更多字段的对象
+      // if (keys.length > 50) return 50000; // 移除超过50个字段立即标记为大数据
       return keys.length * 300; // 估算每个字段300字符
     }
     
@@ -2341,136 +2344,43 @@ ${JSON.stringify(processedData.data)}`;
    * 🏗️ 区块链数据截断
    */
   private truncateBlockchainData(data: any): { data: any; wasTruncated: boolean; summary: string } {
-    if (typeof data === 'object' && data !== null) {
-      const truncated: any = {};
-      
-      // 保留最重要的区块链字段
-      const importantFields = ['hash', 'number', 'gasUsed', 'gasLimit', 'miner', 'timestamp', 'parentHash', 'difficulty', 'totalDifficulty', 'size', 'transactionCount'];
-      
-      importantFields.forEach(field => {
-        if (data[field] !== undefined) {
-          truncated[field] = data[field];
-        }
-      });
-      
-      // 交易数组只保留前3个
-      if (data.transactions && Array.isArray(data.transactions)) {
-        truncated.transactions = data.transactions.slice(0, 3);
-        if (data.transactions.length > 3) {
-          truncated.transactionsNote = `Showing 3 of ${data.transactions.length} total transactions`;
-        }
-      }
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `${Object.keys(truncated).length} key blockchain fields`
-      };
-    }
-    
-    return { data, wasTruncated: false, summary: 'no truncation needed' };
+    // 🔧 移除区块链数据截断，返回完整数据
+    return { data, wasTruncated: false, summary: 'complete blockchain data' };
   }
 
   /**
    * 🐙 GitHub数据截断
    */
   private truncateGithubData(data: any): { data: any; wasTruncated: boolean; summary: string } {
-    if (Array.isArray(data)) {
-      // 列表数据只保留前10个
-      return {
-        data: data.slice(0, 10),
-        wasTruncated: data.length > 10,
-        summary: `showing 10 of ${data.length} items`
-      };
-    }
-    
-    if (typeof data === 'object' && data !== null) {
-      const truncated: any = {};
-      
-      // 保留重要的GitHub字段
-      const importantFields = ['name', 'full_name', 'description', 'html_url', 'clone_url', 'stargazers_count', 'forks_count', 'language', 'created_at', 'updated_at', 'owner'];
-      
-      importantFields.forEach(field => {
-        if (data[field] !== undefined) {
-          truncated[field] = data[field];
-        }
-      });
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `${Object.keys(truncated).length} key GitHub fields`
-      };
-    }
-    
-    return { data, wasTruncated: false, summary: 'no truncation needed' };
+    // 🔧 移除 GitHub 数据截断，返回完整数据
+    return { data, wasTruncated: false, summary: 'complete GitHub data' };
   }
 
   /**
    * 📱 社交媒体数据截断
    */
   private truncateSocialData(data: any): { data: any; wasTruncated: boolean; summary: string } {
-    if (Array.isArray(data)) {
-      return {
-        data: data.slice(0, 20), // 社交媒体显示更多条目
-        wasTruncated: data.length > 20,
-        summary: `showing 20 of ${data.length} posts`
-      };
-    }
-    
-    if (typeof data === 'object' && data !== null) {
-      const truncated: any = {};
-      
-      // 保留重要的社交媒体字段
-      const importantFields = ['id', 'text', 'created_at', 'author', 'user', 'likes', 'retweets', 'replies', 'url'];
-      
-      importantFields.forEach(field => {
-        if (data[field] !== undefined) {
-          truncated[field] = data[field];
-        }
-      });
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `${Object.keys(truncated).length} key social media fields`
-      };
-    }
-    
-    return { data, wasTruncated: false, summary: 'no truncation needed' };
+    // 🔧 移除社交媒体数据截断，返回完整数据
+    return { data, wasTruncated: false, summary: 'complete social media data' };
   }
 
   /**
    * 🔧 通用数据截断
    */
   private truncateGenericData(data: any): { data: any; wasTruncated: boolean; summary: string } {
+    // 🔧 移除所有数据截断，返回完整数据
     if (Array.isArray(data)) {
       return {
-        data: data.slice(0, 15),
-        wasTruncated: data.length > 15,
-        summary: `showing 15 of ${data.length} items`
+        data: data, // 返回完整数组，不再截断
+        wasTruncated: false, // 不截断
+        summary: `complete array with ${data.length} items`
       };
     }
     
     if (typeof data === 'object' && data !== null) {
       const keys = Object.keys(data);
-      if (keys.length <= 20) {
-        return { data, wasTruncated: false, summary: 'complete object' };
-      }
-      
-      // 只保留前20个字段
-      const truncated: any = {};
-      keys.slice(0, 20).forEach(key => {
-        truncated[key] = data[key];
-      });
-      
-      truncated._truncated_note = `Object truncated: showing 20 of ${keys.length} total fields`;
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `20 of ${keys.length} fields`
-      };
+      // 移除字段数量限制，返回完整对象
+      return { data, wasTruncated: false, summary: `complete object with ${keys.length} fields` };
     }
     
     return { data, wasTruncated: false, summary: 'simple value' };
