@@ -6,10 +6,10 @@ import { logger } from '../utils/logger.js';
  * 可根据不同环境调整命令路径
  */
 const SYSTEM_COMMANDS = {
-    NPX_PATH: process.env.NPX_PATH || 'npx',
-    NODE_PATH: process.env.NODE_PATH || 'node',
-    UV_PATH: process.env.UV_PATH || '/home/ubuntu/.local/bin/uv',
-    PYTHON_PATH: process.env.PYTHON_PATH || '/home/ubuntu/mcp-tools/mcp-venv/bin/python'
+    NPX_PATH: 'npx',
+    NODE_PATH: 'node',
+    UV_PATH: '/home/ubuntu/.local/bin/uv',
+    PYTHON_PATH: '/home/ubuntu/mcp-tools/mcp-venv/bin/python'
 };
 
 /**
