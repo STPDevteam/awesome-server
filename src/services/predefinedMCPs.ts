@@ -1973,7 +1973,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'feargreed-mcp',
         description: 'Fear & Greed Index cryptocurrency market sentiment',
-        command: '/home/ubuntu/venvs/mcp-env/bin/uv',
+        command: SYSTEM_COMMANDS.UV_PATH,
         args: [ 
             "--directory", "/home/ubuntu/mcp-tools/crypto-feargreed-mcp", 
             "run", 
@@ -2040,7 +2040,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'rugcheck-mcp',
         description: 'Rug Check token security and risk analysis for Solana tokens',
-        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: [`/home/ubuntu/mcp-tools/rug-check-mcp/main.py`],
         env: {
             SOLSNIFFER_API_KEY: process.env.SOLSNIFFER_API_KEY || ''
@@ -2503,7 +2503,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'mindsdb-mcp',
         description: 'MindsDB machine learning database integration',
-        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: [`/home/ubuntu/mcp-tools/minds-mcp/server.py`],
         env: {},
         connected: false,
@@ -3104,7 +3104,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'discord-mcp',
         description: 'Discord social platform integration',
-        command: '/home/ubuntu/.local/bin/uv',
+        command: SYSTEM_COMMANDS.UV_PATH,
         args: ["--directory",
             `/home/ubuntu/mcp-tools/mcp-discord`,
             "run",
@@ -3435,7 +3435,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'x-mcp',
         description: 'An MCP server to create, manage and publish X/Twitter posts directly',
-        command: '/home/ubuntu/.local/bin/uv',
+        command: SYSTEM_COMMANDS.UV_PATH,
         args: ["--directory",
             `/home/ubuntu/mcp-tools/x-mcp`,
             "run",
@@ -3512,7 +3512,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Browser Automation",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.comweb-search.jpeg", // Placeholder; update if available
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/web-search.webp", // Placeholder; update if available
         "githubUrl": "https://github.com/pskill9/web-search",
         "authRequired": false,
         "authParams": {},
@@ -3546,7 +3546,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-portfolio-mcp",
         "description": "Crypto Portfolio MCP Server - provides tools for tracking and managing cryptocurrency portfolio allocations, including real-time prices from Binance, portfolio summaries, value history charts, and analysis for diversification and risk (LOCAL BUILD)",
-        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
+        "command": SYSTEM_COMMANDS.PYTHON_PATH,
         "args": ["/home/ubuntu/mcp-tools/crypto-portfolio-mcp/main.py"],
         "env": {},
         "connected": false,
@@ -3559,7 +3559,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-news-mcp",
         "description": "Crypto News MCP Server - provides real-time cryptocurrency news headlines, keyword searches, and summarization prompts sourced from NewsData API for AI agents (LOCAL BUILD)",
-        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
+        "command": SYSTEM_COMMANDS.PYTHON_PATH,
         "args": ["/home/ubuntu/mcp-tools/crypto-news-mcp/main.py"],
         "env": {},
         "connected": false,
@@ -3574,7 +3574,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'dune-mcp-v2',
         description: 'Dune Analytics MCP server v2 - enhanced blockchain data access for AI agents (kukapay implementation)',
-        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
             DUNE_API_KEY: process.env.DUNE_API_KEY || ''
@@ -3623,7 +3623,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "defillama-mcp-v2",
         "description": "DeFiLlama MCP server v2 (demcp variant) - provides DeFi protocol data, TVL analytics with FastMCP framework for enhanced AI integration",
-        "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
+        "command": SYSTEM_COMMANDS.PYTHON_PATH,
         "args": ["/home/ubuntu/mcp-tools/demcp-defillama-mcp/defillama.py"],
         "env": {},
         "connected": false,
@@ -3737,7 +3737,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'crypto-projects-mcp',
         description: 'Crypto Projects MCP Server - provides cryptocurrency project data from Mobula.io to AI agents, including raw JSON data and formatted Markdown summaries using uv for package management',
-        command: '/home/ubuntu/.local/bin/uv',
+        command: SYSTEM_COMMANDS.UV_PATH,
         args: [
             'run',
             '--directory',
@@ -3747,7 +3747,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-projects-mcp.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-projects-mcp.avif',
         githubUrl: 'https://github.com/kukapay/crypto-projects-mcp',
         authRequired: false,
         authParams: {},
@@ -3792,12 +3792,12 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-whitepapers-mcp",
         "description": "Crypto Whitepapers MCP Server - serves as a structured knowledge base of crypto whitepapers, enabling AI agents to access, analyze, and learn from them by searching, loading, and querying whitepaper content (LOCAL BUILD)",
-        "command": "/home/ubuntu/.local/bin/uv",
+        "command": SYSTEM_COMMANDS.UV_PATH,
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-whitepapers-mcp", "run", "crypto-whitepapers-mcp"],
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-whitepapers-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-whitepapers-mcp.webp",
         "githubUrl": "https://github.com/kukapay/crypto-whitepapers-mcp",
         "authRequired": false,
         "authParams": {},
@@ -3871,7 +3871,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "hyperliquid-mcp-v2",
         "description": "Hyperliquid MCP server v2 - advanced onchain tools with comprehensive trading operations, account management, and market data using Hyperliquid SDK",
-        "command": "node",
+        "command": SYSTEM_COMMANDS.NODE_PATH,
         "args": ["/home/ubuntu/mcp-tools/hyperliquid-mcp/dist/index.js"],
         "env": {
             PRIVATE_KEY: process.env.HYPERLIQUID_PRIVATE_KEY || ''
@@ -4138,14 +4138,14 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-sentiment-mcp",
         "description": "Crypto Sentiment MCP Server - provides cryptocurrency sentiment analysis to AI agents, leveraging Santiment's aggregated social media and news data to track market mood and detect emerging trends (LOCAL BUILD)",
-        "command": "/home/ubuntu/.local/bin/uv",
+        "command": SYSTEM_COMMANDS.UV_PATH,
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-sentiment-mcp", "run", "main.py"],
         "env": {
             SANTIMENT_API_KEY: process.env.SANTIMENT_API_KEY || ''
         },
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-sentiment-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-sentiment-mcp.webp",
         "githubUrl": "https://github.com/kukapay/crypto-sentiment-mcp",
         "authRequired": true,
         "authParams": {
@@ -4269,7 +4269,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "crypto-indicators-mcp",
         "description": "Crypto Indicators MCP Server - provides a range of cryptocurrency technical analysis indicators and strategies, empowering AI trading agents to efficiently analyze market trends and develop robust quantitative strategies (LOCAL BUILD)",
-        "command": "node",
+        "command": SYSTEM_COMMANDS.NODE_PATH,
         "args": ["/home/ubuntu/mcp-tools/crypto-indicators-mcp/index.js"],
         "env": {
             "EXCHANGE_NAME": "binance"
@@ -4526,7 +4526,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "polymarket-mcp",
         "description": "PolyMarket MCP Server - provides access to prediction market data through the PolyMarket API, implementing a standardized interface for retrieving market information, prices, and historical data from prediction markets (LOCAL BUILD)",
-        "command": "/home/ubuntu/.local/bin/uv",
+        "command": SYSTEM_COMMANDS.UV_PATH,
         "args": ["--directory", "/home/ubuntu/mcp-tools/polymarket-mcp", "run", "src/polymarket_mcp/server.py"],
         "env": {},
         "connected": false,
@@ -4627,7 +4627,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'warpcast-mcp',
         description: 'Warpcast MCP server - Social media tools for Farcaster protocol with posting, following, and feed management capabilities',
-        command: '/home/ubuntu/.local/bin/uv',
+        command: SYSTEM_COMMANDS.UV_PATH,
         args: [
             '--directory',
             '/home/ubuntu/mcp-tools/mcp-warpcast-server',
