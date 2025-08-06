@@ -991,12 +991,15 @@ ${state.executionHistory.map(step => `
 - Status: ${step.success ? '✅ Success' : '❌ Failed'}
 - Tool: ${step.plan.tool}
 - Data Retrieved: ${step.success && step.result ? 'Yes' : 'No'}
-${step.success && step.result ? `- Data Summary: ${this.summarizeStepData(step.result)}` : ''}
+${step.success && step.result ? `- Raw Result Data: ${JSON.stringify(step.result, null, 2)}` : ''}
 ${step.error ? `- Error: ${step.error}` : ''}
 `).join('\n')}
 
-### Data Content Analysis
-${dataContentAnalysis}
+### Raw Data Available for Analysis
+**LLM ANALYSIS REQUIRED**: Review all the raw result data above to determine:
+1. What specific information was successfully collected?
+2. Which parts of the user's request have been fulfilled?
+3. What remains to be done to complete the user's request?
 
 ${taskCompleteAttempts > 0 ? `
 ### ⚠️ Task Completion History
@@ -1112,11 +1115,14 @@ Ask yourself:
 4. What is the END GOAL the user wants to achieve?
 5. Has that end goal been fully achieved with current data/actions?
 
-**CRITICAL THINKING**:
+**CRITICAL THINKING** (Analyze the raw data above):
 - Look at the user's specific words and requirements
+- Examine the ACTUAL DATA CONTENT in the raw result data above
 - Don't just check if "some data exists" - check if the COMPLETE request is satisfied
-- Consider whether all mentioned targets/items have been addressed
+- If user mentioned multiple items, examine the raw data to see which ones were actually retrieved
+- Compare the data content against what the user specifically asked for
 - Evaluate if any key actions (posting, creating, publishing, etc.) are still pending
+- Use your intelligence to analyze the relationship between user request and actual collected data
 - Think about whether the user would be satisfied with current results
 
 Be thorough and honest in your analysis.`;
