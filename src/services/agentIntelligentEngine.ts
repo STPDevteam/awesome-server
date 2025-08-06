@@ -890,15 +890,15 @@ export class AgentIntelligentEngine {
       return false;
     }
 
-    // 🔧 停滞检查：超过8步没有进展
-    if (progressMonitor.stagnationCount >= 8) {
+    // 🔧 停滞检查：超过12步没有进展（允许多目标任务）
+    if (progressMonitor.stagnationCount >= 12) {
       logger.warn(`🛑 Task appears stagnant: ${progressMonitor.stagnationCount} steps without progress`);
       return false;
     }
 
-    // 🔧 重复动作检查：同一工具重复使用超过5次
+    // 🔧 重复动作检查：同一工具重复使用超过15次（允许多目标任务）
     for (const [action, count] of progressMonitor.repeatedActions.entries()) {
-      if (count >= 5) {
+      if (count >= 15) {
         logger.warn(`🛑 Action repeated too many times: ${action} (${count} times)`);
         return false;
       }
@@ -1016,8 +1016,14 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
 - If the user asked for an action (like posting), check if that action actually happened
 
 **DECISION GUIDELINES**:
-✅ Mark COMPLETE if: The core request has been meaningfully fulfilled
-❌ Mark CONTINUE if: Significant parts of the request remain unaddressed
+✅ Mark COMPLETE if: EVERY SINGLE item/user/target in the original request has been processed
+❌ Mark CONTINUE if: ANY item/user/target from the original request is missing
+
+**🚨 MANDATORY CHECK**: 
+- Count total items requested in original query
+- Count total items successfully processed  
+- If numbers don't match → MUST continue
+- Example: 8 users requested, 3 users processed → 5 still missing → CONTINUE!
 
 **OUTPUT FORMAT (JSON only)**:
 {
