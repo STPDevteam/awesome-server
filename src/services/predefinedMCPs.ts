@@ -3564,7 +3564,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-news-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/newsdata-logo.png",
         "githubUrl": "https://github.com/kukapay/crypto-news-mcp",
         "authRequired": true,
         "authParams": {
