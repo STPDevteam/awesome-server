@@ -2,6 +2,17 @@ import { MCPService } from './mcpManager.js';
 import { logger } from '../utils/logger.js';
 
 /**
+ * 系统命令路径配置
+ * 可根据不同环境调整命令路径
+ */
+const SYSTEM_COMMANDS = {
+    NPX_PATH: process.env.NPX_PATH || 'npx',
+    NODE_PATH: process.env.NODE_PATH || 'node',
+    UV_PATH: process.env.UV_PATH || '/home/ubuntu/.local/bin/uv',
+    PYTHON_PATH: process.env.PYTHON_PATH || '/home/ubuntu/mcp-tools/mcp-venv/bin/python'
+};
+
+/**
  * 预定义的MCP服务列表
  * 这些服务将在应用启动时自动连接
  */
@@ -10,7 +21,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'playwright',
         description: 'Playwright Tools for MCP.',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
@@ -381,7 +392,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'base-mcp',
         description: 'Base Chain RPC integration for blockchain operations (LOCAL BUILD)',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/base-mcp/build/index.js`],
         env: {
             COINBASE_API_KEY_NAME: process.env.COINBASE_API_KEY_NAME || '',
@@ -758,7 +769,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'evm-mcp',
         description: 'Comprehensive EVM blockchain server supporting 30+ networks including Ethereum, Optimism, Arbitrum, Base, Polygon with unified interface',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', '@mcpdotdirect/evm-mcp-server'],
         env: {
         },
@@ -1063,7 +1074,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'coingecko-mcp-v1',
         description: 'CoinGecko MCP server v1 for cryptocurrency market data, historical prices, and OHLC candlestick data',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js`],
         env: {
             COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || ''
@@ -1386,7 +1397,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'coinmarketcap-mcp',
         description: 'CoinMarketCap cryptocurrency market data and analytics',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: ['/home/ubuntu/mcp-tools/coinmarketcap-mcp/index.js'],
         env: {
             COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY || '',
@@ -1804,9 +1815,86 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
+        name: 'dune-mcp-v1',
+        description: 'Dune Analytics MCP server v1 - blockchain data queries and dashboards (ekailabs implementation)',
+        command: SYSTEM_COMMANDS.NODE_PATH,
+        args: [`/home/ubuntu/mcp-tools/dune-mcp-server/dist/index.js`],
+        env: {
+            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
+        },
+        connected: false,
+        category: 'Market Data',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
+        githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
+        authRequired: true,
+        authParams: {
+            DUNE_API_KEY: "DUNE_API_KEY"
+        },
+        // 🔧 新增：基于Dune Analytics的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'execute_query',
+                description: 'Execute a Dune Analytics query and return results',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'number',
+                            description: 'Dune query ID to execute',
+                            required: true
+                        },
+                        parameters: {
+                            type: 'object',
+                            description: 'Query parameters as key-value pairs',
+                            required: false
+                        }
+                    },
+                    required: ['query_id']
+                }
+            },
+            {
+                name: 'get_query_results',
+                description: 'Get results from a previously executed query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        execution_id: {
+                            type: 'string',
+                            description: 'Execution ID of the query',
+                            required: true
+                        }
+                    },
+                    required: ['execution_id']
+                }
+            },
+            {
+                name: 'get_latest_results',
+                description: 'Get the latest results for a query',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query_id: {
+                            type: 'number',
+                            description: 'Dune query ID',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of rows to return',
+                            required: false,
+                            default: 100
+                        }
+                    },
+                    required: ['query_id']
+                }
+            }
+        ]
+    },
+
+    {
         name: 'chainlink-mcp',
         description: 'ChainLink price feeds and oracle data',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/chainlink-feeds-mcp/index.js`],
         env: {},
         connected: false,
@@ -2014,7 +2102,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'whaletracker-mcp',
         description: 'Whale Tracker large transaction monitoring',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', 'whale-tracker-mcp'],
         env: {},
         connected: false,
@@ -2512,7 +2600,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'playwright-mcp',
         description: 'Playwright browser automation and testing',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', '@playwright/mcp@latest'],
         env: {},
         connected: false,
@@ -2659,7 +2747,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'unity-mcp',
         description: 'Unity game engine development tools',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', 'unity-mcp'],
         env: {},
         connected: false,
@@ -2690,7 +2778,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'figma-mcp',
         description: 'Figma design tool integration and context',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', 'figma-developer-mcp',`--figma-api-key=${process.env.FIGMA_API_KEY || ''}`, "--stdio"],
         env: {},
         connected: false,
@@ -2900,7 +2988,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'convex-mcp',
         description: 'Convex backend development platform',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ["-y", "convex@latest", "mcp", "start"],
         env: {},
         connected: false,
@@ -2913,7 +3001,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'cloudflare-mcp',
         description: 'Cloudflare edge computing and CDN services',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ["mcp-remote", "https://docs.mcp.cloudflare.com/sse"],
         env: {},
         connected: false,
@@ -2926,7 +3014,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'supabase-mcp',
         description: 'Supabase backend-as-a-service integration',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ["-y",
             "@supabase/mcp-server-supabase@latest",
             "--access-token",
@@ -2946,7 +3034,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'binance-mcp',
         description: 'Binance cryptocurrency exchange trading (LOCAL BUILD)',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/binance-mcp/build/index.js`],
         env: {
             BINANCE_API_KEY: process.env.BINANCE_API_KEY || '',
@@ -2965,7 +3053,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'uniswap-mcp',
         description: 'Uniswap DEX trading and liquidity management (LOCAL BUILD)',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js`],
         env: {
             INFURA_KEY: process.env.UNISWAP_INFURA_KEY || '',
@@ -2984,7 +3072,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'hyperliquid-mcp-v1',
         description: 'Hyperliquid MCP server v1 - decentralized perpetuals trading (simple version)',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', '@mektigboy/server-hyperliquid'],
         env: {},
         connected: false,
@@ -2997,7 +3085,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'pumpfun-mcp',
         description: 'Pump.fun meme token trading platform (LOCAL BUILD)',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js`],
         env: {
             HELIUS_RPC_URL: process.env.HELIUS_RPC_URL || ''
@@ -3036,7 +3124,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'telegram-mcp',
         description: 'Telegram messaging platform integration',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['mcp-telegram'],
         env: {},
         connected: false,
@@ -3052,7 +3140,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'twitter-client-mcp',
         description: 'Advanced Twitter Client MCP with comprehensive functionality including profile operations, tweet management, search, and relationship operations. Uses Twitter API v2 credentials for enhanced functionality and secure access (LOCAL BUILD)',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/twitter-client-mcp/dist/index.js`],
         env: {
             // Primary API v2 credentials for advanced functionality
@@ -3373,7 +3461,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'notion-mcp',
         description: 'Notion workspace and documentation integration',
-        command: 'npx',
+        command: SYSTEM_COMMANDS.NPX_PATH,
         args: ['-y', '@notionhq/notion-mcp-server'],
         env: {"OPENAPI_MCP_HEADERS": process.env.OPENAPI_MCP_HEADERS || ''},
         connected: false,
@@ -3388,7 +3476,7 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'dexscreener-mcp',
         description: 'DexScreener real-time DEX pair data, token information, and market statistics across multiple blockchains (LOCAL BUILD)',
-        command: 'node',
+        command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/dexscreener-mcp-server/build/index.js`],
         env: {},
         connected: false,
@@ -3402,14 +3490,14 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "coingecko-mcp-v2",
         "description": "CoinGecko MCP server v2 - provides cryptocurrency data and market analytics with enhanced features",
-        "command": "npx",
+        "command": SYSTEM_COMMANDS.NPX_PATH,
         "args": ["-y", "@coingecko/coingecko-mcp"],
         "env": {
             "COINGECKO_ENVIRONMENT": "Demo"
         },
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-coingecko.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
         "githubUrl": "https://github.com/coingecko", // Note: No official GitHub for MCP server, this is general
         "authRequired": true, // For public keyless mode; set to true for Pro
         "authParams": {
@@ -3424,7 +3512,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Browser Automation",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-web-search.png", // Placeholder; update if available
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.comweb-search.jpeg", // Placeholder; update if available
         "githubUrl": "https://github.com/pskill9/web-search",
         "authRequired": false,
         "authParams": {},
@@ -3437,7 +3525,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Browser Automation",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-puppeteer.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/puppeteer-mcp-server.jpeg",
         "githubUrl": "https://github.com/merajmehrabi/puppeteer-mcp-server",
         "authRequired": false,
         "authParams": {},
@@ -3445,12 +3533,12 @@ export const predefinedMCPs: MCPService[] = [
     {
         "name": "web3-research-mcp",
         "description": "Web3 Research MCP Server - provides blockchain data, transaction history, smart contract interactions, wallet analytics, and DeFi/NFT metrics using Alchemy and other Web3 APIs (LOCAL BUILD)",
-        "command": "/home/ubuntu/.nvm/versions/node/v20.19.3/bin/npx",
+        "command": SYSTEM_COMMANDS.NPX_PATH,
         "args": ["-y", "web3-research-mcp@latest"],
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-web3-research.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/web3-research.jpeg",
         "githubUrl": "https://github.com/aaronjmars/web3-research-mcp",
         "authRequired": false,
         "authParams": {},
@@ -3463,7 +3551,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Trading",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-portfolio.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-portfolio-mcp.png",
         "githubUrl": "https://github.com/kukapay/crypto-portfolio-mcp",
         "authRequired": false,
         "authParams": {},
@@ -3476,7 +3564,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-news.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-news-mcp.png",
         "githubUrl": "https://github.com/kukapay/crypto-news-mcp",
         "authRequired": true,
         "authParams": {
@@ -3486,14 +3574,14 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'dune-mcp-v2',
         description: 'Dune Analytics MCP server v2 - enhanced blockchain data access for AI agents (kukapay implementation)',
-        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/mcp',
-        args: ["dev", "/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
             DUNE_API_KEY: process.env.DUNE_API_KEY || ''
         },
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
         githubUrl: 'https://github.com/kukapay/dune-analytics-mcp',
         authRequired: true,
         authParams: {
@@ -3536,7 +3624,7 @@ export const predefinedMCPs: MCPService[] = [
         "name": "defillama-mcp-v2",
         "description": "DeFiLlama MCP server v2 (demcp variant) - provides DeFi protocol data, TVL analytics with FastMCP framework for enhanced AI integration",
         "command": "/home/ubuntu/mcp-tools/mcp-venv/bin/python",
-        "args": ["/home/ubuntu/mcp-tools/defillama-mcp/defillama.py"],
+        "args": ["/home/ubuntu/mcp-tools/demcp-defillama-mcp/defillama.py"],
         "env": {},
         "connected": false,
         "category": "Market Data",
@@ -3659,7 +3747,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-projects.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-projects-mcp.png',
         githubUrl: 'https://github.com/kukapay/crypto-projects-mcp',
         authRequired: false,
         authParams: {},
@@ -3709,7 +3797,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-whitepapers.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-whitepapers-mcp.png",
         "githubUrl": "https://github.com/kukapay/crypto-whitepapers-mcp",
         "authRequired": false,
         "authParams": {},
@@ -3790,7 +3878,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         "connected": false,
         "category": "Trading",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-hyperliquid.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.png",
         "githubUrl": "https://github.com/Impa-Ventures/hyperliquid-mcp",
         "authRequired": true,
         "authParams": {
@@ -4057,7 +4145,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-sentiment.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-sentiment-mcp.png",
         "githubUrl": "https://github.com/kukapay/crypto-sentiment-mcp",
         "authRequired": true,
         "authParams": {
@@ -4188,7 +4276,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         "connected": false,
         "category": "Trading",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-crypto-indicators.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-indicators-mcp.png",
         "githubUrl": "https://github.com/kukapay/crypto-indicators-mcp",
         "authRequired": false,
         "authParams": {},
@@ -4443,7 +4531,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Trading",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-polymarket.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/polymarket-mcp.png",
         "githubUrl": "https://github.com/berlinbra/polymarket-mcp",
         "authRequired": true,
         "authParams": {
@@ -4535,6 +4623,271 @@ export const predefinedMCPs: MCPService[] = [
                 }
             }
         ]
+    },
+    {
+        name: 'warpcast-mcp',
+        description: 'Warpcast MCP server - Social media tools for Farcaster protocol with posting, following, and feed management capabilities',
+        command: '/home/ubuntu/.local/bin/uv',
+        args: [
+            '--directory',
+            '/home/ubuntu/mcp-tools/mcp-warpcast-server',
+            'run',
+            'main.py'
+        ],
+        env: {
+            WARPCAST_API_TOKEN: process.env.WARPCAST_API_TOKEN || ''
+        },
+        connected: false,
+        category: 'Social',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/warpcast.png',
+        githubUrl: 'https://github.com/zhangzhongnan928/mcp-warpcast-server',
+        authRequired: true,
+        authParams: {
+            WARPCAST_API_TOKEN: "WARPCAST_API_TOKEN"
+        },
+        // 🔧 新增：基于Warpcast/Farcaster的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'post_cast',
+                description: 'Post a new cast (message) to Farcaster',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Cast content text',
+                            required: true
+                        },
+                        parent_url: {
+                            type: 'string',
+                            description: 'URL to reply to (optional)',
+                            required: false
+                        },
+                        embeds: {
+                            type: 'array',
+                            description: 'Array of embed URLs or objects',
+                            items: {
+                                type: 'string'
+                            },
+                            required: false
+                        }
+                    },
+                    required: ['text']
+                }
+            },
+            {
+                name: 'reply_to_cast',
+                description: 'Reply to an existing cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Reply content text',
+                            required: true
+                        },
+                        parent_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast to reply to',
+                            required: true
+                        }
+                    },
+                    required: ['text', 'parent_hash']
+                }
+            },
+            {
+                name: 'like_cast',
+                description: 'Like a cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast to like',
+                            required: true
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            },
+            {
+                name: 'recast',
+                description: 'Recast (share) a cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast to recast',
+                            required: true
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            },
+            {
+                name: 'follow_user',
+                description: 'Follow a user on Farcaster',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user to follow',
+                            required: true
+                        }
+                    },
+                    required: ['fid']
+                }
+            },
+            {
+                name: 'unfollow_user',
+                description: 'Unfollow a user on Farcaster',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user to unfollow',
+                            required: true
+                        }
+                    },
+                    required: ['fid']
+                }
+            },
+            {
+                name: 'get_user_profile',
+                description: 'Get user profile information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user',
+                            required: false
+                        },
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_user_casts',
+                description: 'Get casts from a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of casts to retrieve',
+                            required: false,
+                            default: 25
+                        },
+                        cursor: {
+                            type: 'string',
+                            description: 'Pagination cursor',
+                            required: false
+                        }
+                    },
+                    required: ['fid']
+                }
+            },
+            {
+                name: 'get_feed',
+                description: 'Get the user\'s home feed',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        feed_type: {
+                            type: 'string',
+                            description: 'Type of feed (following, trending)',
+                            enum: ['following', 'trending'],
+                            required: false,
+                            default: 'following'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of casts to retrieve',
+                            required: false,
+                            default: 25
+                        },
+                        cursor: {
+                            type: 'string',
+                            description: 'Pagination cursor',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'search_casts',
+                description: 'Search for casts by text content',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query text',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of results to return',
+                            required: false,
+                            default: 25
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'get_cast_details',
+                description: 'Get detailed information about a specific cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast',
+                            required: true
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            },
+            {
+                name: 'get_cast_reactions',
+                description: 'Get reactions (likes, recasts) for a cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast',
+                            required: true
+                        },
+                        reaction_type: {
+                            type: 'string',
+                            description: 'Type of reaction to get',
+                            enum: ['likes', 'recasts', 'all'],
+                            required: false,
+                            default: 'all'
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            }
+        ]
     }
 
 ];
@@ -4564,10 +4917,7 @@ export const mcpNameMapping: Record<string, string> = {
     'base-mcp-server': 'base-mcp',
     'coinmarketcap-mcp-service': 'coinmarketcap-mcp',
     'coinmarketcap_mcp_service': 'coinmarketcap-mcp',
-    'defillama-mcp-service': 'defillama-mcp-v1',
     'defillama-mcp': 'defillama-mcp-v2', // 默认使用v2版本
-    'defillama-v2': 'defillama-mcp-v2',
-    'demcp-defillama-mcp': 'defillama-mcp-v2',
     'hyperliquid-mcp': 'hyperliquid-mcp-v2', // 默认使用v2版本
     'hyperliquid-v1': 'hyperliquid-mcp-v1',
     'hyperliquid-v2': 'hyperliquid-mcp-v2',
@@ -4579,7 +4929,8 @@ export const mcpNameMapping: Record<string, string> = {
     'telegram-mcp-service': 'mcp-telegram',
     'twitter-client-mcp-service': 'twitter-client-mcp',
     'notion-mcp-service': 'notion-mcp-server',
-    '12306-mcp-service': '12306-mcp'
+    '12306-mcp-service': '12306-mcp',
+    'warpcast-mcp-server': 'warpcast-mcp',
 };
 
 /**
