@@ -108,17 +108,16 @@ export class EnhancedIntelligentTaskEngine {
     // 🔧 根据复杂度调整执行策略
     const shouldObserveEveryStep = taskComplexity.type !== 'simple_query';
 
-    // 🔧 发送执行开始事件 - 统一字段结构，与Agent引擎一致
+    // 🔧 发送执行开始事件 - 对齐传统任务执行事件名称
     yield {
       event: 'execution_start',
       data: {
         taskId,
-        // 🔧 统一字段：添加agentName，与Agent引擎一致
         agentName: 'WorkflowEngine',
         taskComplexity: taskComplexity.type,
         observationStrategy: taskComplexity.recommendedObservation,
         timestamp: new Date().toISOString(),
-        message: `Starting enhanced workflow execution with ${mcpWorkflow.workflow.length} steps...`,
+        message: `Starting execution...`,
         mode: 'enhanced',
         workflowInfo: {
           totalSteps: mcpWorkflow.workflow.length,
@@ -156,20 +155,7 @@ export class EnhancedIntelligentTaskEngine {
       // 🔧 准备执行环境
       await this.prepareWorkflowExecution(taskId, state, mcpWorkflow);
 
-      // 🔧 主执行循环 - 逐步执行工作流
-      yield {
-        event: 'workflow_execution_start',
-        data: { 
-          message: 'Starting workflow step execution...',
-          totalSteps: state.totalSteps,
-          workflow: state.workflow.map(step => ({
-            step: step.step,
-            mcp: step.mcp,
-            action: step.action,
-            status: step.status
-          }))
-        }
-      };
+      // 🔧 移除workflow_execution_start事件，直接开始步骤执行
 
       for (let i = 0; i < state.workflow.length; i++) {
         const currentStep = state.workflow[i];
@@ -205,13 +191,15 @@ export class EnhancedIntelligentTaskEngine {
           : `Execute ${actualToolName} on ${currentStep.mcp}`;
         const reasoning = `Workflow step ${currentStep.step}`;
 
-        // 🔧 发送步骤开始事件 - 对齐传统任务执行的事件名称
+        // 🔧 发送步骤开始事件 - 对齐传统任务执行事件名称
         const stepId = `workflow_step_${currentStep.step}_${Date.now()}`;
         yield {
           event: 'step_executing',
           data: {
             step: currentStep.step,
-            tool: actualToolName,
+            mcpName: mcpName || currentStep.mcp,
+            actionName: actualToolName,
+            input: JSON.stringify(processedInput),
             agentName: 'WorkflowEngine',
             message: `WorkflowEngine is executing step ${currentStep.step}: ${actualToolName}`,
             // 🔧 与Agent引擎完全一致的toolDetails结构
@@ -260,11 +248,10 @@ export class EnhancedIntelligentTaskEngine {
           resultKeys: executionResult.result ? Object.keys(executionResult.result) : 'no result'
         });
 
-        // 🔧 与Agent引擎完全一致：只在成功且有结果时处理
+        // 🔧 发送step_raw_result事件（新增事件）
         if (executionResult.success && executionResult.result) {
           logger.info(`🎯 CRITICAL DEBUG - Conditions met, yielding step_raw_result`);
           
-          // 🔧 为传输优化：避免在executionDetails中重复大数据
           yield {
             event: 'step_raw_result',
             data: {
@@ -301,16 +288,28 @@ export class EnhancedIntelligentTaskEngine {
               actualToolName
             );
 
-            for await (const chunk of formatGenerator) {
+            // 🔧 使用前端对应的事件名称
+            if (currentStep.step === state.totalSteps) {
+              // 最后一步：发送step_start事件然后使用summary_chunk事件
               yield {
-                event: currentStep.step === state.totalSteps ? 'final_result_chunk' : 'step_result_chunk',
+                event: 'step_start',
                 data: {
-                  chunk,
-                  // 🔧 保留智能引擎的增强字段
-                  step: currentStep.step,
+                  message: `Running ${mcpName || ''} - ${actualToolName || ''}`,
                   agentName: 'WorkflowEngine'
                 }
               };
+              
+              for await (const chunk of formatGenerator) {
+                yield {
+                  event: 'summary_chunk',
+                  data: {
+                    content: chunk,
+                    agentName: 'WorkflowEngine'
+                  }
+                };
+              }
+            } else {
+              // 中间步骤：暂时跳过流式输出，只保留最终格式化结果
             }
           }
 
@@ -321,31 +320,7 @@ export class EnhancedIntelligentTaskEngine {
             actualToolName
           );
 
-          // 🔧 保留智能引擎的格式化结果事件（增强功能）
-          yield {
-            event: 'step_formatted_result',
-            data: {
-              step: currentStep.step,
-              success: true,
-              formattedResult: formattedResult,
-              agentName: 'WorkflowEngine',
-              formattingDetails: {
-                toolType: toolType,
-                toolName: actualToolName,
-                mcpName: mcpName,
-                originalResult: executionResult.result,
-                formattedResult: formattedResult,
-                args: executionResult.actualArgs || currentStep.input || {},
-                processingInfo: {
-                  originalDataSize: JSON.stringify(executionResult.result).length,
-                  formattedDataSize: formattedResult.length,
-                  processingTime: new Date().toISOString(),
-                  needsFormatting: toolType === 'mcp'
-                },
-                timestamp: new Date().toISOString()
-              }
-            }
-          };
+          // 🔧 移除step_formatted_result事件，前端不需要
 
           // 🔧 异步保存格式化结果，避免阻塞流式响应
           this.saveStepFormattedResult(taskId, currentStep.step, currentStep, formattedResult, executionResult.actualArgs, toolType, mcpName, expectedOutput, reasoning, actualToolName).catch(error => {
@@ -384,90 +359,55 @@ export class EnhancedIntelligentTaskEngine {
           currentStep.status = 'failed';
           state.failedSteps++;
 
-          // 🔧 发送MCP连接错误事件（如果适用）
-          if (this.isMCPConnectionError(executionResult.error || '')) {
-            yield {
-              event: 'mcp_connection_error',
-              data: {
-                mcpName: currentStep.mcp,
-                step: currentStep.step,
-                errorType: 'CONNECTION_FAILED',
-                message: executionResult.error,
-                timestamp: new Date().toISOString()
-              }
-            };
-          }
-
-          // 🔧 发送step_error事件 - 对齐传统任务执行格式
+          // 🔧 发送step_error事件 - 简化格式
           yield {
             event: 'step_error',
             data: {
               step: currentStep.step,
               error: executionResult.error,
-              // 🔧 保留智能引擎的增强字段
-              success: false,
-              mcpName: currentStep.mcp,
-              action: currentStep.action,
-              agentName: 'WorkflowEngine',
-              message: `WorkflowEngine failed at step ${currentStep.step}`,
-              attempts: currentStep.attempts || 1
+              agentName: 'WorkflowEngine'
             }
           };
         }
 
-        // 🧠 智能观察阶段 - 根据任务复杂度决定观察频率和策略
-        let shouldObserve = false;
-        
-        if (taskComplexity.type === 'simple_query') {
-          // 简单查询：只在第一步完成后观察
-          shouldObserve = (i === 0 && executionResult.success) || !executionResult.success;
-        } else if (taskComplexity.type === 'medium_task') {
-          // 中等任务：每2步或失败时观察
-          shouldObserve = (i % 2 === 0) || !executionResult.success || (i === state.workflow.length - 1);
-        } else {
-          // 复杂工作流：每步都观察
-          shouldObserve = true;
-        }
+        // 🎯 直接任务完成感知 - 参考Agent引擎的优化方案
+        let shouldContinue = true;
 
-        let observation: {
-          shouldContinue: boolean;
-          shouldAdaptWorkflow: boolean;
-          adaptationReason?: string;
-          newObjective?: string;
-        } = {
-          shouldContinue: true,
-          shouldAdaptWorkflow: false
-        };
-
-        if (shouldObserve) {
-          logger.info(`🔍 Performing task observation after step ${currentStep.step} (${taskComplexity.type} strategy)...`);
-          
-          observation = await this.taskObservationPhase(state, taskComplexity);
-          
-          // 发送观察结果事件
-          yield {
-            event: 'task_observation',
-            data: {
-              taskId,
-              stepIndex: i,
-              shouldContinue: observation.shouldContinue,
-              shouldAdaptWorkflow: observation.shouldAdaptWorkflow,
-              adaptationReason: observation.adaptationReason,
-              agentName: 'WorkflowEngine',
-              complexityType: taskComplexity.type,
-              timestamp: new Date().toISOString()
+        // 🔧 智能完成检测：基于任务复杂度和执行结果进行直接判断
+        if (executionResult.success) {
+          if (taskComplexity.type === 'simple_query') {
+            // 简单查询：第一步成功即完成
+            if (i === 0) {
+              logger.info(`🎯 Simple query completed successfully after first step, stopping execution`);
+              shouldContinue = false;
             }
-          };
-        } else {
-          // 简单查询且第一步成功 - 直接完成
-          if (taskComplexity.type === 'simple_query' && executionResult.success && i === 0) {
-            logger.info(`🎯 Simple query completed successfully after first step, stopping execution`);
-            observation.shouldContinue = false;
+          } else if (taskComplexity.type === 'medium_task') {
+            // 中等任务：检查是否已获得足够数据
+            const hasUsefulData = await this.hasTaskCollectedSufficientData(state);
+            if (hasUsefulData) {
+              logger.info(`🎯 Medium task collected sufficient data, evaluating completion`);
+              shouldContinue = await this.quickTaskCompletionCheck(state, taskComplexity);
+            }
+          } else {
+            // 复杂工作流：每隔2步检查一次完成状态
+            if (i % 2 === 0) {
+              logger.info(`🔍 Complex workflow checkpoint at step ${i + 1}`);
+              shouldContinue = await this.quickTaskCompletionCheck(state, taskComplexity);
+            }
           }
         }
+
+        // 🔧 移除task_observation事件，前端不需要
         
-        // 🔄 如果需要调整工作流，进行动态规划
-        if (observation.shouldAdaptWorkflow) {
+        // 🔄 简化动态规划逻辑（保留工作流适应能力但减少复杂度）
+        let shouldAdaptWorkflow = false;
+        
+        // 只在失败时考虑工作流适应
+        if (!executionResult.success && i < state.workflow.length - 2) {
+          shouldAdaptWorkflow = await this.shouldAdaptWorkflow(state, currentStep);
+        }
+        
+        if (shouldAdaptWorkflow) {
           logger.info(`🧠 Initiating dynamic workflow adaptation...`);
           
           const currentContext = this.buildCurrentContext(state);
@@ -490,27 +430,15 @@ export class EnhancedIntelligentTaskEngine {
             ];
             state.totalSteps = state.workflow.length;
             
-            // 发送工作流调整事件
-            yield {
-              event: 'workflow_adapted',
-              data: {
-                taskId,
-                reason: observation.adaptationReason,
-                adaptedAt: i + 1,
-                newSteps: adaptedWorkflow.length,
-                totalSteps: state.totalSteps,
-                agentName: 'WorkflowEngine',
-                timestamp: new Date().toISOString()
-              }
-            };
+            // 🔧 移除workflow_adapted事件，前端不需要
             
             logger.info(`✅ Workflow adapted: ${adaptedWorkflow.length} new steps planned`);
           }
         }
         
-        // 如果观察认为应该停止，则提前完成任务
-        if (!observation.shouldContinue) {
-          logger.info(`🏁 Task observation indicates completion, stopping workflow execution`);
+        // 🎯 直接完成检测：如果判断任务已完成，立即退出
+        if (!shouldContinue) {
+          logger.info(`🏁 Task completion detected, stopping workflow execution`);
           break;
         }
       }
@@ -520,40 +448,31 @@ export class EnhancedIntelligentTaskEngine {
 
       // 🔧 生成最终结果
       const finalResult = this.generateWorkflowFinalResult(state);
+      const overallSuccess = state.completedSteps > 0;
       
-      // 🔧 对齐传统任务执行：发送final_result事件
+      // 🔧 发送generating_summary事件
       yield {
-        event: 'final_result',
+        event: 'generating_summary',
         data: {
-          finalResult,
-          message: 'Final execution result available'
+          message: 'Generating summary...',
+          agentName: 'WorkflowEngine'
         }
       };
 
-      // 🔧 对齐传统任务执行：发送workflow_complete事件
-      const overallSuccess = state.completedSteps > 0;
+      // 🔧 发送workflow_complete事件
       yield {
         event: 'workflow_complete',
         data: {
-          success: overallSuccess,
-          message: overallSuccess ? 'Task execution completed successfully' : 'Task execution completed with errors',
-          finalResult: finalResult,
-          // 🔧 保留智能引擎的增强字段
-          executionSummary: {
-            totalSteps: state.totalSteps,
-            completedSteps: state.completedSteps,
-            failedSteps: state.failedSteps,
-            successRate: Math.round((state.completedSteps / state.totalSteps) * 100)
-          }
+          message: 'Workflow completed',
+          agentName: 'WorkflowEngine'
         }
       };
 
-      // 🔧 对齐传统任务执行：发送task_complete事件
+      // 🔧 发送task_complete事件
       yield {
         event: 'task_complete',
         data: {
-          taskId,
-          success: overallSuccess
+          agentName: 'WorkflowEngine'
         }
       };
 
@@ -1756,6 +1675,59 @@ ${formattedResult}`;
     }
   }
 
+  /**
+   * 🎯 检查任务是否已收集足够数据（参考Agent引擎的直接判断方法）
+   */
+  private async hasTaskCollectedSufficientData(state: EnhancedWorkflowState): Promise<boolean> {
+    // 基于数据存储和执行历史的快速判断
+    const hasSuccessfulSteps = state.completedSteps > 0;
+    const hasUsefulData = Object.keys(state.dataStore).length > 1; // 除了 lastResult 还有其他数据
+    
+    return hasSuccessfulSteps && hasUsefulData;
+  }
+
+  /**
+   * 🎯 快速任务完成检查（参考Agent引擎的简化判断逻辑）
+   */
+  private async quickTaskCompletionCheck(
+    state: EnhancedWorkflowState, 
+    taskComplexity: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
+  ): Promise<boolean> {
+    // 简化的完成判断逻辑
+    try {
+      const successfulSteps = state.executionHistory.filter(step => step.success);
+      
+      // 基于任务复杂度的快速判断
+      if (taskComplexity.type === 'simple_query') {
+        // 简单查询：有数据就完成
+        return successfulSteps.length > 0;
+      } else if (taskComplexity.type === 'medium_task') {
+        // 中等任务：至少完成一半步骤或有足够数据
+        const completionRatio = state.completedSteps / state.totalSteps;
+        return completionRatio >= 0.5 || successfulSteps.length >= 2;
+      } else {
+        // 复杂工作流：需要更多步骤完成
+        const completionRatio = state.completedSteps / state.totalSteps;
+        return completionRatio >= 0.7;
+      }
+    } catch (error) {
+      logger.error('Quick task completion check failed:', error);
+      return true; // 默认继续执行
+    }
+  }
+
+  /**
+   * 🎯 简化的工作流适应判断（减少复杂度）
+   */
+  private async shouldAdaptWorkflow(state: EnhancedWorkflowState, currentStep: WorkflowStep): Promise<boolean> {
+    // 简化的适应判断：只在连续失败时适应
+    const recentFailures = state.executionHistory
+      .slice(-2) // 最近2步
+      .filter(step => !step.success);
+    
+    return recentFailures.length >= 2; // 连续2步失败才适应
+  }
+
 
 }
 
@@ -1785,12 +1757,11 @@ export class EnhancedIntelligentTaskService {
       // 获取任务信息
       const task = await this.taskService.getTaskById(taskId);
       if (!task) {
-        // 🔧 直接发送错误事件，不包装
+        // 🔧 发送错误事件
         stream({ 
           event: 'error', 
           data: { 
-            message: 'Task not found',
-            agentName: 'WorkflowEngine'
+            message: 'Task not found'
           }
         });
         return false;
@@ -1802,13 +1773,12 @@ export class EnhancedIntelligentTaskService {
         : task.mcpWorkflow;
 
       if (!skipAnalysisCheck && (!mcpWorkflow || !mcpWorkflow.workflow || mcpWorkflow.workflow.length === 0)) {
-        // 🔧 直接发送错误事件，不包装
+        // 🔧 发送错误事件
         stream({ 
           event: 'error', 
           data: { 
             message: 'No workflow found. Please analyze the task first.',
-            details: 'Call /api/task/:id/analyze to generate a workflow before execution.',
-            agentName: 'WorkflowEngine'
+            details: 'Call /api/task/:id/analyze to generate a workflow before execution.'
           }
         });
         return false;
@@ -1816,12 +1786,11 @@ export class EnhancedIntelligentTaskService {
 
       // 更新任务状态
       await taskExecutorDao.updateTaskStatus(taskId, 'in_progress');
-      // 🔧 直接发送状态更新事件，不包装
+      // 🔧 发送状态更新事件
       stream({ 
         event: 'status_update', 
         data: { 
-          status: 'in_progress',
-          agentName: 'WorkflowEngine'
+          status: 'in_progress'
         }
       });
 
@@ -1846,16 +1815,14 @@ export class EnhancedIntelligentTaskService {
         finalSuccess ? 'completed' : 'failed'
       );
 
-      // 🔧 直接发送执行完成事件，不包装
+      // 🔧 发送执行完成事件
       stream({
         event: 'task_execution_complete',
         data: {
           success: finalSuccess,
           message: finalSuccess ? 
-            'WorkflowEngine task execution completed successfully' : 
-            'WorkflowEngine task execution failed',
-          agentName: 'WorkflowEngine',
-          timestamp: new Date().toISOString()
+            'Task execution completed successfully' : 
+            'Task execution failed'
         }
       });
 
@@ -1865,13 +1832,12 @@ export class EnhancedIntelligentTaskService {
     } catch (error) {
       logger.error(`❌ Enhanced workflow execution failed:`, error);
       
-      // 🔧 直接发送错误事件，不包装
+      // 🔧 发送错误事件
       stream({
         event: 'error',
         data: {
           message: 'Enhanced workflow execution failed',
-          details: error instanceof Error ? error.message : String(error),
-          agentName: 'WorkflowEngine'
+          details: error instanceof Error ? error.message : String(error)
         }
       });
 

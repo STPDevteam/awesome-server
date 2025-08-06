@@ -31,6 +31,7 @@ import { MCPToolAdapter } from './mcpToolAdapter.js';
 import { IntelligentWorkflowEngine } from './intelligentWorkflowEngine.js';
 import { IntelligentTaskService } from './intelligentTaskService.js';
 import { createAgentIntelligentTaskService, AgentIntelligentTaskService } from './agentIntelligentEngine.js';
+import { resolveUserLanguageWithInstruction, SupportedLanguage, getLanguageInstruction } from '../utils/languageDetector.js';
 
 
 /**
@@ -223,6 +224,16 @@ export class AgentConversationService {
       // Increment message count
       await conversationDao.incrementMessageCount(conversationId);
 
+      // 🌍 智能解析用户语言（包括语言指令检测）
+      const userLanguage = await resolveUserLanguageWithInstruction(
+        content,
+        agent.language,
+        undefined, // TODO: 从conversation中获取语言设置
+        undefined  // TODO: 从请求头中获取浏览器语言
+      );
+
+      logger.info(`🌍 Resolved user language: ${userLanguage} for message: "${content.slice(0, 50)}..."`);
+
       // Analyze user intent
       const intent = await this.analyzeAgentUserIntent(content, agent);
 
@@ -237,8 +248,8 @@ export class AgentConversationService {
       let taskId: string | undefined;
 
       if (intent.type === 'task') {
-        // Execute Agent task
-        const taskResult = await this.executeAgentTask(content, agent, userId, conversationId);
+        // Execute Agent task (传递用户语言)
+        const taskResult = await this.executeAgentTask(content, agent, userId, conversationId, userLanguage);
         
         assistantMessage = await messageDao.createMessage({
           conversationId,
@@ -257,8 +268,8 @@ export class AgentConversationService {
         // Increment task count
         await conversationDao.incrementTaskCount(conversationId);
       } else {
-        // Chat with Agent
-        const chatResponse = await this.chatWithAgent(content, agent, conversationId);
+        // Chat with Agent (传递用户语言)
+        const chatResponse = await this.chatWithAgent(content, agent, conversationId, userLanguage);
         
         assistantMessage = await messageDao.createMessage({
           conversationId,
@@ -398,6 +409,16 @@ export class AgentConversationService {
       // Increment message count
       await conversationDao.incrementMessageCount(conversationId);
 
+      // 🌍 智能解析用户语言（包括语言指令检测）
+      const userLanguage = await resolveUserLanguageWithInstruction(
+        content,
+        agent.language,
+        undefined, // TODO: 从conversation中获取语言设置
+        undefined  // TODO: 从请求头中获取浏览器语言
+      );
+
+      logger.info(`🌍 Resolved user language: ${userLanguage} for streaming message: "${content.slice(0, 50)}..."`);
+
       // Analyze user intent
       streamCallback({
         event: 'intent_analysis_start',
@@ -425,8 +446,8 @@ export class AgentConversationService {
       let taskId: string | undefined;
 
       if (intent.type === 'task') {
-        // Execute Agent task with streaming
-        const taskResult = await this.executeAgentTaskStream(content, agent, userId, conversationId, streamCallback);
+        // Execute Agent task with streaming (传递用户语言)
+        const taskResult = await this.executeAgentTaskStream(content, agent, userId, conversationId, streamCallback, userLanguage);
         // assistantMessageId = taskResult.assistantMessageId;
         taskId = taskResult.taskId;
         
@@ -438,13 +459,13 @@ export class AgentConversationService {
         // Increment task count
         // await conversationDao.incrementTaskCount(conversationId);
       } else {
-        // Chat with Agent using streaming
+        // Chat with Agent using streaming (传递用户语言)
         const chatResult = await this.chatWithAgentStream(content, agent, conversationId, (chunk) => {
           streamCallback({
             event: 'chat_chunk',
             data: { content: chunk }
           });
-        });
+        }, userLanguage);
         
         assistantMessageId = chatResult.assistantMessageId;
       }
@@ -585,7 +606,8 @@ Respond with ONLY a JSON object:
     content: string, 
     agent: Agent, 
     userId: string, 
-    conversationId: string
+    conversationId: string,
+    userLanguage?: SupportedLanguage
   ): Promise<{ response: string; taskId: string }> {
     try {
       // Generate appropriate task title using LLM
@@ -622,7 +644,7 @@ Respond with ONLY a JSON object:
         const executionSuccess = await this.executeAgentTaskDedicated(task.id, agent, (data) => {
           // Silent execution for non-streaming context
           logger.debug(`Agent task execution progress: ${JSON.stringify(data)}`);
-        });
+        }, userLanguage);
 
         if (executionSuccess) {
           // Get the completed task with results
@@ -632,7 +654,9 @@ Respond with ONLY a JSON object:
           const formattedResponse = await this.formatTaskResultWithLLM(
             completedTask,
             agent,
-            content
+            content,
+            false, // isPartialSuccess
+            userLanguage
           );
 
           return { response: formattedResponse, taskId: task.id };
@@ -676,7 +700,8 @@ I encountered an error while executing this task. Please try again or check the 
     task: any,
     agent: Agent,
     originalRequest: string,
-    isPartialSuccess: boolean = false
+    isPartialSuccess: boolean = false,
+    userLanguage?: SupportedLanguage
   ): Promise<string> {
     try {
       // 提取任务结果
@@ -753,7 +778,8 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
     agent: Agent, 
     userId: string, 
     conversationId: string,
-    streamCallback: (chunk: any) => void
+    streamCallback: (chunk: any) => void,
+    userLanguage?: SupportedLanguage
   ): Promise<{ taskId: string }> {
     try {
       streamCallback({
@@ -861,7 +887,7 @@ The Agent uses **${agent.name}** to effortlessly access the latest information. 
               agentName: agent.name
             }
           });
-        });
+        }, userLanguage);
 
         streamCallback({
           event: 'task_execution_complete',
@@ -1044,7 +1070,8 @@ The task has been processed, but I encountered an issue formatting the detailed 
   private async chatWithAgent(
     content: string, 
     agent: Agent, 
-    conversationId: string
+    conversationId: string,
+    userLanguage?: SupportedLanguage
   ): Promise<string> {
     try {
       logger.info(`[Agent Chat] Processing chat with ${agent.name} [Conversation: ${conversationId}]`);
@@ -1056,7 +1083,7 @@ The task has been processed, but I encountered an issue formatting the detailed 
       const memoryVariables = await memory.loadMemoryVariables({});
       const chatHistory = memoryVariables.chat_history || [];
       
-      // Create Agent role prompt template
+      // Create Agent role prompt template (with language support)
       const agentPrompt = ChatPromptTemplate.fromMessages([
         ['system', `You are ${agent.name}, an AI agent with the following characteristics:
 
@@ -1068,7 +1095,7 @@ Your capabilities include: ${agent.mcpWorkflow ?
 
 Respond to the user's message in a helpful and friendly manner, staying in character as this agent. 
 If they ask about your capabilities, mention what you can help with based on your description and tools.
-Remember the conversation context and provide coherent, helpful responses.`],
+Remember the conversation context and provide coherent, helpful responses.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`],
         ...chatHistory.map((msg: any) => {
           if (msg._getType() === 'human') {
             return ['human', msg.content];
@@ -1110,7 +1137,8 @@ Remember the conversation context and provide coherent, helpful responses.`],
     content: string, 
     agent: Agent, 
     conversationId: string,
-    streamCallback: (chunk: string) => void
+    streamCallback: (chunk: string) => void,
+    userLanguage?: SupportedLanguage
   ): Promise<{ assistantMessageId: string }> {
     try {
       logger.info(`[Agent Chat Stream] Processing chat with ${agent.name} [Conversation: ${conversationId}]`);
@@ -1134,7 +1162,7 @@ Remember the conversation context and provide coherent, helpful responses.`],
       const memoryVariables = await memory.loadMemoryVariables({});
       const chatHistory = memoryVariables.chat_history || [];
       
-      // Create Agent role prompt template
+      // Create Agent role prompt template (with language support)
       const agentPrompt = ChatPromptTemplate.fromMessages([
         ['system', `You are ${agent.name}, an AI agent with the following characteristics:
 
@@ -1146,7 +1174,7 @@ Your capabilities include: ${agent.mcpWorkflow ?
 
 Respond to the user's message in a helpful and friendly manner, staying in character as this agent. 
 If they ask about your capabilities, mention what you can help with based on your description and tools.
-Remember the conversation context and provide coherent, helpful responses.`],
+Remember the conversation context and provide coherent, helpful responses.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`],
         ...chatHistory.map((msg: any) => {
           if (msg._getType() === 'human') {
             return ['human', msg.content];
@@ -1505,7 +1533,8 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
   private async executeAgentTaskDedicated(
     taskId: string, 
     agent: Agent, 
-    stream: (data: any) => void
+    stream: (data: any) => void,
+    userLanguage?: SupportedLanguage
   ): Promise<boolean> {
     try {
       logger.info(`🤖 Starting dedicated Agent task execution [Task ID: ${taskId}, Agent: ${agent.name}]`);
@@ -1545,8 +1574,8 @@ Once authenticated, I'll be able to help you with tasks using these powerful too
       if (useIntelligentEngine) {
         logger.info(`🧠 Using intelligent workflow engine for Agent ${agent.name}`);
         
-        // 使用智能任务服务执行（输出Agent格式事件流）
-        return await this.executeAgentTaskWithIntelligentEngine(taskId, agent, stream);
+        // 使用智能任务服务执行（输出Agent格式事件流，传递用户语言）
+        return await this.executeAgentTaskWithIntelligentEngine(taskId, agent, stream, userLanguage);
       }
       
       // 🔧 根据用户输入动态生成工作流，而不是使用Agent预定义的工作流
@@ -2339,7 +2368,8 @@ Return ONLY a JSON array of workflow steps, no other text:`;
   private async executeAgentTaskWithIntelligentEngine(
     taskId: string,
     agent: Agent, 
-    stream: (data: any) => void
+    stream: (data: any) => void,
+    userLanguage?: SupportedLanguage
   ): Promise<boolean> {
     try {
       logger.info(`🧠 Starting Agent intelligent task execution [Task ID: ${taskId}, Agent: ${agent.name}]`);
@@ -2347,8 +2377,8 @@ Return ONLY a JSON array of workflow steps, no other text:`;
       // 🔧 创建Agent专用智能任务服务
       const agentIntelligentService = createAgentIntelligentTaskService(agent);
       
-      // 🔧 使用Agent专用智能引擎执行（原生支持Agent事件流格式）
-      const success = await agentIntelligentService.executeAgentTaskIntelligently(taskId, stream);
+      // 🔧 使用Agent专用智能引擎执行（原生支持Agent事件流格式，传递用户语言）
+      const success = await agentIntelligentService.executeAgentTaskIntelligently(taskId, stream, userLanguage);
 
       logger.info(`🎯 Agent intelligent task execution completed [Success: ${success}, Agent: ${agent.name}]`);
       return success;

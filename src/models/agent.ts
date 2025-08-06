@@ -11,6 +11,7 @@ export interface Agent {
   name: string;
   description: string;
   status: AgentStatus;
+  language?: string; // Agent的默认语言 (ISO 639-1 代码: zh, en, ja, ko等)
   taskId?: string; // 来源任务ID
   categories: string[]; // 使用的MCP类别列表，提取自mcpWorkflow.mcps，便于高效查询
   mcpWorkflow?: {
@@ -59,6 +60,7 @@ export interface CreateAgentRequest {
   name: string;
   description: string;
   status: AgentStatus;
+  language?: string; // Agent的默认语言
   taskId?: string;
   categories?: string[]; // 使用的MCP类别列表
   mcpWorkflow?: Agent['mcpWorkflow'];
@@ -71,6 +73,7 @@ export interface UpdateAgentRequest {
   name?: string;
   description?: string;
   status?: AgentStatus;
+  language?: string; // Agent的默认语言
   metadata?: Agent['metadata'];
   relatedQuestions?: string[];
 }

@@ -69,6 +69,7 @@ export interface Conversation {
   title: string;
   type: ConversationType;  // 新增：会话类型字段
   agentId?: string;        // 新增：如果是Agent会话，记录Agent ID
+  language?: string;       // 新增：会话语言设置，可覆盖Agent默认语言
   lastMessageContent?: string;
   lastMessageAt?: Date;
   taskCount: number;
