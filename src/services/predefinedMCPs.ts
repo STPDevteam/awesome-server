@@ -3893,8 +3893,8 @@ export const predefinedMCPs: MCPService[] = [
     {
         name: 'dune-mcp-v2',
         description: 'Dune Analytics MCP server v2 - enhanced blockchain data access for AI agents (kukapay implementation)',
-        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/mcp',
-        args: ["dev", "/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
+        command: '/home/ubuntu/mcp-tools/mcp-venv/bin/python',
+        args: ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
             DUNE_API_KEY: process.env.DUNE_API_KEY || ''
         },
@@ -4942,6 +4942,271 @@ export const predefinedMCPs: MCPService[] = [
                 }
             }
         ]
+    },
+    {
+        name: 'warpcast-mcp',
+        description: 'Warpcast MCP server - Social media tools for Farcaster protocol with posting, following, and feed management capabilities',
+        command: '/home/ubuntu/.local/bin/uv',
+        args: [
+            '--directory',
+            '/home/ubuntu/mcp-tools/mcp-warpcast-server',
+            'run',
+            'main.py'
+        ],
+        env: {
+            WARPCAST_API_TOKEN: process.env.WARPCAST_API_TOKEN || ''
+        },
+        connected: false,
+        category: 'Social',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/warpcast.png',
+        githubUrl: 'https://github.com/zhangzhongnan928/mcp-warpcast-server',
+        authRequired: true,
+        authParams: {
+            WARPCAST_API_TOKEN: "WARPCAST_API_TOKEN"
+        },
+        // 🔧 新增：基于Warpcast/Farcaster的预定义工具信息
+        predefinedTools: [
+            {
+                name: 'post_cast',
+                description: 'Post a new cast (message) to Farcaster',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Cast content text',
+                            required: true
+                        },
+                        parent_url: {
+                            type: 'string',
+                            description: 'URL to reply to (optional)',
+                            required: false
+                        },
+                        embeds: {
+                            type: 'array',
+                            description: 'Array of embed URLs or objects',
+                            items: {
+                                type: 'string'
+                            },
+                            required: false
+                        }
+                    },
+                    required: ['text']
+                }
+            },
+            {
+                name: 'reply_to_cast',
+                description: 'Reply to an existing cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Reply content text',
+                            required: true
+                        },
+                        parent_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast to reply to',
+                            required: true
+                        }
+                    },
+                    required: ['text', 'parent_hash']
+                }
+            },
+            {
+                name: 'like_cast',
+                description: 'Like a cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast to like',
+                            required: true
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            },
+            {
+                name: 'recast',
+                description: 'Recast (share) a cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast to recast',
+                            required: true
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            },
+            {
+                name: 'follow_user',
+                description: 'Follow a user on Farcaster',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user to follow',
+                            required: true
+                        }
+                    },
+                    required: ['fid']
+                }
+            },
+            {
+                name: 'unfollow_user',
+                description: 'Unfollow a user on Farcaster',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user to unfollow',
+                            required: true
+                        }
+                    },
+                    required: ['fid']
+                }
+            },
+            {
+                name: 'get_user_profile',
+                description: 'Get user profile information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user',
+                            required: false
+                        },
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'get_user_casts',
+                description: 'Get casts from a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        fid: {
+                            type: 'number',
+                            description: 'Farcaster ID of the user',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of casts to retrieve',
+                            required: false,
+                            default: 25
+                        },
+                        cursor: {
+                            type: 'string',
+                            description: 'Pagination cursor',
+                            required: false
+                        }
+                    },
+                    required: ['fid']
+                }
+            },
+            {
+                name: 'get_feed',
+                description: 'Get the user\'s home feed',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        feed_type: {
+                            type: 'string',
+                            description: 'Type of feed (following, trending)',
+                            enum: ['following', 'trending'],
+                            required: false,
+                            default: 'following'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of casts to retrieve',
+                            required: false,
+                            default: 25
+                        },
+                        cursor: {
+                            type: 'string',
+                            description: 'Pagination cursor',
+                            required: false
+                        }
+                    },
+                    required: []
+                }
+            },
+            {
+                name: 'search_casts',
+                description: 'Search for casts by text content',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query text',
+                            required: true
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of results to return',
+                            required: false,
+                            default: 25
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            {
+                name: 'get_cast_details',
+                description: 'Get detailed information about a specific cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast',
+                            required: true
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            },
+            {
+                name: 'get_cast_reactions',
+                description: 'Get reactions (likes, recasts) for a cast',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        cast_hash: {
+                            type: 'string',
+                            description: 'Hash of the cast',
+                            required: true
+                        },
+                        reaction_type: {
+                            type: 'string',
+                            description: 'Type of reaction to get',
+                            enum: ['likes', 'recasts', 'all'],
+                            required: false,
+                            default: 'all'
+                        }
+                    },
+                    required: ['cast_hash']
+                }
+            }
+        ]
     }
 
 ];
@@ -4989,7 +5254,8 @@ export const mcpNameMapping: Record<string, string> = {
     'telegram-mcp-service': 'mcp-telegram',
     'twitter-client-mcp-service': 'twitter-client-mcp',
     'notion-mcp-service': 'notion-mcp-server',
-    '12306-mcp-service': '12306-mcp'
+    '12306-mcp-service': '12306-mcp',
+    'warpcast-mcp-server': 'warpcast-mcp',
 };
 
 /**
