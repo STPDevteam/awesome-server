@@ -3816,7 +3816,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-coingecko.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
         "githubUrl": "https://github.com/coingecko", // Note: No official GitHub for MCP server, this is general
         "authRequired": true, // For public keyless mode; set to true for Pro
         "authParams": {
@@ -3900,7 +3900,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-dune-analytics.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
         githubUrl: 'https://github.com/kukapay/dune-analytics-mcp',
         authRequired: true,
         authParams: {
@@ -4197,7 +4197,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         "connected": false,
         "category": "Trading",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/hyperliquid.png",
         "githubUrl": "https://github.com/Impa-Ventures/hyperliquid-mcp",
         "authRequired": true,
         "authParams": {
