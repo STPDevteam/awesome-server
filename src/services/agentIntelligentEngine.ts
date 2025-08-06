@@ -199,26 +199,8 @@ export class AgentIntelligentEngine {
 
         state.currentPlan = planResult.plan || null;
 
-        // 🎯 直接完成感知：如果规划阶段判断任务已完成，立即退出
-        if (state.currentPlan?.tool === 'task_complete') {
-          logger.info(`🎯 Agent ${this.agent.name} determined task is complete. Finalizing...`);
-          state.isComplete = true;
-          
-          // 发送任务完成事件
-          yield {
-            event: 'step_complete',
-            data: {
-              step: stepCounter,
-              success: true,
-              result: `Task completed successfully by ${this.agent.name}. All required information has been collected and the user's request has been satisfied.`,
-              agentName: this.agent.name,
-              message: `${this.agent.name} has determined the task is complete`,
-              taskComplete: true
-            }
-          };
-          
-          break; // 直接退出循环，不需要额外的观察阶段
-        }
+        // 🔧 规划阶段现在只负责规划下一步，不再判断任务完成
+        // 任务完成的判断将在观察阶段进行
 
         // 🔧 发送Agent格式的step_start事件
         const stepId = `agent_step_${stepCounter}_${Date.now()}`;
@@ -506,13 +488,42 @@ export class AgentIntelligentEngine {
         // 🔧 保存步骤结果到数据库（使用格式化结果）
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
-        // 🔧 简化：任务完成判断已前置到规划阶段，这里只需更新进度监控
+        // 🔧 更新进度监控
         this.updateProgressMonitor(progressMonitor, executionStep, state);
 
         // 🔧 更新数据存储
         if (executionResult.success && executionResult.result) {
           state.dataStore[`step${stepCounter}`] = executionResult.result;
           state.dataStore.lastResult = executionResult.result;
+        }
+
+        // 🧠 关键修复：执行完每步后进行智能观察判断
+        if (executionResult.success) {
+          logger.info(`🔍 Agent ${this.agent.name} performing intelligent observation after step ${stepCounter}`);
+          
+          const observationResult = await this.agentObservationPhaseEnhanced(state);
+          
+          if (observationResult.isComplete) {
+            logger.info(`🎯 Agent ${this.agent.name} determined task is complete after observation`);
+            state.isComplete = true; // 标记完成，让主循环条件自然退出
+            
+            // 发送观察完成事件
+            yield {
+              event: 'task_observation_complete',
+              data: {
+                step: stepCounter,
+                agentName: this.agent.name,
+                message: `${this.agent.name} determined the task is complete`,
+                reasoning: observationResult.nextObjective || 'Task requirements fulfilled',
+                taskComplete: true
+              }
+            };
+            
+            // 不使用 break，让循环自然结束以确保后续代码正常执行
+          } else if (observationResult.nextObjective) {
+            logger.info(`🎯 Agent ${this.agent.name} next objective: ${observationResult.nextObjective}`);
+            state.currentObjective = observationResult.nextObjective;
+          }
         }
       }
 
@@ -879,15 +890,15 @@ export class AgentIntelligentEngine {
       return false;
     }
 
-    // 🔧 停滞检查：超过8步没有进展
-    if (progressMonitor.stagnationCount >= 8) {
+    // 🔧 停滞检查：超过12步没有进展（允许多目标任务）
+    if (progressMonitor.stagnationCount >= 12) {
       logger.warn(`🛑 Task appears stagnant: ${progressMonitor.stagnationCount} steps without progress`);
       return false;
     }
 
-    // 🔧 重复动作检查：同一工具重复使用超过5次
+    // 🔧 重复动作检查：同一工具重复使用超过15次（允许多目标任务）
     for (const [action, count] of progressMonitor.repeatedActions.entries()) {
-      if (count >= 5) {
+      if (count >= 15) {
         logger.warn(`🛑 Action repeated too many times: ${action} (${count} times)`);
         return false;
       }
@@ -962,17 +973,26 @@ ${state.executionHistory.map(step => `
 - Status: ${step.success ? '✅ Success' : '❌ Failed'}
 - Tool: ${step.plan.tool}
 - Data Retrieved: ${step.success && step.result ? 'Yes' : 'No'}
-${step.success && step.result ? `- Data Summary: ${this.summarizeStepData(step.result)}` : ''}
+${step.success && step.result ? `- Raw Result Data: ${JSON.stringify(step.result, null, 2)}` : ''}
 ${step.error ? `- Error: ${step.error}` : ''}
 `).join('\n')}
 
-### Data Content Analysis
-${dataContentAnalysis}
+### Critical Analysis Required
+**🔍 DETAILED COMPARISON NEEDED**:
+
+1. **Parse the user's original request** - What EXACTLY did they ask for?
+2. **Analyze the collected data** - What have we actually obtained so far?
+3. **Gap Analysis** - What is missing between request and current data?
+
+**🚨 CRITICAL**: For requests mentioning multiple items/users/targets:
+- Count how many were requested vs how many we have data for
+- Example: User asks for "A, B, C, D" but we only have data for "A, B" → INCOMPLETE!
 
 ${taskCompleteAttempts > 0 ? `
 ### ⚠️ Task Completion History
 **Previous task_complete attempts**: ${taskCompleteAttempts}
-**CRITICAL**: If task_complete has been attempted multiple times, the task is likely complete!
+**IMPORTANT**: Don't automatically assume the task is complete just because task_complete was attempted before.
+Previous attempts might have been premature. Analyze the CURRENT situation independently.
 ` : ''}
 
 ## 🧠 INTELLIGENT ANALYSIS REQUIRED
@@ -987,17 +1007,23 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
 
 ## 🎯 DECISION LOGIC
 
-**✅ COMPLETE the task if ANY of these are true**:
-- You have specific data that directly answers the user's question
-- The data contains the requested items/information (e.g., top tokens, prices, etc.)
-- Previous task_complete attempts ≥ 2 (likely indicates task is actually complete)
-- Successful data collection step exists AND data is relevant to the query
+**🧠 USE YOUR INTELLIGENCE TO JUDGE**:
+- Read the user's original request carefully
+- Look at what has been accomplished so far
+- Consider whether a reasonable person would say "this request has been fulfilled"
+- Don't be overly strict, but also don't accept partial completion as full success
+- If the user asked for multiple things, check if ALL of them have been addressed
+- If the user asked for an action (like posting), check if that action actually happened
 
-**❌ CONTINUE execution ONLY if ALL of these are true**:
-- No relevant data has been collected yet
-- Critical information is clearly missing for the specific query
-- Previous attempts all failed to get any usable data
-- User's request requires multiple data points and only partial data exists
+**DECISION GUIDELINES**:
+✅ Mark COMPLETE if: EVERY SINGLE item/user/target in the original request has been processed
+❌ Mark CONTINUE if: ANY item/user/target from the original request is missing
+
+**🚨 MANDATORY CHECK**: 
+- Count total items requested in original query
+- Count total items successfully processed  
+- If numbers don't match → MUST continue
+- Example: 8 users requested, 3 users processed → 5 still missing → CONTINUE!
 
 **OUTPUT FORMAT (JSON only)**:
 {
@@ -1006,7 +1032,9 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
   "nextObjective": "If not complete, what specific missing information is needed?"
 }
 
-**🚨 IMPORTANT**: Be more lenient in completion judgment. If relevant data exists, the task is likely complete.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
+**🚨 THINK LIKE A HUMAN**: 
+Would a reasonable person consider this request fulfilled based on what has been accomplished? 
+Use your intelligence and common sense to make the judgment.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
 
   /**
@@ -1014,37 +1042,34 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
    */
   private buildDataContentAnalysis(state: AgentWorkflowState): string {
     const successfulSteps = state.executionHistory.filter(step => step.success && step.result);
+    const failedSteps = state.executionHistory.filter(step => !step.success);
     
     if (successfulSteps.length === 0) {
-      return "No successful data collection yet.";
+      return "❌ No successful data collection/actions yet.";
     }
 
-    return successfulSteps.map(step => {
-      const resultData = step.result;
-      const dataType = this.detectDataType(resultData);
-      const dataSize = JSON.stringify(resultData).length;
-      
-      let contentDescription = `${dataType} data (${dataSize} characters)`;
-      
-      // 通用的结构化数据分析
-      if (Array.isArray(resultData) && resultData.length > 0) {
-        contentDescription += ` - ${resultData.length} items`;
-        const firstItem = resultData[0];
-        if (typeof firstItem === 'object' && firstItem !== null) {
-          const keys = Object.keys(firstItem);
-          if (keys.length > 0) {
-            contentDescription += `, sample fields: ${keys.slice(0, 3).join(', ')}`;
-          }
-        }
-      } else if (typeof resultData === 'object' && resultData !== null) {
-        const keys = Object.keys(resultData);
-        if (keys.length > 0) {
-          contentDescription += `, fields: ${keys.slice(0, 5).join(', ')}`;
-        }
-      }
-      
-      return `- Step ${step.stepNumber} (${step.plan.tool}): ${contentDescription}`;
-    }).join('\n');
+    // 简单展示执行结果，让 LLM 来分析
+    let analysis = `📊 **EXECUTION SUMMARY**:\n`;
+    analysis += `- Total steps executed: ${state.executionHistory.length}\n`;
+    analysis += `- Successful steps: ${successfulSteps.length}\n`;
+    analysis += `- Failed steps: ${failedSteps.length}\n\n`;
+
+    analysis += `✅ **SUCCESSFUL STEPS**:\n`;
+    successfulSteps.forEach(step => {
+      const dataSize = JSON.stringify(step.result).length;
+      analysis += `- Step ${step.stepNumber}: ${step.plan.tool} → ${dataSize} chars of data\n`;
+    });
+
+    if (failedSteps.length > 0) {
+      analysis += `\n❌ **FAILED STEPS**:\n`;
+      failedSteps.forEach(step => {
+        analysis += `- Step ${step.stepNumber}: ${step.plan.tool} → ${step.error || 'Unknown error'}\n`;
+      });
+    }
+
+    analysis += `\n🧠 **FOR LLM ANALYSIS**: Review the above execution results against the original request to determine if the task is truly complete.`;
+
+    return analysis;
   }
 
   /**
@@ -1072,29 +1097,28 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
    * 构建针对具体问题的需求检查
    */
   private buildSpecificRequirementsCheck(originalQuery: string): string {
-    const lowerQuery = originalQuery.toLowerCase();
-    
-    // 针对不同类型的查询构建具体的需求检查
-    if (lowerQuery.includes('identify') && lowerQuery.includes('top') && /\d+/.test(lowerQuery)) {
-      const numberMatch = lowerQuery.match(/\d+/);
-      const number = numberMatch ? numberMatch[0] : 'X';
-      return `- Do you have data that allows you to identify the top ${number} items requested?
-   - Is the data sorted/rankable to determine which are "top"?
-   - Are the specific criteria mentioned in the query satisfied?`;
-    }
-    
-    if (lowerQuery.includes('current') || lowerQuery.includes('latest')) {
-      return `- Is the data current/recent as requested?
-   - Does it represent the latest state as of now?`;
-    }
-    
-    if (lowerQuery.includes('compare') || lowerQuery.includes('vs')) {
-      return `- Do you have data for all items to be compared?
-   - Is the data comparable (same timeframe, metrics, etc.)?`;
-    }
-    
-    return `- Does the data directly address what the user is asking for?
-   - Are all key terms from the user's question covered by the data?`;
+    // 🧠 让 LLM 智能分析，不要硬编码规则
+    return `**INTELLIGENT ANALYSIS**:
+Analyze the user's original request: "${originalQuery}"
+
+Ask yourself:
+1. What EXACTLY did the user ask for?
+2. What are the KEY COMPONENTS that must be completed?
+3. Are there multiple parts/targets/items mentioned?
+4. What is the END GOAL the user wants to achieve?
+5. Has that end goal been fully achieved with current data/actions?
+
+**CRITICAL THINKING** (Be extremely thorough):
+- Count EXACTLY what the user requested vs what we have
+- Don't assume "some data = complete" - verify COMPLETENESS
+- For multi-target requests: ALL targets must be processed
+- Examine each result summary above: does it contain the requested information?
+- Ask: "Would a reasonable person consider this request fully satisfied?"
+- If user asked for data on 8 users but we only have 2 → CLEARLY INCOMPLETE
+- If user asked for posting/publishing but only collected data → INCOMPLETE
+- Use logical reasoning: partial completion ≠ task completion
+
+Be thorough and honest in your analysis.`;
   }
 
   /**
@@ -1241,11 +1265,19 @@ What is the most logical next step for ${this.agent.name} to take?`;
 **Data Collected**: ${hasDataInStore ? 'Available' : 'None'}
 **Last Action**: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? '✅ Success' : '❌ Failed'})` : 'Starting task'}
 
+## 📋 Execution History (for planning next step)
+${state.executionHistory.map(step => `
+**Step ${step.stepNumber}**: ${step.plan.tool}
+- Status: ${step.success ? '✅ Success' : '❌ Failed'}
+- Args: ${JSON.stringify(step.plan.args)}
+${step.success ? '- Result: Data collected successfully' : `- Error: ${step.error || 'Unknown error'}`}
+`).join('\n')}
+
 ${lastStepResult?.success ? `
 ## ✅ Last Success
 **Tool**: ${lastStepResult.plan.tool}
 **Result**: Data successfully obtained
-**Next**: Build on this result (DO NOT repeat same tool)
+**Next**: Continue with remaining tasks (same tool is OK for different targets)
 ` : lastStepResult ? `
 ## ⚠️ Last Attempt Failed
 **Tool**: ${lastStepResult.plan.tool}
@@ -1272,34 +1304,40 @@ ${availableMCPs.map(mcp => {
 **🎯 PRIMARY: Direct Task Completion Assessment**
 Based on the current data and execution history, make ONE of these decisions:
 
-**A) TASK IS COMPLETE** → Use "task_complete" tool
-- Current data fully answers the user's question
-- All requested information has been successfully collected
-- User's specific requirements are satisfied
-- No additional data or processing is needed
+**🚨 IMPORTANT**: Planning phase should focus on WHAT TO DO NEXT, not whether task is complete!
 
-**B) TASK NEEDS MORE WORK** → Choose appropriate MCP tool
-- Identify exactly what information is still missing
-- Select the most direct tool to get that information
-- Use existing data from dataStore when applicable
-- Focus on the specific gap in current data
+**PLANNING MISSION**: Choose the most appropriate next action:
+
+**Option A) Continue with MCP tool** → Choose appropriate MCP tool
+- **STEP 1**: Parse the original mission to identify ALL required targets/items
+- **STEP 2**: Review execution history to see which targets have been processed
+- **STEP 3**: Identify exactly which targets are still missing
+- **STEP 4**: For multi-target tasks: Use the SAME successful tool for remaining targets
+- **STEP 5**: Choose the next unprocessed target and plan the action
+
+**🔍 CRITICAL ANALYSIS**:
+- Compare original request vs execution history
+- For user queries like "@user1, @user2, @user3": check which users have been processed
+- If only @user1 was processed, next step should be @user2 with same tool
 
 **🚨 CRITICAL**: Make this decision based on actual data sufficiency, not execution count or complexity
 
 ## 📋 Decision Rules
-1. **Task Complete → Finalize**: If user's request is satisfied, use "task_complete"
-2. **Success → Progress**: If last step succeeded, assess if more is needed
-3. **Failure → Alternative**: If tool failed, choose different approach  
+1. **Success → Continue/Progress**: If last step succeeded, identify what's still needed
+2. **Failure → Alternative**: If tool failed, choose different approach  
+3. **Multi-Target Tasks → Repeat**: Use same tool for different targets (e.g., multiple users, files, etc.)
 4. **Data Available → Analysis**: If data exists but incomplete, collect more
 5. **Missing Data → Collection**: If data needed, collect efficiently
 
+🚨 **NOTE**: Planning phase should NOT decide task completion. That's for observation phase!
+
 ## 🎯 Output Format (JSON only)
 {
-  "tool": "exact-function-name-or-task_complete",
-  "toolType": "mcp" or "llm" or "completion",
-  "mcpName": "service-name-from-above-or-null",
+  "tool": "exact-function-name",
+  "toolType": "mcp" or "llm",
+  "mcpName": "service-name-from-above",
   "args": {
-    // Specific parameters for this tool (empty {} for task_complete)
+    // Specific parameters for this tool
   },
   "expectedOutput": "What this accomplishes",
   "reasoning": "Why this is the optimal next step",
@@ -1309,7 +1347,7 @@ Based on the current data and execution history, make ONE of these decisions:
 **🔑 Critical Format Rules**:
 - tool = function name (getUserTweets, not twitter-client-mcp)
 - mcpName = service name (twitter-client-mcp, not getUserTweets)
-- For task completion: {"tool": "task_complete", "toolType": "completion", "mcpName": null}
+- Planning phase should ONLY suggest actual tools, not task completion
 
 As ${this.agent.name}, what is your next strategic move?${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
@@ -1583,6 +1621,8 @@ ${taskComplexity?.type === 'simple_query' ? 'For simple queries: Success = Compl
   /**
    * 解析Agent观察结果
    */
+
+
   private parseAgentObservation(content: string): { isComplete: boolean; nextObjective?: string } {
     try {
       let jsonText = content.trim();
@@ -2248,10 +2288,11 @@ ${JSON.stringify(processedData.data)}`;
       // 快速大小估算（避免完整序列化）
       const estimatedSize = this.estimateDataSize(rawResult);
       
-      // 🔥 激进截断策略
-      if (estimatedSize > 50000) { // 50K字符阈值，更激进
-        return this.truncateDataIntelligently(rawResult, mcpName, toolName);
-      }
+      // 🔧 移除数据截断限制，允许完整数据处理
+      // 注释：为了获取完整的 MCP 数据，移除了之前的 50K 字符限制
+      // if (estimatedSize > 50000) { 
+      //   return this.truncateDataIntelligently(rawResult, mcpName, toolName);
+      // }
       
       // 小数据直接返回
       return {
@@ -2285,13 +2326,15 @@ ${JSON.stringify(processedData.data)}`;
     }
     
     if (Array.isArray(data)) {
-      if (data.length > 100) return 100000; // 大数组立即标记为大数据
+      // 🔧 移除大数组立即标记限制，允许处理更大的数组
+      // if (data.length > 100) return 100000; // 移除大数组立即标记为大数据
       return data.length * 200; // 估算每个元素200字符
     }
     
     if (typeof data === 'object' && data !== null) {
       const keys = Object.keys(data);
-      if (keys.length > 50) return 50000; // 超过50个字段立即标记为大数据
+      // 🔧 移除大对象立即标记限制，允许处理更多字段的对象
+      // if (keys.length > 50) return 50000; // 移除超过50个字段立即标记为大数据
       return keys.length * 300; // 估算每个字段300字符
     }
     
@@ -2341,136 +2384,43 @@ ${JSON.stringify(processedData.data)}`;
    * 🏗️ 区块链数据截断
    */
   private truncateBlockchainData(data: any): { data: any; wasTruncated: boolean; summary: string } {
-    if (typeof data === 'object' && data !== null) {
-      const truncated: any = {};
-      
-      // 保留最重要的区块链字段
-      const importantFields = ['hash', 'number', 'gasUsed', 'gasLimit', 'miner', 'timestamp', 'parentHash', 'difficulty', 'totalDifficulty', 'size', 'transactionCount'];
-      
-      importantFields.forEach(field => {
-        if (data[field] !== undefined) {
-          truncated[field] = data[field];
-        }
-      });
-      
-      // 交易数组只保留前3个
-      if (data.transactions && Array.isArray(data.transactions)) {
-        truncated.transactions = data.transactions.slice(0, 3);
-        if (data.transactions.length > 3) {
-          truncated.transactionsNote = `Showing 3 of ${data.transactions.length} total transactions`;
-        }
-      }
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `${Object.keys(truncated).length} key blockchain fields`
-      };
-    }
-    
-    return { data, wasTruncated: false, summary: 'no truncation needed' };
+    // 🔧 移除区块链数据截断，返回完整数据
+    return { data, wasTruncated: false, summary: 'complete blockchain data' };
   }
 
   /**
    * 🐙 GitHub数据截断
    */
   private truncateGithubData(data: any): { data: any; wasTruncated: boolean; summary: string } {
-    if (Array.isArray(data)) {
-      // 列表数据只保留前10个
-      return {
-        data: data.slice(0, 10),
-        wasTruncated: data.length > 10,
-        summary: `showing 10 of ${data.length} items`
-      };
-    }
-    
-    if (typeof data === 'object' && data !== null) {
-      const truncated: any = {};
-      
-      // 保留重要的GitHub字段
-      const importantFields = ['name', 'full_name', 'description', 'html_url', 'clone_url', 'stargazers_count', 'forks_count', 'language', 'created_at', 'updated_at', 'owner'];
-      
-      importantFields.forEach(field => {
-        if (data[field] !== undefined) {
-          truncated[field] = data[field];
-        }
-      });
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `${Object.keys(truncated).length} key GitHub fields`
-      };
-    }
-    
-    return { data, wasTruncated: false, summary: 'no truncation needed' };
+    // 🔧 移除 GitHub 数据截断，返回完整数据
+    return { data, wasTruncated: false, summary: 'complete GitHub data' };
   }
 
   /**
    * 📱 社交媒体数据截断
    */
   private truncateSocialData(data: any): { data: any; wasTruncated: boolean; summary: string } {
-    if (Array.isArray(data)) {
-      return {
-        data: data.slice(0, 20), // 社交媒体显示更多条目
-        wasTruncated: data.length > 20,
-        summary: `showing 20 of ${data.length} posts`
-      };
-    }
-    
-    if (typeof data === 'object' && data !== null) {
-      const truncated: any = {};
-      
-      // 保留重要的社交媒体字段
-      const importantFields = ['id', 'text', 'created_at', 'author', 'user', 'likes', 'retweets', 'replies', 'url'];
-      
-      importantFields.forEach(field => {
-        if (data[field] !== undefined) {
-          truncated[field] = data[field];
-        }
-      });
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `${Object.keys(truncated).length} key social media fields`
-      };
-    }
-    
-    return { data, wasTruncated: false, summary: 'no truncation needed' };
+    // 🔧 移除社交媒体数据截断，返回完整数据
+    return { data, wasTruncated: false, summary: 'complete social media data' };
   }
 
   /**
    * 🔧 通用数据截断
    */
   private truncateGenericData(data: any): { data: any; wasTruncated: boolean; summary: string } {
+    // 🔧 移除所有数据截断，返回完整数据
     if (Array.isArray(data)) {
       return {
-        data: data.slice(0, 15),
-        wasTruncated: data.length > 15,
-        summary: `showing 15 of ${data.length} items`
+        data: data, // 返回完整数组，不再截断
+        wasTruncated: false, // 不截断
+        summary: `complete array with ${data.length} items`
       };
     }
     
     if (typeof data === 'object' && data !== null) {
       const keys = Object.keys(data);
-      if (keys.length <= 20) {
-        return { data, wasTruncated: false, summary: 'complete object' };
-      }
-      
-      // 只保留前20个字段
-      const truncated: any = {};
-      keys.slice(0, 20).forEach(key => {
-        truncated[key] = data[key];
-      });
-      
-      truncated._truncated_note = `Object truncated: showing 20 of ${keys.length} total fields`;
-      
-      return {
-        data: truncated,
-        wasTruncated: true,
-        summary: `20 of ${keys.length} fields`
-      };
+      // 移除字段数量限制，返回完整对象
+      return { data, wasTruncated: false, summary: `complete object with ${keys.length} fields` };
     }
     
     return { data, wasTruncated: false, summary: 'simple value' };
@@ -3479,11 +3429,13 @@ CRITICAL TWITTER RULES:
 - Twitter has a HARD 280 character limit!
 - Count ALL characters including spaces, emojis, URLs, hashtags
 - If content is too long, you MUST:
-  1. Remove URLs (they're not clickable in tweets anyway)
-  2. Use abbreviations (e.g., "w/" for "with")
+  1. Use abbreviations (e.g., "w/" for "with")
+  2. Shorten usernames (e.g., "@user" instead of full names)
   3. Remove less important details
-  4. Keep only the most essential information
+  4. Keep URLs whenever possible as they are valuable references
+  5. If URLs must be removed due to length, prefer keeping the most important ones
 - For threads: First tweet should be <250 chars to leave room for thread numbering
+- PRIORITY: Always try to include original tweet URLs when space allows
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -3497,6 +3449,8 @@ CRITICAL CONTENT EXTRACTION:
 - When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
 - Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
 - NEVER use "[Insert summary here]" or "Latest tweet content from @user" - extract actual content!
+- ALWAYS extract and include tweet URLs/links when available in the source data
+- Format URLs efficiently to save characters (use bit.ly style if needed)
 
 IMPORTANT: Always use exact parameter names from the inputSchema, ensure Twitter content is under 280 characters, and EXTRACT REAL CONTENT from previous results!
 
