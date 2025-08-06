@@ -1259,6 +1259,14 @@ What is the most logical next step for ${this.agent.name} to take?`;
 **Data Collected**: ${hasDataInStore ? 'Available' : 'None'}
 **Last Action**: ${lastStepResult ? `${lastStepResult.plan.tool} (${lastStepResult.success ? '✅ Success' : '❌ Failed'})` : 'Starting task'}
 
+## 📋 Execution History (for planning next step)
+${state.executionHistory.map(step => `
+**Step ${step.stepNumber}**: ${step.plan.tool}
+- Status: ${step.success ? '✅ Success' : '❌ Failed'}
+- Args: ${JSON.stringify(step.plan.args)}
+${step.success ? '- Result: Data collected successfully' : `- Error: ${step.error || 'Unknown error'}`}
+`).join('\n')}
+
 ${lastStepResult?.success ? `
 ## ✅ Last Success
 **Tool**: ${lastStepResult.plan.tool}
@@ -1295,11 +1303,16 @@ Based on the current data and execution history, make ONE of these decisions:
 **PLANNING MISSION**: Choose the most appropriate next action:
 
 **Option A) Continue with MCP tool** → Choose appropriate MCP tool
-- Identify exactly what information is still missing
-- For multi-target tasks (multiple users, files, items): Use the SAME successful tool for remaining targets
-- Select the most direct tool to get that information
-- Use existing data from dataStore when applicable
-- Focus on the specific gap in current data
+- **STEP 1**: Parse the original mission to identify ALL required targets/items
+- **STEP 2**: Review execution history to see which targets have been processed
+- **STEP 3**: Identify exactly which targets are still missing
+- **STEP 4**: For multi-target tasks: Use the SAME successful tool for remaining targets
+- **STEP 5**: Choose the next unprocessed target and plan the action
+
+**🔍 CRITICAL ANALYSIS**:
+- Compare original request vs execution history
+- For user queries like "@user1, @user2, @user3": check which users have been processed
+- If only @user1 was processed, next step should be @user2 with same tool
 
 **🚨 CRITICAL**: Make this decision based on actual data sufficiency, not execution count or complexity
 
