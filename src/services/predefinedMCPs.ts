@@ -4556,9 +4556,7 @@ export const mcpNameMapping: Record<string, string> = {
     'coingecko-v2': 'coingecko-mcp-v2',
     'evm-mcp-server': 'evm-mcp',
     'evm-mcp-service': 'evm-mcp',
-    'dune-mcp-server': 'dune-mcp-v1',
     'dune-mcp': 'dune-mcp-v2', // 默认使用v2版本
-    'dune-v1': 'dune-mcp-v1',
     'dune-v2': 'dune-mcp-v2',
     'dune-analytics-mcp': 'dune-mcp-v2', // kukapay implementation
     '@kukapay/dune-analytics-mcp': 'dune-mcp-v2', // handle npm package name
