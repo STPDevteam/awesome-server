@@ -1692,10 +1692,10 @@ TRANSFORMATION PRINCIPLES:
    - data fetching: Expects specific IDs or parameters
 
 5. **Smart content generation**:
-   - For Twitter: MUST be under 280 characters! Use concise language, abbreviations if needed
+   - For Twitter: MUST be under 280 characters! Use concise language, abbreviations if needed, but preserve important URLs
    - For cryptocurrency/financial data: Highlight price, changes, trends
-   - For analysis results: Summarize key findings concisely
-   - For lists/collections: Format as readable bullet points or threads
+   - For analysis results: Summarize key findings concisely with reference links
+   - For lists/collections: Format as readable bullet points or threads with source URLs when available
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:

@@ -3389,11 +3389,13 @@ CRITICAL TWITTER RULES:
 - Twitter has a HARD 280 character limit!
 - Count ALL characters including spaces, emojis, URLs, hashtags
 - If content is too long, you MUST:
-  1. Remove URLs (they're not clickable in tweets anyway)
-  2. Use abbreviations (e.g., "w/" for "with")
+  1. Use abbreviations (e.g., "w/" for "with")
+  2. Shorten usernames (e.g., "@user" instead of full names)
   3. Remove less important details
-  4. Keep only the most essential information
+  4. Keep URLs whenever possible as they are valuable references
+  5. If URLs must be removed due to length, prefer keeping the most important ones
 - For threads: First tweet should be <250 chars to leave room for thread numbering
+- PRIORITY: Always try to include original tweet URLs when space allows
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -3407,6 +3409,8 @@ CRITICAL CONTENT EXTRACTION:
 - When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
 - Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
 - NEVER use "[Insert summary here]" or "Latest tweet content from @user" - extract actual content!
+- ALWAYS extract and include tweet URLs/links when available in the source data
+- Format URLs efficiently to save characters (use bit.ly style if needed)
 
 IMPORTANT: Always use exact parameter names from the inputSchema, ensure Twitter content is under 280 characters, and EXTRACT REAL CONTENT from previous results!
 
