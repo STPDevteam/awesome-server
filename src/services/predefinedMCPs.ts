@@ -3525,7 +3525,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Browser Automation",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/puppeteer-mcp-server.jpeg",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/puppeteer-mcp.png",
         "githubUrl": "https://github.com/merajmehrabi/puppeteer-mcp-server",
         "authRequired": false,
         "authParams": {},
