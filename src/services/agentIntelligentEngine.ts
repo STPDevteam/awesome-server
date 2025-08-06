@@ -506,13 +506,42 @@ export class AgentIntelligentEngine {
         // 🔧 保存步骤结果到数据库（使用格式化结果）
         await this.saveAgentStepResult(taskId, executionStep, formattedResultForStorage);
 
-        // 🔧 简化：任务完成判断已前置到规划阶段，这里只需更新进度监控
+        // 🔧 更新进度监控
         this.updateProgressMonitor(progressMonitor, executionStep, state);
 
         // 🔧 更新数据存储
         if (executionResult.success && executionResult.result) {
           state.dataStore[`step${stepCounter}`] = executionResult.result;
           state.dataStore.lastResult = executionResult.result;
+        }
+
+        // 🧠 关键修复：执行完每步后进行智能观察判断
+        if (executionResult.success) {
+          logger.info(`🔍 Agent ${this.agent.name} performing intelligent observation after step ${stepCounter}`);
+          
+          const observationResult = await this.agentObservationPhaseEnhanced(state);
+          
+          if (observationResult.isComplete) {
+            logger.info(`🎯 Agent ${this.agent.name} determined task is complete after observation`);
+            state.isComplete = true; // 标记完成，让主循环条件自然退出
+            
+            // 发送观察完成事件
+            yield {
+              event: 'task_observation_complete',
+              data: {
+                step: stepCounter,
+                agentName: this.agent.name,
+                message: `${this.agent.name} determined the task is complete`,
+                reasoning: observationResult.nextObjective || 'Task requirements fulfilled',
+                taskComplete: true
+              }
+            };
+            
+            // 不使用 break，让循环自然结束以确保后续代码正常执行
+          } else if (observationResult.nextObjective) {
+            logger.info(`🎯 Agent ${this.agent.name} next objective: ${observationResult.nextObjective}`);
+            state.currentObjective = observationResult.nextObjective;
+          }
         }
       }
 
@@ -972,7 +1001,8 @@ ${dataContentAnalysis}
 ${taskCompleteAttempts > 0 ? `
 ### ⚠️ Task Completion History
 **Previous task_complete attempts**: ${taskCompleteAttempts}
-**CRITICAL**: If task_complete has been attempted multiple times, the task is likely complete!
+**IMPORTANT**: Don't automatically assume the task is complete just because task_complete was attempted before.
+Previous attempts might have been premature. Analyze the CURRENT situation independently.
 ` : ''}
 
 ## 🧠 INTELLIGENT ANALYSIS REQUIRED
@@ -987,17 +1017,17 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
 
 ## 🎯 DECISION LOGIC
 
-**✅ COMPLETE the task if ANY of these are true**:
-- You have specific data that directly answers the user's question
-- The data contains the requested items/information (e.g., top tokens, prices, etc.)
-- Previous task_complete attempts ≥ 2 (likely indicates task is actually complete)
-- Successful data collection step exists AND data is relevant to the query
+**🧠 USE YOUR INTELLIGENCE TO JUDGE**:
+- Read the user's original request carefully
+- Look at what has been accomplished so far
+- Consider whether a reasonable person would say "this request has been fulfilled"
+- Don't be overly strict, but also don't accept partial completion as full success
+- If the user asked for multiple things, check if ALL of them have been addressed
+- If the user asked for an action (like posting), check if that action actually happened
 
-**❌ CONTINUE execution ONLY if ALL of these are true**:
-- No relevant data has been collected yet
-- Critical information is clearly missing for the specific query
-- Previous attempts all failed to get any usable data
-- User's request requires multiple data points and only partial data exists
+**DECISION GUIDELINES**:
+✅ Mark COMPLETE if: The core request has been meaningfully fulfilled
+❌ Mark CONTINUE if: Significant parts of the request remain unaddressed
 
 **OUTPUT FORMAT (JSON only)**:
 {
@@ -1006,7 +1036,9 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
   "nextObjective": "If not complete, what specific missing information is needed?"
 }
 
-**🚨 IMPORTANT**: Be more lenient in completion judgment. If relevant data exists, the task is likely complete.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
+**🚨 THINK LIKE A HUMAN**: 
+Would a reasonable person consider this request fulfilled based on what has been accomplished? 
+Use your intelligence and common sense to make the judgment.${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
 
   /**
@@ -1014,37 +1046,34 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
    */
   private buildDataContentAnalysis(state: AgentWorkflowState): string {
     const successfulSteps = state.executionHistory.filter(step => step.success && step.result);
+    const failedSteps = state.executionHistory.filter(step => !step.success);
     
     if (successfulSteps.length === 0) {
-      return "No successful data collection yet.";
+      return "❌ No successful data collection/actions yet.";
     }
 
-    return successfulSteps.map(step => {
-      const resultData = step.result;
-      const dataType = this.detectDataType(resultData);
-      const dataSize = JSON.stringify(resultData).length;
-      
-      let contentDescription = `${dataType} data (${dataSize} characters)`;
-      
-      // 通用的结构化数据分析
-      if (Array.isArray(resultData) && resultData.length > 0) {
-        contentDescription += ` - ${resultData.length} items`;
-        const firstItem = resultData[0];
-        if (typeof firstItem === 'object' && firstItem !== null) {
-          const keys = Object.keys(firstItem);
-          if (keys.length > 0) {
-            contentDescription += `, sample fields: ${keys.slice(0, 3).join(', ')}`;
-          }
-        }
-      } else if (typeof resultData === 'object' && resultData !== null) {
-        const keys = Object.keys(resultData);
-        if (keys.length > 0) {
-          contentDescription += `, fields: ${keys.slice(0, 5).join(', ')}`;
-        }
-      }
-      
-      return `- Step ${step.stepNumber} (${step.plan.tool}): ${contentDescription}`;
-    }).join('\n');
+    // 简单展示执行结果，让 LLM 来分析
+    let analysis = `📊 **EXECUTION SUMMARY**:\n`;
+    analysis += `- Total steps executed: ${state.executionHistory.length}\n`;
+    analysis += `- Successful steps: ${successfulSteps.length}\n`;
+    analysis += `- Failed steps: ${failedSteps.length}\n\n`;
+
+    analysis += `✅ **SUCCESSFUL STEPS**:\n`;
+    successfulSteps.forEach(step => {
+      const dataSize = JSON.stringify(step.result).length;
+      analysis += `- Step ${step.stepNumber}: ${step.plan.tool} → ${dataSize} chars of data\n`;
+    });
+
+    if (failedSteps.length > 0) {
+      analysis += `\n❌ **FAILED STEPS**:\n`;
+      failedSteps.forEach(step => {
+        analysis += `- Step ${step.stepNumber}: ${step.plan.tool} → ${step.error || 'Unknown error'}\n`;
+      });
+    }
+
+    analysis += `\n🧠 **FOR LLM ANALYSIS**: Review the above execution results against the original request to determine if the task is truly complete.`;
+
+    return analysis;
   }
 
   /**
@@ -1072,29 +1101,25 @@ ${this.buildSpecificRequirementsCheck(state.originalQuery)}
    * 构建针对具体问题的需求检查
    */
   private buildSpecificRequirementsCheck(originalQuery: string): string {
-    const lowerQuery = originalQuery.toLowerCase();
-    
-    // 针对不同类型的查询构建具体的需求检查
-    if (lowerQuery.includes('identify') && lowerQuery.includes('top') && /\d+/.test(lowerQuery)) {
-      const numberMatch = lowerQuery.match(/\d+/);
-      const number = numberMatch ? numberMatch[0] : 'X';
-      return `- Do you have data that allows you to identify the top ${number} items requested?
-   - Is the data sorted/rankable to determine which are "top"?
-   - Are the specific criteria mentioned in the query satisfied?`;
-    }
-    
-    if (lowerQuery.includes('current') || lowerQuery.includes('latest')) {
-      return `- Is the data current/recent as requested?
-   - Does it represent the latest state as of now?`;
-    }
-    
-    if (lowerQuery.includes('compare') || lowerQuery.includes('vs')) {
-      return `- Do you have data for all items to be compared?
-   - Is the data comparable (same timeframe, metrics, etc.)?`;
-    }
-    
-    return `- Does the data directly address what the user is asking for?
-   - Are all key terms from the user's question covered by the data?`;
+    // 🧠 让 LLM 智能分析，不要硬编码规则
+    return `**INTELLIGENT ANALYSIS**:
+Analyze the user's original request: "${originalQuery}"
+
+Ask yourself:
+1. What EXACTLY did the user ask for?
+2. What are the KEY COMPONENTS that must be completed?
+3. Are there multiple parts/targets/items mentioned?
+4. What is the END GOAL the user wants to achieve?
+5. Has that end goal been fully achieved with current data/actions?
+
+**CRITICAL THINKING**:
+- Look at the user's specific words and requirements
+- Don't just check if "some data exists" - check if the COMPLETE request is satisfied
+- Consider whether all mentioned targets/items have been addressed
+- Evaluate if any key actions (posting, creating, publishing, etc.) are still pending
+- Think about whether the user would be satisfied with current results
+
+Be thorough and honest in your analysis.`;
   }
 
   /**
