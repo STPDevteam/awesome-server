@@ -199,26 +199,8 @@ export class AgentIntelligentEngine {
 
         state.currentPlan = planResult.plan || null;
 
-        // 🎯 直接完成感知：如果规划阶段判断任务已完成，立即退出
-        if (state.currentPlan?.tool === 'task_complete') {
-          logger.info(`🎯 Agent ${this.agent.name} determined task is complete. Finalizing...`);
-          state.isComplete = true;
-          
-          // 发送任务完成事件
-          yield {
-            event: 'step_complete',
-            data: {
-              step: stepCounter,
-              success: true,
-              result: `Task completed successfully by ${this.agent.name}. All required information has been collected and the user's request has been satisfied.`,
-              agentName: this.agent.name,
-              message: `${this.agent.name} has determined the task is complete`,
-              taskComplete: true
-            }
-          };
-          
-          break; // 直接退出循环，不需要额外的观察阶段
-        }
+        // 🔧 规划阶段现在只负责规划下一步，不再判断任务完成
+        // 任务完成的判断将在观察阶段进行
 
         // 🔧 发送Agent格式的step_start事件
         const stepId = `agent_step_${stepCounter}_${Date.now()}`;
@@ -1303,13 +1285,11 @@ ${availableMCPs.map(mcp => {
 **🎯 PRIMARY: Direct Task Completion Assessment**
 Based on the current data and execution history, make ONE of these decisions:
 
-**A) TASK IS COMPLETE** → Use "task_complete" tool
-- Current data fully answers the user's question
-- All requested information has been successfully collected
-- User's specific requirements are satisfied
-- No additional data or processing is needed
+**🚨 IMPORTANT**: Planning phase should focus on WHAT TO DO NEXT, not whether task is complete!
 
-**B) TASK NEEDS MORE WORK** → Choose appropriate MCP tool
+**PLANNING MISSION**: Choose the most appropriate next action:
+
+**Option A) Continue with MCP tool** → Choose appropriate MCP tool
 - Identify exactly what information is still missing
 - For multi-target tasks (multiple users, files, items): Use the SAME successful tool for remaining targets
 - Select the most direct tool to get that information
@@ -1319,20 +1299,21 @@ Based on the current data and execution history, make ONE of these decisions:
 **🚨 CRITICAL**: Make this decision based on actual data sufficiency, not execution count or complexity
 
 ## 📋 Decision Rules
-1. **Task Complete → Finalize**: If user's request is satisfied, use "task_complete"
-2. **Success → Progress**: If last step succeeded, assess if more is needed
-3. **Failure → Alternative**: If tool failed, choose different approach  
-4. **Multi-Target Tasks → Repeat**: Use same tool for different targets (e.g., multiple users, files, etc.)
-5. **Data Available → Analysis**: If data exists but incomplete, collect more
-6. **Missing Data → Collection**: If data needed, collect efficiently
+1. **Success → Continue/Progress**: If last step succeeded, identify what's still needed
+2. **Failure → Alternative**: If tool failed, choose different approach  
+3. **Multi-Target Tasks → Repeat**: Use same tool for different targets (e.g., multiple users, files, etc.)
+4. **Data Available → Analysis**: If data exists but incomplete, collect more
+5. **Missing Data → Collection**: If data needed, collect efficiently
+
+🚨 **NOTE**: Planning phase should NOT decide task completion. That's for observation phase!
 
 ## 🎯 Output Format (JSON only)
 {
-  "tool": "exact-function-name-or-task_complete",
-  "toolType": "mcp" or "llm" or "completion",
-  "mcpName": "service-name-from-above-or-null",
+  "tool": "exact-function-name",
+  "toolType": "mcp" or "llm",
+  "mcpName": "service-name-from-above",
   "args": {
-    // Specific parameters for this tool (empty {} for task_complete)
+    // Specific parameters for this tool
   },
   "expectedOutput": "What this accomplishes",
   "reasoning": "Why this is the optimal next step",
@@ -1342,7 +1323,7 @@ Based on the current data and execution history, make ONE of these decisions:
 **🔑 Critical Format Rules**:
 - tool = function name (getUserTweets, not twitter-client-mcp)
 - mcpName = service name (twitter-client-mcp, not getUserTweets)
-- For task completion: {"tool": "task_complete", "toolType": "completion", "mcpName": null}
+- Planning phase should ONLY suggest actual tools, not task completion
 
 As ${this.agent.name}, what is your next strategic move?${userLanguage ? getLanguageInstruction(userLanguage) : ''}`;
   }
