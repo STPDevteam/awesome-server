@@ -3512,7 +3512,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Browser Automation",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.comweb-search.jpeg", // Placeholder; update if available
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/web-search.webp", // Placeholder; update if available
         "githubUrl": "https://github.com/pskill9/web-search",
         "authRequired": false,
         "authParams": {},
@@ -3747,7 +3747,7 @@ export const predefinedMCPs: MCPService[] = [
         env: {},
         connected: false,
         category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-projects-mcp.png',
+        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-projects-mcp.avif',
         githubUrl: 'https://github.com/kukapay/crypto-projects-mcp',
         authRequired: false,
         authParams: {},
@@ -3797,7 +3797,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-whitepapers-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-whitepapers-mcp.webp",
         "githubUrl": "https://github.com/kukapay/crypto-whitepapers-mcp",
         "authRequired": false,
         "authParams": {},
@@ -4145,7 +4145,7 @@ export const predefinedMCPs: MCPService[] = [
         },
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-sentiment-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-sentiment-mcp.webp",
         "githubUrl": "https://github.com/kukapay/crypto-sentiment-mcp",
         "authRequired": true,
         "authParams": {
