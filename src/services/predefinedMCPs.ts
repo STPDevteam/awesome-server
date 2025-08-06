@@ -3538,7 +3538,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/web3-research.jpeg",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
         "githubUrl": "https://github.com/aaronjmars/web3-research-mcp",
         "authRequired": false,
         "authParams": {},
