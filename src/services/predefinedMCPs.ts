@@ -3366,7 +3366,348 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_SECRET: "TWITTER_API_SECRET",
             TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
             TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
-        }
+        },
+        // 🔧 新增：预定义工具信息
+        predefinedTools: [
+            // 草稿管理工具
+            {
+                name: 'create_draft_tweet',
+                description: 'Create a draft tweet for later publishing',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        content: {
+                            type: 'string',
+                            description: 'The content of the tweet',
+                            required: true
+                        }
+                    },
+                    required: ['content']
+                }
+            },
+            {
+                name: 'create_draft_thread',
+                description: 'Create a draft tweet thread for later publishing',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        contents: {
+                            type: 'array',
+                            items: { type: 'string' },
+                            description: 'An array of tweet contents for the thread',
+                            required: true
+                        }
+                    },
+                    required: ['contents']
+                }
+            },
+            {
+                name: 'list_drafts',
+                description: 'List all draft tweets and threads',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'publish_draft',
+                description: 'Publish a draft tweet or thread',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        draft_id: {
+                            type: 'string',
+                            description: 'ID of the draft to publish',
+                            required: true
+                        }
+                    },
+                    required: ['draft_id']
+                }
+            },
+            {
+                name: 'delete_draft',
+                description: 'Delete a draft tweet or thread',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        draft_id: {
+                            type: 'string',
+                            description: 'ID of the draft to delete',
+                            required: true
+                        }
+                    },
+                    required: ['draft_id']
+                }
+            },
+            // 用户资料工具
+            {
+                name: 'profileByUsername',
+                description: 'Get detailed Twitter profile information for a specific username',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Twitter username (without @ symbol)',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'myProfile',
+                description: 'Get the authenticated user\'s Twitter profile information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        check: {
+                            type: 'boolean',
+                            description: 'Must be true to confirm the action',
+                            required: true
+                        }
+                    },
+                    required: ['check']
+                }
+            },
+            // 推文发布工具
+            {
+                name: 'sendTweet',
+                description: 'Post a new tweet or reply to an existing tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Tweet content (max 280 characters)',
+                            required: true
+                        },
+                        replyToId: {
+                            type: 'string',
+                            description: 'ID of the tweet to reply to (optional)',
+                            required: false
+                        }
+                    },
+                    required: ['text']
+                }
+            },
+            // 搜索工具
+            {
+                name: 'searchTweets',
+                description: 'Search for tweets using Twitter\'s search API',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query string',
+                            required: true
+                        },
+                        maxResults: {
+                            type: 'number',
+                            description: 'Maximum number of results to return (1-100)',
+                            required: false,
+                            default: 10
+                        },
+                        searchMode: {
+                            type: 'string',
+                            description: 'Search mode: Latest, Top, or Photos',
+                            enum: ['Latest', 'Top', 'Photos'],
+                            required: false,
+                            default: 'Latest'
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            // 互动工具
+            {
+                name: 'likeTweet',
+                description: 'Like a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to like',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'unlikeTweet',
+                description: 'Unlike a previously liked tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to unlike',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'retweet',
+                description: 'Retweet a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to retweet',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'unretweet',
+                description: 'Undo a previous retweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to unretweet',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            // 关注关系工具
+            {
+                name: 'followUser',
+                description: 'Follow a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user to follow',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'unfollowUser',
+                description: 'Unfollow a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user to unfollow',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getFollowers',
+                description: 'Get list of followers for a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get followers for',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of followers to fetch (max 50)',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getFollowing',
+                description: 'Get list of users that a specific user is following',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get following list for',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of following to fetch (max 50)',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getTweets',
+                description: 'Get recent tweets from a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get tweets from',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of tweets to fetch (max 50)',
+                            required: false,
+                            default: 10
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            // 书签工具
+            {
+                name: 'bookmarkTweet',
+                description: 'Bookmark a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to bookmark',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'removeBookmark',
+                description: 'Remove a tweet from bookmarks',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to remove from bookmarks',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            }
+        ]
     },
     {
         name: 'notion-mcp',
