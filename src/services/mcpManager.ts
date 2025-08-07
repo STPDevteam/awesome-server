@@ -696,34 +696,6 @@ export class MCPManager {
         console.log(`  Result preview: ${String(result).substring(0, 200)}...`);
       }
       
-      // 🔧 新增：记录最终内存状态和总体效率
-      const memUsageAfter = process.memoryUsage();
-      // 🔧 检查是否存在内存泄漏迹象
-      const heapDelta = (memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024;
-      const resultMB = resultSize / 1024 / 1024;
-      
-      if (heapDelta > resultMB * 10) {
-        console.log(`⚠️ POTENTIAL MEMORY LEAK DETECTED:`);
-        console.log(`   Heap increased by ${heapDelta.toFixed(2)} MB`);
-        console.log(`   But result is only ${resultMB.toFixed(2)} MB`);
-        console.log(`   Ratio: ${(heapDelta / resultMB).toFixed(2)}x (should be < 10x)`);
-      }
-      
-      if (resultMB > 50) {
-        console.log(`⚠️ LARGE RESULT DETECTED: ${resultMB.toFixed(2)} MB`);
-        console.log(`   This could cause memory issues if not handled properly`);
-      }
-      
-      // 🔧 强制垃圾回收（如果可用）
-      if (global.gc) {
-        console.log(`🗑️ Forcing garbage collection after MCP call...`);
-        const memBeforeGC = process.memoryUsage();
-        global.gc();
-        const memAfterGC = process.memoryUsage();
-        console.log(`Memory after GC: Heap Used ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterGC.heapUsed - memBeforeGC.heapUsed) / 1024 / 1024).toFixed(2)} MB freed)`);
-      } else {
-        console.log(`⚠️ Garbage collection not available (start Node.js with --expose-gc to enable)`);
-      }
       
       return result;
     } catch (error) {
