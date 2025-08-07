@@ -740,8 +740,11 @@ export class EnhancedIntelligentTaskEngine {
           task.userId
         );
 
+        // 🔧 新增：x-mcp自动发布处理（与Agent引擎保持一致）
+        const finalResult = await this.handleXMcpAutoPublish(step.mcp, toolName, result, task.userId);
+        
         logger.info(`✅ MCP ${step.mcp} execution successful - returning original MCP structure`);
-        return { success: true, result, actualArgs: input };
+        return { success: true, result: finalResult, actualArgs: input };
       }
 
     } catch (error) {
@@ -2109,6 +2112,209 @@ Transform the data now:`;
       logger.error(`❌ Parameter conversion failed:`, error);
       return originalArgs; // 回退到原始参数
     }
+  }
+
+  /**
+   * x-mcp自动发布处理：当create_draft_tweet或create_draft_thread成功后自动发布
+   * 🔧 与AgentIntelligentEngine保持完全一致
+   */
+  private async handleXMcpAutoPublish(
+    mcpName: string, 
+    toolName: string, 
+    result: any, 
+    userId?: string
+  ): Promise<any> {
+    // 🔧 添加详细调试信息
+    const normalizedMcpName = this.normalizeMCPName(mcpName);
+    logger.info(`🔍 EnhancedEngine X-MCP Auto-publish Check: mcpName="${mcpName}", normalizedMcpName="${normalizedMcpName}", toolName="${toolName}"`);
+    
+    // 只处理x-mcp的草稿创建操作
+    if (normalizedMcpName !== 'x-mcp') {
+      logger.info(`❌ EnhancedEngine X-MCP Auto-publish: Normalized MCP name "${normalizedMcpName}" is not "x-mcp", skipping auto-publish`);
+      return result;
+    }
+
+    // 检查是否是草稿创建操作
+    if (!toolName.includes('create_draft')) {
+      logger.info(`❌ EnhancedEngine X-MCP Auto-publish: Tool name "${toolName}" does not include "create_draft", skipping auto-publish`);
+      return result;
+    }
+
+    try {
+      logger.info(`🔄 X-MCP Auto-publish: Detected ${toolName} completion, attempting auto-publish...`);
+
+      // 提取draft_id - 与Agent引擎完全一致的逻辑
+      let draftId = null;
+      if (result && typeof result === 'object') {
+        // 尝试从不同的结果格式中提取draft_id
+        if (result.draft_id) {
+          draftId = result.draft_id;
+        } else if (result.content && Array.isArray(result.content)) {
+          // MCP标准格式
+          for (const content of result.content) {
+            if (content.text) {
+              try {
+                const parsed = JSON.parse(content.text);
+                if (parsed.draft_id) {
+                  draftId = parsed.draft_id;
+                  break;
+                } else if (Array.isArray(parsed)) {
+                  // 🔧 处理解析成功但是数组结构的情况
+                  for (const nestedItem of parsed) {
+                    if (nestedItem && nestedItem.text) {
+                      const innerText = nestedItem.text;
+                      const innerMatch = this.extractDraftIdFromText(innerText);
+                      if (innerMatch) {
+                        draftId = innerMatch;
+                        logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from nested JSON structure`);
+                        break;
+                      }
+                    }
+                  }
+                  if (draftId) break;
+                }
+              } catch {
+                // 🔧 修复：处理嵌套JSON结构和文本提取
+                let text = content.text;
+                
+                // 🔧 处理双重嵌套的JSON情况：text字段本身是JSON字符串
+                try {
+                  // 尝试解析text作为JSON数组
+                  const nestedArray = JSON.parse(text);
+                  if (Array.isArray(nestedArray)) {
+                    // 遍历嵌套数组，寻找包含draft信息的文本
+                    for (const nestedItem of nestedArray) {
+                      if (nestedItem && nestedItem.text) {
+                        const innerText = nestedItem.text;
+                        // 先尝试从内层文本提取draft_id
+                        const innerMatch = this.extractDraftIdFromText(innerText);
+                        if (innerMatch) {
+                          draftId = innerMatch;
+                          logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from nested JSON structure`);
+                          break;
+                        }
+                      }
+                    }
+                  }
+                } catch {
+                  // 如果不是JSON，继续用原文本进行模式匹配
+                }
+                
+                // 如果嵌套解析没有找到，用原文本进行模式匹配
+                if (!draftId) {
+                  draftId = this.extractDraftIdFromText(text);
+                  if (draftId) {
+                    logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from text pattern matching`);
+                  }
+                }
+                
+                if (draftId) break;
+              }
+            }
+          }
+        }
+      }
+      
+      // 🔧 修复：处理字符串类型的result
+      if (!draftId && typeof result === 'string') {
+        // 从字符串结果中提取
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.draft_id) {
+            draftId = parsed.draft_id;
+          }
+        } catch {
+          // 🔧 修复：处理嵌套JSON和字符串文本中提取draft ID
+          draftId = this.extractDraftIdFromText(result);
+          if (draftId) {
+            logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from string pattern matching`);
+          }
+        }
+      }
+
+      if (!draftId) {
+        logger.warn(`⚠️ X-MCP Auto-publish: Could not extract draft_id from result: ${JSON.stringify(result)}`);
+        return result;
+      }
+
+      logger.info(`📝 X-MCP Auto-publish: Extracted draft_id: ${draftId}`);
+
+      // 调用publish_draft
+      logger.info(`🚀 X-MCP Auto-publish: Publishing draft ${draftId}...`);
+      
+      const publishInput = { draft_id: draftId };
+      logger.info(`📝 EnhancedEngine X-MCP Auto-publish INPUT: ${JSON.stringify(publishInput, null, 2)}`);
+      
+      const publishResult = await this.mcpToolAdapter.callTool(
+        normalizedMcpName,
+        'publish_draft',
+        publishInput,
+        userId
+      );
+      
+      logger.info(`📤 EnhancedEngine X-MCP Auto-publish OUTPUT: ${JSON.stringify(publishResult, null, 2)}`);
+
+      logger.info(`✅ X-MCP Auto-publish: Successfully published draft ${draftId}`);
+
+      // 返回合并的结果 - 与Agent引擎完全一致
+      return {
+        draft_creation: result,
+        auto_publish: publishResult,
+        combined_result: `Draft created and published successfully. Draft ID: ${draftId}`,
+        draft_id: draftId,
+        published: true
+      };
+
+    } catch (error) {
+      logger.error(`❌ X-MCP Auto-publish failed:`, error);
+      
+      // 即使发布失败，也返回原始的草稿创建结果 - 与Agent引擎完全一致
+      return {
+        draft_creation: result,
+        auto_publish_error: error instanceof Error ? error.message : String(error),
+        combined_result: `Draft created successfully but auto-publish failed. You may need to publish manually.`,
+        published: false
+      };
+    }
+  }
+
+  /**
+   * 从文本中提取draft_id的辅助方法 - 与Agent引擎完全一致
+   */
+  private extractDraftIdFromText(text: string): string | null {
+    const patterns = [
+      /draft[_-]?id["\s:]*([^"\s,}]+)/i,                    // draft_id: "xxx" 
+      /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,               // "with ID thread_draft_xxx.json"
+      /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,     // "created with ID xxx.json"
+      /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,                   // "ID: xxx.json" 或 "ID xxx.json"
+      /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i        // 任何包含draft的.json文件
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * 标准化MCP名称 - 与Agent引擎完全一致
+   */
+  private normalizeMCPName(mcpName: string): string {
+    const nameMapping: Record<string, string> = {
+      'twitter': 'twitter-client-mcp',
+      'github': 'github-mcp',
+      'coinmarketcap': 'coinmarketcap-mcp',
+      'crypto': 'coinmarketcap-mcp',
+      'web': 'brave-search-mcp',
+      'search': 'brave-search-mcp',
+      'x-mcp': 'x-mcp'  // 🔧 添加x-mcp的映射
+    };
+
+    return nameMapping[mcpName.toLowerCase()] || mcpName;
   }
 
   /**
