@@ -730,14 +730,17 @@ export class EnhancedIntelligentTaskEngine {
         let convertedInput = await this.convertParametersForMCP(step.mcp, toolName, input, task.userId);
         
         // 🔧 NEW: 使用LLM进行智能内容转换，防止占位符问题
-        convertedInput = await this.convertParametersWithLLM(toolName, convertedInput, step.mcp, task.userId);
-        logger.info(`📝 Final Converted Input: ${JSON.stringify(convertedInput, null, 2)}`);
+        const llmResult = await this.convertParametersWithLLM(toolName, convertedInput, step.mcp, task.userId);
+        const smartToolName = llmResult.toolName;
+        const smartInput = llmResult.params;
+        logger.info(`📝 LLM Smart Tool Selection: ${toolName} → ${smartToolName}`);
+        logger.info(`📝 Final Converted Input: ${JSON.stringify(smartInput, null, 2)}`);
 
         // 🔧 NEW: Twitter工作流智能修复 - 检测并修复publish_draft无draft_id的问题
         const { finalToolName, finalInput } = await this.handleTwitterWorkflowFix(
           step.mcp, 
-          toolName, 
-          convertedInput, 
+          smartToolName, 
+          smartInput, 
           state, 
           task.userId
         );
@@ -2000,7 +2003,7 @@ ${formattedResult}`;
   /**
    * 🔧 使用LLM进行智能参数转换，防止占位符问题（复制自AgentIntelligentEngine）
    */
-  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpName: string, userId: string): Promise<any> {
+  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpName: string, userId: string): Promise<{ toolName: string; params: any }> {
     try {
       logger.info(`🔄 Converting parameters for tool: ${toolName}`);
 
@@ -2061,13 +2064,27 @@ CRITICAL TWITTER RULES:
 - For threads: First tweet should be <250 chars to leave room for thread numbering
 - PRIORITY: Always try to include original tweet URLs when space allows
 
+CRITICAL TWITTER WORKFLOW STRATEGY:
+- **ALWAYS prefer create_draft_thread over publish_draft when you have content to publish**
+- **ONLY use publish_draft if you have a CONFIRMED, REAL draft_id from previous create_draft result**
+- **For publishing new content: Use create_draft_thread (it will auto-publish)**
+- **For publishing existing draft: Use publish_draft with real draft_id**
+- **If tool name is publish_draft but no real draft_id available: CHANGE to create_draft_thread**
+- **Never use placeholder draft_ids like "12345", "draft_id", etc.**
+
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
 {
-  "toolName": "${toolName}",
+  "toolName": "ACTUAL_TOOL_NAME", /* Use create_draft_thread for new content OR publish_draft for existing drafts */
   "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
-  "reasoning": "brief explanation of parameter transformation"
+  "reasoning": "brief explanation of tool selection and parameter transformation"
 }
+
+SMART TOOL SELECTION RULES:
+- If original tool is "publish_draft" AND you have real content to publish BUT no valid draft_id: CHANGE toolName to "create_draft_thread"
+- If original tool is "publish_draft" AND you have a real draft_id from previous step: KEEP toolName as "publish_draft"
+- If original tool is "create_draft_thread": KEEP toolName as "create_draft_thread"
+- NEVER use placeholder draft_ids - if you don't have a real one, switch to create_draft_thread
 
 CRITICAL CONTENT EXTRACTION:
 - When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
@@ -2104,27 +2121,30 @@ Transform the data now:`;
         logger.error(`❌ Failed to parse parameter conversion response: ${response.content}`);
         logger.error(`❌ Parse error: ${parseError}`);
         logger.info(`🔍 Falling back to preprocessedArgs: ${JSON.stringify(preprocessedArgs, null, 2)}`);
-        return preprocessedArgs; // 回退到预处理后的参数
+        return { toolName, params: preprocessedArgs }; // 回退到预处理后的参数
       }
 
       const convertedParams = conversion.inputParams || preprocessedArgs;
+      const finalToolName = conversion.toolName || toolName; // LLM可能会更改工具名
       
       logger.info(`🔍 === Parameter Conversion Results ===`);
+      logger.info(`🔍 Original Tool: ${toolName}`);
+      logger.info(`🔍 Final Tool: ${finalToolName}`);
       logger.info(`🔍 Original Args: ${JSON.stringify(originalArgs, null, 2)}`);
       logger.info(`🔍 Converted Params: ${JSON.stringify(convertedParams, null, 2)}`);
       logger.info(`🔍 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
       logger.info(`🔍 =====================================`);
       
-      return convertedParams;
+      return { toolName: finalToolName, params: convertedParams };
 
     } catch (error) {
       logger.error(`❌ Parameter conversion failed:`, error);
-      return originalArgs; // 回退到原始参数
+      return { toolName, params: originalArgs }; // 回退到原始参数
     }
   }
 
   /**
-   * Twitter工作流智能修复：检测并修复publish_draft无draft_id的问题
+   * Twitter工作流最后检查：如果LLM没有正确处理，进行最后的安全修复
    */
   private async handleTwitterWorkflowFix(
     mcpName: string,
@@ -2133,48 +2153,76 @@ Transform the data now:`;
     state: EnhancedWorkflowState,
     userId?: string
   ): Promise<{ finalToolName: string; finalInput: any }> {
-    // 只处理x-mcp的publish_draft操作
+    // LLM应该已经处理了大部分情况，这里只是最后的安全检查
     const normalizedMcpName = this.normalizeMCPName(mcpName);
-    if (normalizedMcpName !== 'x-mcp' || toolName !== 'publish_draft') {
+    if (normalizedMcpName !== 'x-mcp') {
       return { finalToolName: toolName, finalInput: input };
     }
 
-    logger.info(`🔍 Twitter工作流检查: 检测到publish_draft操作`);
+    logger.info(`🔍 Twitter工作流最后检查: ${toolName}`);
 
-    // 检查是否有有效的draft_id
-    const hasDraftId = input && input.draft_id && input.draft_id.trim() !== '';
-    
-    if (hasDraftId) {
-      logger.info(`✅ Twitter工作流检查: 发现有效的draft_id="${input.draft_id}"`);
-      return { finalToolName: toolName, finalInput: input };
+    // 如果是publish_draft但仍然有占位符draft_id，作为最后的安全网
+    if (toolName === 'publish_draft' && input.draft_id && this.isPlaceholderDraftId(input.draft_id)) {
+      logger.warn(`⚠️ Twitter工作流安全修复: LLM未能处理占位符draft_id="${input.draft_id}"，强制切换到create_draft_thread`);
+      
+      const content = this.extractContentFromState(state);
+      if (content) {
+        const optimizedContent = await this.optimizeContentForTwitterThread(content, userId);
+        return {
+          finalToolName: 'create_draft_thread',
+          finalInput: { content: optimizedContent }
+        };
+      }
     }
 
-    // 检查是否有内容需要发布
-    const hasContent = this.extractContentFromState(state);
-    if (!hasContent) {
-      logger.warn(`⚠️ Twitter工作流检查: 没有发现可发布的内容`);
-      return { finalToolName: toolName, finalInput: input };
+    return { finalToolName: toolName, finalInput: input };
+  }
+
+  /**
+   * 检测是否为占位符draft_id
+   */
+  private isPlaceholderDraftId(draftId: string): boolean {
+    if (!draftId) return false;
+    
+    // 常见的占位符模式
+    const placeholderPatterns = [
+      /^12345$/,                          // 常见占位符 "12345"
+      /^draft_?id$/i,                     // "draft_id" 或 "draftid"
+      /^placeholder/i,                    // "placeholder..."
+      /^example/i,                        // "example..."
+      /^sample/i,                         // "sample..."
+      /^test/i,                           // "test..."
+      /^dummy/i,                          // "dummy..."
+      /^\d{1,5}$/,                        // 简单数字 1-99999
+      /^[a-z]+_\d{1,3}$/i,               // "draft_1", "test_123" 等
+      /^[a-z]+\d{1,3}$/i,                // "draft1", "test123" 等
+      /^your_draft_id$/i,                 // "your_draft_id"
+      /^actual_draft_id$/i,               // "actual_draft_id"
+      /^\[.*\]$/,                         // "[Insert Draft ID]" 等
+      /^<.*>$/,                           // "<DRAFT_ID>" 等
+      /^\{.*\}$/                          // "{draft_id}" 等
+    ];
+    
+    for (const pattern of placeholderPatterns) {
+      if (pattern.test(draftId.trim())) {
+        return true;
+      }
     }
-
-    logger.info(`🔄 Twitter工作流修复: publish_draft缺少draft_id，切换到create_draft_thread`);
     
-    // 从state中提取内容并创建thread
-    const content = this.extractContentFromState(state);
+    // 检查是否包含占位符关键词
+    const placeholderKeywords = [
+      'insert', 'replace', 'actual', 'real', 'valid', 'specific',
+      'here', 'id', 'placeholder', 'example', 'sample', 'template'
+    ];
     
-    // 使用LLM优化内容为Twitter thread格式
-    const optimizedContent = await this.optimizeContentForTwitterThread(content || '', userId);
+    const lowerDraftId = draftId.toLowerCase();
+    for (const keyword of placeholderKeywords) {
+      if (lowerDraftId.includes(keyword)) {
+        return true;
+      }
+    }
     
-    const threadInput = {
-      content: optimizedContent
-    };
-
-    logger.info(`📝 Twitter工作流修复: 切换工具从 "${toolName}" 到 "create_draft_thread"`);
-    logger.info(`📝 Twitter工作流修复: 新输入参数: ${JSON.stringify(threadInput, null, 2)}`);
-
-    return { 
-      finalToolName: 'create_draft_thread', 
-      finalInput: threadInput 
-    };
+    return false;
   }
 
   /**
