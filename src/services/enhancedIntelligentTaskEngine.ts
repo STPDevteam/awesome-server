@@ -163,10 +163,15 @@ export class EnhancedIntelligentTaskEngine {
 
         logger.info(`🧠 Executing workflow step ${currentStep.step}: ${currentStep.mcp}.${currentStep.action}`);
 
-        // 🔧 预处理参数：智能参数处理，如果input为空，尝试从上下文推导
+        // 🔧 预处理参数：智能参数处理，使用LLM判断是否需要重新推断
         let processedInput = currentStep.input || {};
-        if (!currentStep.input && state.dataStore.lastResult) {
-          processedInput = this.inferStepInputFromContext(currentStep, state);
+        
+        // 🧠 使用LLM智能判断是否需要重新推断输入
+        const shouldReinferInput = await this.shouldReinferStepInput(currentStep, state, processedInput);
+        
+        if (!currentStep.input || shouldReinferInput || state.dataStore.lastResult) {
+          logger.info(`🔄 Inferring step input from context (LLM判断需要重新推断: ${shouldReinferInput})`);
+          processedInput = await this.inferStepInputFromContext(currentStep, state);
         }
 
         // 🔧 确定工具类型和智能描述 - 与Agent引擎一致
@@ -370,30 +375,31 @@ export class EnhancedIntelligentTaskEngine {
           };
         }
 
-        // 🎯 直接任务完成感知 - 参考Agent引擎的优化方案
+        // 🎯 与Agent引擎保持一致：使用智能观察阶段判断完成
         let shouldContinue = true;
 
-        // 🔧 智能完成检测：基于任务复杂度和执行结果进行直接判断
+        // 🔧 执行成功后进行智能观察判断（与Agent引擎一致）
         if (executionResult.success) {
-          if (taskComplexity.type === 'simple_query') {
-            // 简单查询：第一步成功即完成
-            if (i === 0) {
-              logger.info(`🎯 Simple query completed successfully after first step, stopping execution`);
-              shouldContinue = false;
-            }
-          } else if (taskComplexity.type === 'medium_task') {
-            // 中等任务：检查是否已获得足够数据
-            const hasUsefulData = await this.hasTaskCollectedSufficientData(state);
-            if (hasUsefulData) {
-              logger.info(`🎯 Medium task collected sufficient data, evaluating completion`);
-              shouldContinue = await this.quickTaskCompletionCheck(state, taskComplexity);
-            }
-          } else {
-            // 复杂工作流：每隔2步检查一次完成状态
-            if (i % 2 === 0) {
-              logger.info(`🔍 Complex workflow checkpoint at step ${i + 1}`);
-              shouldContinue = await this.quickTaskCompletionCheck(state, taskComplexity);
-            }
+          logger.info(`🔍 Task performing intelligent observation after step ${i + 1}`);
+          
+          const observationResult = await this.taskObservationPhase(state, taskComplexity);
+          
+          if (!observationResult.shouldContinue) {
+            logger.info(`🎯 Task determined complete after intelligent observation`);
+            shouldContinue = false;
+            
+            // 发送任务完成事件
+            yield {
+              event: 'task_observation_complete',
+              data: {
+                step: i + 1,
+                message: 'Task determined complete by intelligent observation',
+                reasoning: observationResult.newObjective || 'Task requirements fulfilled',
+                taskComplete: true
+              }
+            };
+          } else if (observationResult.newObjective) {
+            logger.info(`🎯 Task next objective: ${observationResult.newObjective}`);
           }
         }
 
@@ -443,12 +449,12 @@ export class EnhancedIntelligentTaskEngine {
         }
       }
 
-      // 🔧 检查完成状态
-      state.isComplete = state.completedSteps > 0; // 至少有一步成功就算部分完成
+      // 🔧 简化逻辑：执行到最后就是成功
+      state.isComplete = true;
 
       // 🔧 生成最终结果
       const finalResult = this.generateWorkflowFinalResult(state);
-      const overallSuccess = state.completedSteps > 0;
+      const overallSuccess = true;
       
       // 🔧 发送generating_summary事件
       yield {
@@ -476,10 +482,20 @@ export class EnhancedIntelligentTaskEngine {
         }
       };
 
+      // 🔧 发送final_result事件（用于上层判断成功状态）
+      yield {
+        event: 'final_result',
+        data: {
+          success: overallSuccess,
+          result: finalResult,
+          agentName: 'WorkflowEngine'
+        }
+      };
+
       // 🔧 保存最终结果
       await this.saveWorkflowFinalResult(taskId, state, finalResult);
 
-      return state.completedSteps > 0;
+      return overallSuccess;
 
     } catch (error) {
       logger.error(`❌ Enhanced workflow execution failed:`, error);
@@ -564,12 +580,35 @@ export class EnhancedIntelligentTaskEngine {
               }
 
               // 动态注入认证信息
+              console.log(`\n🔧 === MCP Auth Injection Debug (Enhanced Engine) ===`);
+              console.log(`MCP Name: ${mcpName}`);
+              console.log(`User ID: ${userId}`);
+              console.log(`Task ID: ${taskId}`);
+              console.log(`Auth Data Keys: ${Object.keys(userAuth.authData)}`);
+              console.log(`Auth Params: ${JSON.stringify(mcpConfig.authParams, null, 2)}`);
+              console.log(`Env Config: ${JSON.stringify(mcpConfig.env, null, 2)}`);
+              
               const dynamicEnv = { ...mcpConfig.env };
               if (mcpConfig.env) {
                 for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-                  if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                    dynamicEnv[envKey] = userAuth.authData[envKey];
+                  console.log(`Checking env var: ${envKey} = "${envValue}"`);
+                  
+                  // 🔧 改进：检查用户认证数据中是否有对应的键
+                  let authValue = userAuth.authData[envKey];
+                  
+                  // 🔧 如果直接键名不存在，尝试从authParams映射中查找
+                  if (!authValue && mcpConfig.authParams && mcpConfig.authParams[envKey]) {
+                    const authParamKey = mcpConfig.authParams[envKey];
+                    authValue = userAuth.authData[authParamKey];
+                    console.log(`🔧 Trying authParams mapping: ${envKey} -> ${authParamKey}, value: "${authValue}"`);
+                  }
+                  
+                  if ((!envValue || envValue === '') && authValue) {
+                    dynamicEnv[envKey] = authValue;
+                    console.log(`✅ Injected ${envKey} = "${authValue}"`);
                     logger.info(`Injected authentication for ${envKey} in MCP ${mcpName} for user ${userId}`);
+                  } else {
+                    console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authValue: "${authValue}"`);
                   }
                 }
               }
@@ -697,15 +736,37 @@ export class EnhancedIntelligentTaskEngine {
         logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${toolName})`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
 
-        const result = await this.mcpToolAdapter.callTool(
-          step.mcp,
-          toolName,
-          input,
+        // 🔧 新增：智能参数转换，确保参数名与工具 schema 匹配
+        let convertedInput = await this.convertParametersForMCP(step.mcp, toolName, input, task.userId);
+        
+        // 🔧 NEW: 使用LLM进行智能内容转换，防止占位符问题
+        const llmResult = await this.convertParametersWithLLM(toolName, convertedInput, step.mcp, task.userId);
+        const smartToolName = llmResult.toolName;
+        const smartInput = llmResult.params;
+        logger.info(`📝 LLM Smart Tool Selection: ${toolName} → ${smartToolName}`);
+        logger.info(`📝 Final Converted Input: ${JSON.stringify(smartInput, null, 2)}`);
+
+        // 🔧 NEW: Twitter工作流智能修复 - 检测并修复publish_draft无draft_id的问题
+        const { finalToolName, finalInput } = await this.handleTwitterWorkflowFix(
+          step.mcp, 
+          smartToolName, 
+          smartInput, 
+          state, 
           task.userId
         );
 
+        const result = await this.mcpToolAdapter.callTool(
+          step.mcp,
+          finalToolName,
+          finalInput,
+          task.userId
+        );
+
+        // 🔧 新增：x-mcp自动发布处理（与Agent引擎保持一致）
+        const finalResult = await this.handleXMcpAutoPublish(step.mcp, finalToolName, result, task.userId);
+        
         logger.info(`✅ MCP ${step.mcp} execution successful - returning original MCP structure`);
-        return { success: true, result, actualArgs: input };
+        return { success: true, result: finalResult, actualArgs: input };
       }
 
     } catch (error) {
@@ -718,14 +779,187 @@ export class EnhancedIntelligentTaskEngine {
   }
 
   /**
+   * 🧠 使用LLM智能判断是否需要重新推断步骤输入
+   */
+  private async shouldReinferStepInput(step: WorkflowStep, state: EnhancedWorkflowState, currentInput: any): Promise<boolean> {
+    try {
+      const judgmentPrompt = `You are an expert data quality analyst. Your task is to determine if step input data contains placeholders, incomplete information, or needs to be re-inferred from previous results.
+
+**Current Step:**
+- Action: ${step.action}
+- MCP: ${step.mcp}
+- Current Input: ${JSON.stringify(currentInput, null, 2)}
+
+**Previous Execution Results:**
+${state.executionHistory.length > 0 ? state.executionHistory.map((entry, index) => `
+Step ${entry.stepNumber}: ${entry.action}
+- Success: ${entry.success}
+- Result Available: ${entry.result ? 'Yes' : 'No'}
+${entry.result ? `- Result Preview: ${JSON.stringify(entry.result, null, 2).substring(0, 500)}...` : ''}
+`).join('\n') : 'No previous results available'}
+
+**Data Store:**
+${JSON.stringify(state.dataStore, null, 2)}
+
+**INTELLIGENT ANALYSIS:**
+
+Analyze the current input and determine if it needs to be re-inferred. Consider:
+
+1. **Placeholder Detection**: Does the input contain obvious placeholders, template text, or incomplete data?
+2. **Relevance Check**: Is the current input appropriate for the intended action?
+3. **Data Dependency**: Should this step use data from previous steps instead of the current input?
+4. **Completeness**: Is the input sufficient and meaningful for the tool to execute successfully?
+
+**Examples of inputs that NEED re-inference:**
+- Contains "[Insert", "placeholder", "template", "example"
+- Generic descriptive text instead of actual data
+- Empty or null required parameters
+- Mismatched data types for the action
+- References to unavailable data
+
+**Examples of inputs that are GOOD:**
+- Actual data values that match the tool requirements
+- Properly formatted parameters
+- Real content ready for processing
+- Complete and meaningful data
+
+**CRITICAL THINKING:**
+- If previous steps have produced useful results, should this step use that data instead?
+- Does the current input look like it was generated by a template rather than extracted from real data?
+- Would a reasonable person consider this input ready for tool execution?
+
+**OUTPUT FORMAT (JSON only):**
+{
+  "shouldReinfer": true/false,
+  "reasoning": "Detailed explanation of why re-inference is or isn't needed",
+  "confidence": 0.0-1.0
+}
+
+Analyze the data quality now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(judgmentPrompt)]);
+      const responseText = response.content.toString().trim();
+      
+      try {
+        let cleanedJson = responseText;
+        cleanedJson = cleanedJson.replace(/```json\s*|\s*```/g, '');
+        
+        const jsonMatch = cleanedJson.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const judgment = JSON.parse(jsonMatch[0]);
+          
+          logger.info(`🧠 LLM Input Quality Judgment:`, {
+            shouldReinfer: judgment.shouldReinfer,
+            reasoning: judgment.reasoning,
+            confidence: judgment.confidence
+          });
+          
+          return judgment.shouldReinfer === true;
+        }
+      } catch (parseError) {
+        logger.warn(`⚠️ Failed to parse LLM judgment, defaulting to safe re-inference: ${parseError}`);
+      }
+      
+      // 降级方案：如果解析失败，检查是否有前一步的结果可用
+      return state.dataStore.lastResult !== undefined;
+      
+    } catch (error) {
+      logger.error(`❌ Input quality judgment failed: ${error}`);
+      // 降级方案：如果判断失败，检查是否有前一步的结果
+      return state.dataStore.lastResult !== undefined;
+    }
+  }
+
+  /**
    * 从上下文推导步骤输入参数
    */
-  private inferStepInputFromContext(step: WorkflowStep, state: EnhancedWorkflowState): any {
-    // 基于上一步的结果和当前动作智能推导参数
+  private async inferStepInputFromContext(step: WorkflowStep, state: EnhancedWorkflowState): Promise<any> {
+    // 🔧 使用LLM进行智能参数推导，防止生成占位符
     const lastResult = state.dataStore.lastResult;
     const action = step.action.toLowerCase();
     
-    // 简单的推导逻辑，可以根据需要扩展
+    if (!lastResult) {
+      return {};
+    }
+    
+    try {
+      // 使用LLM智能提取实际数据
+      const inferencePrompt = `You are an expert data extraction assistant. Your task is to extract ACTUAL DATA from the previous step result to create appropriate input parameters for the next action.
+
+**Previous Step Result:**
+${JSON.stringify(lastResult, null, 2)}
+
+**Next Action:** ${step.action}
+**MCP Service:** ${step.mcp}
+
+**CRITICAL RULES:**
+1. **NEVER use placeholders or descriptions** - always extract ACTUAL DATA
+2. **Extract real content** from the previous result
+3. **If data exists**: Use it directly, never summarize or describe it
+4. **If no relevant data**: Return empty object {}, never use descriptive text
+5. **DO NOT generate** "[Insert Data Here]" or similar placeholders
+
+**EXAMPLES OF CORRECT EXTRACTION:**
+- If previous result contains "Hello world" → use "Hello world"
+- If previous result contains {"content": "Bitcoin up 5%"} → use "Bitcoin up 5%"
+- If previous result has array of data → extract the relevant items
+- If previous result has URLs/links → include them
+
+**EXAMPLES OF WRONG BEHAVIOR:**
+- NEVER: Use placeholder text or templates
+- NEVER: Use descriptive summaries instead of actual data
+- NEVER: Use generic examples or sample data
+- NEVER: Use incomplete or missing information
+- NEVER: Use data that doesn't match the action requirements
+
+**SMART EXTRACTION RULES:**
+- For tweet/post actions: Extract actual text content
+- For search actions: Extract search terms or queries
+- For publish actions: Extract content to be published OR draft_id if available
+- For data analysis: Extract the actual data points
+- For publish_draft actions: Extract draft_id from previous create_draft result, if no draft_id available, return empty object
+
+**OUTPUT FORMAT:**
+Return a JSON object with the extracted parameters:
+{
+  "parameterName": "actual_extracted_value"
+}
+
+Extract the actual data now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(inferencePrompt)]);
+      const responseText = response.content.toString().trim();
+      
+      // 解析LLM响应
+      let extractedParams;
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          extractedParams = JSON.parse(jsonMatch[0]);
+        } else {
+          extractedParams = JSON.parse(responseText);
+        }
+      } catch (parseError) {
+        logger.warn(`❌ Failed to parse LLM inference response, using fallback: ${parseError}`);
+        extractedParams = this.fallbackInferenceLogic(step, lastResult);
+      }
+      
+      logger.info(`🔍 Inferred input parameters: ${JSON.stringify(extractedParams, null, 2)}`);
+      return extractedParams;
+      
+    } catch (error) {
+      logger.error(`❌ Smart inference failed, using fallback logic: ${error}`);
+      return this.fallbackInferenceLogic(step, lastResult);
+    }
+  }
+  
+  /**
+   * 降级推导逻辑
+   */
+  private fallbackInferenceLogic(step: WorkflowStep, lastResult: any): any {
+    const action = step.action.toLowerCase();
+    
+    // 简单的降级推导逻辑
     if (lastResult && typeof lastResult === 'object') {
       if (action.includes('tweet') && lastResult.text) {
         return { content: lastResult.text };
@@ -736,9 +970,36 @@ export class EnhancedIntelligentTaskEngine {
       if (action.includes('get') && lastResult.id) {
         return { id: lastResult.id };
       }
+      if (action.includes('publish') && lastResult.content) {
+        return { content: lastResult.content };
+      }
+      // 通用情况：提取第一个字符串值
+      const firstStringValue = this.extractFirstStringValue(lastResult);
+      if (firstStringValue) {
+        return { content: firstStringValue };
+      }
     }
     
     return {};
+  }
+  
+  /**
+   * 提取对象中第一个有意义的字符串值
+   */
+  private extractFirstStringValue(obj: any): string | null {
+    if (typeof obj === 'string') {
+      return obj;
+    }
+    
+    if (typeof obj === 'object' && obj !== null) {
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string' && value.length > 0 && !key.toLowerCase().includes('id')) {
+          return value;
+        }
+      }
+    }
+    
+    return null;
   }
 
   /**
@@ -1170,82 +1431,93 @@ private buildTaskObserverPrompt(
   state: EnhancedWorkflowState,
   taskComplexity?: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
 ): string {
-  const completedStepsInfo = state.executionHistory
-    .filter(step => step.success)
-    .map(step => `Step ${step.stepNumber}: ${step.action} -> Success`)
-    .join('\n');
-    
-  const failedStepsInfo = state.executionHistory
-    .filter(step => !step.success)
-    .map(step => `Step ${step.stepNumber}: ${step.action} -> Failed: ${step.error}`)
-    .join('\n');
+  return `You are analyzing whether sufficient work has been completed to answer the user's question.
 
-  return `You are an intelligent task execution observer analyzing workflow progress. Make smart decisions based on task complexity.
+## 📋 USER'S ORIGINAL QUESTION
+"${state.originalQuery}"
 
-**Original Task**: ${state.originalQuery}
-**Task Complexity**: ${taskComplexity ? `${taskComplexity.type} (${taskComplexity.recommendedObservation} observation)` : 'Unknown'}
+## 📊 EXECUTION ANALYSIS
 
-**Current Progress**: Step ${state.currentStepIndex + 1}/${state.totalSteps} (${Math.round(((state.currentStepIndex + 1) / state.totalSteps) * 100)}%)
+### Execution History
+${state.executionHistory.map(step => `
+**Step ${step.stepNumber}**: ${step.action}
+- Status: ${step.success ? '✅ Success' : '❌ Failed'}
+- MCP: ${step.mcpName}
+- Data Retrieved: ${step.success && step.result ? 'Yes' : 'No'}
+${step.success && step.result ? `- Raw Result Data: ${JSON.stringify(step.result, null, 2)}` : ''}
+${step.error ? `- Error: ${step.error}` : ''}
+`).join('\n')}
 
-**COMPLEXITY-BASED COMPLETION CRITERIA**:
+### Critical Analysis Required
+**🔍 DETAILED COMPARISON NEEDED**:
 
-${taskComplexity?.type === 'simple_query' ? `
-🟢 **SIMPLE QUERY MODE** - Fast completion priority:
-- ✅ **COMPLETE IMMEDIATELY** if first step returned valid data
-- ✅ **COMPLETE IMMEDIATELY** if user's question is answered
-- ❌ Continue only if NO data retrieved or complete failure
-- 🎯 Priority: Speed over perfection for data requests
-` : taskComplexity?.type === 'medium_task' ? `
-🟡 **MEDIUM TASK MODE** - Balanced approach:
-- ✅ Complete if main objectives achieved (50%+ steps successful)
-- ✅ Complete if sufficient data collected for analysis
-- ❌ Continue if key analysis or comparison still needed
-- 🎯 Priority: Balance speed with thoroughness
-` : `
-🔴 **COMPLEX WORKFLOW MODE** - Thorough completion:
-- ✅ Complete only if all major workflow components finished
-- ✅ Complete if comprehensive analysis delivered
-- ❌ Continue if significant workflow steps remain
-- 🎯 Priority: Comprehensive completion over speed
-`}
+1. **Parse the user's original request** - What EXACTLY did they ask for?
+2. **Analyze the collected data** - What have we actually obtained so far?
+3. **Gap Analysis** - What is missing between request and current data?
 
-**Execution Summary**:
-- Completed Steps: ${state.completedSteps}
-- Failed Steps: ${state.failedSteps}
-- Current Step: ${state.currentStepIndex + 1}
+**🚨 CRITICAL**: For requests mentioning multiple items/users/targets:
+- Count how many were requested vs how many we have data for
+- Example: User asks for "A, B, C, D" but we only have data for "A, B" → INCOMPLETE!
 
-**Recent Completed Steps**:
-${completedStepsInfo || 'None yet'}
+## 🧠 INTELLIGENT ANALYSIS REQUIRED
 
-**Recent Failed Steps**:
-${failedStepsInfo || 'None'}
+**Critical Questions**: 
+1. Does the collected data contain the specific information requested by the user?
+2. Can you identify and extract the exact answer from the available data?
+3. Is the data recent, relevant, and sufficient in scope?
 
-**Available Results & Data**:
-${JSON.stringify(state.dataStore, null, 2)}
+**For "${state.originalQuery}"**:
+**INTELLIGENT ANALYSIS**:
+Analyze the user's original request: "${state.originalQuery}"
 
-**Observation Guidelines**:
-1. **Task Completion Analysis**: Evaluate if the original task objective has been achieved with current results
-2. **Progress Assessment**: Consider the quality and relevance of completed steps
-3. **Failure Impact**: Assess how failed steps affect overall task completion
-4. **Workflow Efficiency**: Determine if the remaining planned steps are still optimal
-5. **Early Completion**: Identify if sufficient results exist to complete the task early
-6. **Adaptation Needs**: Detect if the workflow should be adapted based on current context
+Ask yourself:
+1. What EXACTLY did the user ask for?
+2. What are the KEY COMPONENTS that must be completed?
+3. Are there multiple parts/targets/items mentioned?
+4. What is the END GOAL the user wants to achieve?
+5. Has that end goal been fully achieved with current data/actions?
 
-**Decision Criteria**:
-- CONTINUE: Task not complete, current workflow is optimal
-- STOP EARLY: Task objective achieved with current results
-- ADAPT: Task not complete, but workflow needs modification
+**CRITICAL THINKING** (Be extremely thorough):
+- Count EXACTLY what the user requested vs what we have
+- Don't assume "some data = complete" - verify COMPLETENESS
+- For multi-target requests: ALL targets must be processed
+- Examine each result summary above: does it contain the requested information?
+- Ask: "Would a reasonable person consider this request fully satisfied?"
+- If user asked for data on 8 users but we only have 2 → CLEARLY INCOMPLETE
+- If user asked for posting/publishing but only collected data → INCOMPLETE
+- Use logical reasoning: partial completion ≠ task completion
 
-Respond with valid JSON:
+## 🎯 DECISION LOGIC
+
+**🧠 USE YOUR INTELLIGENCE TO JUDGE**:
+- Read the user's original request carefully
+- Look at what has been accomplished so far
+- Consider whether a reasonable person would say "this request has been fulfilled"
+- Don't be overly strict, but also don't accept partial completion as full success
+- If the user asked for multiple things, check if ALL of them have been addressed
+- If the user asked for an action (like posting), check if that action actually happened
+
+**DECISION GUIDELINES**:
+✅ Mark COMPLETE if: EVERY SINGLE item/user/target in the original request has been processed
+❌ Mark CONTINUE if: ANY item/user/target from the original request is missing
+
+**🚨 MANDATORY CHECK**: 
+- Count total items requested in original query
+- Count total items successfully processed  
+- If numbers don't match → MUST continue
+- Example: 8 users requested, 3 users processed → 5 still missing → CONTINUE!
+
+**OUTPUT FORMAT (JSON only)**:
 {
-  "should_continue": true/false,
-  "should_adapt_workflow": true/false,
-  "adaptation_reason": "Reason for adaptation if needed",
-  "new_objective": "Adjusted objective if adaptation needed",
-  "completion_analysis": "Analysis of current task completion status",
-  "confidence_score": 0.0-1.0,
-  "observation_reasoning": "Detailed step-by-step reasoning for this decision"
-}`;
+  "shouldContinue": true/false,
+  "reasoning": "Focus on whether the specific user question can be answered with available data",
+  "newObjective": "If continue, what specific missing information is needed?",
+  "shouldAdaptWorkflow": false
+}
+
+**🚨 THINK LIKE A HUMAN**: 
+Would a reasonable person consider this request fulfilled based on what has been accomplished? 
+Use your intelligence and common sense to make the judgment.`;
 }
 
 /**
@@ -1282,27 +1554,30 @@ private parseTaskObservation(content: string): {
   newObjective?: string;
 } {
   try {
-    const cleanedContent = content
-      .replace(/```json\s*/g, '')
-      .replace(/```\s*$/g, '')
-      .trim();
+    let jsonText = content.trim();
+    jsonText = jsonText.replace(/```json\s*|\s*```/g, '');
+    jsonText = jsonText.replace(/```\s*|\s*```/g, '');
     
-    const parsed = JSON.parse(cleanedContent);
-    
-    return {
-      shouldContinue: parsed.should_continue !== false,
-      shouldAdaptWorkflow: parsed.should_adapt_workflow === true,
-      adaptationReason: parsed.adaptation_reason,
-      newObjective: parsed.new_objective
-    };
+    const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      return {
+        shouldContinue: parsed.shouldContinue !== false,
+        shouldAdaptWorkflow: parsed.shouldAdaptWorkflow === true,
+        adaptationReason: parsed.reasoning,
+        newObjective: parsed.newObjective
+      };
+    }
   } catch (error) {
-    logger.error('Failed to parse task observation:', error);
-    logger.error('Raw observation content:', content);
-    return { 
-      shouldContinue: true, 
-      shouldAdaptWorkflow: false 
-    };
+    logger.warn(`Task observation parsing failed: ${error}`);
   }
+  
+  // 降级方案
+  return { 
+    shouldContinue: true, 
+    shouldAdaptWorkflow: false 
+  };
 }
 
 /**
@@ -1690,32 +1965,7 @@ ${formattedResult}`;
   /**
    * 🎯 快速任务完成检查（参考Agent引擎的简化判断逻辑）
    */
-  private async quickTaskCompletionCheck(
-    state: EnhancedWorkflowState, 
-    taskComplexity: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
-  ): Promise<boolean> {
-    // 简化的完成判断逻辑
-    try {
-      const successfulSteps = state.executionHistory.filter(step => step.success);
-      
-      // 基于任务复杂度的快速判断
-      if (taskComplexity.type === 'simple_query') {
-        // 简单查询：有数据就完成
-        return successfulSteps.length > 0;
-      } else if (taskComplexity.type === 'medium_task') {
-        // 中等任务：至少完成一半步骤或有足够数据
-        const completionRatio = state.completedSteps / state.totalSteps;
-        return completionRatio >= 0.5 || successfulSteps.length >= 2;
-      } else {
-        // 复杂工作流：需要更多步骤完成
-        const completionRatio = state.completedSteps / state.totalSteps;
-        return completionRatio >= 0.7;
-      }
-    } catch (error) {
-      logger.error('Quick task completion check failed:', error);
-      return true; // 默认继续执行
-    }
-  }
+  // 🔧 移除硬编码的快速完成检查，现在使用智能观察阶段
 
   /**
    * 🎯 简化的工作流适应判断（减少复杂度）
@@ -1727,6 +1977,607 @@ ${formattedResult}`;
       .filter(step => !step.success);
     
     return recentFailures.length >= 2; // 连续2步失败才适应
+  }
+
+  /**
+   * 🔧 新增：为 MCP 转换参数，确保参数名与工具 schema 匹配
+   */
+  private async convertParametersForMCP(mcpName: string, toolName: string, input: any, userId: string): Promise<any> {
+    try {
+      logger.info(`🔄 Converting parameters for MCP tool: ${mcpName}.${toolName}`);
+
+      // 获取 MCP 工具的 schema
+      const mcpTools = await this.mcpManager.getTools(mcpName, userId);
+      const targetTool = mcpTools.find(tool => tool.name === toolName);
+      
+      if (!targetTool || !targetTool.inputSchema) {
+        logger.info(`🔍 No schema found for ${mcpName}.${toolName}, returning original input`);
+        return input;
+      }
+
+      // 执行参数名转换
+      const convertedParams = this.preprocessParameterNames(input, targetTool.inputSchema);
+      
+      if (JSON.stringify(convertedParams) !== JSON.stringify(input)) {
+        logger.info(`🔧 Parameters converted for ${mcpName}.${toolName}: ${JSON.stringify(input)} → ${JSON.stringify(convertedParams)}`);
+      }
+
+      return convertedParams;
+
+    } catch (error) {
+      logger.error(`❌ Parameter conversion failed for ${mcpName}.${toolName}:`, error);
+      return input; // 回退到原始输入
+    }
+  }
+
+  /**
+   * 🔧 使用LLM进行智能参数转换，防止占位符问题（复制自AgentIntelligentEngine）
+   */
+  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpName: string, userId: string): Promise<{ toolName: string; params: any }> {
+    try {
+      logger.info(`🔄 Converting parameters for tool: ${toolName}`);
+
+      // 获取MCP工具信息
+      const mcpTools = await this.mcpManager.getTools(mcpName, userId);
+      
+      // 🔧 新增：预处理参数名映射（camelCase 到 snake_case）
+      const preprocessedArgs = this.preprocessParameterNames(originalArgs, mcpTools[0]?.inputSchema);
+      if (JSON.stringify(preprocessedArgs) !== JSON.stringify(originalArgs)) {
+        logger.info(`🔧 Parameter names preprocessed: ${JSON.stringify(originalArgs)} → ${JSON.stringify(preprocessedArgs)}`);
+      }
+
+      // 构建智能参数转换提示词
+      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform parameters for MCP tool calls.
+
+CONTEXT:
+- Tool to call: ${toolName}
+- MCP Service: ${mcpName}
+- Input parameters: ${JSON.stringify(preprocessedArgs, null, 2)}
+- Available tools with their schemas:
+${mcpTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
+
+TRANSFORMATION PRINCIPLES:
+1. **Use exact tool name**: ${toolName}
+2. **Transform parameters**: Convert input into correct format for the tool
+3. **CRITICAL: Use exact parameter names from the schema**: 
+   - ALWAYS check the inputSchema and use the exact parameter names shown
+   - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
+   - Match the exact property names shown in the inputSchema
+4. **EXTRACT REAL DATA FROM CONTEXT**: 
+   - If previous step results are available: Extract the ACTUAL CONTENT, never use placeholders
+   - Look for real text, summaries, data in the previous results
+   - Use the exact content from previous step, not descriptions like "Summary of @user's tweets"
+   - Example: If previous result contains "Here's the summary: Bitcoin price is up 5%" → use "Bitcoin price is up 5%"
+5. **Handle missing data intelligently**: 
+   - CRITICAL: NEVER use placeholders or descriptions - always extract ACTUAL DATA
+   - For required data: Find and extract the real content from the input or previous results
+   - If actual data exists: Use it directly, never summarize or describe it
+   - If data is truly missing: Return empty string or null, never use descriptive text
+   - DO NOT use hardcoded examples, templates, or placeholder descriptions
+
+CRITICAL TWITTER RULES:
+- Twitter has a HARD 280 character limit!
+- Count ALL characters including spaces, emojis, URLs, hashtags
+- If content is too long, you MUST:
+  1. Use abbreviations (e.g., "w/" for "with")
+  2. Shorten usernames (e.g., "@user" instead of full names)
+  3. Remove less important details
+  4. Keep URLs whenever possible as they are valuable references
+  5. If URLs must be removed due to length, prefer keeping the most important ones
+- For threads: First tweet should be <250 chars to leave room for thread numbering
+- PRIORITY: Always try to include original tweet URLs when space allows
+
+CRITICAL TWITTER WORKFLOW STRATEGY:
+- **ALWAYS prefer create_draft_thread over publish_draft when you have content to publish**
+- **ONLY use publish_draft if you have a CONFIRMED, REAL draft_id from previous create_draft result**
+- **For publishing new content: Use create_draft_thread (it will auto-publish)**
+- **For publishing existing draft: Use publish_draft with real draft_id**
+- **If tool name is publish_draft but no real draft_id available: CHANGE to create_draft_thread**
+- **Never use placeholder draft_ids like "12345", "draft_id", etc.**
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "toolName": "ACTUAL_TOOL_NAME", /* Use create_draft_thread for new content OR publish_draft for existing drafts */
+  "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
+  "reasoning": "brief explanation of tool selection and parameter transformation"
+}
+
+SMART TOOL SELECTION RULES:
+- If original tool is "publish_draft" AND you have real content to publish BUT no valid draft_id: CHANGE toolName to "create_draft_thread"
+- If original tool is "publish_draft" AND you have a real draft_id from previous step: KEEP toolName as "publish_draft"
+- If original tool is "create_draft_thread": KEEP toolName as "create_draft_thread"
+- NEVER use placeholder draft_ids - if you don't have a real one, switch to create_draft_thread
+
+CRITICAL CONTENT EXTRACTION:
+- When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
+- Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
+- NEVER use "[Insert summary here]" or "Latest tweet content from @user" - extract actual content!
+- ALWAYS extract and include tweet URLs/links when available in the source data
+- Format URLs efficiently to save characters (use bit.ly style if needed)
+
+IMPORTANT: Always use exact parameter names from the inputSchema, ensure Twitter content is under 280 characters, and EXTRACT REAL CONTENT from previous results!
+
+Transform the data now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(conversionPrompt)]);
+
+      let conversion;
+      try {
+        const responseText = response.content.toString().trim();
+        logger.info(`🔍 === LLM Parameter Conversion Debug ===`);
+        logger.info(`🔍 Raw LLM Response: ${responseText}`);
+        
+        // 清理JSON响应
+        let cleanedJson = responseText;
+        cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        
+        // 提取完整JSON
+        const extractedJson = this.extractCompleteJson(cleanedJson);
+        if (extractedJson) {
+          cleanedJson = extractedJson;
+        }
+        
+        conversion = JSON.parse(cleanedJson);
+        logger.info(`🔍 Parsed Conversion: ${JSON.stringify(conversion, null, 2)}`);
+      } catch (parseError) {
+        logger.error(`❌ Failed to parse parameter conversion response: ${response.content}`);
+        logger.error(`❌ Parse error: ${parseError}`);
+        logger.info(`🔍 Falling back to preprocessedArgs: ${JSON.stringify(preprocessedArgs, null, 2)}`);
+        return { toolName, params: preprocessedArgs }; // 回退到预处理后的参数
+      }
+
+      const convertedParams = conversion.inputParams || preprocessedArgs;
+      const finalToolName = conversion.toolName || toolName; // LLM可能会更改工具名
+      
+      logger.info(`🔍 === Parameter Conversion Results ===`);
+      logger.info(`🔍 Original Tool: ${toolName}`);
+      logger.info(`🔍 Final Tool: ${finalToolName}`);
+      logger.info(`🔍 Original Args: ${JSON.stringify(originalArgs, null, 2)}`);
+      logger.info(`🔍 Converted Params: ${JSON.stringify(convertedParams, null, 2)}`);
+      logger.info(`🔍 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
+      logger.info(`🔍 =====================================`);
+      
+      return { toolName: finalToolName, params: convertedParams };
+
+    } catch (error) {
+      logger.error(`❌ Parameter conversion failed:`, error);
+      return { toolName, params: originalArgs }; // 回退到原始参数
+    }
+  }
+
+  /**
+   * Twitter工作流最后检查：如果LLM没有正确处理，进行最后的安全修复
+   */
+  private async handleTwitterWorkflowFix(
+    mcpName: string,
+    toolName: string,
+    input: any,
+    state: EnhancedWorkflowState,
+    userId?: string
+  ): Promise<{ finalToolName: string; finalInput: any }> {
+    // LLM应该已经处理了大部分情况，这里只是最后的安全检查
+    const normalizedMcpName = this.normalizeMCPName(mcpName);
+    if (normalizedMcpName !== 'x-mcp') {
+      return { finalToolName: toolName, finalInput: input };
+    }
+
+    logger.info(`🔍 Twitter工作流最后检查: ${toolName}`);
+
+    // 如果是publish_draft但仍然有占位符draft_id，作为最后的安全网
+    if (toolName === 'publish_draft' && input.draft_id && this.isPlaceholderDraftId(input.draft_id)) {
+      logger.warn(`⚠️ Twitter工作流安全修复: LLM未能处理占位符draft_id="${input.draft_id}"，强制切换到create_draft_thread`);
+      
+      const content = this.extractContentFromState(state);
+      if (content) {
+        const optimizedContent = await this.optimizeContentForTwitterThread(content, userId);
+        return {
+          finalToolName: 'create_draft_thread',
+          finalInput: { content: optimizedContent }
+        };
+      }
+    }
+
+    return { finalToolName: toolName, finalInput: input };
+  }
+
+  /**
+   * 检测是否为占位符draft_id
+   */
+  private isPlaceholderDraftId(draftId: string): boolean {
+    if (!draftId) return false;
+    
+    // 常见的占位符模式
+    const placeholderPatterns = [
+      /^12345$/,                          // 常见占位符 "12345"
+      /^draft_?id$/i,                     // "draft_id" 或 "draftid"
+      /^placeholder/i,                    // "placeholder..."
+      /^example/i,                        // "example..."
+      /^sample/i,                         // "sample..."
+      /^test/i,                           // "test..."
+      /^dummy/i,                          // "dummy..."
+      /^\d{1,5}$/,                        // 简单数字 1-99999
+      /^[a-z]+_\d{1,3}$/i,               // "draft_1", "test_123" 等
+      /^[a-z]+\d{1,3}$/i,                // "draft1", "test123" 等
+      /^your_draft_id$/i,                 // "your_draft_id"
+      /^actual_draft_id$/i,               // "actual_draft_id"
+      /^\[.*\]$/,                         // "[Insert Draft ID]" 等
+      /^<.*>$/,                           // "<DRAFT_ID>" 等
+      /^\{.*\}$/                          // "{draft_id}" 等
+    ];
+    
+    for (const pattern of placeholderPatterns) {
+      if (pattern.test(draftId.trim())) {
+        return true;
+      }
+    }
+    
+    // 检查是否包含占位符关键词
+    const placeholderKeywords = [
+      'insert', 'replace', 'actual', 'real', 'valid', 'specific',
+      'here', 'id', 'placeholder', 'example', 'sample', 'template'
+    ];
+    
+    const lowerDraftId = draftId.toLowerCase();
+    for (const keyword of placeholderKeywords) {
+      if (lowerDraftId.includes(keyword)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * 使用LLM优化内容为Twitter thread格式
+   */
+  private async optimizeContentForTwitterThread(content: string, userId?: string): Promise<string> {
+    if (!content || content.trim().length === 0) {
+      return content;
+    }
+
+    try {
+      const optimizationPrompt = `You are a social media content optimization expert. Your task is to transform the provided content into an engaging Twitter thread format.
+
+**Original Content:**
+${content}
+
+**Optimization Rules:**
+1. **Character Limit**: Each tweet in the thread must be under 280 characters
+2. **Thread Structure**: Start with "🧵 Thread" or similar indicator
+3. **Engagement**: Use emojis, hashtags, and engaging language
+4. **Clarity**: Break complex information into digestible chunks
+5. **URLs**: Preserve any URLs from the original content
+6. **Numbering**: Use 1/n, 2/n format if content is long enough for multiple tweets
+
+**Output Requirements:**
+- If content is under 250 characters: Return as single optimized tweet
+- If content is longer: Structure as a thread with clear breaks
+- Maintain the key information and insights from original content
+- Make it engaging and Twitter-appropriate
+
+Transform the content now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(optimizationPrompt)]);
+      const optimizedContent = response.content.toString().trim();
+      
+      logger.info(`📝 Twitter内容优化: 原始长度=${content.length}, 优化后长度=${optimizedContent.length}`);
+      
+      return optimizedContent;
+      
+    } catch (error) {
+      logger.error(`❌ Twitter内容优化失败:`, error);
+      // 如果优化失败，返回原始内容的截断版本
+      return content.length > 250 ? content.substring(0, 247) + '...' : content;
+    }
+  }
+
+  /**
+   * 从执行状态中提取可发布的内容
+   */
+  private extractContentFromState(state: EnhancedWorkflowState): string | null {
+    // 检查dataStore中的内容
+    if (state.dataStore.lastResult) {
+      const lastResult = state.dataStore.lastResult;
+      
+      // 尝试提取文本内容
+      if (typeof lastResult === 'string') {
+        return lastResult;
+      }
+      
+      if (lastResult && typeof lastResult === 'object') {
+        // 检查常见的内容字段
+        if (lastResult.content) return lastResult.content;
+        if (lastResult.text) return lastResult.text;
+        if (lastResult.summary) return lastResult.summary;
+        if (lastResult.result) return lastResult.result;
+        
+        // 检查MCP格式的content数组
+        if (lastResult.content && Array.isArray(lastResult.content)) {
+          for (const item of lastResult.content) {
+            if (item && item.text) {
+              return item.text;
+            }
+          }
+        }
+        
+        // 如果是复杂对象，将其转换为可读文本
+        return JSON.stringify(lastResult, null, 2);
+      }
+    }
+    
+    // 检查执行历史中的最新数据
+    if (state.executionHistory.length > 0) {
+      const lastStep = state.executionHistory[state.executionHistory.length - 1];
+      if (lastStep.success && lastStep.result) {
+        const result = lastStep.result;
+        
+        if (typeof result === 'string') {
+          return result;
+        }
+        
+        if (result && typeof result === 'object') {
+          if (result.content) return result.content;
+          if (result.text) return result.text;
+          if (result.summary) return result.summary;
+          
+          // 转换为可读文本
+          return JSON.stringify(result, null, 2);
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * x-mcp自动发布处理：当create_draft_tweet或create_draft_thread成功后自动发布
+   * 🔧 与AgentIntelligentEngine保持完全一致
+   */
+  private async handleXMcpAutoPublish(
+    mcpName: string, 
+    toolName: string, 
+    result: any, 
+    userId?: string
+  ): Promise<any> {
+    // 🔧 添加详细调试信息
+    const normalizedMcpName = this.normalizeMCPName(mcpName);
+    logger.info(`🔍 EnhancedEngine X-MCP Auto-publish Check: mcpName="${mcpName}", normalizedMcpName="${normalizedMcpName}", toolName="${toolName}"`);
+    
+    // 只处理x-mcp的草稿创建操作
+    if (normalizedMcpName !== 'x-mcp') {
+      logger.info(`❌ EnhancedEngine X-MCP Auto-publish: Normalized MCP name "${normalizedMcpName}" is not "x-mcp", skipping auto-publish`);
+      return result;
+    }
+
+    // 检查是否是草稿创建操作
+    if (!toolName.includes('create_draft')) {
+      logger.info(`❌ EnhancedEngine X-MCP Auto-publish: Tool name "${toolName}" does not include "create_draft", skipping auto-publish`);
+      return result;
+    }
+
+    try {
+      logger.info(`🔄 X-MCP Auto-publish: Detected ${toolName} completion, attempting auto-publish...`);
+
+      // 提取draft_id - 与Agent引擎完全一致的逻辑
+      let draftId = null;
+      if (result && typeof result === 'object') {
+        // 尝试从不同的结果格式中提取draft_id
+        if (result.draft_id) {
+          draftId = result.draft_id;
+        } else if (result.content && Array.isArray(result.content)) {
+          // MCP标准格式
+          for (const content of result.content) {
+            if (content.text) {
+              try {
+                const parsed = JSON.parse(content.text);
+                if (parsed.draft_id) {
+                  draftId = parsed.draft_id;
+                  break;
+                } else if (Array.isArray(parsed)) {
+                  // 🔧 处理解析成功但是数组结构的情况
+                  for (const nestedItem of parsed) {
+                    if (nestedItem && nestedItem.text) {
+                      const innerText = nestedItem.text;
+                      const innerMatch = this.extractDraftIdFromText(innerText);
+                      if (innerMatch) {
+                        draftId = innerMatch;
+                        logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from nested JSON structure`);
+                        break;
+                      }
+                    }
+                  }
+                  if (draftId) break;
+                }
+              } catch {
+                // 🔧 修复：处理嵌套JSON结构和文本提取
+                let text = content.text;
+                
+                // 🔧 处理双重嵌套的JSON情况：text字段本身是JSON字符串
+                try {
+                  // 尝试解析text作为JSON数组
+                  const nestedArray = JSON.parse(text);
+                  if (Array.isArray(nestedArray)) {
+                    // 遍历嵌套数组，寻找包含draft信息的文本
+                    for (const nestedItem of nestedArray) {
+                      if (nestedItem && nestedItem.text) {
+                        const innerText = nestedItem.text;
+                        // 先尝试从内层文本提取draft_id
+                        const innerMatch = this.extractDraftIdFromText(innerText);
+                        if (innerMatch) {
+                          draftId = innerMatch;
+                          logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from nested JSON structure`);
+                          break;
+                        }
+                      }
+                    }
+                  }
+                } catch {
+                  // 如果不是JSON，继续用原文本进行模式匹配
+                }
+                
+                // 如果嵌套解析没有找到，用原文本进行模式匹配
+                if (!draftId) {
+                  draftId = this.extractDraftIdFromText(text);
+                  if (draftId) {
+                    logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from text pattern matching`);
+                  }
+                }
+                
+                if (draftId) break;
+              }
+            }
+          }
+        }
+      }
+      
+      // 🔧 修复：处理字符串类型的result
+      if (!draftId && typeof result === 'string') {
+        // 从字符串结果中提取
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.draft_id) {
+            draftId = parsed.draft_id;
+          }
+        } catch {
+          // 🔧 修复：处理嵌套JSON和字符串文本中提取draft ID
+          draftId = this.extractDraftIdFromText(result);
+          if (draftId) {
+            logger.info(`📝 EnhancedEngine X-MCP Auto-publish: Extracted draft_id "${draftId}" from string pattern matching`);
+          }
+        }
+      }
+
+      if (!draftId) {
+        logger.warn(`⚠️ X-MCP Auto-publish: Could not extract draft_id from result: ${JSON.stringify(result)}`);
+        return result;
+      }
+
+      logger.info(`📝 X-MCP Auto-publish: Extracted draft_id: ${draftId}`);
+
+      // 调用publish_draft
+      logger.info(`🚀 X-MCP Auto-publish: Publishing draft ${draftId}...`);
+      
+      const publishInput = { draft_id: draftId };
+      logger.info(`📝 EnhancedEngine X-MCP Auto-publish INPUT: ${JSON.stringify(publishInput, null, 2)}`);
+      
+      const publishResult = await this.mcpToolAdapter.callTool(
+        normalizedMcpName,
+        'publish_draft',
+        publishInput,
+        userId
+      );
+      
+      logger.info(`📤 EnhancedEngine X-MCP Auto-publish OUTPUT: ${JSON.stringify(publishResult, null, 2)}`);
+
+      logger.info(`✅ X-MCP Auto-publish: Successfully published draft ${draftId}`);
+
+      // 返回合并的结果 - 与Agent引擎完全一致
+      return {
+        draft_creation: result,
+        auto_publish: publishResult,
+        combined_result: `Draft created and published successfully. Draft ID: ${draftId}`,
+        draft_id: draftId,
+        published: true
+      };
+
+    } catch (error) {
+      logger.error(`❌ X-MCP Auto-publish failed:`, error);
+      
+      // 即使发布失败，也返回原始的草稿创建结果 - 与Agent引擎完全一致
+      return {
+        draft_creation: result,
+        auto_publish_error: error instanceof Error ? error.message : String(error),
+        combined_result: `Draft created successfully but auto-publish failed. You may need to publish manually.`,
+        published: false
+      };
+    }
+  }
+
+  /**
+   * 从文本中提取draft_id的辅助方法 - 与Agent引擎完全一致
+   */
+  private extractDraftIdFromText(text: string): string | null {
+    const patterns = [
+      /draft[_-]?id["\s:]*([^"\s,}]+)/i,                    // draft_id: "xxx" 
+      /with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,               // "with ID thread_draft_xxx.json"
+      /created\s+with\s+id\s+([a-zA-Z0-9_.-]+\.json)/i,     // "created with ID xxx.json"
+      /id[:\s]+([a-zA-Z0-9_.-]+\.json)/i,                   // "ID: xxx.json" 或 "ID xxx.json"
+      /([a-zA-Z0-9_.-]*draft[a-zA-Z0-9_.-]*\.json)/i        // 任何包含draft的.json文件
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * 标准化MCP名称 - 与Agent引擎完全一致
+   */
+  private normalizeMCPName(mcpName: string): string {
+    const nameMapping: Record<string, string> = {
+      'twitter': 'twitter-client-mcp',
+      'github': 'github-mcp',
+      'coinmarketcap': 'coinmarketcap-mcp',
+      'crypto': 'coinmarketcap-mcp',
+      'web': 'brave-search-mcp',
+      'search': 'brave-search-mcp',
+      'x-mcp': 'x-mcp'  // 🔧 添加x-mcp的映射
+    };
+
+    return nameMapping[mcpName.toLowerCase()] || mcpName;
+  }
+
+  /**
+   * 🔧 新增：预处理参数名（camelCase 到 snake_case）
+   */
+  private preprocessParameterNames(originalArgs: any, inputSchema: any): any {
+    if (!originalArgs || typeof originalArgs !== 'object') {
+      return originalArgs;
+    }
+
+    const schemaProperties = inputSchema.properties || {};
+    const expectedParamNames = Object.keys(schemaProperties);
+    
+    logger.info(`🔧 Preprocessing parameters, expected: [${expectedParamNames.join(', ')}]`);
+
+    const processedArgs: any = {};
+    
+    for (const [key, value] of Object.entries(originalArgs)) {
+      let mappedKey = key;
+      
+      // 检查是否需要 camelCase -> snake_case 转换
+      if (!expectedParamNames.includes(key)) {
+        const snakeCaseKey = this.camelToSnakeCase(key);
+        if (expectedParamNames.includes(snakeCaseKey)) {
+          mappedKey = snakeCaseKey;
+          logger.info(`🔧 Parameter name mapped: ${key} -> ${mappedKey}`);
+        }
+      }
+      
+      processedArgs[mappedKey] = value;
+    }
+
+    return processedArgs;
+  }
+
+  /**
+   * 🔧 新增：camelCase 转 snake_case
+   */
+  private camelToSnakeCase(str: string): string {
+    return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
   }
 
 

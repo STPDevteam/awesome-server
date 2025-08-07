@@ -25,7 +25,7 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
-        category: 'Dev Tool',
+        category: 'Browser Automation',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
         githubUrl: 'https://github.com/microsoft/playwright',
         authRequired: false,
@@ -395,13 +395,13 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/base-mcp/build/index.js`],
         env: {
-            COINBASE_API_KEY_NAME: process.env.COINBASE_API_KEY_NAME || '',
-            COINBASE_API_PRIVATE_KEY: process.env.COINBASE_API_PRIVATE_KEY || '',
-            SEED_PHRASE: process.env.SEED_PHRASE || '',
-            COINBASE_PROJECT_ID: process.env.COINBASE_PROJECT_ID || '',
-            ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY || '',
-            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
-            CHAIN_ID: process.env.CHAIN_ID || '',
+            COINBASE_API_KEY_NAME: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            COINBASE_API_PRIVATE_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            SEED_PHRASE: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            COINBASE_PROJECT_ID: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            ALCHEMY_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            OPENROUTER_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            CHAIN_ID: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Chain RPC',
@@ -1077,7 +1077,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js`],
         env: {
-            COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || ''
+            COINGECKO_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
@@ -1400,7 +1400,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: ['/home/ubuntu/mcp-tools/coinmarketcap-mcp/index.js'],
         env: {
-            COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY || '',
+            COINMARKETCAP_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
             SUBSCRIPTION_LEVEL: "Basic",
             PORT: "3002"
         },
@@ -1815,83 +1815,6 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        name: 'dune-mcp-v1',
-        description: 'Dune Analytics MCP server v1 - blockchain data queries and dashboards (ekailabs implementation)',
-        command: SYSTEM_COMMANDS.NODE_PATH,
-        args: [`/home/ubuntu/mcp-tools/dune-mcp-server/dist/index.js`],
-        env: {
-            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
-        },
-        connected: false,
-        category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
-        githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
-        authRequired: true,
-        authParams: {
-            DUNE_API_KEY: "DUNE_API_KEY"
-        },
-        // 🔧 新增：基于Dune Analytics的预定义工具信息
-        predefinedTools: [
-            {
-                name: 'execute_query',
-                description: 'Execute a Dune Analytics query and return results',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        query_id: {
-                            type: 'number',
-                            description: 'Dune query ID to execute',
-                            required: true
-                        },
-                        parameters: {
-                            type: 'object',
-                            description: 'Query parameters as key-value pairs',
-                            required: false
-                        }
-                    },
-                    required: ['query_id']
-                }
-            },
-            {
-                name: 'get_query_results',
-                description: 'Get results from a previously executed query',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        execution_id: {
-                            type: 'string',
-                            description: 'Execution ID of the query',
-                            required: true
-                        }
-                    },
-                    required: ['execution_id']
-                }
-            },
-            {
-                name: 'get_latest_results',
-                description: 'Get the latest results for a query',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        query_id: {
-                            type: 'number',
-                            description: 'Dune query ID',
-                            required: true
-                        },
-                        limit: {
-                            type: 'number',
-                            description: 'Number of rows to return',
-                            required: false,
-                            default: 100
-                        }
-                    },
-                    required: ['query_id']
-                }
-            }
-        ]
-    },
-
-    {
         name: 'chainlink-mcp',
         description: 'ChainLink price feeds and oracle data',
         command: SYSTEM_COMMANDS.NODE_PATH,
@@ -2043,7 +1966,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: [`/home/ubuntu/mcp-tools/rug-check-mcp/main.py`],
         env: {
-            SOLSNIFFER_API_KEY: process.env.SOLSNIFFER_API_KEY || ''
+            SOLSNIFFER_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
@@ -2206,7 +2129,7 @@ export const predefinedMCPs: MCPService[] = [
             'ghcr.io/github/github-mcp-server'
         ],
         env: {
-            GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || '',
+            GITHUB_PERSONAL_ACCESS_TOKEN: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Dev Tool',
@@ -2596,19 +2519,6 @@ export const predefinedMCPs: MCPService[] = [
                 }
             }
         ]
-    },
-    {
-        name: 'playwright-mcp',
-        description: 'Playwright browser automation and testing',
-        command: SYSTEM_COMMANDS.NPX_PATH,
-        args: ['-y', '@playwright/mcp@latest'],
-        env: {},
-        connected: false,
-        category: 'Dev Tool',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
-        githubUrl: 'https://github.com/microsoft/playwright-mcp',
-        authRequired: false,
-        authParams: {}
     },
     {
         name: 'blender-mcp',
@@ -3037,8 +2947,8 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/binance-mcp/build/index.js`],
         env: {
-            BINANCE_API_KEY: process.env.BINANCE_API_KEY || '',
-            BINANCE_API_SECRET: process.env.BINANCE_API_SECRET || ''
+            BINANCE_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            BINANCE_API_SECRET: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Trading',
@@ -3056,8 +2966,8 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js`],
         env: {
-            INFURA_KEY: process.env.UNISWAP_INFURA_KEY || '',
-            WALLET_PRIVATE_KEY: process.env.UNISWAP_WALLET_PRIVATE_KEY || ''
+            INFURA_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            WALLET_PRIVATE_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Trading',
@@ -3088,7 +2998,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js`],
         env: {
-            HELIUS_RPC_URL: process.env.HELIUS_RPC_URL || ''
+            HELIUS_RPC_URL: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Trading',
@@ -3110,7 +3020,7 @@ export const predefinedMCPs: MCPService[] = [
             "run",
             "mcp-discord"],
         env: {
-            DISCORD_TOKEN: process.env.DISCORD_TOKEN || ''
+            DISCORD_TOKEN: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -3144,14 +3054,14 @@ export const predefinedMCPs: MCPService[] = [
         args: [`/home/ubuntu/mcp-tools/twitter-client-mcp/dist/index.js`],
         env: {
             // Primary API v2 credentials for advanced functionality
-            TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
-            TWITTER_API_SECRET_KEY: process.env.TWITTER_API_SECRET_KEY || '',
-            TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || '',
+            TWITTER_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_API_SECRET_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN_SECRET: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
             // Optional basic auth (leave empty to use API-only mode)
-            TWITTER_USERNAME: process.env.TWITTER_USERNAME || '',
-            TWITTER_PASSWORD: process.env.TWITTER_PASSWORD || '',
-            TWITTER_EMAIL: process.env.TWITTER_EMAIL || ''
+            TWITTER_USERNAME: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_PASSWORD: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_EMAIL: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -3441,10 +3351,10 @@ export const predefinedMCPs: MCPService[] = [
             "run",
             "x-mcp"],
         env: {
-            TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
-            TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
-            TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
+            TWITTER_API_KEY: '', // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_API_SECRET: '', // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN: '', // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN_SECRET: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -3456,7 +3366,348 @@ export const predefinedMCPs: MCPService[] = [
             TWITTER_API_SECRET: "TWITTER_API_SECRET",
             TWITTER_ACCESS_TOKEN: "TWITTER_ACCESS_TOKEN",
             TWITTER_ACCESS_TOKEN_SECRET: "TWITTER_ACCESS_TOKEN_SECRET"
-        }
+        },
+        // 🔧 新增：预定义工具信息
+        predefinedTools: [
+            // 草稿管理工具
+            {
+                name: 'create_draft_tweet',
+                description: 'Create a draft tweet for later publishing',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        content: {
+                            type: 'string',
+                            description: 'The content of the tweet',
+                            required: true
+                        }
+                    },
+                    required: ['content']
+                }
+            },
+            {
+                name: 'create_draft_thread',
+                description: 'Create a draft tweet thread for later publishing',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        contents: {
+                            type: 'array',
+                            items: { type: 'string' },
+                            description: 'An array of tweet contents for the thread',
+                            required: true
+                        }
+                    },
+                    required: ['contents']
+                }
+            },
+            {
+                name: 'list_drafts',
+                description: 'List all draft tweets and threads',
+                parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: 'publish_draft',
+                description: 'Publish a draft tweet or thread',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        draft_id: {
+                            type: 'string',
+                            description: 'ID of the draft to publish',
+                            required: true
+                        }
+                    },
+                    required: ['draft_id']
+                }
+            },
+            {
+                name: 'delete_draft',
+                description: 'Delete a draft tweet or thread',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        draft_id: {
+                            type: 'string',
+                            description: 'ID of the draft to delete',
+                            required: true
+                        }
+                    },
+                    required: ['draft_id']
+                }
+            },
+            // 用户资料工具
+            {
+                name: 'profileByUsername',
+                description: 'Get detailed Twitter profile information for a specific username',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Twitter username (without @ symbol)',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'myProfile',
+                description: 'Get the authenticated user\'s Twitter profile information',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        check: {
+                            type: 'boolean',
+                            description: 'Must be true to confirm the action',
+                            required: true
+                        }
+                    },
+                    required: ['check']
+                }
+            },
+            // 推文发布工具
+            {
+                name: 'sendTweet',
+                description: 'Post a new tweet or reply to an existing tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        text: {
+                            type: 'string',
+                            description: 'Tweet content (max 280 characters)',
+                            required: true
+                        },
+                        replyToId: {
+                            type: 'string',
+                            description: 'ID of the tweet to reply to (optional)',
+                            required: false
+                        }
+                    },
+                    required: ['text']
+                }
+            },
+            // 搜索工具
+            {
+                name: 'searchTweets',
+                description: 'Search for tweets using Twitter\'s search API',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        query: {
+                            type: 'string',
+                            description: 'Search query string',
+                            required: true
+                        },
+                        maxResults: {
+                            type: 'number',
+                            description: 'Maximum number of results to return (1-100)',
+                            required: false,
+                            default: 10
+                        },
+                        searchMode: {
+                            type: 'string',
+                            description: 'Search mode: Latest, Top, or Photos',
+                            enum: ['Latest', 'Top', 'Photos'],
+                            required: false,
+                            default: 'Latest'
+                        }
+                    },
+                    required: ['query']
+                }
+            },
+            // 互动工具
+            {
+                name: 'likeTweet',
+                description: 'Like a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to like',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'unlikeTweet',
+                description: 'Unlike a previously liked tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to unlike',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'retweet',
+                description: 'Retweet a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to retweet',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'unretweet',
+                description: 'Undo a previous retweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to unretweet',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            // 关注关系工具
+            {
+                name: 'followUser',
+                description: 'Follow a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user to follow',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'unfollowUser',
+                description: 'Unfollow a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username of the user to unfollow',
+                            required: true
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getFollowers',
+                description: 'Get list of followers for a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get followers for',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of followers to fetch (max 50)',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getFollowing',
+                description: 'Get list of users that a specific user is following',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get following list for',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of following to fetch (max 50)',
+                            required: false,
+                            default: 20
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            {
+                name: 'getTweets',
+                description: 'Get recent tweets from a specific user',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        username: {
+                            type: 'string',
+                            description: 'Username to get tweets from',
+                            required: true
+                        },
+                        count: {
+                            type: 'number',
+                            description: 'Number of tweets to fetch (max 50)',
+                            required: false,
+                            default: 10
+                        }
+                    },
+                    required: ['username']
+                }
+            },
+            // 书签工具
+            {
+                name: 'bookmarkTweet',
+                description: 'Bookmark a specific tweet',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to bookmark',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            },
+            {
+                name: 'removeBookmark',
+                description: 'Remove a tweet from bookmarks',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        tweetId: {
+                            type: 'string',
+                            description: 'ID of the tweet to remove from bookmarks',
+                            required: true
+                        }
+                    },
+                    required: ['tweetId']
+                }
+            }
+        ]
     },
     {
         name: 'notion-mcp',
@@ -3488,23 +3739,6 @@ export const predefinedMCPs: MCPService[] = [
     },
     // new mcp
     {
-        "name": "coingecko-mcp-v2",
-        "description": "CoinGecko MCP server v2 - provides cryptocurrency data and market analytics with enhanced features",
-        "command": SYSTEM_COMMANDS.NPX_PATH,
-        "args": ["-y", "@coingecko/coingecko-mcp"],
-        "env": {
-            "COINGECKO_ENVIRONMENT": "Demo"
-        },
-        "connected": false,
-        "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
-        "githubUrl": "https://github.com/coingecko", // Note: No official GitHub for MCP server, this is general
-        "authRequired": true, // For public keyless mode; set to true for Pro
-        "authParams": {
-            COINGECKO_API_KEY: "COINGECKO_API_KEY",
-        },
-    },
-    {
         "name": "web-search-mcp",
         "description": "Web Search MCP Server - provides internet search capabilities using Serper.dev API for querying web results, snippets, and related searches (LOCAL BUILD)",
         "command": "node",
@@ -3525,7 +3759,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Browser Automation",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/puppeteer-mcp-server.jpeg",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/puppeteer-mcp.png",
         "githubUrl": "https://github.com/merajmehrabi/puppeteer-mcp-server",
         "authRequired": false,
         "authParams": {},
@@ -3538,7 +3772,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/web3-research.jpeg",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
         "githubUrl": "https://github.com/aaronjmars/web3-research-mcp",
         "authRequired": false,
         "authParams": {},
@@ -3564,7 +3798,7 @@ export const predefinedMCPs: MCPService[] = [
         "env": {},
         "connected": false,
         "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/crypto-news-mcp.png",
+        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/newsdata-logo.png",
         "githubUrl": "https://github.com/kukapay/crypto-news-mcp",
         "authRequired": true,
         "authParams": {
@@ -3577,7 +3811,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
-            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
+            DUNE_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
@@ -3874,7 +4108,7 @@ export const predefinedMCPs: MCPService[] = [
         "command": SYSTEM_COMMANDS.NODE_PATH,
         "args": ["/home/ubuntu/mcp-tools/hyperliquid-mcp/dist/index.js"],
         "env": {
-            PRIVATE_KEY: process.env.HYPERLIQUID_PRIVATE_KEY || ''
+            PRIVATE_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         "connected": false,
         "category": "Trading",
@@ -4141,7 +4375,7 @@ export const predefinedMCPs: MCPService[] = [
         "command": SYSTEM_COMMANDS.UV_PATH,
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-sentiment-mcp", "run", "main.py"],
         "env": {
-            SANTIMENT_API_KEY: process.env.SANTIMENT_API_KEY || ''
+            SANTIMENT_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         "connected": false,
         "category": "Market Data",
@@ -4635,7 +4869,7 @@ export const predefinedMCPs: MCPService[] = [
             'main.py'
         ],
         env: {
-            WARPCAST_API_TOKEN: process.env.WARPCAST_API_TOKEN || ''
+            WARPCAST_API_TOKEN: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -4904,9 +5138,8 @@ export const mcpNameMapping: Record<string, string> = {
     'playwright-mcp-service': 'playwright',
     'coingecko-server': 'coingecko-mcp-v1',
     'coingecko-mcp-service': 'coingecko-mcp-v1',
-    'coingecko-mcp': 'coingecko-mcp-v2', // 默认使用v2版本
+    'coingecko-mcp': 'coingecko-mcp-v1', // 默认使用v2版本
     'coingecko-v1': 'coingecko-mcp-v1',
-    'coingecko-v2': 'coingecko-mcp-v2',
     'evm-mcp-server': 'evm-mcp',
     'evm-mcp-service': 'evm-mcp',
     'dune-mcp': 'dune-mcp-v2', // 默认使用v2版本
