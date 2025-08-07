@@ -733,15 +733,24 @@ export class EnhancedIntelligentTaskEngine {
         convertedInput = await this.convertParametersWithLLM(toolName, convertedInput, step.mcp, task.userId);
         logger.info(`📝 Final Converted Input: ${JSON.stringify(convertedInput, null, 2)}`);
 
+        // 🔧 NEW: Twitter工作流智能修复 - 检测并修复publish_draft无draft_id的问题
+        const { finalToolName, finalInput } = await this.handleTwitterWorkflowFix(
+          step.mcp, 
+          toolName, 
+          convertedInput, 
+          state, 
+          task.userId
+        );
+
         const result = await this.mcpToolAdapter.callTool(
           step.mcp,
-          toolName,
-          convertedInput,
+          finalToolName,
+          finalInput,
           task.userId
         );
 
         // 🔧 新增：x-mcp自动发布处理（与Agent引擎保持一致）
-        const finalResult = await this.handleXMcpAutoPublish(step.mcp, toolName, result, task.userId);
+        const finalResult = await this.handleXMcpAutoPublish(step.mcp, finalToolName, result, task.userId);
         
         logger.info(`✅ MCP ${step.mcp} execution successful - returning original MCP structure`);
         return { success: true, result: finalResult, actualArgs: input };
@@ -2063,9 +2072,9 @@ Return a JSON object with exactly this structure:
 CRITICAL CONTENT EXTRACTION:
 - When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
 - Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
-- NEVER use "[Insert Data Here]" or "Latest data from Dune for queryId X" - extract actual content!
-- ALWAYS extract and include actual data/URLs/links when available in the source data
-- If no actual data exists, return empty/null, never use descriptive placeholders
+- NEVER use "[Insert summary here]" or "Latest tweet content from @user" - extract actual content!
+- ALWAYS extract and include tweet URLs/links when available in the source data
+- Format URLs efficiently to save characters (use bit.ly style if needed)
 
 IMPORTANT: Always use exact parameter names from the inputSchema, ensure Twitter content is under 280 characters, and EXTRACT REAL CONTENT from previous results!
 
@@ -2112,6 +2121,162 @@ Transform the data now:`;
       logger.error(`❌ Parameter conversion failed:`, error);
       return originalArgs; // 回退到原始参数
     }
+  }
+
+  /**
+   * Twitter工作流智能修复：检测并修复publish_draft无draft_id的问题
+   */
+  private async handleTwitterWorkflowFix(
+    mcpName: string,
+    toolName: string,
+    input: any,
+    state: EnhancedWorkflowState,
+    userId?: string
+  ): Promise<{ finalToolName: string; finalInput: any }> {
+    // 只处理x-mcp的publish_draft操作
+    const normalizedMcpName = this.normalizeMCPName(mcpName);
+    if (normalizedMcpName !== 'x-mcp' || toolName !== 'publish_draft') {
+      return { finalToolName: toolName, finalInput: input };
+    }
+
+    logger.info(`🔍 Twitter工作流检查: 检测到publish_draft操作`);
+
+    // 检查是否有有效的draft_id
+    const hasDraftId = input && input.draft_id && input.draft_id.trim() !== '';
+    
+    if (hasDraftId) {
+      logger.info(`✅ Twitter工作流检查: 发现有效的draft_id="${input.draft_id}"`);
+      return { finalToolName: toolName, finalInput: input };
+    }
+
+    // 检查是否有内容需要发布
+    const hasContent = this.extractContentFromState(state);
+    if (!hasContent) {
+      logger.warn(`⚠️ Twitter工作流检查: 没有发现可发布的内容`);
+      return { finalToolName: toolName, finalInput: input };
+    }
+
+    logger.info(`🔄 Twitter工作流修复: publish_draft缺少draft_id，切换到create_draft_thread`);
+    
+    // 从state中提取内容并创建thread
+    const content = this.extractContentFromState(state);
+    
+    // 使用LLM优化内容为Twitter thread格式
+    const optimizedContent = await this.optimizeContentForTwitterThread(content || '', userId);
+    
+    const threadInput = {
+      content: optimizedContent
+    };
+
+    logger.info(`📝 Twitter工作流修复: 切换工具从 "${toolName}" 到 "create_draft_thread"`);
+    logger.info(`📝 Twitter工作流修复: 新输入参数: ${JSON.stringify(threadInput, null, 2)}`);
+
+    return { 
+      finalToolName: 'create_draft_thread', 
+      finalInput: threadInput 
+    };
+  }
+
+  /**
+   * 使用LLM优化内容为Twitter thread格式
+   */
+  private async optimizeContentForTwitterThread(content: string, userId?: string): Promise<string> {
+    if (!content || content.trim().length === 0) {
+      return content;
+    }
+
+    try {
+      const optimizationPrompt = `You are a social media content optimization expert. Your task is to transform the provided content into an engaging Twitter thread format.
+
+**Original Content:**
+${content}
+
+**Optimization Rules:**
+1. **Character Limit**: Each tweet in the thread must be under 280 characters
+2. **Thread Structure**: Start with "🧵 Thread" or similar indicator
+3. **Engagement**: Use emojis, hashtags, and engaging language
+4. **Clarity**: Break complex information into digestible chunks
+5. **URLs**: Preserve any URLs from the original content
+6. **Numbering**: Use 1/n, 2/n format if content is long enough for multiple tweets
+
+**Output Requirements:**
+- If content is under 250 characters: Return as single optimized tweet
+- If content is longer: Structure as a thread with clear breaks
+- Maintain the key information and insights from original content
+- Make it engaging and Twitter-appropriate
+
+Transform the content now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(optimizationPrompt)]);
+      const optimizedContent = response.content.toString().trim();
+      
+      logger.info(`📝 Twitter内容优化: 原始长度=${content.length}, 优化后长度=${optimizedContent.length}`);
+      
+      return optimizedContent;
+      
+    } catch (error) {
+      logger.error(`❌ Twitter内容优化失败:`, error);
+      // 如果优化失败，返回原始内容的截断版本
+      return content.length > 250 ? content.substring(0, 247) + '...' : content;
+    }
+  }
+
+  /**
+   * 从执行状态中提取可发布的内容
+   */
+  private extractContentFromState(state: EnhancedWorkflowState): string | null {
+    // 检查dataStore中的内容
+    if (state.dataStore.lastResult) {
+      const lastResult = state.dataStore.lastResult;
+      
+      // 尝试提取文本内容
+      if (typeof lastResult === 'string') {
+        return lastResult;
+      }
+      
+      if (lastResult && typeof lastResult === 'object') {
+        // 检查常见的内容字段
+        if (lastResult.content) return lastResult.content;
+        if (lastResult.text) return lastResult.text;
+        if (lastResult.summary) return lastResult.summary;
+        if (lastResult.result) return lastResult.result;
+        
+        // 检查MCP格式的content数组
+        if (lastResult.content && Array.isArray(lastResult.content)) {
+          for (const item of lastResult.content) {
+            if (item && item.text) {
+              return item.text;
+            }
+          }
+        }
+        
+        // 如果是复杂对象，将其转换为可读文本
+        return JSON.stringify(lastResult, null, 2);
+      }
+    }
+    
+    // 检查执行历史中的最新数据
+    if (state.executionHistory.length > 0) {
+      const lastStep = state.executionHistory[state.executionHistory.length - 1];
+      if (lastStep.success && lastStep.result) {
+        const result = lastStep.result;
+        
+        if (typeof result === 'string') {
+          return result;
+        }
+        
+        if (result && typeof result === 'object') {
+          if (result.content) return result.content;
+          if (result.text) return result.text;
+          if (result.summary) return result.summary;
+          
+          // 转换为可读文本
+          return JSON.stringify(result, null, 2);
+        }
+      }
+    }
+    
+    return null;
   }
 
   /**
