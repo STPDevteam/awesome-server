@@ -567,9 +567,12 @@ TRANSFORMATION PRINCIPLES:
    - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
    - Match the exact property names shown in the inputSchema
 4. **Handle missing data intelligently**: 
-   - For required data not in previous output: Extract from task context or use descriptive placeholders
+   - CRITICAL: NEVER use placeholders or descriptions - always extract ACTUAL DATA
+   - For required data: Find and extract the real content from the input or previous results
+   - If actual data exists: Use it directly, never summarize or describe it
+   - If data is truly missing: Return empty string or null, never use descriptive text
    - For optional fields: Omit them if not relevant
-   - DO NOT use hardcoded examples or templates
+   - DO NOT use hardcoded examples, templates, or placeholder descriptions
 
 5. **Format according to tool expectations**:
    - Social media tools: Create engaging, concise content from the data
@@ -613,6 +616,13 @@ EXAMPLE TRANSFORMATIONS:
 - For social media: Extract key insights and format as engaging content (respect character limits!)
 - For API calls: Structure data according to API schema requirements
 - For content creation: Transform data into readable, formatted text
+
+CRITICAL CONTENT EXTRACTION:
+- When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
+- Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
+- NEVER use "[Insert Data Here]" or "Latest data from Dune for queryId X" - extract actual content!
+- ALWAYS extract and include actual data/URLs/links when available in the source data
+- If no actual data exists, return empty/null, never use descriptive placeholders
 
 IMPORTANT: Always check the exact parameter names in the inputSchema and use those exact names in your inputParams.
 

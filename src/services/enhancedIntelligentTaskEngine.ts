@@ -166,7 +166,7 @@ export class EnhancedIntelligentTaskEngine {
         // 🔧 预处理参数：智能参数处理，如果input为空，尝试从上下文推导
         let processedInput = currentStep.input || {};
         if (!currentStep.input && state.dataStore.lastResult) {
-          processedInput = this.inferStepInputFromContext(currentStep, state);
+          processedInput = await this.inferStepInputFromContext(currentStep, state);
         }
 
         // 🔧 确定工具类型和智能描述 - 与Agent引擎一致
@@ -722,8 +722,11 @@ export class EnhancedIntelligentTaskEngine {
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
 
         // 🔧 新增：智能参数转换，确保参数名与工具 schema 匹配
-        const convertedInput = await this.convertParametersForMCP(step.mcp, toolName, input, task.userId);
-        logger.info(`📝 Converted Input: ${JSON.stringify(convertedInput, null, 2)}`);
+        let convertedInput = await this.convertParametersForMCP(step.mcp, toolName, input, task.userId);
+        
+        // 🔧 NEW: 使用LLM进行智能内容转换，防止占位符问题
+        convertedInput = await this.convertParametersWithLLM(toolName, convertedInput, step.mcp, task.userId);
+        logger.info(`📝 Final Converted Input: ${JSON.stringify(convertedInput, null, 2)}`);
 
         const result = await this.mcpToolAdapter.callTool(
           step.mcp,
@@ -748,12 +751,93 @@ export class EnhancedIntelligentTaskEngine {
   /**
    * 从上下文推导步骤输入参数
    */
-  private inferStepInputFromContext(step: WorkflowStep, state: EnhancedWorkflowState): any {
-    // 基于上一步的结果和当前动作智能推导参数
+  private async inferStepInputFromContext(step: WorkflowStep, state: EnhancedWorkflowState): Promise<any> {
+    // 🔧 使用LLM进行智能参数推导，防止生成占位符
     const lastResult = state.dataStore.lastResult;
     const action = step.action.toLowerCase();
     
-    // 简单的推导逻辑，可以根据需要扩展
+    if (!lastResult) {
+      return {};
+    }
+    
+    try {
+      // 使用LLM智能提取实际数据
+      const inferencePrompt = `You are an expert data extraction assistant. Your task is to extract ACTUAL DATA from the previous step result to create appropriate input parameters for the next action.
+
+**Previous Step Result:**
+${JSON.stringify(lastResult, null, 2)}
+
+**Next Action:** ${step.action}
+**MCP Service:** ${step.mcp}
+
+**CRITICAL RULES:**
+1. **NEVER use placeholders or descriptions** - always extract ACTUAL DATA
+2. **Extract real content** from the previous result
+3. **If data exists**: Use it directly, never summarize or describe it
+4. **If no relevant data**: Return empty object {}, never use descriptive text
+5. **DO NOT generate** "[Insert Data Here]" or similar placeholders
+
+**EXAMPLES OF CORRECT EXTRACTION:**
+- If previous result contains "Hello world" → use "Hello world"
+- If previous result contains {"content": "Bitcoin up 5%"} → use "Bitcoin up 5%"
+- If previous result has array of data → extract the relevant items
+- If previous result has URLs/links → include them
+
+**EXAMPLES OF WRONG BEHAVIOR:**
+- NEVER: "Here is the latest data from..."
+- NEVER: "[Insert Data Here]"
+- NEVER: "Latest data from Dune for queryId X"
+- NEVER: "Summary of previous results"
+- NEVER: Descriptive placeholders
+- NEVER: "Here is the latest data from Dune for queryId 2838842: [Insert Data Here]"
+
+**SMART EXTRACTION RULES:**
+- For tweet/post actions: Extract actual text content
+- For search actions: Extract search terms or queries
+- For publish actions: Extract content to be published
+- For data analysis: Extract the actual data points
+
+**OUTPUT FORMAT:**
+Return a JSON object with the extracted parameters:
+{
+  "parameterName": "actual_extracted_value"
+}
+
+Extract the actual data now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(inferencePrompt)]);
+      const responseText = response.content.toString().trim();
+      
+      // 解析LLM响应
+      let extractedParams;
+      try {
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          extractedParams = JSON.parse(jsonMatch[0]);
+        } else {
+          extractedParams = JSON.parse(responseText);
+        }
+      } catch (parseError) {
+        logger.warn(`❌ Failed to parse LLM inference response, using fallback: ${parseError}`);
+        extractedParams = this.fallbackInferenceLogic(step, lastResult);
+      }
+      
+      logger.info(`🔍 Inferred input parameters: ${JSON.stringify(extractedParams, null, 2)}`);
+      return extractedParams;
+      
+    } catch (error) {
+      logger.error(`❌ Smart inference failed, using fallback logic: ${error}`);
+      return this.fallbackInferenceLogic(step, lastResult);
+    }
+  }
+  
+  /**
+   * 降级推导逻辑
+   */
+  private fallbackInferenceLogic(step: WorkflowStep, lastResult: any): any {
+    const action = step.action.toLowerCase();
+    
+    // 简单的降级推导逻辑
     if (lastResult && typeof lastResult === 'object') {
       if (action.includes('tweet') && lastResult.text) {
         return { content: lastResult.text };
@@ -764,9 +848,36 @@ export class EnhancedIntelligentTaskEngine {
       if (action.includes('get') && lastResult.id) {
         return { id: lastResult.id };
       }
+      if (action.includes('publish') && lastResult.content) {
+        return { content: lastResult.content };
+      }
+      // 通用情况：提取第一个字符串值
+      const firstStringValue = this.extractFirstStringValue(lastResult);
+      if (firstStringValue) {
+        return { content: firstStringValue };
+      }
     }
     
     return {};
+  }
+  
+  /**
+   * 提取对象中第一个有意义的字符串值
+   */
+  private extractFirstStringValue(obj: any): string | null {
+    if (typeof obj === 'string') {
+      return obj;
+    }
+    
+    if (typeof obj === 'object' && obj !== null) {
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string' && value.length > 0 && !key.toLowerCase().includes('id')) {
+          return value;
+        }
+      }
+    }
+    
+    return null;
   }
 
   /**
@@ -1774,6 +1885,132 @@ ${formattedResult}`;
     } catch (error) {
       logger.error(`❌ Parameter conversion failed for ${mcpName}.${toolName}:`, error);
       return input; // 回退到原始输入
+    }
+  }
+
+  /**
+   * 🔧 使用LLM进行智能参数转换，防止占位符问题（复制自AgentIntelligentEngine）
+   */
+  private async convertParametersWithLLM(toolName: string, originalArgs: any, mcpName: string, userId: string): Promise<any> {
+    try {
+      logger.info(`🔄 Converting parameters for tool: ${toolName}`);
+
+      // 获取MCP工具信息
+      const mcpTools = await this.mcpManager.getTools(mcpName, userId);
+      
+      // 🔧 新增：预处理参数名映射（camelCase 到 snake_case）
+      const preprocessedArgs = this.preprocessParameterNames(originalArgs, mcpTools[0]?.inputSchema);
+      if (JSON.stringify(preprocessedArgs) !== JSON.stringify(originalArgs)) {
+        logger.info(`🔧 Parameter names preprocessed: ${JSON.stringify(originalArgs)} → ${JSON.stringify(preprocessedArgs)}`);
+      }
+
+      // 构建智能参数转换提示词
+      const conversionPrompt = `You are an expert data transformation assistant. Your task is to intelligently transform parameters for MCP tool calls.
+
+CONTEXT:
+- Tool to call: ${toolName}
+- MCP Service: ${mcpName}
+- Input parameters: ${JSON.stringify(preprocessedArgs, null, 2)}
+- Available tools with their schemas:
+${mcpTools.map(tool => {
+  const schema = tool.inputSchema || {};
+  return `
+Tool: ${tool.name}
+Description: ${tool.description || 'No description'}
+Input Schema: ${JSON.stringify(schema, null, 2)}
+`;
+}).join('\n')}
+
+TRANSFORMATION PRINCIPLES:
+1. **Use exact tool name**: ${toolName}
+2. **Transform parameters**: Convert input into correct format for the tool
+3. **CRITICAL: Use exact parameter names from the schema**: 
+   - ALWAYS check the inputSchema and use the exact parameter names shown
+   - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
+   - Match the exact property names shown in the inputSchema
+4. **EXTRACT REAL DATA FROM CONTEXT**: 
+   - If previous step results are available: Extract the ACTUAL CONTENT, never use placeholders
+   - Look for real text, summaries, data in the previous results
+   - Use the exact content from previous step, not descriptions like "Summary of @user's tweets"
+   - Example: If previous result contains "Here's the summary: Bitcoin price is up 5%" → use "Bitcoin price is up 5%"
+5. **Handle missing data intelligently**: 
+   - CRITICAL: NEVER use placeholders or descriptions - always extract ACTUAL DATA
+   - For required data: Find and extract the real content from the input or previous results
+   - If actual data exists: Use it directly, never summarize or describe it
+   - If data is truly missing: Return empty string or null, never use descriptive text
+   - DO NOT use hardcoded examples, templates, or placeholder descriptions
+
+CRITICAL TWITTER RULES:
+- Twitter has a HARD 280 character limit!
+- Count ALL characters including spaces, emojis, URLs, hashtags
+- If content is too long, you MUST:
+  1. Use abbreviations (e.g., "w/" for "with")
+  2. Shorten usernames (e.g., "@user" instead of full names)
+  3. Remove less important details
+  4. Keep URLs whenever possible as they are valuable references
+  5. If URLs must be removed due to length, prefer keeping the most important ones
+- For threads: First tweet should be <250 chars to leave room for thread numbering
+- PRIORITY: Always try to include original tweet URLs when space allows
+
+OUTPUT FORMAT:
+Return a JSON object with exactly this structure:
+{
+  "toolName": "${toolName}",
+  "inputParams": { /* transformed parameters using EXACT parameter names from the tool's input schema */ },
+  "reasoning": "brief explanation of parameter transformation"
+}
+
+CRITICAL CONTENT EXTRACTION:
+- When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
+- Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
+- NEVER use "[Insert Data Here]" or "Latest data from Dune for queryId X" - extract actual content!
+- ALWAYS extract and include actual data/URLs/links when available in the source data
+- If no actual data exists, return empty/null, never use descriptive placeholders
+
+IMPORTANT: Always use exact parameter names from the inputSchema, ensure Twitter content is under 280 characters, and EXTRACT REAL CONTENT from previous results!
+
+Transform the data now:`;
+
+      const response = await this.llm.invoke([new SystemMessage(conversionPrompt)]);
+
+      let conversion;
+      try {
+        const responseText = response.content.toString().trim();
+        logger.info(`🔍 === LLM Parameter Conversion Debug ===`);
+        logger.info(`🔍 Raw LLM Response: ${responseText}`);
+        
+        // 清理JSON响应
+        let cleanedJson = responseText;
+        cleanedJson = cleanedJson.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+        
+        // 提取完整JSON
+        const extractedJson = this.extractCompleteJson(cleanedJson);
+        if (extractedJson) {
+          cleanedJson = extractedJson;
+        }
+        
+        conversion = JSON.parse(cleanedJson);
+        logger.info(`🔍 Parsed Conversion: ${JSON.stringify(conversion, null, 2)}`);
+      } catch (parseError) {
+        logger.error(`❌ Failed to parse parameter conversion response: ${response.content}`);
+        logger.error(`❌ Parse error: ${parseError}`);
+        logger.info(`🔍 Falling back to preprocessedArgs: ${JSON.stringify(preprocessedArgs, null, 2)}`);
+        return preprocessedArgs; // 回退到预处理后的参数
+      }
+
+      const convertedParams = conversion.inputParams || preprocessedArgs;
+      
+      logger.info(`🔍 === Parameter Conversion Results ===`);
+      logger.info(`🔍 Original Args: ${JSON.stringify(originalArgs, null, 2)}`);
+      logger.info(`🔍 Converted Params: ${JSON.stringify(convertedParams, null, 2)}`);
+      logger.info(`🔍 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
+      logger.info(`🔍 =====================================`);
+      
+      return convertedParams;
+
+    } catch (error) {
+      logger.error(`❌ Parameter conversion failed:`, error);
+      return originalArgs; // 回退到原始参数
     }
   }
 
