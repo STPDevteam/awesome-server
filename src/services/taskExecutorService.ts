@@ -862,15 +862,32 @@ Transform the data now:`;
             
             if (userAuth && userAuth.isVerified && userAuth.authData) {
               logger.info(`Found user ${userId} auth info for ${mcpConfig.name}, injecting environment variables...`);
+              console.log(`\n🔧 === MCP Auth Injection Debug ===`);
+              console.log(`MCP Name: ${mcpConfig.name}`);
+              console.log(`User ID: ${userId}`);
+              console.log(`Task ID: ${taskId}`);
+              console.log(`Auth Data Keys: ${Object.keys(userAuth.authData)}`);
+              console.log(`Auth Params: ${JSON.stringify(mcpConfig.authParams, null, 2)}`);
+              console.log(`Env Config: ${JSON.stringify(mcpConfig.env, null, 2)}`);
               console.log(`User Auth Data: ${JSON.stringify(userAuth.authData, null, 2)}`);
               
               // 动态注入认证信息到环境变量
               for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
                 console.log(`Checking env var: ${envKey} = "${envValue}"`);
-                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                
+                // 🔧 改进：检查用户认证数据中是否有对应的键
+                let authValue = userAuth.authData[envKey];
+                
+                // 🔧 如果直接键名不存在，尝试从authParams映射中查找
+                if (!authValue && mcpConfig.authParams && mcpConfig.authParams[envKey]) {
+                  const authParamKey = mcpConfig.authParams[envKey];
+                  authValue = userAuth.authData[authParamKey];
+                  console.log(`🔧 Trying authParams mapping: ${envKey} -> ${authParamKey}, value: "${authValue}"`);
+                }
+                
+                if ((!envValue || envValue === '') && authValue) {
                   // 🔧 特殊处理Notion MCP的OPENAPI_MCP_HEADERS
                   if (envKey === 'OPENAPI_MCP_HEADERS' && mcpConfig.name === 'notion-mcp') {
-                    const authValue = userAuth.authData[envKey];
                     console.log(`🔧 处理Notion MCP的OPENAPI_MCP_HEADERS: "${authValue}"`);
                     
                     // 检查用户填写的是否已经是完整的JSON字符串
@@ -905,12 +922,12 @@ Transform the data now:`;
                     }
                   } else {
                     // 其他MCP的正常处理
-                  dynamicEnv[envKey] = userAuth.authData[envKey];
-                  console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                    dynamicEnv[envKey] = authValue;
+                    console.log(`✅ Injected ${envKey} = "${authValue}"`);
                   }
                   logger.info(`Injected environment variable ${envKey}`);
                 } else {
-                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authData has key: ${!!userAuth.authData[envKey]}`);
+                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authValue: "${authValue}"`);
                 }
               }
               

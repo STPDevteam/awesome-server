@@ -3470,7 +3470,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
-            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
+            DUNE_API_KEY: '' // 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
