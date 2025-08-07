@@ -395,13 +395,13 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/base-mcp/build/index.js`],
         env: {
-            COINBASE_API_KEY_NAME: process.env.COINBASE_API_KEY_NAME || '',
-            COINBASE_API_PRIVATE_KEY: process.env.COINBASE_API_PRIVATE_KEY || '',
-            SEED_PHRASE: process.env.SEED_PHRASE || '',
-            COINBASE_PROJECT_ID: process.env.COINBASE_PROJECT_ID || '',
-            ALCHEMY_API_KEY: process.env.ALCHEMY_API_KEY || '',
-            OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
-            CHAIN_ID: process.env.CHAIN_ID || '',
+            COINBASE_API_KEY_NAME: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            COINBASE_API_PRIVATE_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            SEED_PHRASE: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            COINBASE_PROJECT_ID: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            ALCHEMY_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            OPENROUTER_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            CHAIN_ID: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Chain RPC',
@@ -1077,7 +1077,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/mcp-coingecko-server/build/index.js`],
         env: {
-            COINGECKO_API_KEY: process.env.COINGECKO_API_KEY || ''
+            COINGECKO_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
@@ -1400,7 +1400,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: ['/home/ubuntu/mcp-tools/coinmarketcap-mcp/index.js'],
         env: {
-            COINMARKETCAP_API_KEY: process.env.COINMARKETCAP_API_KEY || '',
+            COINMARKETCAP_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
             SUBSCRIPTION_LEVEL: "Basic",
             PORT: "3002"
         },
@@ -1966,7 +1966,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: [`/home/ubuntu/mcp-tools/rug-check-mcp/main.py`],
         env: {
-            SOLSNIFFER_API_KEY: process.env.SOLSNIFFER_API_KEY || ''
+            SOLSNIFFER_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
@@ -2129,7 +2129,7 @@ export const predefinedMCPs: MCPService[] = [
             'ghcr.io/github/github-mcp-server'
         ],
         env: {
-            GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || '',
+            GITHUB_PERSONAL_ACCESS_TOKEN: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Dev Tool',
@@ -2947,8 +2947,8 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/binance-mcp/build/index.js`],
         env: {
-            BINANCE_API_KEY: process.env.BINANCE_API_KEY || '',
-            BINANCE_API_SECRET: process.env.BINANCE_API_SECRET || ''
+            BINANCE_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            BINANCE_API_SECRET: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Trading',
@@ -2966,8 +2966,8 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/uniswap-trader-mcp/index.js`],
         env: {
-            INFURA_KEY: process.env.UNISWAP_INFURA_KEY || '',
-            WALLET_PRIVATE_KEY: process.env.UNISWAP_WALLET_PRIVATE_KEY || ''
+            INFURA_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            WALLET_PRIVATE_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Trading',
@@ -2998,7 +2998,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.NODE_PATH,
         args: [`/home/ubuntu/mcp-tools/pumpfun-mcp-server/build/index.js`],
         env: {
-            HELIUS_RPC_URL: process.env.HELIUS_RPC_URL || ''
+            HELIUS_RPC_URL: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Trading',
@@ -3020,7 +3020,7 @@ export const predefinedMCPs: MCPService[] = [
             "run",
             "mcp-discord"],
         env: {
-            DISCORD_TOKEN: process.env.DISCORD_TOKEN || ''
+            DISCORD_TOKEN: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -3054,14 +3054,14 @@ export const predefinedMCPs: MCPService[] = [
         args: [`/home/ubuntu/mcp-tools/twitter-client-mcp/dist/index.js`],
         env: {
             // Primary API v2 credentials for advanced functionality
-            TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
-            TWITTER_API_SECRET_KEY: process.env.TWITTER_API_SECRET_KEY || '',
-            TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || '',
+            TWITTER_API_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_API_SECRET_KEY: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN_SECRET: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
             // Optional basic auth (leave empty to use API-only mode)
-            TWITTER_USERNAME: process.env.TWITTER_USERNAME || '',
-            TWITTER_PASSWORD: process.env.TWITTER_PASSWORD || '',
-            TWITTER_EMAIL: process.env.TWITTER_EMAIL || ''
+            TWITTER_USERNAME: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_PASSWORD: '' , // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_EMAIL: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -3351,10 +3351,10 @@ export const predefinedMCPs: MCPService[] = [
             "run",
             "x-mcp"],
         env: {
-            TWITTER_API_KEY: process.env.TWITTER_API_KEY || '',
-            TWITTER_API_SECRET: process.env.TWITTER_API_SECRET || '',
-            TWITTER_ACCESS_TOKEN: process.env.TWITTER_ACCESS_TOKEN || '',
-            TWITTER_ACCESS_TOKEN_SECRET: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
+            TWITTER_API_KEY: '', // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_API_SECRET: '', // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN: '', // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            TWITTER_ACCESS_TOKEN_SECRET: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
@@ -3470,7 +3470,7 @@ export const predefinedMCPs: MCPService[] = [
         command: SYSTEM_COMMANDS.PYTHON_PATH,
         args: ["/home/ubuntu/mcp-tools/dune-analytics-mcp/main.py"],
         env: {
-            DUNE_API_KEY: '' // 🔧 修复：设置为空字符串，允许用户认证数据注入
+            DUNE_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Market Data',
@@ -3767,7 +3767,7 @@ export const predefinedMCPs: MCPService[] = [
         "command": SYSTEM_COMMANDS.NODE_PATH,
         "args": ["/home/ubuntu/mcp-tools/hyperliquid-mcp/dist/index.js"],
         "env": {
-            PRIVATE_KEY: process.env.HYPERLIQUID_PRIVATE_KEY || ''
+            PRIVATE_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         "connected": false,
         "category": "Trading",
@@ -4034,7 +4034,7 @@ export const predefinedMCPs: MCPService[] = [
         "command": SYSTEM_COMMANDS.UV_PATH,
         "args": ["--directory", "/home/ubuntu/mcp-tools/crypto-sentiment-mcp", "run", "main.py"],
         "env": {
-            SANTIMENT_API_KEY: process.env.SANTIMENT_API_KEY || ''
+            SANTIMENT_API_KEY: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         "connected": false,
         "category": "Market Data",
@@ -4528,7 +4528,7 @@ export const predefinedMCPs: MCPService[] = [
             'main.py'
         ],
         env: {
-            WARPCAST_API_TOKEN: process.env.WARPCAST_API_TOKEN || ''
+            WARPCAST_API_TOKEN: '' ,// 🔧 修复：设置为空字符串，允许用户认证数据注入
         },
         connected: false,
         category: 'Social',
