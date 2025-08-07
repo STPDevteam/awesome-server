@@ -25,7 +25,7 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
-        category: 'Dev Tool',
+        category: 'Browser Automation',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
         githubUrl: 'https://github.com/microsoft/playwright',
         authRequired: false,
@@ -1815,83 +1815,6 @@ export const predefinedMCPs: MCPService[] = [
         ]
     },
     {
-        name: 'dune-mcp-v1',
-        description: 'Dune Analytics MCP server v1 - blockchain data queries and dashboards (ekailabs implementation)',
-        command: SYSTEM_COMMANDS.NODE_PATH,
-        args: [`/home/ubuntu/mcp-tools/dune-mcp-server/dist/index.js`],
-        env: {
-            DUNE_API_KEY: process.env.DUNE_API_KEY || ''
-        },
-        connected: false,
-        category: 'Market Data',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/dune.png',
-        githubUrl: 'https://github.com/ekailabs/dune-mcp-server',
-        authRequired: true,
-        authParams: {
-            DUNE_API_KEY: "DUNE_API_KEY"
-        },
-        // 🔧 新增：基于Dune Analytics的预定义工具信息
-        predefinedTools: [
-            {
-                name: 'execute_query',
-                description: 'Execute a Dune Analytics query and return results',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        query_id: {
-                            type: 'number',
-                            description: 'Dune query ID to execute',
-                            required: true
-                        },
-                        parameters: {
-                            type: 'object',
-                            description: 'Query parameters as key-value pairs',
-                            required: false
-                        }
-                    },
-                    required: ['query_id']
-                }
-            },
-            {
-                name: 'get_query_results',
-                description: 'Get results from a previously executed query',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        execution_id: {
-                            type: 'string',
-                            description: 'Execution ID of the query',
-                            required: true
-                        }
-                    },
-                    required: ['execution_id']
-                }
-            },
-            {
-                name: 'get_latest_results',
-                description: 'Get the latest results for a query',
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        query_id: {
-                            type: 'number',
-                            description: 'Dune query ID',
-                            required: true
-                        },
-                        limit: {
-                            type: 'number',
-                            description: 'Number of rows to return',
-                            required: false,
-                            default: 100
-                        }
-                    },
-                    required: ['query_id']
-                }
-            }
-        ]
-    },
-
-    {
         name: 'chainlink-mcp',
         description: 'ChainLink price feeds and oracle data',
         command: SYSTEM_COMMANDS.NODE_PATH,
@@ -2596,19 +2519,6 @@ export const predefinedMCPs: MCPService[] = [
                 }
             }
         ]
-    },
-    {
-        name: 'playwright-mcp',
-        description: 'Playwright browser automation and testing',
-        command: SYSTEM_COMMANDS.NPX_PATH,
-        args: ['-y', '@playwright/mcp@latest'],
-        env: {},
-        connected: false,
-        category: 'Dev Tool',
-        imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
-        githubUrl: 'https://github.com/microsoft/playwright-mcp',
-        authRequired: false,
-        authParams: {}
     },
     {
         name: 'blender-mcp',
@@ -3487,23 +3397,6 @@ export const predefinedMCPs: MCPService[] = [
         authParams: {}
     },
     // new mcp
-    {
-        "name": "coingecko-mcp-v2",
-        "description": "CoinGecko MCP server v2 - provides cryptocurrency data and market analytics with enhanced features",
-        "command": SYSTEM_COMMANDS.NPX_PATH,
-        "args": ["-y", "@coingecko/coingecko-mcp"],
-        "env": {
-            "COINGECKO_ENVIRONMENT": "Demo"
-        },
-        "connected": false,
-        "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
-        "githubUrl": "https://github.com/coingecko", // Note: No official GitHub for MCP server, this is general
-        "authRequired": true, // For public keyless mode; set to true for Pro
-        "authParams": {
-            COINGECKO_API_KEY: "COINGECKO_API_KEY",
-        },
-    },
     {
         "name": "web-search-mcp",
         "description": "Web Search MCP Server - provides internet search capabilities using Serper.dev API for querying web results, snippets, and related searches (LOCAL BUILD)",
@@ -4904,9 +4797,8 @@ export const mcpNameMapping: Record<string, string> = {
     'playwright-mcp-service': 'playwright',
     'coingecko-server': 'coingecko-mcp-v1',
     'coingecko-mcp-service': 'coingecko-mcp-v1',
-    'coingecko-mcp': 'coingecko-mcp-v2', // 默认使用v2版本
+    'coingecko-mcp': 'coingecko-mcp-v1', // 默认使用v2版本
     'coingecko-v1': 'coingecko-mcp-v1',
-    'coingecko-v2': 'coingecko-mcp-v2',
     'evm-mcp-server': 'evm-mcp',
     'evm-mcp-service': 'evm-mcp',
     'dune-mcp': 'dune-mcp-v2', // 默认使用v2版本
