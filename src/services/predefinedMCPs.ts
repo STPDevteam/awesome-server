@@ -3398,23 +3398,6 @@ export const predefinedMCPs: MCPService[] = [
     },
     // new mcp
     {
-        "name": "coingecko-mcp-v2",
-        "description": "CoinGecko MCP server v2 - provides cryptocurrency data and market analytics with enhanced features",
-        "command": SYSTEM_COMMANDS.NPX_PATH,
-        "args": ["-y", "@coingecko/coingecko-mcp"],
-        "env": {
-            "COINGECKO_ENVIRONMENT": "Demo"
-        },
-        "connected": false,
-        "category": "Market Data",
-        "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/coingecko.ico",
-        "githubUrl": "https://github.com/coingecko", // Note: No official GitHub for MCP server, this is general
-        "authRequired": true, // For public keyless mode; set to true for Pro
-        "authParams": {
-            COINGECKO_API_KEY: "COINGECKO_API_KEY",
-        },
-    },
-    {
         "name": "web-search-mcp",
         "description": "Web Search MCP Server - provides internet search capabilities using Serper.dev API for querying web results, snippets, and related searches (LOCAL BUILD)",
         "command": "node",
@@ -4814,9 +4797,8 @@ export const mcpNameMapping: Record<string, string> = {
     'playwright-mcp-service': 'playwright',
     'coingecko-server': 'coingecko-mcp-v1',
     'coingecko-mcp-service': 'coingecko-mcp-v1',
-    'coingecko-mcp': 'coingecko-mcp-v2', // 默认使用v2版本
+    'coingecko-mcp': 'coingecko-mcp-v1', // 默认使用v2版本
     'coingecko-v1': 'coingecko-mcp-v1',
-    'coingecko-v2': 'coingecko-mcp-v2',
     'evm-mcp-server': 'evm-mcp',
     'evm-mcp-service': 'evm-mcp',
     'dune-mcp': 'dune-mcp-v2', // 默认使用v2版本
