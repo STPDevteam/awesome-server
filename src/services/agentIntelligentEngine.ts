@@ -3376,6 +3376,12 @@ ${formattedResult}`;
     try {
       logger.info(`🔄 Converting parameters for tool: ${toolName}`);
 
+      // 🔧 新增：预处理参数名映射（camelCase 到 snake_case）
+      const preprocessedArgs = this.preprocessParameterNames(originalArgs, toolName, mcpTools);
+      if (JSON.stringify(preprocessedArgs) !== JSON.stringify(originalArgs)) {
+        logger.info(`🔧 Parameter names preprocessed: ${JSON.stringify(originalArgs)} → ${JSON.stringify(preprocessedArgs)}`);
+      }
+
       // 🔧 准备前一步的执行结果上下文
       let previousResultsContext = '';
       if (state && state.executionHistory.length > 0) {
@@ -3395,7 +3401,7 @@ IMPORTANT: Use the ACTUAL CONTENT from the previous step results above when crea
 
 CONTEXT:
 - Tool to call: ${toolName}
-- Input parameters: ${JSON.stringify(originalArgs, null, 2)}${previousResultsContext}
+- Input parameters: ${JSON.stringify(preprocessedArgs, null, 2)}${previousResultsContext}
 - Available tools with their schemas:
 ${mcpTools.map(tool => {
   const schema = tool.inputSchema || {};
@@ -3490,24 +3496,115 @@ Transform the data now:`;
       } catch (parseError) {
         logger.error(`❌ Failed to parse parameter conversion response: ${response.content}`);
         logger.error(`❌ Parse error: ${parseError}`);
-        logger.info(`🔍 Falling back to originalArgs: ${JSON.stringify(originalArgs, null, 2)}`);
-        return originalArgs; // 回退到原始参数
+        logger.info(`🔍 Falling back to preprocessedArgs: ${JSON.stringify(preprocessedArgs, null, 2)}`);
+        return this.validateParameterNames(preprocessedArgs, toolName, mcpTools); // 回退到预处理后的参数
       }
 
-      const convertedParams = conversion.inputParams || originalArgs;
+      const convertedParams = conversion.inputParams || preprocessedArgs;
+      
+      // 🔧 最终参数名检查：确保参数名与工具 schema 匹配
+      const finalParams = this.validateParameterNames(convertedParams, toolName, mcpTools);
       
       logger.info(`🔍 === Parameter Conversion Results ===`);
       logger.info(`🔍 Original Args: ${JSON.stringify(originalArgs, null, 2)}`);
       logger.info(`🔍 Converted Params: ${JSON.stringify(convertedParams, null, 2)}`);
+      logger.info(`🔍 Final Params (after validation): ${JSON.stringify(finalParams, null, 2)}`);
       logger.info(`🔍 Conversion reasoning: ${conversion.reasoning || 'No reasoning provided'}`);
       logger.info(`🔍 =====================================`);
       
-      return convertedParams;
+      return finalParams;
 
     } catch (error) {
       logger.error(`❌ Parameter conversion failed:`, error);
-      return originalArgs; // 回退到原始参数
+      return this.validateParameterNames(this.preprocessParameterNames(originalArgs, toolName, mcpTools), toolName, mcpTools); // 回退到预处理后的参数
     }
+  }
+
+  /**
+   * 🔧 新增：预处理参数名（camelCase 到 snake_case）
+   */
+  private preprocessParameterNames(originalArgs: any, toolName: string, mcpTools: any[]): any {
+    if (!originalArgs || typeof originalArgs !== 'object') {
+      return originalArgs;
+    }
+
+    // 找到目标工具的 schema
+    const targetTool = mcpTools.find(tool => tool.name === toolName);
+    if (!targetTool || !targetTool.inputSchema) {
+      return originalArgs;
+    }
+
+    const schemaProperties = targetTool.inputSchema.properties || {};
+    const expectedParamNames = Object.keys(schemaProperties);
+    
+    logger.info(`🔧 Preprocessing parameters for ${toolName}, expected: [${expectedParamNames.join(', ')}]`);
+
+    const processedArgs: any = {};
+    
+    for (const [key, value] of Object.entries(originalArgs)) {
+      let mappedKey = key;
+      
+      // 检查是否需要 camelCase -> snake_case 转换
+      if (!expectedParamNames.includes(key)) {
+        const snakeCaseKey = this.camelToSnakeCase(key);
+        if (expectedParamNames.includes(snakeCaseKey)) {
+          mappedKey = snakeCaseKey;
+          logger.info(`🔧 Parameter name mapped: ${key} -> ${mappedKey}`);
+        }
+      }
+      
+      processedArgs[mappedKey] = value;
+    }
+
+    return processedArgs;
+  }
+
+  /**
+   * 🔧 新增：camelCase 转 snake_case
+   */
+  private camelToSnakeCase(str: string): string {
+    return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+  }
+
+  /**
+   * 🔧 新增：验证参数名是否与工具 schema 匹配
+   */
+  private validateParameterNames(params: any, toolName: string, mcpTools: any[]): any {
+    if (!params || typeof params !== 'object') {
+      return params;
+    }
+
+    // 找到目标工具的 schema
+    const targetTool = mcpTools.find(tool => tool.name === toolName);
+    if (!targetTool || !targetTool.inputSchema) {
+      return params;
+    }
+
+    const schemaProperties = targetTool.inputSchema.properties || {};
+    const expectedParamNames = Object.keys(schemaProperties);
+    
+    logger.info(`🔧 Validating parameters for ${toolName}, expected: [${expectedParamNames.join(', ')}]`);
+
+    const validatedParams: any = {};
+    
+    for (const [key, value] of Object.entries(params)) {
+      let finalKey = key;
+      
+      // 如果参数名不在期望列表中，尝试转换
+      if (!expectedParamNames.includes(key)) {
+        const snakeCaseKey = this.camelToSnakeCase(key);
+        if (expectedParamNames.includes(snakeCaseKey)) {
+          finalKey = snakeCaseKey;
+          logger.info(`🔧 Parameter name corrected: ${key} -> ${finalKey}`);
+        } else {
+          logger.warn(`⚠️ Parameter ${key} not found in schema, keeping original name`);
+        }
+      }
+      
+      validatedParams[finalKey] = value;
+    }
+
+    return validatedParams;
   }
 
   /**
