@@ -370,30 +370,31 @@ export class EnhancedIntelligentTaskEngine {
           };
         }
 
-        // 🎯 直接任务完成感知 - 参考Agent引擎的优化方案
+        // 🎯 与Agent引擎保持一致：使用智能观察阶段判断完成
         let shouldContinue = true;
 
-        // 🔧 智能完成检测：基于任务复杂度和执行结果进行直接判断
+        // 🔧 执行成功后进行智能观察判断（与Agent引擎一致）
         if (executionResult.success) {
-          if (taskComplexity.type === 'simple_query') {
-            // 简单查询：第一步成功即完成
-            if (i === 0) {
-              logger.info(`🎯 Simple query completed successfully after first step, stopping execution`);
-              shouldContinue = false;
-            }
-          } else if (taskComplexity.type === 'medium_task') {
-            // 中等任务：检查是否已获得足够数据
-            const hasUsefulData = await this.hasTaskCollectedSufficientData(state);
-            if (hasUsefulData) {
-              logger.info(`🎯 Medium task collected sufficient data, evaluating completion`);
-              shouldContinue = await this.quickTaskCompletionCheck(state, taskComplexity);
-            }
-          } else {
-            // 复杂工作流：每隔2步检查一次完成状态
-            if (i % 2 === 0) {
-              logger.info(`🔍 Complex workflow checkpoint at step ${i + 1}`);
-              shouldContinue = await this.quickTaskCompletionCheck(state, taskComplexity);
-            }
+          logger.info(`🔍 Task performing intelligent observation after step ${i + 1}`);
+          
+          const observationResult = await this.taskObservationPhase(state, taskComplexity);
+          
+          if (!observationResult.shouldContinue) {
+            logger.info(`🎯 Task determined complete after intelligent observation`);
+            shouldContinue = false;
+            
+            // 发送任务完成事件
+            yield {
+              event: 'task_observation_complete',
+              data: {
+                step: i + 1,
+                message: 'Task determined complete by intelligent observation',
+                reasoning: observationResult.newObjective || 'Task requirements fulfilled',
+                taskComplete: true
+              }
+            };
+          } else if (observationResult.newObjective) {
+            logger.info(`🎯 Task next objective: ${observationResult.newObjective}`);
           }
         }
 
@@ -1170,82 +1171,93 @@ private buildTaskObserverPrompt(
   state: EnhancedWorkflowState,
   taskComplexity?: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
 ): string {
-  const completedStepsInfo = state.executionHistory
-    .filter(step => step.success)
-    .map(step => `Step ${step.stepNumber}: ${step.action} -> Success`)
-    .join('\n');
-    
-  const failedStepsInfo = state.executionHistory
-    .filter(step => !step.success)
-    .map(step => `Step ${step.stepNumber}: ${step.action} -> Failed: ${step.error}`)
-    .join('\n');
+  return `You are analyzing whether sufficient work has been completed to answer the user's question.
 
-  return `You are an intelligent task execution observer analyzing workflow progress. Make smart decisions based on task complexity.
+## 📋 USER'S ORIGINAL QUESTION
+"${state.originalQuery}"
 
-**Original Task**: ${state.originalQuery}
-**Task Complexity**: ${taskComplexity ? `${taskComplexity.type} (${taskComplexity.recommendedObservation} observation)` : 'Unknown'}
+## 📊 EXECUTION ANALYSIS
 
-**Current Progress**: Step ${state.currentStepIndex + 1}/${state.totalSteps} (${Math.round(((state.currentStepIndex + 1) / state.totalSteps) * 100)}%)
+### Execution History
+${state.executionHistory.map(step => `
+**Step ${step.stepNumber}**: ${step.action}
+- Status: ${step.success ? '✅ Success' : '❌ Failed'}
+- MCP: ${step.mcpName}
+- Data Retrieved: ${step.success && step.result ? 'Yes' : 'No'}
+${step.success && step.result ? `- Raw Result Data: ${JSON.stringify(step.result, null, 2)}` : ''}
+${step.error ? `- Error: ${step.error}` : ''}
+`).join('\n')}
 
-**COMPLEXITY-BASED COMPLETION CRITERIA**:
+### Critical Analysis Required
+**🔍 DETAILED COMPARISON NEEDED**:
 
-${taskComplexity?.type === 'simple_query' ? `
-🟢 **SIMPLE QUERY MODE** - Fast completion priority:
-- ✅ **COMPLETE IMMEDIATELY** if first step returned valid data
-- ✅ **COMPLETE IMMEDIATELY** if user's question is answered
-- ❌ Continue only if NO data retrieved or complete failure
-- 🎯 Priority: Speed over perfection for data requests
-` : taskComplexity?.type === 'medium_task' ? `
-🟡 **MEDIUM TASK MODE** - Balanced approach:
-- ✅ Complete if main objectives achieved (50%+ steps successful)
-- ✅ Complete if sufficient data collected for analysis
-- ❌ Continue if key analysis or comparison still needed
-- 🎯 Priority: Balance speed with thoroughness
-` : `
-🔴 **COMPLEX WORKFLOW MODE** - Thorough completion:
-- ✅ Complete only if all major workflow components finished
-- ✅ Complete if comprehensive analysis delivered
-- ❌ Continue if significant workflow steps remain
-- 🎯 Priority: Comprehensive completion over speed
-`}
+1. **Parse the user's original request** - What EXACTLY did they ask for?
+2. **Analyze the collected data** - What have we actually obtained so far?
+3. **Gap Analysis** - What is missing between request and current data?
 
-**Execution Summary**:
-- Completed Steps: ${state.completedSteps}
-- Failed Steps: ${state.failedSteps}
-- Current Step: ${state.currentStepIndex + 1}
+**🚨 CRITICAL**: For requests mentioning multiple items/users/targets:
+- Count how many were requested vs how many we have data for
+- Example: User asks for "A, B, C, D" but we only have data for "A, B" → INCOMPLETE!
 
-**Recent Completed Steps**:
-${completedStepsInfo || 'None yet'}
+## 🧠 INTELLIGENT ANALYSIS REQUIRED
 
-**Recent Failed Steps**:
-${failedStepsInfo || 'None'}
+**Critical Questions**: 
+1. Does the collected data contain the specific information requested by the user?
+2. Can you identify and extract the exact answer from the available data?
+3. Is the data recent, relevant, and sufficient in scope?
 
-**Available Results & Data**:
-${JSON.stringify(state.dataStore, null, 2)}
+**For "${state.originalQuery}"**:
+**INTELLIGENT ANALYSIS**:
+Analyze the user's original request: "${state.originalQuery}"
 
-**Observation Guidelines**:
-1. **Task Completion Analysis**: Evaluate if the original task objective has been achieved with current results
-2. **Progress Assessment**: Consider the quality and relevance of completed steps
-3. **Failure Impact**: Assess how failed steps affect overall task completion
-4. **Workflow Efficiency**: Determine if the remaining planned steps are still optimal
-5. **Early Completion**: Identify if sufficient results exist to complete the task early
-6. **Adaptation Needs**: Detect if the workflow should be adapted based on current context
+Ask yourself:
+1. What EXACTLY did the user ask for?
+2. What are the KEY COMPONENTS that must be completed?
+3. Are there multiple parts/targets/items mentioned?
+4. What is the END GOAL the user wants to achieve?
+5. Has that end goal been fully achieved with current data/actions?
 
-**Decision Criteria**:
-- CONTINUE: Task not complete, current workflow is optimal
-- STOP EARLY: Task objective achieved with current results
-- ADAPT: Task not complete, but workflow needs modification
+**CRITICAL THINKING** (Be extremely thorough):
+- Count EXACTLY what the user requested vs what we have
+- Don't assume "some data = complete" - verify COMPLETENESS
+- For multi-target requests: ALL targets must be processed
+- Examine each result summary above: does it contain the requested information?
+- Ask: "Would a reasonable person consider this request fully satisfied?"
+- If user asked for data on 8 users but we only have 2 → CLEARLY INCOMPLETE
+- If user asked for posting/publishing but only collected data → INCOMPLETE
+- Use logical reasoning: partial completion ≠ task completion
 
-Respond with valid JSON:
+## 🎯 DECISION LOGIC
+
+**🧠 USE YOUR INTELLIGENCE TO JUDGE**:
+- Read the user's original request carefully
+- Look at what has been accomplished so far
+- Consider whether a reasonable person would say "this request has been fulfilled"
+- Don't be overly strict, but also don't accept partial completion as full success
+- If the user asked for multiple things, check if ALL of them have been addressed
+- If the user asked for an action (like posting), check if that action actually happened
+
+**DECISION GUIDELINES**:
+✅ Mark COMPLETE if: EVERY SINGLE item/user/target in the original request has been processed
+❌ Mark CONTINUE if: ANY item/user/target from the original request is missing
+
+**🚨 MANDATORY CHECK**: 
+- Count total items requested in original query
+- Count total items successfully processed  
+- If numbers don't match → MUST continue
+- Example: 8 users requested, 3 users processed → 5 still missing → CONTINUE!
+
+**OUTPUT FORMAT (JSON only)**:
 {
-  "should_continue": true/false,
-  "should_adapt_workflow": true/false,
-  "adaptation_reason": "Reason for adaptation if needed",
-  "new_objective": "Adjusted objective if adaptation needed",
-  "completion_analysis": "Analysis of current task completion status",
-  "confidence_score": 0.0-1.0,
-  "observation_reasoning": "Detailed step-by-step reasoning for this decision"
-}`;
+  "shouldContinue": true/false,
+  "reasoning": "Focus on whether the specific user question can be answered with available data",
+  "newObjective": "If continue, what specific missing information is needed?",
+  "shouldAdaptWorkflow": false
+}
+
+**🚨 THINK LIKE A HUMAN**: 
+Would a reasonable person consider this request fulfilled based on what has been accomplished? 
+Use your intelligence and common sense to make the judgment.`;
 }
 
 /**
@@ -1282,27 +1294,30 @@ private parseTaskObservation(content: string): {
   newObjective?: string;
 } {
   try {
-    const cleanedContent = content
-      .replace(/```json\s*/g, '')
-      .replace(/```\s*$/g, '')
-      .trim();
+    let jsonText = content.trim();
+    jsonText = jsonText.replace(/```json\s*|\s*```/g, '');
+    jsonText = jsonText.replace(/```\s*|\s*```/g, '');
     
-    const parsed = JSON.parse(cleanedContent);
-    
-    return {
-      shouldContinue: parsed.should_continue !== false,
-      shouldAdaptWorkflow: parsed.should_adapt_workflow === true,
-      adaptationReason: parsed.adaptation_reason,
-      newObjective: parsed.new_objective
-    };
+    const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      return {
+        shouldContinue: parsed.shouldContinue !== false,
+        shouldAdaptWorkflow: parsed.shouldAdaptWorkflow === true,
+        adaptationReason: parsed.reasoning,
+        newObjective: parsed.newObjective
+      };
+    }
   } catch (error) {
-    logger.error('Failed to parse task observation:', error);
-    logger.error('Raw observation content:', content);
-    return { 
-      shouldContinue: true, 
-      shouldAdaptWorkflow: false 
-    };
+    logger.warn(`Task observation parsing failed: ${error}`);
   }
+  
+  // 降级方案
+  return { 
+    shouldContinue: true, 
+    shouldAdaptWorkflow: false 
+  };
 }
 
 /**
@@ -1690,32 +1705,7 @@ ${formattedResult}`;
   /**
    * 🎯 快速任务完成检查（参考Agent引擎的简化判断逻辑）
    */
-  private async quickTaskCompletionCheck(
-    state: EnhancedWorkflowState, 
-    taskComplexity: { type: string; recommendedObservation: string; shouldCompleteEarly: boolean; reasoning: string }
-  ): Promise<boolean> {
-    // 简化的完成判断逻辑
-    try {
-      const successfulSteps = state.executionHistory.filter(step => step.success);
-      
-      // 基于任务复杂度的快速判断
-      if (taskComplexity.type === 'simple_query') {
-        // 简单查询：有数据就完成
-        return successfulSteps.length > 0;
-      } else if (taskComplexity.type === 'medium_task') {
-        // 中等任务：至少完成一半步骤或有足够数据
-        const completionRatio = state.completedSteps / state.totalSteps;
-        return completionRatio >= 0.5 || successfulSteps.length >= 2;
-      } else {
-        // 复杂工作流：需要更多步骤完成
-        const completionRatio = state.completedSteps / state.totalSteps;
-        return completionRatio >= 0.7;
-      }
-    } catch (error) {
-      logger.error('Quick task completion check failed:', error);
-      return true; // 默认继续执行
-    }
-  }
+  // 🔧 移除硬编码的快速完成检查，现在使用智能观察阶段
 
   /**
    * 🎯 简化的工作流适应判断（减少复杂度）

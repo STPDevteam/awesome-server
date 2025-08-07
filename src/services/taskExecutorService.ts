@@ -581,11 +581,13 @@ CRITICAL TWITTER RULES:
 - Twitter has a HARD 280 character limit!
 - Count ALL characters including spaces, emojis, URLs, hashtags
 - If content is too long, you MUST:
-  1. Remove URLs (they're not clickable in tweets anyway)
-  2. Use abbreviations (e.g., "w/" for "with")
+  1. Use abbreviations (e.g., "w/" for "with")
+  2. Shorten usernames (e.g., "@user" instead of full names)
   3. Remove less important details
-  4. Keep only the most essential information
+  4. Keep URLs whenever possible as they are valuable references
+  5. If URLs must be removed due to length, prefer keeping the most important ones
 - For threads: First tweet should be <250 chars to leave room for thread numbering
+- PRIORITY: Always try to include original tweet URLs when space allows
 - Example of good tweet: "🚀 Top 3 Meme Coins 🧵\n\n1️⃣ Big Papa ($PAPA) - Solana meme coin\n2️⃣ $BEAST - Pulsechain revolution\n3️⃣ Novus Ordo ($NOVO) - Providence themed\n\n#MemeCoins #Crypto" (under 280 chars)
 
 IMPORTANT REMINDERS:
@@ -1694,8 +1696,9 @@ TRANSFORMATION PRINCIPLES:
 5. **Smart content generation**:
    - For Twitter: MUST be under 280 characters! Use concise language, abbreviations if needed, but preserve important URLs
    - For cryptocurrency/financial data: Highlight price, changes, trends
-   - For analysis results: Summarize key findings concisely with reference links
-   - For lists/collections: Format as readable bullet points or threads with source URLs when available
+   - For analysis results: Summarize key findings concisely and include reference links
+   - For lists/collections: Format as readable bullet points or threads, include source URLs
+   - ALWAYS extract and include original URLs/links when available in the source data
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
