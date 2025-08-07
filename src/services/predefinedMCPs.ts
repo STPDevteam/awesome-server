@@ -25,7 +25,7 @@ export const predefinedMCPs: MCPService[] = [
         args: ['@playwright/mcp@latest'],
         env: {},
         connected: false,
-        category: 'Dev Tool',
+        category: 'Browser Automation',
         imageUrl: 'https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/playwrite.png',
         githubUrl: 'https://github.com/microsoft/playwright',
         authRequired: false,
