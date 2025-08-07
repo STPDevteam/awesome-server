@@ -544,8 +544,28 @@ export class MCPManager {
     
     try {
       const toolsResponse = await mcpClient.client.listTools();
-      const tools = toolsResponse.tools || [];
-      return tools;
+      const connectedTools = toolsResponse.tools || [];
+      
+      // 🔧 优先使用预定义工具的参数定义，但保留连接工具的其他信息
+      const predefinedTools = await this.getPredefinedTools(name);
+      
+      if (predefinedTools.length > 0) {
+        logger.info(`【MCP Debug】Using predefined tool schemas for ${name} (${predefinedTools.length} tools)`);
+        // 将预定义工具的 schema 与连接工具合并
+        return connectedTools.map(connectedTool => {
+          const predefinedTool = predefinedTools.find(p => p.name === connectedTool.name);
+          if (predefinedTool) {
+            logger.info(`【MCP Debug】Applied predefined schema for tool: ${connectedTool.name}`);
+            return {
+              ...connectedTool,
+              inputSchema: predefinedTool.inputSchema
+            };
+          }
+          return connectedTool;
+        });
+      }
+      
+      return connectedTools;
     } catch (error) {
       logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       logger.info(`【MCP Debug】Fallback to predefined tools for [MCP: ${name}]`);
@@ -566,11 +586,11 @@ export class MCPManager {
     
     if (mcpConfig && mcpConfig.predefinedTools) {
       logger.info(`【MCP Debug】Found ${mcpConfig.predefinedTools.length} predefined tools for ${mcpName}`);
-      // 转换为标准的MCP工具格式
+      // 转换为标准的MCP工具格式，使用预定义的参数配置
       return mcpConfig.predefinedTools.map((tool: MCPTool) => ({
         name: tool.name,
         description: tool.description,
-        inputSchema: {
+        inputSchema: tool.parameters || {
           type: 'object',
           properties: {},
           required: []
