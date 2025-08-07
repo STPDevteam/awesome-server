@@ -697,10 +697,14 @@ export class EnhancedIntelligentTaskEngine {
         logger.info(`📡 Calling MCP ${step.mcp} with action: ${step.action} (resolved to: ${toolName})`);
         logger.info(`📝 Input: ${JSON.stringify(input, null, 2)}`);
 
+        // 🔧 新增：智能参数转换，确保参数名与工具 schema 匹配
+        const convertedInput = await this.convertParametersForMCP(step.mcp, toolName, input, task.userId);
+        logger.info(`📝 Converted Input: ${JSON.stringify(convertedInput, null, 2)}`);
+
         const result = await this.mcpToolAdapter.callTool(
           step.mcp,
           toolName,
-          input,
+          convertedInput,
           task.userId
         );
 
@@ -1727,6 +1731,77 @@ ${formattedResult}`;
       .filter(step => !step.success);
     
     return recentFailures.length >= 2; // 连续2步失败才适应
+  }
+
+  /**
+   * 🔧 新增：为 MCP 转换参数，确保参数名与工具 schema 匹配
+   */
+  private async convertParametersForMCP(mcpName: string, toolName: string, input: any, userId: string): Promise<any> {
+    try {
+      logger.info(`🔄 Converting parameters for MCP tool: ${mcpName}.${toolName}`);
+
+      // 获取 MCP 工具的 schema
+      const mcpTools = await this.mcpManager.getTools(mcpName, userId);
+      const targetTool = mcpTools.find(tool => tool.name === toolName);
+      
+      if (!targetTool || !targetTool.inputSchema) {
+        logger.info(`🔍 No schema found for ${mcpName}.${toolName}, returning original input`);
+        return input;
+      }
+
+      // 执行参数名转换
+      const convertedParams = this.preprocessParameterNames(input, targetTool.inputSchema);
+      
+      if (JSON.stringify(convertedParams) !== JSON.stringify(input)) {
+        logger.info(`🔧 Parameters converted for ${mcpName}.${toolName}: ${JSON.stringify(input)} → ${JSON.stringify(convertedParams)}`);
+      }
+
+      return convertedParams;
+
+    } catch (error) {
+      logger.error(`❌ Parameter conversion failed for ${mcpName}.${toolName}:`, error);
+      return input; // 回退到原始输入
+    }
+  }
+
+  /**
+   * 🔧 新增：预处理参数名（camelCase 到 snake_case）
+   */
+  private preprocessParameterNames(originalArgs: any, inputSchema: any): any {
+    if (!originalArgs || typeof originalArgs !== 'object') {
+      return originalArgs;
+    }
+
+    const schemaProperties = inputSchema.properties || {};
+    const expectedParamNames = Object.keys(schemaProperties);
+    
+    logger.info(`🔧 Preprocessing parameters, expected: [${expectedParamNames.join(', ')}]`);
+
+    const processedArgs: any = {};
+    
+    for (const [key, value] of Object.entries(originalArgs)) {
+      let mappedKey = key;
+      
+      // 检查是否需要 camelCase -> snake_case 转换
+      if (!expectedParamNames.includes(key)) {
+        const snakeCaseKey = this.camelToSnakeCase(key);
+        if (expectedParamNames.includes(snakeCaseKey)) {
+          mappedKey = snakeCaseKey;
+          logger.info(`🔧 Parameter name mapped: ${key} -> ${mappedKey}`);
+        }
+      }
+      
+      processedArgs[mappedKey] = value;
+    }
+
+    return processedArgs;
+  }
+
+  /**
+   * 🔧 新增：camelCase 转 snake_case
+   */
+  private camelToSnakeCase(str: string): string {
+    return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
   }
 
 

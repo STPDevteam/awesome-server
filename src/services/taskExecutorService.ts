@@ -639,10 +639,15 @@ Transform the data now:`;
       }
 
       const selectedToolName = toolSelection.toolName;
-      const convertedInput = toolSelection.inputParams || input;
+      const llmConvertedInput = toolSelection.inputParams || input;
+      
+      // 🔧 新增：进一步验证和转换参数名，确保与 schema 匹配
+      const targetTool = mcpTools.find(t => t.name === selectedToolName);
+      const finalConvertedInput = targetTool ? this.validateParameterNames(llmConvertedInput, targetTool.inputSchema) : llmConvertedInput;
       
       logger.info(`🔧 LLM selected tool: ${selectedToolName}`);
-      logger.info(`🔧 Converted input parameters: ${JSON.stringify(convertedInput)}`);
+      logger.info(`🔧 LLM converted input: ${JSON.stringify(llmConvertedInput)}`);
+      logger.info(`🔧 Final validated input: ${JSON.stringify(finalConvertedInput)}`);
       logger.info(`🧠 Selection reasoning: ${toolSelection.reasoning || 'No reasoning provided'}`);
 
       // 验证选择的工具是否存在
@@ -673,9 +678,9 @@ Transform the data now:`;
       console.log(`Objective: ${objective}`);
       console.log(`Selected Tool: ${finalToolName}`);
       console.log(`Original Input: ${JSON.stringify(input, null, 2)}`);
-      console.log(`Converted Input Parameters: ${JSON.stringify(convertedInput, null, 2)}`);
+      console.log(`Converted Input Parameters: ${JSON.stringify(finalConvertedInput, null, 2)}`);
       
-      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, convertedInput, taskId);
+      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, finalConvertedInput, taskId);
       
       console.log(`\n==== MCP Objective-Based Call Result ====`);
       console.log(`Status: Success`);
@@ -2583,5 +2588,51 @@ IMPORTANT: Your response should be ready-to-display markdown content, not wrappe
       'MCP_SERVICE_INIT_FAILED'
     ];
     return mcpConnectionErrorTypes.includes(errorType);
+  }
+
+  /**
+   * 🔧 新增：验证参数名是否与工具 schema 匹配
+   */
+  private validateParameterNames(params: any, inputSchema: any): any {
+    if (!params || typeof params !== 'object') {
+      return params;
+    }
+
+    if (!inputSchema || !inputSchema.properties) {
+      return params;
+    }
+
+    const schemaProperties = inputSchema.properties;
+    const expectedParamNames = Object.keys(schemaProperties);
+    
+    logger.info(`🔧 Validating parameters, expected: [${expectedParamNames.join(', ')}]`);
+
+    const validatedParams: any = {};
+    
+    for (const [key, value] of Object.entries(params)) {
+      let finalKey = key;
+      
+      // 如果参数名不在期望列表中，尝试转换
+      if (!expectedParamNames.includes(key)) {
+        const snakeCaseKey = this.camelToSnakeCase(key);
+        if (expectedParamNames.includes(snakeCaseKey)) {
+          finalKey = snakeCaseKey;
+          logger.info(`🔧 Parameter name corrected: ${key} -> ${finalKey}`);
+        } else {
+          logger.warn(`⚠️ Parameter ${key} not found in schema, keeping original name`);
+        }
+      }
+      
+      validatedParams[finalKey] = value;
+    }
+
+    return validatedParams;
+  }
+
+  /**
+   * 🔧 新增：camelCase 转 snake_case
+   */
+  private camelToSnakeCase(str: string): string {
+    return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
   }
 } 
