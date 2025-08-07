@@ -567,9 +567,12 @@ TRANSFORMATION PRINCIPLES:
    - For example, if the schema shows "text" as parameter name, use "text" NOT "tweet" or other variations
    - Match the exact property names shown in the inputSchema
 4. **Handle missing data intelligently**: 
-   - For required data not in previous output: Extract from task context or use descriptive placeholders
+   - CRITICAL: NEVER use placeholders or descriptions - always extract ACTUAL DATA
+   - For required data: Find and extract the real content from the input or previous results
+   - If actual data exists: Use it directly, never summarize or describe it
+   - If data is truly missing: Return empty string or null, never use descriptive text
    - For optional fields: Omit them if not relevant
-   - DO NOT use hardcoded examples or templates
+   - DO NOT use hardcoded examples, templates, or placeholder descriptions
 
 5. **Format according to tool expectations**:
    - Social media tools: Create engaging, concise content from the data
@@ -581,11 +584,13 @@ CRITICAL TWITTER RULES:
 - Twitter has a HARD 280 character limit!
 - Count ALL characters including spaces, emojis, URLs, hashtags
 - If content is too long, you MUST:
-  1. Remove URLs (they're not clickable in tweets anyway)
-  2. Use abbreviations (e.g., "w/" for "with")
+  1. Use abbreviations (e.g., "w/" for "with")
+  2. Shorten usernames (e.g., "@user" instead of full names)
   3. Remove less important details
-  4. Keep only the most essential information
+  4. Keep URLs whenever possible as they are valuable references
+  5. If URLs must be removed due to length, prefer keeping the most important ones
 - For threads: First tweet should be <250 chars to leave room for thread numbering
+- PRIORITY: Always try to include original tweet URLs when space allows
 - Example of good tweet: "🚀 Top 3 Meme Coins 🧵\n\n1️⃣ Big Papa ($PAPA) - Solana meme coin\n2️⃣ $BEAST - Pulsechain revolution\n3️⃣ Novus Ordo ($NOVO) - Providence themed\n\n#MemeCoins #Crypto" (under 280 chars)
 
 IMPORTANT REMINDERS:
@@ -611,6 +616,13 @@ EXAMPLE TRANSFORMATIONS:
 - For social media: Extract key insights and format as engaging content (respect character limits!)
 - For API calls: Structure data according to API schema requirements
 - For content creation: Transform data into readable, formatted text
+
+CRITICAL CONTENT EXTRACTION:
+- When previous step results contain actual content: EXTRACT THE REAL TEXT, never use placeholders
+- Example: If previous contains "Summary: Bitcoin is trending up 5%" → use "Bitcoin is trending up 5%"
+- NEVER use "[Insert Data Here]" or "Latest data from Dune for queryId X" - extract actual content!
+- ALWAYS extract and include actual data/URLs/links when available in the source data
+- If no actual data exists, return empty/null, never use descriptive placeholders
 
 IMPORTANT: Always check the exact parameter names in the inputSchema and use those exact names in your inputParams.
 
@@ -639,10 +651,15 @@ Transform the data now:`;
       }
 
       const selectedToolName = toolSelection.toolName;
-      const convertedInput = toolSelection.inputParams || input;
+      const llmConvertedInput = toolSelection.inputParams || input;
+      
+      // 🔧 新增：进一步验证和转换参数名，确保与 schema 匹配
+      const targetTool = mcpTools.find(t => t.name === selectedToolName);
+      const finalConvertedInput = targetTool ? this.validateParameterNames(llmConvertedInput, targetTool.inputSchema) : llmConvertedInput;
       
       logger.info(`🔧 LLM selected tool: ${selectedToolName}`);
-      logger.info(`🔧 Converted input parameters: ${JSON.stringify(convertedInput)}`);
+      logger.info(`🔧 LLM converted input: ${JSON.stringify(llmConvertedInput)}`);
+      logger.info(`🔧 Final validated input: ${JSON.stringify(finalConvertedInput)}`);
       logger.info(`🧠 Selection reasoning: ${toolSelection.reasoning || 'No reasoning provided'}`);
 
       // 验证选择的工具是否存在
@@ -673,9 +690,9 @@ Transform the data now:`;
       console.log(`Objective: ${objective}`);
       console.log(`Selected Tool: ${finalToolName}`);
       console.log(`Original Input: ${JSON.stringify(input, null, 2)}`);
-      console.log(`Converted Input Parameters: ${JSON.stringify(convertedInput, null, 2)}`);
+      console.log(`Converted Input Parameters: ${JSON.stringify(finalConvertedInput, null, 2)}`);
       
-      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, convertedInput, taskId);
+      const result = await this.callMCPToolWithLangChain(actualMcpName, finalToolName, finalConvertedInput, taskId);
       
       console.log(`\n==== MCP Objective-Based Call Result ====`);
       console.log(`Status: Success`);
@@ -855,15 +872,32 @@ Transform the data now:`;
             
             if (userAuth && userAuth.isVerified && userAuth.authData) {
               logger.info(`Found user ${userId} auth info for ${mcpConfig.name}, injecting environment variables...`);
+              console.log(`\n🔧 === MCP Auth Injection Debug ===`);
+              console.log(`MCP Name: ${mcpConfig.name}`);
+              console.log(`User ID: ${userId}`);
+              console.log(`Task ID: ${taskId}`);
+              console.log(`Auth Data Keys: ${Object.keys(userAuth.authData)}`);
+              console.log(`Auth Params: ${JSON.stringify(mcpConfig.authParams, null, 2)}`);
+              console.log(`Env Config: ${JSON.stringify(mcpConfig.env, null, 2)}`);
               console.log(`User Auth Data: ${JSON.stringify(userAuth.authData, null, 2)}`);
               
               // 动态注入认证信息到环境变量
               for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
                 console.log(`Checking env var: ${envKey} = "${envValue}"`);
-                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                
+                // 🔧 改进：检查用户认证数据中是否有对应的键
+                let authValue = userAuth.authData[envKey];
+                
+                // 🔧 如果直接键名不存在，尝试从authParams映射中查找
+                if (!authValue && mcpConfig.authParams && mcpConfig.authParams[envKey]) {
+                  const authParamKey = mcpConfig.authParams[envKey];
+                  authValue = userAuth.authData[authParamKey];
+                  console.log(`🔧 Trying authParams mapping: ${envKey} -> ${authParamKey}, value: "${authValue}"`);
+                }
+                
+                if ((!envValue || envValue === '') && authValue) {
                   // 🔧 特殊处理Notion MCP的OPENAPI_MCP_HEADERS
                   if (envKey === 'OPENAPI_MCP_HEADERS' && mcpConfig.name === 'notion-mcp') {
-                    const authValue = userAuth.authData[envKey];
                     console.log(`🔧 处理Notion MCP的OPENAPI_MCP_HEADERS: "${authValue}"`);
                     
                     // 检查用户填写的是否已经是完整的JSON字符串
@@ -898,12 +932,12 @@ Transform the data now:`;
                     }
                   } else {
                     // 其他MCP的正常处理
-                  dynamicEnv[envKey] = userAuth.authData[envKey];
-                  console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                    dynamicEnv[envKey] = authValue;
+                    console.log(`✅ Injected ${envKey} = "${authValue}"`);
                   }
                   logger.info(`Injected environment variable ${envKey}`);
                 } else {
-                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authData has key: ${!!userAuth.authData[envKey]}`);
+                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authValue: "${authValue}"`);
                 }
               }
               
@@ -1694,8 +1728,9 @@ TRANSFORMATION PRINCIPLES:
 5. **Smart content generation**:
    - For Twitter: MUST be under 280 characters! Use concise language, abbreviations if needed, but preserve important URLs
    - For cryptocurrency/financial data: Highlight price, changes, trends
-   - For analysis results: Summarize key findings concisely with reference links
-   - For lists/collections: Format as readable bullet points or threads with source URLs when available
+   - For analysis results: Summarize key findings concisely and include reference links
+   - For lists/collections: Format as readable bullet points or threads, include source URLs
+   - ALWAYS extract and include original URLs/links when available in the source data
 
 OUTPUT FORMAT:
 Return a JSON object with exactly this structure:
@@ -2583,5 +2618,51 @@ IMPORTANT: Your response should be ready-to-display markdown content, not wrappe
       'MCP_SERVICE_INIT_FAILED'
     ];
     return mcpConnectionErrorTypes.includes(errorType);
+  }
+
+  /**
+   * 🔧 新增：验证参数名是否与工具 schema 匹配
+   */
+  private validateParameterNames(params: any, inputSchema: any): any {
+    if (!params || typeof params !== 'object') {
+      return params;
+    }
+
+    if (!inputSchema || !inputSchema.properties) {
+      return params;
+    }
+
+    const schemaProperties = inputSchema.properties;
+    const expectedParamNames = Object.keys(schemaProperties);
+    
+    logger.info(`🔧 Validating parameters, expected: [${expectedParamNames.join(', ')}]`);
+
+    const validatedParams: any = {};
+    
+    for (const [key, value] of Object.entries(params)) {
+      let finalKey = key;
+      
+      // 如果参数名不在期望列表中，尝试转换
+      if (!expectedParamNames.includes(key)) {
+        const snakeCaseKey = this.camelToSnakeCase(key);
+        if (expectedParamNames.includes(snakeCaseKey)) {
+          finalKey = snakeCaseKey;
+          logger.info(`🔧 Parameter name corrected: ${key} -> ${finalKey}`);
+        } else {
+          logger.warn(`⚠️ Parameter ${key} not found in schema, keeping original name`);
+        }
+      }
+      
+      validatedParams[finalKey] = value;
+    }
+
+    return validatedParams;
+  }
+
+  /**
+   * 🔧 新增：camelCase 转 snake_case
+   */
+  private camelToSnakeCase(str: string): string {
+    return str.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
   }
 } 

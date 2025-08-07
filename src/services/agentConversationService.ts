@@ -1029,12 +1029,35 @@ The task has been processed, but I encountered an issue formatting the detailed 
           }
 
           // 动态注入认证信息
+          console.log(`\n🔧 === MCP Auth Injection Debug (Agent Conversation Service) ===`);
+          console.log(`MCP Name: ${mcpInfo.name}`);
+          console.log(`User ID: ${userId}`);
+          console.log(`Task ID: ${taskId}`);
+          console.log(`Auth Data Keys: ${Object.keys(userAuth.authData)}`);
+          console.log(`Auth Params: ${JSON.stringify(mcpConfig.authParams, null, 2)}`);
+          console.log(`Env Config: ${JSON.stringify(mcpConfig.env, null, 2)}`);
+          
           const dynamicEnv = { ...mcpConfig.env };
           if (mcpConfig.env) {
             for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
-              if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
-                dynamicEnv[envKey] = userAuth.authData[envKey];
+              console.log(`Checking env var: ${envKey} = "${envValue}"`);
+              
+              // 🔧 改进：检查用户认证数据中是否有对应的键
+              let authValue = userAuth.authData[envKey];
+              
+              // 🔧 如果直接键名不存在，尝试从authParams映射中查找
+              if (!authValue && mcpConfig.authParams && mcpConfig.authParams[envKey]) {
+                const authParamKey = mcpConfig.authParams[envKey];
+                authValue = userAuth.authData[authParamKey];
+                console.log(`🔧 Trying authParams mapping: ${envKey} -> ${authParamKey}, value: "${authValue}"`);
+              }
+              
+              if ((!envValue || envValue === '') && authValue) {
+                dynamicEnv[envKey] = authValue;
+                console.log(`✅ Injected ${envKey} = "${authValue}"`);
                 logger.info(`Injected authentication for ${envKey} in MCP ${mcpInfo.name} for user ${userId}`);
+              } else {
+                console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authValue: "${authValue}"`);
               }
             }
           }
