@@ -544,8 +544,28 @@ export class MCPManager {
     
     try {
       const toolsResponse = await mcpClient.client.listTools();
-      const tools = toolsResponse.tools || [];
-      return tools;
+      const connectedTools = toolsResponse.tools || [];
+      
+      // 🔧 优先使用预定义工具的参数定义，但保留连接工具的其他信息
+      const predefinedTools = await this.getPredefinedTools(name);
+      
+      if (predefinedTools.length > 0) {
+        logger.info(`【MCP Debug】Using predefined tool schemas for ${name} (${predefinedTools.length} tools)`);
+        // 将预定义工具的 schema 与连接工具合并
+        return connectedTools.map(connectedTool => {
+          const predefinedTool = predefinedTools.find(p => p.name === connectedTool.name);
+          if (predefinedTool) {
+            logger.info(`【MCP Debug】Applied predefined schema for tool: ${connectedTool.name}`);
+            return {
+              ...connectedTool,
+              inputSchema: predefinedTool.inputSchema
+            };
+          }
+          return connectedTool;
+        });
+      }
+      
+      return connectedTools;
     } catch (error) {
       logger.error(`【MCP Debug】Failed to get MCP tool list [MCP: ${name}, User: ${userId || 'default'}]:`, error);
       logger.info(`【MCP Debug】Fallback to predefined tools for [MCP: ${name}]`);
@@ -566,11 +586,11 @@ export class MCPManager {
     
     if (mcpConfig && mcpConfig.predefinedTools) {
       logger.info(`【MCP Debug】Found ${mcpConfig.predefinedTools.length} predefined tools for ${mcpName}`);
-      // 转换为标准的MCP工具格式
+      // 转换为标准的MCP工具格式，使用预定义的参数配置
       return mcpConfig.predefinedTools.map((tool: MCPTool) => ({
         name: tool.name,
         description: tool.description,
-        inputSchema: {
+        inputSchema: tool.parameters || {
           type: 'object',
           properties: {},
           required: []
@@ -676,34 +696,6 @@ export class MCPManager {
         console.log(`  Result preview: ${String(result).substring(0, 200)}...`);
       }
       
-      // 🔧 新增：记录最终内存状态和总体效率
-      const memUsageAfter = process.memoryUsage();
-      // 🔧 检查是否存在内存泄漏迹象
-      const heapDelta = (memUsageAfter.heapUsed - memUsageBefore.heapUsed) / 1024 / 1024;
-      const resultMB = resultSize / 1024 / 1024;
-      
-      if (heapDelta > resultMB * 10) {
-        console.log(`⚠️ POTENTIAL MEMORY LEAK DETECTED:`);
-        console.log(`   Heap increased by ${heapDelta.toFixed(2)} MB`);
-        console.log(`   But result is only ${resultMB.toFixed(2)} MB`);
-        console.log(`   Ratio: ${(heapDelta / resultMB).toFixed(2)}x (should be < 10x)`);
-      }
-      
-      if (resultMB > 50) {
-        console.log(`⚠️ LARGE RESULT DETECTED: ${resultMB.toFixed(2)} MB`);
-        console.log(`   This could cause memory issues if not handled properly`);
-      }
-      
-      // 🔧 强制垃圾回收（如果可用）
-      if (global.gc) {
-        console.log(`🗑️ Forcing garbage collection after MCP call...`);
-        const memBeforeGC = process.memoryUsage();
-        global.gc();
-        const memAfterGC = process.memoryUsage();
-        console.log(`Memory after GC: Heap Used ${(memAfterGC.heapUsed / 1024 / 1024).toFixed(2)} MB (${((memAfterGC.heapUsed - memBeforeGC.heapUsed) / 1024 / 1024).toFixed(2)} MB freed)`);
-      } else {
-        console.log(`⚠️ Garbage collection not available (start Node.js with --expose-gc to enable)`);
-      }
       
       return result;
     } catch (error) {

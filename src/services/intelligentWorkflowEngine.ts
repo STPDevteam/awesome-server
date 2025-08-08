@@ -1321,15 +1321,32 @@ Please return in format:
             
             if (userAuth && userAuth.isVerified && userAuth.authData) {
               logger.info(`Found user ${userId} auth info for ${mcpConfig.name}, injecting environment variables...`);
+              console.log(`\n🔧 === MCP Auth Injection Debug (Workflow Engine) ===`);
+              console.log(`MCP Name: ${mcpConfig.name}`);
+              console.log(`User ID: ${userId}`);
+              console.log(`Task ID: ${taskId}`);
+              console.log(`Auth Data Keys: ${Object.keys(userAuth.authData)}`);
+              console.log(`Auth Params: ${JSON.stringify(mcpConfig.authParams, null, 2)}`);
+              console.log(`Env Config: ${JSON.stringify(mcpConfig.env, null, 2)}`);
               console.log(`User auth data: ${JSON.stringify(userAuth.authData, null, 2)}`);
               
               // Dynamically inject authentication information into environment variables
               for (const [envKey, envValue] of Object.entries(mcpConfig.env)) {
                 console.log(`Checking environment variable: ${envKey} = "${envValue}"`);
-                if ((!envValue || envValue === '') && userAuth.authData[envKey]) {
+                
+                // 🔧 Improved: Check if there's a corresponding key in user auth data
+                let authValue = userAuth.authData[envKey];
+                
+                // 🔧 If direct key name doesn't exist, try to find from authParams mapping
+                if (!authValue && mcpConfig.authParams && mcpConfig.authParams[envKey]) {
+                  const authParamKey = mcpConfig.authParams[envKey];
+                  authValue = userAuth.authData[authParamKey];
+                  console.log(`🔧 Trying authParams mapping: ${envKey} -> ${authParamKey}, value: "${authValue}"`);
+                }
+                
+                if ((!envValue || envValue === '') && authValue) {
                   // 🔧 Special handling for Notion MCP's OPENAPI_MCP_HEADERS
                   if (envKey === 'OPENAPI_MCP_HEADERS' && mcpConfig.name === 'notion-mcp') {
-                    const authValue = userAuth.authData[envKey];
                     console.log(`🔧 Processing Notion MCP OPENAPI_MCP_HEADERS: "${authValue}"`);
                     
                     // Check if user provided complete JSON string
@@ -1364,12 +1381,12 @@ Please return in format:
                     }
                   } else {
                     // Normal handling for other MCPs
-                    dynamicEnv[envKey] = userAuth.authData[envKey];
-                    console.log(`✅ Injected ${envKey} = "${userAuth.authData[envKey]}"`);
+                    dynamicEnv[envKey] = authValue;
+                    console.log(`✅ Injected ${envKey} = "${authValue}"`);
                   }
                   logger.info(`Injected environment variable ${envKey}`);
                 } else {
-                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", auth data has key: ${!!userAuth.authData[envKey]}`);
+                  console.log(`❌ Not injecting ${envKey}: envValue="${envValue}", authValue: "${authValue}"`);
                 }
               }
               
