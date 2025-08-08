@@ -3863,7 +3863,7 @@ export const predefinedMCPs: MCPService[] = [
         "connected": false,
         "category": "Market Data",
         "imageUrl": "https://mcp-server-tool-logo.s3.ap-northeast-1.amazonaws.com/mcp-server-defillama.png",
-        "githubUrl": "https://github.com/demcp/demcp-defillama-mcp",
+        "githubUrl": "https://github.com/demcp/defillama-mcp",
         "authRequired": false,
         "authParams": {},
         "predefinedTools": [
