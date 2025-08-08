@@ -963,13 +963,13 @@ Please generate 3 questions, one per line, without numbering or other formatting
         throw new Error(`Access denied: This task belongs to another user`);
       }
 
-      // Check if task is completed
-      if (task.status !== 'completed') {
-        logger.warn(`Task ${taskId} is not completed (status: ${task.status}), cannot create Agent`);
-        throw new Error(`Task is not completed (status: ${task.status}), cannot create Agent`);
+      // Check if task is completed or failed - 允许失败的任务也能创建Agent
+      if (task.status !== 'completed' && task.status !== 'failed') {
+        logger.warn(`Task ${taskId} is not in completed or failed status (status: ${task.status}), cannot create Agent`);
+        throw new Error(`Task is not in completed or failed status (status: ${task.status}), cannot create Agent. Only completed or failed tasks can be used to create Agents.`);
       }
 
-      logger.info(`Task ${taskId} validation passed, generating Agent info...`);
+      logger.info(`Task ${taskId} validation passed (status: ${task.status}), generating Agent info...`);
 
       // Generate Agent name
       const name = await this.generateAgentName({
@@ -1019,9 +1019,9 @@ Please generate 3 questions, one per line, without numbering or other formatting
         throw new Error('Task not found or access denied');
       }
 
-      // Check if task is completed
-      if (task.status !== 'completed') {
-        throw new Error('Task is not completed, cannot create Agent');
+      // Check if task is completed or failed - 允许失败的任务也能创建Agent
+      if (task.status !== 'completed' && task.status !== 'failed') {
+        throw new Error('Task is not in completed  status, cannot create Agent. Only completed or failed tasks can be used to create Agents.');
       }
 
       // Generate suggested name
@@ -1094,9 +1094,9 @@ Please generate 3 questions, one per line, without numbering or other formatting
         throw new Error('Task not found or access denied');
       }
 
-      // Check if task is completed
-      if (task.status !== 'completed') {
-        throw new Error('Task is not completed, cannot create Agent');
+      // Check if task is completed or failed - 允许失败的任务也能创建Agent
+      if (task.status !== 'completed' && task.status !== 'failed') {
+        throw new Error('Task is not in completed or failed status, cannot create Agent. Only completed or failed tasks can be used to create Agents.');
       }
 
       // Use custom name or auto-generate Agent name
@@ -1155,7 +1155,7 @@ Please generate 3 questions, one per line, without numbering or other formatting
       };
 
       const agent = await this.createAgent(createRequest);
-      logger.info(`Successfully created Agent from task: ${agent.id} (${agent.name}) - Status: ${status}`);
+      logger.info(`Successfully created Agent from task: ${agent.id} (${agent.name}) - Task Status: ${task.status}, Agent Status: ${status}`);
       
       return agent;
     } catch (error) {
